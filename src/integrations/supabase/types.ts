@@ -1032,6 +1032,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      bootstrap_org_once_invoke: {
+        Args: { _email: string; _name: string }
+        Returns: number
+      }
       can_member_access_route: {
         Args: { _org_id: string; _route: string; _user_id: string }
         Returns: boolean
