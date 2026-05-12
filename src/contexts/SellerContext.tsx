@@ -198,18 +198,18 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
   );
 
   const addSeller = useCallback(async (name: string): Promise<Seller | null> => {
-    if (!user) return null;
+    if (!user || !currentOrg) return null;
     const initials = generateInitials(name);
     const { data, error } = await supabase
       .from("sellers" as any)
-      .insert({ user_id: user.id, name, initials, is_active: true })
+      .insert({ user_id: user.id, name, initials, is_active: true, organization_id: currentOrg.id })
       .select()
       .single();
     if (error || !data) { console.error(error); return null; }
     const newSeller = buildSeller(data as any, []);
     setSellers((prev) => [...prev, newSeller]);
     return newSeller;
-  }, [user]);
+  }, [user, currentOrg]);
 
   const updateSeller = useCallback(async (id: string, data: { name?: string; is_active?: boolean; logo_url?: string | null }) => {
     const updates: any = { ...data };
@@ -246,6 +246,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
   }, [sellers, selectedSellerId]);
 
   const addStore = useCallback(async (sellerId: string, input: AddStoreInput): Promise<SellerStore | null> => {
+    if (!currentOrg) return null;
     const { data, error } = await supabase
       .from("seller_stores" as any)
       .insert({
@@ -254,6 +255,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
         store_name: input.store_name,
         external_id: input.external_id ?? null,
         is_active: true,
+        organization_id: currentOrg.id,
       })
       .select()
       .single();
