@@ -250,7 +250,10 @@ export default function Integrations() {
           .limit(1);
 
         const firstToken = dbTokens?.[0];
-        if (!firstToken) return;
+        if (!firstToken) {
+          updateIntegrationStatus("ml", "disconnected");
+          return;
+        }
 
         const expiresAt = firstToken.expires_at ? new Date(firstToken.expires_at).getTime() : 0;
         if (expiresAt > Date.now()) {
