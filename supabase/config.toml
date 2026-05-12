@@ -53,6 +53,3 @@ verify_jwt = true
 
 [functions.super-admin-users]
 verify_jwt = true
-
-[functions.bootstrap-org-once]
-verify_jwt = false
