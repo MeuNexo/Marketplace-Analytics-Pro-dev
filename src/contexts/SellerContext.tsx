@@ -268,7 +268,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       })
     );
     return newStore;
-  }, []);
+  }, [currentOrg]);
 
   const updateStore = useCallback(async (
     storeId: string,
