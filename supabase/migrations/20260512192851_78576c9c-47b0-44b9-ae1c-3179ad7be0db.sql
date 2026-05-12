@@ -1,0 +1,1 @@
+SELECT public.bootstrap_org_once_invoke('Pé Vermeio', 'wesleysantos@pevermeio.com');
