@@ -173,21 +173,39 @@ export default function MLPedidos() {
     if (!resolvedMLUserIds.length) return;
     setLoading(true);
     try {
-      const { data, error } = await (supabase as any)
-        .from("orders")
-        .select([
-          "ml_order_id", "item_id", "titulo", "listing_type",
-          "quantidade", "preco_unit", "comissao", "frete",
-          "receita_bruta", "receita_liquida",
-          "status", "data_pedido", "comprador",
-        ].join(", "))
-        .in("ml_user_id", resolvedMLUserIds)
-        .gte("data_pedido", dateFrom)
-        .lte("data_pedido", dateTo)
-        .order("data_pedido", { ascending: false });
+      // Fetch in pages of 1000 to bypass Supabase's default row cap
+      const PAGE = 1000;
+      let allRows: OrderRow[] = [];
+      let from = 0;
 
-      if (error) throw error;
-      setRows((data as OrderRow[]) ?? []);
+      while (true) {
+        const { data, error, count } = await (supabase as any)
+          .from("orders")
+          .select(
+            [
+              "ml_order_id", "item_id", "titulo", "listing_type",
+              "quantidade", "preco_unit", "comissao", "frete",
+              "receita_bruta", "receita_liquida",
+              "status", "data_pedido", "comprador",
+            ].join(", "),
+            { count: "exact" },
+          )
+          .in("ml_user_id", resolvedMLUserIds)
+          .gte("data_pedido", dateFrom)
+          .lte("data_pedido", dateTo)
+          .order("data_pedido", { ascending: false })
+          .range(from, from + PAGE - 1);
+
+        if (error) throw error;
+        const page = (data as OrderRow[]) ?? [];
+        allRows = allRows.concat(page);
+
+        // Stop when we've received all rows
+        if (page.length < PAGE || allRows.length >= (count ?? 0)) break;
+        from += PAGE;
+      }
+
+      setRows(allRows);
     } catch (err: any) {
       toast({ title: "Erro ao carregar pedidos", description: err.message, variant: "destructive" });
     } finally {
