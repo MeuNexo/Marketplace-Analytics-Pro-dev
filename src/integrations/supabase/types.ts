@@ -858,68 +858,6 @@ export type Database = {
         }
         Relationships: []
       }
-      sales_data: {
-        Row: {
-          ano: number
-          dia: number
-          id: string
-          marketplace: string
-          mes: number
-          meta_vendas: number | null
-          organization_id: string | null
-          pmt: number | null
-          qtd_vendas: number | null
-          seller_id: string
-          synced_at: string
-          updated_at: string
-          venda_ano_anterior: number | null
-          venda_aprovada_real: number | null
-          venda_total: number
-        }
-        Insert: {
-          ano: number
-          dia: number
-          id?: string
-          marketplace: string
-          mes: number
-          meta_vendas?: number | null
-          organization_id?: string | null
-          pmt?: number | null
-          qtd_vendas?: number | null
-          seller_id: string
-          synced_at?: string
-          updated_at?: string
-          venda_ano_anterior?: number | null
-          venda_aprovada_real?: number | null
-          venda_total?: number
-        }
-        Update: {
-          ano?: number
-          dia?: number
-          id?: string
-          marketplace?: string
-          mes?: number
-          meta_vendas?: number | null
-          organization_id?: string | null
-          pmt?: number | null
-          qtd_vendas?: number | null
-          seller_id?: string
-          synced_at?: string
-          updated_at?: string
-          venda_ano_anterior?: number | null
-          venda_aprovada_real?: number | null
-          venda_total?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "sales_data_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       seller_stores: {
         Row: {
           created_at: string
