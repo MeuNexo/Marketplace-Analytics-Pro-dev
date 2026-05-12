@@ -42,7 +42,7 @@ async function fetchScopedRows<T extends RowWithSync>(params: {
   if (ownError) throw ownError;
 
   const ownList = (ownRows || []) as T[];
-  if (ownList.length > 0 || !organizationId) {
+  if (!organizationId) {
     return ownList;
   }
 
@@ -50,7 +50,10 @@ async function fetchScopedRows<T extends RowWithSync>(params: {
   if (orgError) throw orgError;
 
   const orgList = (orgRows || []) as T[];
-  return dedupeKey ? dedupeLatestRows(orgList, dedupeKey) : orgList;
+  const merged = [...ownList, ...orgList].sort((a, b) =>
+    String(b.synced_at ?? "").localeCompare(String(a.synced_at ?? "")),
+  );
+  return dedupeKey ? dedupeLatestRows(merged, dedupeKey) : merged;
 }
 
 export async function fetchDailyCache(
