@@ -3,7 +3,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip as RechartsTooltip, ResponsiveContainer,
 } from "recharts";
-import { format, subDays, parseISO } from "date-fns";
+import { format, parseISO, eachDayOfInterval } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   ClipboardList, DollarSign, TrendingDown, Package,
@@ -14,10 +14,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
+import { MLPeriodPicker } from "@/components/mercadolivre/MLPeriodPicker";
 import { useMLStore } from "@/contexts/MLStoreContext";
+import { useMLFilters } from "@/hooks/useMLFilters";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -95,12 +96,6 @@ const LISTING_LABELS: Record<ListingType, string> = {
   free:    "Grátis",
 };
 
-const PERIOD_OPTIONS = [
-  { value: 7,  label: "7 dias"  },
-  { value: 30, label: "30 dias" },
-  { value: 60, label: "60 dias" },
-  { value: 90, label: "90 dias" },
-];
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -137,26 +132,37 @@ export default function MLPedidos() {
   const { stores, resolvedMLUserIds } = useMLStore();
   const { toast } = useToast();
 
-  const [rows, setRows]               = useState<OrderRow[]>([]);
-  const [loading, setLoading]         = useState(false);
-  const [syncing, setSyncing]         = useState(false);
+  const {
+    period, setPeriod,
+    customRange, setCustomRange,
+    popoverOpen, setPopoverOpen,
+    pendingRange, setPendingRange,
+    pendingPeriod, setPendingPeriod,
+    pendingLabel, canConfirm,
+    periodLabel,
+    currentFrom: dateFrom,
+    currentTo:   dateTo,
+  } = useMLFilters();
+
+  const [rows, setRows]                 = useState<OrderRow[]>([]);
+  const [loading, setLoading]           = useState(false);
+  const [syncing, setSyncing]           = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
-  const [period, setPeriod]           = useState(30);
-  const [search, setSearch]           = useState("");
+  const [search, setSearch]             = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [sortKey, setSortKey]         = useState<SortKey>("date");
-  const [sortDir, setSortDir]         = useState<SortDir>("desc");
+  const [sortKey, setSortKey]           = useState<SortKey>("date");
+  const [sortDir, setSortDir]           = useState<SortDir>("desc");
 
   const connected = stores.length > 0;
 
-  // ── Date range ──────────────────────────────────────────────────────────────
-  const { dateFrom, dateTo } = useMemo(() => {
-    const today = new Date();
-    return {
-      dateFrom: format(subDays(today, period - 1), "yyyy-MM-dd"),
-      dateTo:   format(today, "yyyy-MM-dd"),
-    };
-  }, [period]);
+  // Confirma a seleção do picker (igual ao padrão de Vendas)
+  const handleConfirmPeriod = useCallback(() => {
+    if (pendingRange !== null) { setCustomRange(pendingRange); setPeriod(30); }
+    else if (pendingPeriod !== null) { setPeriod(pendingPeriod); setCustomRange(null); }
+    setPopoverOpen(false);
+    setPendingRange(null);
+    setPendingPeriod(null);
+  }, [pendingRange, pendingPeriod, setCustomRange, setPeriod, setPopoverOpen, setPendingRange, setPendingPeriod]);
 
   // resolvedMLUserIds já vem filtrado pelo seletor de loja do header:
   // "Todas" → todos os ml_user_ids do seller, loja específica → só o dela.
@@ -270,20 +276,23 @@ export default function MLPedidos() {
     };
   }, [orders]);
 
-  // ── Chart (last N days grouped by date) ────────────────────────────────────
+  // ── Chart (grouped by date within the selected range) ─────────────────────
   const chartData = useMemo(() => {
-    const today = new Date();
-    const days  = Math.min(period, 30);
-    return Array.from({ length: days }, (_, i) => {
-      const date = format(subDays(today, days - 1 - i), "yyyy-MM-dd");
+    const from = parseISO(dateFrom);
+    const to   = parseISO(dateTo);
+    const days = eachDayOfInterval({ start: from, end: to });
+    // Cap at 60 days for readability; show every Nth tick on x-axis
+    const slice = days.length > 60 ? days.slice(-60) : days;
+    return slice.map(d => {
+      const date = format(d, "yyyy-MM-dd");
       const day  = orders.filter(o => o.date === date && o.status !== "cancelled" && o.status !== "returned");
       return {
-        date:             format(parseISO(date), "dd/MM", { locale: ptBR }),
-        "Receita Bruta":  Math.round(day.reduce((s, o) => s + o.gross_revenue, 0) * 100) / 100,
+        date:              format(d, "dd/MM", { locale: ptBR }),
+        "Receita Bruta":   Math.round(day.reduce((s, o) => s + o.gross_revenue, 0) * 100) / 100,
         "Receita Líquida": Math.round(day.reduce((s, o) => s + o.net_revenue,   0) * 100) / 100,
       };
     });
-  }, [orders, period]);
+  }, [orders, dateFrom, dateTo]);
 
   // ── Filtered + sorted table ─────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -328,16 +337,20 @@ export default function MLPedidos() {
         <div className="flex items-center justify-between gap-4">
           <MLPageHeader title="Pedidos" lastUpdated={lastSyncedAt} />
           <div className="flex items-center gap-2">
-            <Select value={String(period)} onValueChange={v => setPeriod(Number(v))}>
-              <SelectTrigger className="h-8 w-28 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PERIOD_OPTIONS.map(o => (
-                  <SelectItem key={o.value} value={String(o.value)}>{o.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <MLPeriodPicker
+              periodLabel={periodLabel}
+              popoverOpen={popoverOpen}
+              setPopoverOpen={setPopoverOpen}
+              pendingRange={pendingRange}
+              setPendingRange={setPendingRange}
+              pendingPeriod={pendingPeriod}
+              setPendingPeriod={setPendingPeriod}
+              pendingLabel={pendingLabel}
+              canConfirm={canConfirm}
+              customRange={customRange}
+              period={period}
+              onConfirm={handleConfirmPeriod}
+            />
             <Button
               variant="outline"
               size="sm"
@@ -386,7 +399,7 @@ export default function MLPedidos() {
               iconClassName="bg-accent/10 text-accent"
               size="compact"
               icon={<DollarSign className="w-4 h-4" />}
-              subtitle={`Últimos ${period} dias`}
+              subtitle={periodLabel}
             />
             <KPICard
               title="Receita líquida"
@@ -445,7 +458,7 @@ export default function MLPedidos() {
           <Card>
             <div className="px-4 pt-4 pb-3">
               <span className="text-sm font-medium text-foreground">
-                Receita — últimos {Math.min(period, 30)} dias
+                Receita — {periodLabel}
               </span>
             </div>
             <CardContent className="px-4 pb-2 pt-0">
