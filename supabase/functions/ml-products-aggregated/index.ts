@@ -47,6 +47,18 @@ serve(async (req) => {
     }
     const userId = userData.user.id;
 
+    const { data: orgMemberships, error: orgMembershipsError } = await supabase
+      .from("organization_members")
+      .select("organization_id")
+      .eq("user_id", userId);
+    if (orgMembershipsError) {
+      console.error("Organization membership lookup error:", orgMembershipsError);
+      return jsonResponse({ error: "Organization lookup failed" }, 500);
+    }
+    const organizationIds = Array.from(
+      new Set((orgMemberships || []).map((row: any) => row.organization_id).filter(Boolean)),
+    );
+
     // Parse and validate body
     const body = await req.json();
     const parsed = QuerySchema.safeParse(body);
@@ -73,7 +85,7 @@ serve(async (req) => {
     }> = [];
     let from = 0;
     while (from < MAX_ROWS) {
-      const { data: page, error } = await supabase
+      const userScopedQuery = supabase
         .from("ml_product_daily_cache")
         .select("item_id, title, thumbnail, qty_sold, revenue, ml_user_id, date")
         .eq("user_id", userId)
@@ -83,10 +95,33 @@ serve(async (req) => {
         .order("date", { ascending: true })
         .range(from, from + PAGE - 1);
 
+      const { data: userPage, error } = await userScopedQuery;
+
       if (error) {
         console.error("Query error:", error);
         return jsonResponse({ error: "Database query failed" }, 500);
       }
+
+      let page = userPage;
+      if ((!page || page.length === 0) && organizationIds.length > 0) {
+        const { data: orgPage, error: orgError } = await supabase
+          .from("ml_product_daily_cache")
+          .select("item_id, title, thumbnail, qty_sold, revenue, ml_user_id, date, synced_at")
+          .in("organization_id", organizationIds)
+          .in("ml_user_id", ml_user_ids)
+          .gte("date", date_from)
+          .lte("date", date_to)
+          .order("date", { ascending: true })
+          .order("synced_at", { ascending: false })
+          .range(from, from + PAGE - 1);
+
+        if (orgError) {
+          console.error("Organization query error:", orgError);
+          return jsonResponse({ error: "Database query failed" }, 500);
+        }
+        page = orgPage;
+      }
+
       if (!page || page.length === 0) break;
       data.push(...(page as any));
       if (page.length < PAGE) break;
