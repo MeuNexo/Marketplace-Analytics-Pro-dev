@@ -134,7 +134,7 @@ function SortIcon({ sortKey, k, sortDir }: { sortKey: SortKey; k: SortKey; sortD
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function MLPedidos() {
-  const { stores, resolvedMLUserIds, selectedStore } = useMLStore();
+  const { stores, resolvedMLUserIds } = useMLStore();
   const { toast } = useToast();
 
   const [rows, setRows]               = useState<OrderRow[]>([]);
@@ -158,15 +158,12 @@ export default function MLPedidos() {
     };
   }, [period]);
 
-  // ── Active ml_user_ids ──────────────────────────────────────────────────────
-  const activeMLUserIds = useMemo(() => {
-    if (selectedStore && selectedStore !== "all") return [selectedStore];
-    return resolvedMLUserIds;
-  }, [selectedStore, resolvedMLUserIds]);
+  // resolvedMLUserIds já vem filtrado pelo seletor de loja do header:
+  // "Todas" → todos os ml_user_ids do seller, loja específica → só o dela.
 
   // ── Load orders from DB ─────────────────────────────────────────────────────
   const loadOrders = useCallback(async () => {
-    if (!activeMLUserIds.length) return;
+    if (!resolvedMLUserIds.length) return;
     setLoading(true);
     try {
       const { data, error } = await (supabase as any)
@@ -177,7 +174,7 @@ export default function MLPedidos() {
           "receita_bruta", "receita_liquida",
           "status", "data_pedido", "comprador",
         ].join(", "))
-        .in("ml_user_id", activeMLUserIds)
+        .in("ml_user_id", resolvedMLUserIds)
         .gte("data_pedido", dateFrom)
         .lte("data_pedido", dateTo)
         .order("data_pedido", { ascending: false });
@@ -189,7 +186,7 @@ export default function MLPedidos() {
     } finally {
       setLoading(false);
     }
-  }, [activeMLUserIds, dateFrom, dateTo, toast]);
+  }, [resolvedMLUserIds, dateFrom, dateTo, toast]);
 
   useEffect(() => {
     if (connected) loadOrders();
@@ -197,13 +194,13 @@ export default function MLPedidos() {
 
   // ── Sync (call edge function then reload) ───────────────────────────────────
   const handleSync = useCallback(async () => {
-    if (!activeMLUserIds.length || syncing) return;
+    if (!resolvedMLUserIds.length || syncing) return;
     setSyncing(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Sessão expirada");
 
-      for (const ml_user_id of activeMLUserIds) {
+      for (const ml_user_id of resolvedMLUserIds) {
         const store = stores.find(s => s.ml_user_id === ml_user_id);
         const { data, error } = await supabase.functions.invoke("sync-ml-orders", {
           body: {
@@ -226,7 +223,7 @@ export default function MLPedidos() {
     } finally {
       setSyncing(false);
     }
-  }, [activeMLUserIds, stores, syncing, dateFrom, dateTo, loadOrders, toast]);
+  }, [resolvedMLUserIds, stores, syncing, dateFrom, dateTo, loadOrders, toast]);
 
   // ── Derived display data ────────────────────────────────────────────────────
   const orders = useMemo(() =>
