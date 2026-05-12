@@ -80,10 +80,8 @@ export function useMLHourlyQuery(
 
 export function useMLProductsQuery(dateFrom: string, dateTo: string) {
   const { user } = useAuth();
-  const { currentOrg } = useOrganization();
   const { selectedStore, resolvedMLUserIds } = useMLStore();
   const userId = user?.id ?? "";
-  const orgId = currentOrg?.id ?? null;
 
   const mlUserIds =
     selectedStore !== "all" ? [selectedStore] : resolvedMLUserIds;
@@ -146,8 +144,10 @@ export function useMLUserQuery() {
 
 export function useMLMonthlyDailyQuery() {
   const { user } = useAuth();
+  const { currentOrg } = useOrganization();
   const { selectedStore, resolvedMLUserIds } = useMLStore();
   const userId = user?.id ?? "";
+  const orgId = currentOrg?.id ?? null;
 
   const today = new Date();
   const monthFrom = format(new Date(today.getFullYear(), today.getMonth(), 1), "yyyy-MM-dd");
