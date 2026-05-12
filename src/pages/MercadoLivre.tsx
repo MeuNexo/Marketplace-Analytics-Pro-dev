@@ -159,6 +159,26 @@ export default function MercadoLivre() {
     }
   }, [user, storeLoading, connected, stores, resolvedMLUserIds, shouldAutoSync, syncFromAPI]);
 
+  // ── Force sync when the current filter range has no cached data ──
+  // Covers cases where auto-sync ran earlier but didn't catch up to today
+  // (e.g. user kept the tab open across midnight or refreshed after a deploy).
+  const rangeSyncedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!connected || dailyLoading || syncing) return;
+    const rangeKey = `${currentFrom}:${currentTo}:${scopeKey}`;
+    if (rangeSyncedRef.current === rangeKey) return;
+    const hasRangeData = allDaily.some(
+      (d) => d.date >= currentFrom && d.date <= currentTo,
+    );
+    if (hasRangeData) return;
+    rangeSyncedRef.current = rangeKey;
+    if (customRange?.from) {
+      syncFromAPI({ from: customRange.from, to: customRange.to ?? customRange.from });
+    } else {
+      syncFromAPI({ periodDays: period === 0 ? 1 : period });
+    }
+  }, [connected, dailyLoading, syncing, allDaily, currentFrom, currentTo, scopeKey, customRange, period, syncFromAPI]);
+
   // Reset on scope change
   useEffect(() => {
     autoSyncDoneRef.current = false;
