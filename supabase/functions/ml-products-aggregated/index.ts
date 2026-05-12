@@ -82,12 +82,13 @@ serve(async (req) => {
       revenue: number | null;
       ml_user_id: string | null;
       date: string;
+      synced_at?: string | null;
     }> = [];
     let from = 0;
     while (from < MAX_ROWS) {
       const userScopedQuery = supabase
         .from("ml_product_daily_cache")
-        .select("item_id, title, thumbnail, qty_sold, revenue, ml_user_id, date")
+        .select("item_id, title, thumbnail, qty_sold, revenue, ml_user_id, date, synced_at")
         .eq("user_id", userId)
         .in("ml_user_id", ml_user_ids)
         .gte("date", date_from)
@@ -102,8 +103,8 @@ serve(async (req) => {
         return jsonResponse({ error: "Database query failed" }, 500);
       }
 
-      let page = userPage;
-      if ((!page || page.length === 0) && organizationIds.length > 0) {
+      let page = userPage || [];
+      if (organizationIds.length > 0) {
         const { data: orgPage, error: orgError } = await supabase
           .from("ml_product_daily_cache")
           .select("item_id, title, thumbnail, qty_sold, revenue, ml_user_id, date, synced_at")
@@ -119,7 +120,17 @@ serve(async (req) => {
           console.error("Organization query error:", orgError);
           return jsonResponse({ error: "Database query failed" }, 500);
         }
-        page = orgPage;
+
+        const merged = [...page, ...(orgPage || [])].sort((a: any, b: any) =>
+          String(b.synced_at || "").localeCompare(String(a.synced_at || "")),
+        );
+        const seen = new Set<string>();
+        page = merged.filter((row: any) => {
+          const key = `${row.ml_user_id || ""}:${row.date}:${row.item_id}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
       }
 
       if (!page || page.length === 0) break;
