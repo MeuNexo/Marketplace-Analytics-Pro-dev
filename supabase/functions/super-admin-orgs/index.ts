@@ -118,12 +118,19 @@ serve(async (req) => {
           (u) => (u.email ?? "").toLowerCase() === ownerEmail,
         );
         if (!found) {
-          return new Response(JSON.stringify({ error: "Usuário owner não encontrado" }), {
-            status: 404,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
+          // Convida o usuário por email (envia email de definição de senha)
+          const { data: invited, error: inviteErr } =
+            await adminClient.auth.admin.inviteUserByEmail(ownerEmail);
+          if (inviteErr || !invited?.user) {
+            return new Response(
+              JSON.stringify({ error: `Falha ao convidar usuário: ${inviteErr?.message ?? "desconhecido"}` }),
+              { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+            );
+          }
+          ownerId = invited.user.id;
+        } else {
+          ownerId = found.id;
         }
-        ownerId = found.id;
       }
 
       let slug = slugify(name);
