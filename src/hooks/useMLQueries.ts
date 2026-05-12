@@ -6,6 +6,7 @@ import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-quer
 import { format } from "date-fns";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMLStore } from "@/contexts/MLStoreContext";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchDailyCache, fetchHourlyCache, fetchUserCache, fetchStateDailyCache } from "@/services/mlCacheService";
 import { mapDailyRow, mapHourlyRow } from "@/types/mlCache";
@@ -33,13 +34,15 @@ export const mlKeys = {
 
 export function useMLDailyQuery(fetchFrom: string, fetchTo: string) {
   const { user } = useAuth();
+  const { currentOrg } = useOrganization();
   const { selectedStore, resolvedMLUserIds } = useMLStore();
   const userId = user?.id ?? "";
+  const orgId = currentOrg?.id ?? null;
 
   return useQuery({
     queryKey: mlKeys.daily(userId, resolvedMLUserIds, fetchFrom, fetchTo, selectedStore),
     queryFn: async () => {
-      const rows = await fetchDailyCache(userId, resolvedMLUserIds, fetchFrom, fetchTo, selectedStore);
+      const rows = await fetchDailyCache(userId, orgId, resolvedMLUserIds, fetchFrom, fetchTo, selectedStore);
       return rows.map(mapDailyRow);
     },
     enabled: !!userId && resolvedMLUserIds.length > 0 && !!fetchFrom,
@@ -55,14 +58,16 @@ export function useMLHourlyQuery(
   hourlyTargetDate: string | null,
 ) {
   const { user } = useAuth();
+  const { currentOrg } = useOrganization();
   const { selectedStore, resolvedMLUserIds } = useMLStore();
   const userId = user?.id ?? "";
+  const orgId = currentOrg?.id ?? null;
   const targetDate = isHourlyAvailable && hourlyTargetDate ? hourlyTargetDate : null;
 
   return useQuery({
     queryKey: mlKeys.hourly(userId, resolvedMLUserIds, selectedStore, targetDate),
     queryFn: async () => {
-      const rows = await fetchHourlyCache(userId, resolvedMLUserIds, selectedStore, targetDate);
+      const rows = await fetchHourlyCache(userId, orgId, resolvedMLUserIds, selectedStore, targetDate);
       return rows.map(mapHourlyRow);
     },
     enabled: !!userId && resolvedMLUserIds.length > 0,
@@ -110,13 +115,15 @@ export function useMLProductsQuery(dateFrom: string, dateTo: string) {
 
 export function useMLUserQuery() {
   const { user } = useAuth();
+  const { currentOrg } = useOrganization();
   const { selectedStore, resolvedMLUserIds } = useMLStore();
   const userId = user?.id ?? "";
+  const orgId = currentOrg?.id ?? null;
 
   return useQuery({
     queryKey: mlKeys.userInfo(userId, resolvedMLUserIds, selectedStore),
     queryFn: async (): Promise<MLUser | null> => {
-      const data = await fetchUserCache(userId, resolvedMLUserIds, selectedStore);
+      const data = await fetchUserCache(userId, orgId, resolvedMLUserIds, selectedStore);
       if (!data) return null;
       return {
         id: data.ml_user_id,
@@ -137,8 +144,10 @@ export function useMLUserQuery() {
 
 export function useMLMonthlyDailyQuery() {
   const { user } = useAuth();
+  const { currentOrg } = useOrganization();
   const { selectedStore, resolvedMLUserIds } = useMLStore();
   const userId = user?.id ?? "";
+  const orgId = currentOrg?.id ?? null;
 
   const today = new Date();
   const monthFrom = format(new Date(today.getFullYear(), today.getMonth(), 1), "yyyy-MM-dd");
@@ -147,7 +156,7 @@ export function useMLMonthlyDailyQuery() {
   return useQuery({
     queryKey: mlKeys.daily(userId, resolvedMLUserIds, monthFrom, monthTo, selectedStore),
     queryFn: async () => {
-      const rows = await fetchDailyCache(userId, resolvedMLUserIds, monthFrom, monthTo, selectedStore);
+      const rows = await fetchDailyCache(userId, orgId, resolvedMLUserIds, monthFrom, monthTo, selectedStore);
       return rows.map(mapDailyRow);
     },
     enabled: !!userId && resolvedMLUserIds.length > 0,
@@ -160,13 +169,15 @@ export function useMLMonthlyDailyQuery() {
 
 export function useMLStateQuery(dateFrom: string, dateTo: string) {
   const { user } = useAuth();
+  const { currentOrg } = useOrganization();
   const { selectedStore, resolvedMLUserIds } = useMLStore();
   const userId = user?.id ?? "";
+  const orgId = currentOrg?.id ?? null;
 
   return useQuery({
     queryKey: mlKeys.state(userId, resolvedMLUserIds, dateFrom, dateTo, selectedStore),
     queryFn: async (): Promise<StateDailyRow[]> => {
-      return fetchStateDailyCache(userId, resolvedMLUserIds, dateFrom, dateTo, selectedStore);
+      return fetchStateDailyCache(userId, orgId, resolvedMLUserIds, dateFrom, dateTo, selectedStore);
     },
     enabled: !!userId && resolvedMLUserIds.length > 0 && !!dateFrom && !!dateTo,
     staleTime: 3 * 60 * 1000,

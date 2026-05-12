@@ -5,87 +5,172 @@ import type { DailyRow, HourlyRow, ProductDailyRow, MLUserCacheRow, StateDailyRo
 
 export type { DailyRow, HourlyRow, ProductDailyRow, MLUserCacheRow, StateDailyRow };
 
+type ScopeColumn = "user_id" | "organization_id";
+
+type RowWithSync = {
+  synced_at?: string | null;
+  ml_user_id?: string | null;
+  date?: string | null;
+  hour?: number | null;
+  item_id?: string | null;
+  uf?: string | null;
+};
+
+function dedupeLatestRows<T extends RowWithSync>(rows: T[], getKey: (row: T) => string): T[] {
+  const seen = new Set<string>();
+  const deduped: T[] = [];
+
+  for (const row of rows) {
+    const key = getKey(row);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(row);
+  }
+
+  return deduped;
+}
+
+async function fetchScopedRows<T extends RowWithSync>(params: {
+  userId: string;
+  organizationId?: string | null;
+  buildQuery: (scopeColumn: ScopeColumn, scopeValue: string) => any;
+  dedupeKey?: (row: T) => string;
+}): Promise<T[]> {
+  const { userId, organizationId, buildQuery, dedupeKey } = params;
+
+  const { data: ownRows, error: ownError } = await buildQuery("user_id", userId);
+  if (ownError) throw ownError;
+
+  const ownList = (ownRows || []) as T[];
+  if (!organizationId) {
+    return ownList;
+  }
+
+  const { data: orgRows, error: orgError } = await buildQuery("organization_id", organizationId);
+  if (orgError) throw orgError;
+
+  const orgList = (orgRows || []) as T[];
+  const merged = [...ownList, ...orgList].sort((a, b) =>
+    String(b.synced_at ?? "").localeCompare(String(a.synced_at ?? "")),
+  );
+  return dedupeKey ? dedupeLatestRows(merged, dedupeKey) : merged;
+}
+
 export async function fetchDailyCache(
   userId: string,
+  organizationId: string | null | undefined,
   mlUserIds: string[],
   dateFrom: string,
   dateTo: string,
   selectedStore: string,
 ): Promise<DailyRow[]> {
-  let query = supabase
-    .from("ml_daily_cache")
-    .select("*")
-    .eq("user_id", userId)
-    .gte("date", dateFrom)
-    .lte("date", dateTo)
-    .order("date", { ascending: false })
-    .limit(1000);
+  const rows = await fetchScopedRows<DailyRow & RowWithSync>({
+    userId,
+    organizationId,
+    buildQuery: (scopeColumn, scopeValue) => {
+      let query = (supabase as any)
+        .from("ml_daily_cache")
+        .select("*")
+        .eq(scopeColumn, scopeValue)
+        .gte("date", dateFrom)
+        .lte("date", dateTo)
+        .order("date", { ascending: false })
+        .order("synced_at", { ascending: false })
+        .limit(2000);
 
-  if (selectedStore !== "all") {
-    query = query.eq("ml_user_id", selectedStore);
-  } else {
-    query = query.in("ml_user_id", mlUserIds);
-  }
+      if (selectedStore !== "all") {
+        query = query.eq("ml_user_id", selectedStore);
+      } else {
+        query = query.in("ml_user_id", mlUserIds);
+      }
 
-  const { data } = await query;
-  return (data || []) as DailyRow[];
+      return query;
+    },
+    dedupeKey: (row) => `${row.ml_user_id ?? ""}:${row.date ?? ""}`,
+  });
+
+  return rows as DailyRow[];
 }
 
 export async function fetchHourlyCache(
   userId: string,
+  organizationId: string | null | undefined,
   mlUserIds: string[],
   selectedStore: string,
   targetDate: string | null,
 ): Promise<HourlyRow[]> {
-  let query = supabase
-    .from("ml_hourly_cache")
-    .select("*")
-    .eq("user_id", userId);
+  const scopedLimit = targetDate
+    ? 24 * Math.max(mlUserIds.length, 1) * 5
+    : 1000;
 
-  if (selectedStore !== "all") {
-    query = query.eq("ml_user_id", selectedStore);
-  } else {
-    query = query.in("ml_user_id", mlUserIds);
-  }
+  const rows = await fetchScopedRows<HourlyRow & RowWithSync>({
+    userId,
+    organizationId,
+    buildQuery: (scopeColumn, scopeValue) => {
+      let query = (supabase as any)
+        .from("ml_hourly_cache")
+        .select("*")
+        .eq(scopeColumn, scopeValue);
 
-  query = query
-    .order("date", { ascending: false })
-    .order("hour", { ascending: true });
+      if (selectedStore !== "all") {
+        query = query.eq("ml_user_id", selectedStore);
+      } else {
+        query = query.in("ml_user_id", mlUserIds);
+      }
 
-  if (targetDate) {
-    query = query.eq("date", targetDate).limit(24 * Math.max(mlUserIds.length, 1));
-  } else {
-    query = query.limit(1000);
-  }
+      query = query
+        .order("date", { ascending: false })
+        .order("synced_at", { ascending: false })
+        .order("hour", { ascending: true });
 
-  const { data } = await query;
-  return (data || []) as HourlyRow[];
+      if (targetDate) {
+        query = query.eq("date", targetDate).limit(scopedLimit);
+      } else {
+        query = query.limit(scopedLimit);
+      }
+
+      return query;
+    },
+    dedupeKey: (row) => `${row.ml_user_id ?? ""}:${row.date ?? ""}:${row.hour ?? ""}`,
+  });
+
+  return rows as HourlyRow[];
 }
 
 export async function fetchProductDailyCache(
   userId: string,
+  organizationId: string | null | undefined,
   mlUserIds: string[],
   dateFrom: string,
   dateTo: string,
   selectedStore: string,
 ): Promise<ProductDailyRow[]> {
-  let query = supabase
-    .from("ml_product_daily_cache")
-    .select("*")
-    .eq("user_id", userId)
-    .gte("date", dateFrom)
-    .lte("date", dateTo)
-    .order("revenue", { ascending: false })
-    .limit(5000);
+  const rows = await fetchScopedRows<(ProductDailyRow & RowWithSync & Record<string, any>)>({
+    userId,
+    organizationId,
+    buildQuery: (scopeColumn, scopeValue) => {
+      let query = (supabase as any)
+        .from("ml_product_daily_cache")
+        .select("*")
+        .eq(scopeColumn, scopeValue)
+        .gte("date", dateFrom)
+        .lte("date", dateTo)
+        .order("revenue", { ascending: false })
+        .order("synced_at", { ascending: false })
+        .limit(5000);
 
-  if (selectedStore !== "all") {
-    query = query.eq("ml_user_id", selectedStore);
-  } else {
-    query = query.in("ml_user_id", mlUserIds);
-  }
+      if (selectedStore !== "all") {
+        query = query.eq("ml_user_id", selectedStore);
+      } else {
+        query = query.in("ml_user_id", mlUserIds);
+      }
 
-  const { data } = await query;
-  return (data || []).map((r: any) => ({
+      return query;
+    },
+    dedupeKey: (row) => `${row.ml_user_id ?? ""}:${row.date ?? ""}:${row.item_id ?? ""}`,
+  });
+
+  return rows.map((r: any) => ({
     item_id: r.item_id,
     date: r.date,
     title: r.title || "",
@@ -98,28 +183,38 @@ export async function fetchProductDailyCache(
 
 export async function fetchStateDailyCache(
   userId: string,
+  organizationId: string | null | undefined,
   mlUserIds: string[],
   dateFrom: string,
   dateTo: string,
   selectedStore: string,
 ): Promise<StateDailyRow[]> {
-  let query = (supabase as any)
-    .from("ml_state_daily_cache")
-    .select("*")
-    .eq("user_id", userId)
-    .gte("date", dateFrom)
-    .lte("date", dateTo)
-    .order("date", { ascending: false })
-    .limit(5000);
+  const rows = await fetchScopedRows<(StateDailyRow & RowWithSync & Record<string, any>)>({
+    userId,
+    organizationId,
+    buildQuery: (scopeColumn, scopeValue) => {
+      let query = (supabase as any)
+        .from("ml_state_daily_cache")
+        .select("*")
+        .eq(scopeColumn, scopeValue)
+        .gte("date", dateFrom)
+        .lte("date", dateTo)
+        .order("date", { ascending: false })
+        .order("synced_at", { ascending: false })
+        .limit(5000);
 
-  if (selectedStore !== "all") {
-    query = query.eq("ml_user_id", selectedStore);
-  } else {
-    query = query.in("ml_user_id", mlUserIds);
-  }
+      if (selectedStore !== "all") {
+        query = query.eq("ml_user_id", selectedStore);
+      } else {
+        query = query.in("ml_user_id", mlUserIds);
+      }
 
-  const { data } = await query;
-  return ((data as any[]) || []).map((r: any) => ({
+      return query;
+    },
+    dedupeKey: (row) => `${row.ml_user_id ?? ""}:${row.date ?? ""}:${row.uf ?? ""}`,
+  });
+
+  return rows.map((r: any) => ({
     date: r.date,
     uf: r.uf,
     state_name: r.state_name || "",
@@ -132,18 +227,45 @@ export async function fetchStateDailyCache(
 
 export async function fetchUserCache(
   userId: string,
+  organizationId: string | null | undefined,
   mlUserIds: string[],
   selectedStore: string,
 ): Promise<MLUserCacheRow | null> {
-  let query = supabase.from("ml_user_cache").select("*").eq("user_id", userId);
-  if (selectedStore !== "all") {
-    query = query.eq("ml_user_id", Number(selectedStore));
-  } else if (mlUserIds.length > 0) {
-    query = query.in("ml_user_id", mlUserIds.map(Number));
-  }
+  const applyStoreFilters = (query: any) => {
+    if (selectedStore !== "all") {
+      return query.eq("ml_user_id", Number(selectedStore));
+    }
 
-  const { data } = await query.maybeSingle();
-  return data as MLUserCacheRow | null;
+    if (mlUserIds.length > 0) {
+      return query.in("ml_user_id", mlUserIds.map(Number));
+    }
+
+    return query;
+  };
+
+  const ownQuery = applyStoreFilters(
+    (supabase as any)
+      .from("ml_user_cache")
+      .select("*")
+      .eq("user_id", userId)
+      .order("synced_at", { ascending: false })
+      .limit(1),
+  );
+  const { data: ownData, error: ownError } = await ownQuery.maybeSingle();
+  if (ownError) throw ownError;
+  if (ownData || !organizationId) return ownData as MLUserCacheRow | null;
+
+  const orgQuery = applyStoreFilters(
+    (supabase as any)
+      .from("ml_user_cache")
+      .select("*")
+      .eq("organization_id", organizationId)
+      .order("synced_at", { ascending: false })
+      .limit(1),
+  );
+  const { data: orgData, error: orgError } = await orgQuery.maybeSingle();
+  if (orgError) throw orgError;
+  return orgData as MLUserCacheRow | null;
 }
 
 // ── Sync (Edge Function invocation) ────────────────────────────────────────────
