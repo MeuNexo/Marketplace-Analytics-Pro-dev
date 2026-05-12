@@ -22,12 +22,13 @@ function toBRT(isoStr: string): { date: string; hour: number } {
   };
 }
 
-async function mlFetch(path: string, accessToken: string) {
+async function mlFetch(path: string, accessToken: string, timeoutMs = 15_000) {
   const res = await fetch(`${ML_API}${path}`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       Accept: "application/json",
     },
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const data = await res.json();
   if (!res.ok) {
@@ -39,8 +40,8 @@ async function mlFetch(path: string, accessToken: string) {
 
 /**
  * Fetch shipment receiver state for a list of shipment ids.
- * The /orders/search endpoint does NOT include receiver_address — it must be
- * fetched per shipment. We run with a concurrency limit and tolerate failures.
+ * Each call is capped at 6 s; the entire block is capped at 20 s total.
+ * Returns whatever was collected within the budget (non-fatal).
  */
 async function fetchShipmentStates(
   shipmentIds: string[],
@@ -49,15 +50,31 @@ async function fetchShipmentStates(
   const map = new Map<string, { uf: string; state_name: string }>();
   if (shipmentIds.length === 0) return map;
 
-  const CONCURRENCY = 10;
+  // Hard cap: only process the first 150 shipments to avoid excessive API calls
+  const ids = shipmentIds.slice(0, 150);
+
+  const CONCURRENCY = 5;
   let cursor = 0;
-  const workers = Array.from({ length: Math.min(CONCURRENCY, shipmentIds.length) }, async () => {
-    while (true) {
+  const abortController = new AbortController();
+
+  // Total budget: 20 s — after that, abort remaining calls and return partial results
+  const budgetTimer = setTimeout(() => {
+    console.warn(`fetchShipmentStates: 20 s budget reached, returning ${map.size}/${ids.length} results`);
+    abortController.abort();
+  }, 20_000);
+
+  const workers = Array.from({ length: Math.min(CONCURRENCY, ids.length) }, async () => {
+    while (!abortController.signal.aborted) {
       const idx = cursor++;
-      if (idx >= shipmentIds.length) return;
-      const sid = shipmentIds[idx];
+      if (idx >= ids.length) return;
+      const sid = ids[idx];
       try {
-        const data = await mlFetch(`/shipments/${sid}`, accessToken);
+        const res = await fetch(`${ML_API}/shipments/${sid}`, {
+          headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+          signal: AbortSignal.any([AbortSignal.timeout(6_000), abortController.signal]),
+        });
+        if (!res.ok) continue;
+        const data = await res.json();
         const stateObj = data?.receiver_address?.state;
         const rawId: string | undefined = typeof stateObj === "string" ? stateObj : stateObj?.id;
         const stateName: string =
@@ -73,11 +90,18 @@ async function fetchShipmentStates(
           map.set(sid, { uf, state_name: stateName });
         }
       } catch (_e) {
-        // tolerate per-shipment failures (PII permissions, deleted, etc.)
+        // tolerate per-shipment failures (timeout, PII permissions, deleted, etc.)
       }
     }
   });
-  await Promise.all(workers);
+
+  try {
+    await Promise.all(workers);
+  } finally {
+    clearTimeout(budgetTimer);
+  }
+
+  console.log(`fetchShipmentStates: resolved ${map.size}/${ids.length} shipments`);
   return map;
 }
 
