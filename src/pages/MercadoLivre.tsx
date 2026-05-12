@@ -160,11 +160,14 @@ export default function MercadoLivre() {
   }, [user, storeLoading, connected, stores, resolvedMLUserIds, shouldAutoSync, syncFromAPI]);
 
   // ── Force sync when the current filter range has no cached data ──
-  // Covers cases where auto-sync ran earlier but didn't catch up to today
-  // (e.g. user kept the tab open across midnight or refreshed after a deploy).
+  // Only triggers when the range includes today (historical ranges won't be
+  // helped by a sync). Always syncs just 1 day (today) to stay inside the
+  // edge function CPU budget.
   const rangeSyncedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!connected || dailyLoading || syncing) return;
+    const todayStr = format(new Date(), "yyyy-MM-dd");
+    if (currentTo < todayStr) return; // historical range — sync won't help
     const rangeKey = `${currentFrom}:${currentTo}:${scopeKey}`;
     if (rangeSyncedRef.current === rangeKey) return;
     const hasRangeData = allDaily.some(
@@ -172,12 +175,8 @@ export default function MercadoLivre() {
     );
     if (hasRangeData) return;
     rangeSyncedRef.current = rangeKey;
-    if (customRange?.from) {
-      syncFromAPI({ from: customRange.from, to: customRange.to ?? customRange.from });
-    } else {
-      syncFromAPI({ periodDays: period === 0 ? 1 : period });
-    }
-  }, [connected, dailyLoading, syncing, allDaily, currentFrom, currentTo, scopeKey, customRange, period, syncFromAPI]);
+    syncFromAPI({ periodDays: 1 });
+  }, [connected, dailyLoading, syncing, allDaily, currentFrom, currentTo, scopeKey, syncFromAPI]);
 
   // Reset on scope change
   useEffect(() => {
