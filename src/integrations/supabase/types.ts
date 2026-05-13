@@ -100,7 +100,7 @@ export type Database = {
           impressions: number
           ml_user_id: string
           name: string
-          organization_id: string | null
+          organization_id: string
           roas: number
           seller_id: string | null
           spend: number
@@ -120,7 +120,7 @@ export type Database = {
           impressions?: number
           ml_user_id?: string
           name?: string
-          organization_id?: string | null
+          organization_id: string
           roas?: number
           seller_id?: string | null
           spend?: number
@@ -140,7 +140,7 @@ export type Database = {
           impressions?: number
           ml_user_id?: string
           name?: string
-          organization_id?: string | null
+          organization_id?: string
           roas?: number
           seller_id?: string | null
           spend?: number
@@ -176,7 +176,7 @@ export type Database = {
           id: string
           impressions: number
           ml_user_id: string
-          organization_id: string | null
+          organization_id: string
           roas: number
           seller_id: string | null
           spend: number
@@ -193,7 +193,7 @@ export type Database = {
           id?: string
           impressions?: number
           ml_user_id?: string
-          organization_id?: string | null
+          organization_id: string
           roas?: number
           seller_id?: string | null
           spend?: number
@@ -210,7 +210,7 @@ export type Database = {
           id?: string
           impressions?: number
           ml_user_id?: string
-          organization_id?: string | null
+          organization_id?: string
           roas?: number
           seller_id?: string | null
           spend?: number
@@ -245,7 +245,7 @@ export type Database = {
           impressions: number
           item_id: string
           ml_user_id: string
-          organization_id: string | null
+          organization_id: string
           roas: number
           seller_id: string | null
           spend: number
@@ -264,7 +264,7 @@ export type Database = {
           impressions?: number
           item_id: string
           ml_user_id?: string
-          organization_id?: string | null
+          organization_id: string
           roas?: number
           seller_id?: string | null
           spend?: number
@@ -283,7 +283,7 @@ export type Database = {
           impressions?: number
           item_id?: string
           ml_user_id?: string
-          organization_id?: string | null
+          organization_id?: string
           roas?: number
           seller_id?: string | null
           spend?: number
@@ -316,7 +316,7 @@ export type Database = {
           date: string
           id: string
           ml_user_id: string
-          organization_id: string | null
+          organization_id: string
           qty_orders: number
           seller_id: string | null
           shipped_orders: number
@@ -333,7 +333,7 @@ export type Database = {
           date: string
           id?: string
           ml_user_id?: string
-          organization_id?: string | null
+          organization_id: string
           qty_orders?: number
           seller_id?: string | null
           shipped_orders?: number
@@ -350,7 +350,7 @@ export type Database = {
           date?: string
           id?: string
           ml_user_id?: string
-          organization_id?: string | null
+          organization_id?: string
           qty_orders?: number
           seller_id?: string | null
           shipped_orders?: number
@@ -385,7 +385,7 @@ export type Database = {
           hour: number
           id: string
           ml_user_id: string
-          organization_id: string | null
+          organization_id: string
           qty_orders: number
           seller_id: string | null
           synced_at: string
@@ -399,7 +399,7 @@ export type Database = {
           hour: number
           id?: string
           ml_user_id?: string
-          organization_id?: string | null
+          organization_id: string
           qty_orders?: number
           seller_id?: string | null
           synced_at?: string
@@ -413,7 +413,7 @@ export type Database = {
           hour?: number
           id?: string
           ml_user_id?: string
-          organization_id?: string | null
+          organization_id?: string
           qty_orders?: number
           seller_id?: string | null
           synced_at?: string
@@ -444,7 +444,7 @@ export type Database = {
           id: string
           item_id: string
           ml_user_id: string
-          organization_id: string | null
+          organization_id: string
           qty_sold: number
           revenue: number
           seller_id: string | null
@@ -458,7 +458,7 @@ export type Database = {
           id?: string
           item_id: string
           ml_user_id?: string
-          organization_id?: string | null
+          organization_id: string
           qty_sold?: number
           revenue?: number
           seller_id?: string | null
@@ -472,7 +472,7 @@ export type Database = {
           id?: string
           item_id?: string
           ml_user_id?: string
-          organization_id?: string | null
+          organization_id?: string
           qty_sold?: number
           revenue?: number
           seller_id?: string | null
@@ -504,7 +504,7 @@ export type Database = {
           date: string
           id: string
           ml_user_id: string
-          organization_id: string | null
+          organization_id: string
           qty_orders: number
           revenue: number
           seller_id: string | null
@@ -518,7 +518,7 @@ export type Database = {
           date: string
           id?: string
           ml_user_id?: string
-          organization_id?: string | null
+          organization_id: string
           qty_orders?: number
           revenue?: number
           seller_id?: string | null
@@ -532,7 +532,7 @@ export type Database = {
           date?: string
           id?: string
           ml_user_id?: string
-          organization_id?: string | null
+          organization_id?: string
           qty_orders?: number
           revenue?: number
           seller_id?: string | null
@@ -559,7 +559,7 @@ export type Database = {
           id: string
           ml_user_id: string
           orders_fetched: number
-          organization_id: string | null
+          organization_id: string
           seller_id: string | null
           source: string
           synced_at: string
@@ -572,7 +572,7 @@ export type Database = {
           id?: string
           ml_user_id?: string
           orders_fetched?: number
-          organization_id?: string | null
+          organization_id: string
           seller_id?: string | null
           source?: string
           synced_at?: string
@@ -585,7 +585,7 @@ export type Database = {
           id?: string
           ml_user_id?: string
           orders_fetched?: number
-          organization_id?: string | null
+          organization_id?: string
           seller_id?: string | null
           source?: string
           synced_at?: string
@@ -615,7 +615,7 @@ export type Database = {
           expires_at: string | null
           id: string
           ml_user_id: string | null
-          organization_id: string | null
+          organization_id: string
           refresh_token: string | null
           scope: string | null
           seller_id: string | null
@@ -629,7 +629,7 @@ export type Database = {
           expires_at?: string | null
           id?: string
           ml_user_id?: string | null
-          organization_id?: string | null
+          organization_id: string
           refresh_token?: string | null
           scope?: string | null
           seller_id?: string | null
@@ -643,7 +643,7 @@ export type Database = {
           expires_at?: string | null
           id?: string
           ml_user_id?: string | null
-          organization_id?: string | null
+          organization_id?: string
           refresh_token?: string | null
           scope?: string | null
           seller_id?: string | null
@@ -675,7 +675,7 @@ export type Database = {
           custom_name: string | null
           ml_user_id: number
           nickname: string | null
-          organization_id: string | null
+          organization_id: string
           permalink: string | null
           seller_id: string | null
           synced_at: string
@@ -687,7 +687,7 @@ export type Database = {
           custom_name?: string | null
           ml_user_id: number
           nickname?: string | null
-          organization_id?: string | null
+          organization_id: string
           permalink?: string | null
           seller_id?: string | null
           synced_at?: string
@@ -699,7 +699,7 @@ export type Database = {
           custom_name?: string | null
           ml_user_id?: number
           nickname?: string | null
-          organization_id?: string | null
+          organization_id?: string
           permalink?: string | null
           seller_id?: string | null
           synced_at?: string
@@ -961,7 +961,7 @@ export type Database = {
           id: string
           is_active: boolean
           marketplace: string
-          organization_id: string | null
+          organization_id: string
           seller_id: string
           store_name: string
         }
@@ -971,7 +971,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           marketplace: string
-          organization_id?: string | null
+          organization_id: string
           seller_id: string
           store_name: string
         }
@@ -981,7 +981,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           marketplace?: string
-          organization_id?: string | null
+          organization_id?: string
           seller_id?: string
           store_name?: string
         }
@@ -1010,7 +1010,7 @@ export type Database = {
           is_active: boolean
           logo_url: string | null
           name: string
-          organization_id: string | null
+          organization_id: string
           user_id: string
         }
         Insert: {
@@ -1020,7 +1020,7 @@ export type Database = {
           is_active?: boolean
           logo_url?: string | null
           name: string
-          organization_id?: string | null
+          organization_id: string
           user_id: string
         }
         Update: {
@@ -1030,7 +1030,7 @@ export type Database = {
           is_active?: boolean
           logo_url?: string | null
           name?: string
-          organization_id?: string | null
+          organization_id?: string
           user_id?: string
         }
         Relationships: [
@@ -1066,10 +1066,6 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      bootstrap_org_once_invoke: {
-        Args: { _email: string; _name: string }
-        Returns: number
-      }
       can_member_access_route: {
         Args: { _org_id: string; _route: string; _user_id: string }
         Returns: boolean
