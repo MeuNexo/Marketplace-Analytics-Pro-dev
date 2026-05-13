@@ -36,7 +36,16 @@ serve(async (req) => {
       );
       const codeChallenge = base64UrlEncode(new Uint8Array(challengeBytes));
 
-      const authUrl = `https://auth.mercadolivre.com.br/authorization?response_type=code&client_id=${ML_APP_ID}&redirect_uri=${redirect_uri}&code_challenge=${codeChallenge}&code_challenge_method=S256`;
+      const ML_SCOPES = [
+        "offline_access",
+        "read_orders",
+        "write_orders",
+        "read_products",
+        "read_payments",
+        "read_advertising",
+      ].join(" ");
+
+      const authUrl = `https://auth.mercadolivre.com.br/authorization?response_type=code&client_id=${ML_APP_ID}&redirect_uri=${redirect_uri}&code_challenge=${codeChallenge}&code_challenge_method=S256&scope=${encodeURIComponent(ML_SCOPES)}`;
 
       return new Response(
         JSON.stringify({ success: true, auth_url: authUrl, code_verifier: generatedCodeVerifier }),
