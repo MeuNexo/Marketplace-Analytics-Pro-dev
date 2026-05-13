@@ -302,27 +302,44 @@ export default function MLPedidos() {
   // ── Summary ─────────────────────────────────────────────────────────────────
   const summary = useMemo(() => {
     const CONFIRMED_STATUSES: OrderStatus[] = ["paid", "shipped", "delivered"];
-    const cancelled  = orders.filter(o => o.status === "cancelled" || o.status === "returned");
-    const pending    = orders.filter(o => o.status === "pending");
-    // Revenue KPIs only count confirmed orders (payment received)
+
+    // The `orders` array has one entry per ORDER ITEM (expandOrder splits by items).
+    // For unique-order counts and avg_ticket we deduplicate by ml_order_id.
+    const orderStatusMap = new Map<string, OrderStatus>();
+    for (const o of orders) {
+      // Keep the "most advanced" status if an order has multiple items
+      // (all items from the same order always share the same status)
+      if (!orderStatusMap.has(o.id)) orderStatusMap.set(o.id, o.status);
+    }
+
+    const uniqueOrderIds        = Array.from(orderStatusMap.keys());
+    const confirmedOrderIds     = uniqueOrderIds.filter(id => CONFIRMED_STATUSES.includes(orderStatusMap.get(id)!));
+    const pendingOrderIds       = uniqueOrderIds.filter(id => orderStatusMap.get(id) === "pending");
+    const cancelledOrderIds     = uniqueOrderIds.filter(id => {
+      const s = orderStatusMap.get(id)!;
+      return s === "cancelled" || s === "returned";
+    });
+
+    // Revenue is summed at item level (correct — each item has its own receita_bruta)
     const confirmed  = orders.filter(o => CONFIRMED_STATUSES.includes(o.status));
     const gross      = confirmed.reduce((s, o) => s + o.gross_revenue, 0);
     const net        = confirmed.reduce((s, o) => s + o.net_revenue, 0);
     const commission = confirmed.reduce((s, o) => s + o.ml_commission, 0);
     const shipping   = confirmed.reduce((s, o) => s + o.shipping_cost, 0);
-    // Total active = confirmed + pending (exclude cancelled/returned)
-    const totalActive = confirmed.length + pending.length;
+
     return {
-      total_orders:     totalActive,
-      confirmed_orders: confirmed.length,
-      pending_orders:   pending.length,
-      cancelled_orders: cancelled.length,
+      // Counts are unique-order based, not item-row based
+      total_orders:     confirmedOrderIds.length + pendingOrderIds.length,
+      confirmed_orders: confirmedOrderIds.length,
+      pending_orders:   pendingOrderIds.length,
+      cancelled_orders: cancelledOrderIds.length,
       gross_revenue:    gross,
       net_revenue:      net,
       ml_commission:    commission,
       shipping_cost:    shipping,
       net_margin_pct:   gross > 0 ? (net / gross) * 100 : 0,
-      avg_ticket:       confirmed.length > 0 ? gross / confirmed.length : 0,
+      // avg_ticket per unique confirmed order
+      avg_ticket:       confirmedOrderIds.length > 0 ? gross / confirmedOrderIds.length : 0,
     };
   }, [orders]);
 
@@ -550,7 +567,12 @@ export default function MLPedidos() {
           <Card>
             <div className="px-4 pt-4 pb-3">
               <div className="flex items-center justify-between flex-wrap gap-3">
-                <span className="text-sm font-medium text-foreground">Pedidos ({filtered.length})</span>
+                <span className="text-sm font-medium text-foreground">
+                  Pedidos ({new Set(filtered.map(o => o.id)).size}
+                  {filtered.length !== new Set(filtered.map(o => o.id)).size && (
+                    <span className="text-xs font-normal text-muted-foreground ml-1">· {filtered.length} itens</span>
+                  )})
+                </span>
                 <div className="flex items-center gap-2 flex-wrap">
                   <div className="relative w-44">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
@@ -662,7 +684,12 @@ export default function MLPedidos() {
               </div>
               {filtered.length > 0 && (
                 <div className="px-6 py-3 border-t text-xs text-muted-foreground">
-                  {filtered.length} pedidos · Líquido total:{" "}
+                  {/* filtered contains item rows; deduplicate for order count */}
+                  {new Set(filtered.map(o => o.id)).size} pedidos
+                  {filtered.length !== new Set(filtered.map(o => o.id)).size && (
+                    <span className="ml-1 opacity-60">({filtered.length} itens)</span>
+                  )}
+                  {" · "}Líquido total:{" "}
                   <span className="font-semibold text-foreground">
                     {currFmt(filtered.reduce((s, o) => s + o.net_revenue, 0))}
                   </span>
