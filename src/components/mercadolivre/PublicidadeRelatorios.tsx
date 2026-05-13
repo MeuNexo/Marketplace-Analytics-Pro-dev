@@ -6,10 +6,11 @@ import {
 } from "recharts";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { TrendingUp, TrendingDown, Target } from "lucide-react";
+import { TrendingUp, TrendingDown, Target, LineChart as LineChartIcon, PieChart as PieChartIcon, Crosshair, GitCompare, Coins } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import type {
   AdsDailyStat, AdsCampaign, AdsProductStat,
 } from "@/hooks/useMLAds";
@@ -191,11 +192,19 @@ export function PublicidadeRelatorios({
   }
 
   return (
-    <div className="space-y-5">
+    <Tabs defaultValue="evolucao" className="space-y-4">
+      <TabsList className="h-8 w-auto overflow-x-auto no-scrollbar">
+        <TabsTrigger value="evolucao"   className="text-xs px-3 h-7 gap-1.5"><LineChartIcon className="w-3.5 h-3.5" />Evolução</TabsTrigger>
+        <TabsTrigger value="distribuicao" className="text-xs px-3 h-7 gap-1.5"><PieChartIcon className="w-3.5 h-3.5" />Distribuição do Gasto</TabsTrigger>
+        <TabsTrigger value="eficiencia" className="text-xs px-3 h-7 gap-1.5"><Crosshair className="w-3.5 h-3.5" />Eficiência por Produto</TabsTrigger>
+        <TabsTrigger value="comparativo" className="text-xs px-3 h-7 gap-1.5"><GitCompare className="w-3.5 h-3.5" />Comparativo</TabsTrigger>
+        <TabsTrigger value="cpa"        className="text-xs px-3 h-7 gap-1.5"><Coins className="w-3.5 h-3.5" />CPA</TabsTrigger>
+      </TabsList>
 
       {/* ── 1. Performance evolution ─────────────────────────── */}
+      <TabsContent value="evolucao" className="mt-0">
       <Section
-        title="1. Evolução de Performance"
+        title="Evolução de Performance"
         subtitle="ROAS, CPC e CTR ao longo do período. Meta de ROAS é a linha tracejada."
         action={
           <div className="flex items-center gap-2">
@@ -230,10 +239,12 @@ export function PublicidadeRelatorios({
           </LineChart>
         </ResponsiveContainer>
       </Section>
+      </TabsContent>
 
       {/* ── 2. Spend distribution by campaign ────────────────── */}
+      <TabsContent value="distribuicao" className="mt-0">
       <Section
-        title="2. Distribuição do Gasto por Campanha"
+        title="Distribuição do Gasto por Campanha"
         subtitle="Quanto cada campanha consome do orçamento e quanto retorna em receita atribuída."
       >
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
@@ -291,10 +302,12 @@ export function PublicidadeRelatorios({
           </div>
         </div>
       </Section>
+      </TabsContent>
 
       {/* ── 4. Spend × ROAS matrix ─────────────────────────── */}
+      <TabsContent value="eficiencia" className="mt-0">
       <Section
-        title="3. Eficiência por Produto (Gasto × ROAS)"
+        title="Eficiência por Produto (Gasto × ROAS)"
         subtitle="Quadrantes ajudam a decidir: Escale, Pause, Invista mais ou Descarte."
       >
         <ResponsiveContainer width="100%" height={320}>
@@ -361,10 +374,12 @@ export function PublicidadeRelatorios({
           </div>
         </div>
       </Section>
+      </TabsContent>
 
       {/* ── 5. Campaign comparison ─────────────────────────── */}
+      <TabsContent value="comparativo" className="mt-0">
       <Section
-        title="4. Comparativo de Campanhas vs Período Anterior"
+        title="Comparativo de Campanhas vs Período Anterior"
         subtitle="Variação de Gasto, ROAS e Pedidos. Ranking pelo maior ganho combinado."
       >
         <div className="overflow-x-auto">
@@ -399,10 +414,12 @@ export function PublicidadeRelatorios({
           </table>
         </div>
       </Section>
+      </TabsContent>
 
       {/* ── 7. CPA over time ───────────────────────────────── */}
+      <TabsContent value="cpa" className="mt-0">
       <Section
-        title="5. Custo por Pedido (CPA) ao Longo do Tempo"
+        title="Custo por Pedido (CPA) ao Longo do Tempo"
         subtitle="CPA diário comparado com o ticket médio atribuído aos anúncios."
         action={
           <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
@@ -440,6 +457,7 @@ export function PublicidadeRelatorios({
           </div>
         )}
       </Section>
-    </div>
+      </TabsContent>
+    </Tabs>
   );
 }
