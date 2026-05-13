@@ -837,10 +837,6 @@ export default function MLPedidos() {
         <div className="flex items-center justify-between gap-4">
           <MLPageHeader title="Pedidos" lastUpdated={lastSyncedAt} />
           <div className="flex items-center gap-2">
-            <TabsList className="h-8">
-              <TabsTrigger value="pedidos"    className="text-xs px-3 h-7">Pedidos</TabsTrigger>
-              <TabsTrigger value="relatorios" className="text-xs px-3 h-7">Relatórios</TabsTrigger>
-            </TabsList>
             <MLPeriodPicker
               periodLabel={periodLabel}
               popoverOpen={popoverOpen}
@@ -855,6 +851,10 @@ export default function MLPedidos() {
               period={period}
               onConfirm={handleConfirmPeriod}
             />
+            <TabsList className="h-8">
+              <TabsTrigger value="pedidos"    className="text-xs px-3 h-7">Pedidos</TabsTrigger>
+              <TabsTrigger value="relatorios" className="text-xs px-3 h-7">Relatórios</TabsTrigger>
+            </TabsList>
             <Button
               variant="ghost"
               size="sm"
