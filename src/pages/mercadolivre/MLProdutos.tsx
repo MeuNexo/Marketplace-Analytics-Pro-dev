@@ -647,7 +647,13 @@ export default function MLProdutos() {
         if (stockFilter === "in_stock" && item.available_quantity === 0) return false;
         if (brandFilter !== "all" && (item.brand || "") !== brandFilter) return false;
         if (hideOutOfStock && item.available_quantity === 0) return false;
-        if (logisticFilter !== "all" && (item.logistic_type || "") !== logisticFilter) return false;
+        if (logisticFilter !== "all") {
+          const lt = item.logistic_type || "";
+          const match = logisticFilter === "drop_off"
+            ? lt === "drop_off" || lt === "xd_drop_off"
+            : lt === logisticFilter;
+          if (!match) return false;
+        }
         if (onlyDiscount && columnView === "preco") {
           const cachedDealPrice = dealPriceCache.get(item.id);
           const priceSale = cachedDealPrice ?? item.price;
@@ -1114,7 +1120,7 @@ export default function MLProdutos() {
                                       {item.logistic_type === "fulfillment" ? "Full" :
                                        item.logistic_type === "cross_docking" ? "Coleta" :
                                        item.logistic_type === "self_service" ? "Flex" :
-                                       item.logistic_type === "drop_off" ? "Drop Off" :
+                                       item.logistic_type === "drop_off" || item.logistic_type === "xd_drop_off" ? "Drop Off" :
                                        item.logistic_type}
                                     </Badge>
                                   ) : <span className="text-xs text-muted-foreground">—</span>}
