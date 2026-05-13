@@ -105,33 +105,39 @@ async function fetchOrdersPage(
   return allOrders;
 }
 
-// ── Batch-fetch seller shipping cost from /shipments/{id} ─────────────────────
-// order.shipping.cost = buyer-paid (0 for frete grátis).
-// The seller-absorbed cost only exists in the Shipments API → base_cost.
-// We fetch up to MAX_SHIPMENTS concurrently in chunks of CONCURRENCY.
+// ── Batch-fetch shipment details from /shipments/{id} ────────────────────────
+// Fetches ALL unique shipment IDs (not just frete grátis) to get:
+//   • base_cost  → seller-absorbed shipping cost (frete grátis / Full)
+//   • receiver_address → estado (UF) + cidade
+// /orders/search does NOT return receiver_address; it is only in /shipments/{id}.
 
-async function fetchShipmentCosts(
+interface ShipmentDetail {
+  cost:   number | null;
+  estado: string | null;
+  cidade: string | null;
+}
+
+async function fetchShipmentDetails(
   orders: any[],
   accessToken: string,
-  maxShipments = 300,
-): Promise<Map<number, number>> {
-  const costMap = new Map<number, number>();
+  maxShipments = 500,
+): Promise<Map<number, ShipmentDetail>> {
+  const detailMap = new Map<number, ShipmentDetail>();
 
-  // Collect unique shipment IDs for orders where the buyer paid 0 shipping
+  // Collect ALL unique shipment IDs
   const seen = new Set<number>();
   const ids: number[] = [];
   for (const order of orders) {
-    const buyerCost = order.shipping?.cost;
-    const shipId    = order.shipping?.id ? Number(order.shipping.id) : null;
-    if (shipId && !seen.has(shipId) && (buyerCost == null || Number(buyerCost) === 0)) {
+    const shipId = order.shipping?.id ? Number(order.shipping.id) : null;
+    if (shipId && !seen.has(shipId)) {
       seen.add(shipId);
       ids.push(shipId);
       if (ids.length >= maxShipments) break;
     }
   }
 
-  if (!ids.length) return costMap;
-  console.log(`Fetching ${ids.length} shipments for frete grátis cost…`);
+  if (!ids.length) return detailMap;
+  console.log(`Fetching ${ids.length} shipments for cost + address…`);
 
   const CONCURRENCY = 10;
   for (let i = 0; i < ids.length; i += CONCURRENCY) {
@@ -139,20 +145,42 @@ async function fetchShipmentCosts(
     const results = await Promise.allSettled(
       batch.map(async (id) => {
         const s = await mlFetch(`/shipments/${id}`, accessToken, 8_000);
-        // base_cost = seller-facing gross shipping cost
+
+        // Seller-absorbed shipping cost
         const cost = s.base_cost ?? s.cost?.gross ?? null;
-        return { id, cost };
+
+        // Receiver address → UF + cidade
+        const addr     = s.receiver_address ?? {};
+        const stateObj = addr.state ?? {};
+        const estadoRaw =
+          typeof stateObj === "string"
+            ? stateObj
+            : (stateObj?.id ?? stateObj?.name ?? null);
+        let estado = estadoRaw ? String(estadoRaw).trim() || null : null;
+        if (estado?.includes("-")) {
+          estado = estado.split("-")[1]?.trim()?.toUpperCase()?.slice(0, 2) ?? estado;
+        }
+        const cityObj = addr.city ?? addr.city_name ?? null;
+        const cidade  = cityObj
+          ? (typeof cityObj === "object" ? (cityObj?.name ?? null) : String(cityObj).trim() || null)
+          : null;
+
+        return { id, cost: cost != null ? Number(cost) : null, estado, cidade };
       }),
     );
     for (const r of results) {
-      if (r.status === "fulfilled" && r.value.cost != null && Number(r.value.cost) > 0) {
-        costMap.set(r.value.id, Number(r.value.cost));
+      if (r.status === "fulfilled") {
+        detailMap.set(r.value.id, {
+          cost:   r.value.cost != null && r.value.cost > 0 ? r.value.cost : null,
+          estado: r.value.estado,
+          cidade: r.value.cidade,
+        });
       }
     }
   }
 
-  console.log(`Shipment costs resolved: ${costMap.size} / ${ids.length}`);
-  return costMap;
+  console.log(`Shipment details resolved: ${detailMap.size} / ${ids.length}`);
+  return detailMap;
 }
 
 // ── Expand one ML order object into one row per order_item ────────────────────
@@ -164,47 +192,42 @@ function safeStr(v: unknown): string | null {
 }
 
 function expandOrder(
-  order:           any,
-  mlUserId:        string,
-  sellerId:        string | null,
-  userId:          string,
-  organizationId:  string | null,
-  syncAt:          string,
-  shipmentCostMap: Map<number, number>,
+  order:          any,
+  mlUserId:       string,
+  sellerId:       string | null,
+  userId:         string,
+  organizationId: string | null,
+  syncAt:         string,
+  shipmentMap:    Map<number, ShipmentDetail>,
 ): Array<Record<string, unknown>> {
   const datePedido    = (order.date_created || "").substring(0, 10) || null;
   const dataPagamento = (order.date_approved || "").substring(0, 10) || null;
 
-  // Shipping address → estado (UF) + cidade
-  const addr     = order.shipping?.receiver_address ?? order.buyer?.address ?? {};
-  const stateObj = addr.state ?? {};
-  const estadoRaw =
-    typeof stateObj === "string"
-      ? stateObj
-      : (stateObj?.id ?? stateObj?.name ?? null);
-
-  let estado = safeStr(estadoRaw);
-  // ML returns state ids like "BR-SP" → extract "SP"
-  if (estado?.includes("-")) {
-    estado = estado.split("-")[1]?.trim()?.toUpperCase()?.slice(0, 2) ?? estado;
-  }
-
-  const cidade =
-    safeStr(
-      typeof addr.city === "object"
-        ? addr.city?.name
-        : addr.city ?? addr.city_name ?? null,
-    );
-
   const comprador = safeStr(
     order.buyer?.nickname ?? order.buyer?.first_name ?? null,
   );
+
+  // Address comes from the shipment detail (receiver_address).
+  // /orders/search does NOT include receiver_address; it is only in /shipments/{id}.
+  const shipId  = order.shipping?.id ? Number(order.shipping.id) : null;
+  const detail  = shipId ? shipmentMap.get(shipId) : undefined;
+  const estado  = detail?.estado ?? null;
+  const cidade  = detail?.cidade ?? null;
 
   return (order.order_items || []).map((item: any) => {
     const prod           = item.item ?? {};
     // listing_type_id lives at the order_item level, NOT inside item.item
     const listingTypeRaw = item.listing_type_id ?? prod.listing_type_id ?? prod.listing_type ?? "";
     const listing_type   = LISTING_TYPE_MAP[listingTypeRaw] ?? listingTypeRaw ?? null;
+
+    // Shipping cost resolution:
+    //  1. order.shipping.cost → buyer-paid (non-zero for paid shipping)
+    //  2. detail.cost         → seller-absorbed base_cost from /shipments/{id}
+    //     (covers frete grátis / Mercado Envios Full orders)
+    const buyerCost = order.shipping?.cost != null ? Number(order.shipping.cost) : null;
+    const frete     = (buyerCost != null && buyerCost > 0)
+      ? buyerCost
+      : (detail?.cost ?? null);
 
     return {
       ml_order_id:     String(order.id),
@@ -220,17 +243,7 @@ function expandOrder(
       quantidade:      Number(item.quantity || 0),
       preco_unit:      item.unit_price  != null ? Number(item.unit_price)  : null,
       comissao:        item.sale_fee    != null ? Number(item.sale_fee)    : null,
-      // Shipping cost resolution:
-      //  1. order.shipping.cost  → buyer-paid (non-zero for paid shipping)
-      //  2. shipmentCostMap       → seller-absorbed cost fetched from /shipments/{id}
-      //     (base_cost on frete grátis / Mercado Envios Full orders)
-      frete: (() => {
-        const buyerCost = order.shipping?.cost != null ? Number(order.shipping.cost) : null;
-        if (buyerCost != null && buyerCost > 0) return buyerCost;
-        const shipId = order.shipping?.id ? Number(order.shipping.id) : null;
-        if (shipId && shipmentCostMap.has(shipId)) return shipmentCostMap.get(shipId)!;
-        return null;
-      })(),
+      frete,
       status:          order.status ?? null,
       data_pedido:     datePedido,
       data_pagamento:  dataPagamento,
@@ -361,12 +374,12 @@ serve(async (req) => {
 
     console.log(`sync-ml-orders: ${orders.length} unique orders`);
 
-    // ── Resolve seller shipping cost via /shipments/{id} for frete grátis ────
-    const shipmentCostMap = await fetchShipmentCosts(orders, accessToken);
+    // ── Fetch shipment details (cost + address) for all orders ───────────────
+    const shipmentMap = await fetchShipmentDetails(orders, accessToken);
 
     // ── Expand + upsert ───────────────────────────────────────────────────────
     const records = orders.flatMap((o) =>
-      expandOrder(o, ml_user_id, effectiveSellerId, userId, organizationId, syncAt, shipmentCostMap),
+      expandOrder(o, ml_user_id, effectiveSellerId, userId, organizationId, syncAt, shipmentMap),
     );
 
     let upserted = 0;
