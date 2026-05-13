@@ -967,8 +967,8 @@ export default function MLPedidos() {
               </Card>
             </div>
 
-            {/* Chart */}
-            <Card>
+            {/* Chart — only shown for multi-day ranges */}
+            {dateFrom !== dateTo && <Card>
               <div className="px-4 pt-4 pb-3">
                 <span className="text-sm font-medium text-foreground">Receita — {periodLabel}</span>
               </div>
@@ -997,7 +997,7 @@ export default function MLPedidos() {
                   </AreaChart>
                 </ResponsiveContainer>
               </CardContent>
-            </Card>
+            </Card>}
 
             {/* Orders table */}
             <Card>
