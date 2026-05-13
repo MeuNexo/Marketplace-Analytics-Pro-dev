@@ -1,10 +1,10 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import {
   ComposedChart, Area, Bar, Line, XAxis, YAxis, CartesianGrid,
   Tooltip as RechartsTooltip, ResponsiveContainer,
   FunnelChart, Funnel, LabelList,
 } from "recharts";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, startOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   TrendingUp, TrendingDown, MousePointerClick,
@@ -18,21 +18,16 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
+import { MLPeriodPicker } from "@/components/mercadolivre/MLPeriodPicker";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { useMLAds, type AdsCampaign } from "@/hooks/useMLAds";
+import { useMLFilters } from "@/hooks/useMLFilters";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const currFmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const numFmt  = (v: number) => v.toLocaleString("pt-BR");
 const pctFmt  = (v: number) => `${v.toFixed(2)}%`;
-
-const QUICK_RANGES = [
-  { label: "Hoje",    days: 1  },
-  { label: "7 dias",  days: 7  },
-  { label: "15 dias", days: 15 },
-  { label: "30 dias", days: 30 },
-] as const;
 
 function roasBadge(roas: number) {
   if (roas >= 4) return <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30 font-mono">{roas.toFixed(2)}x</Badge>;
@@ -73,31 +68,93 @@ function PublicidadeRelatorios() {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function MLAnuncios() {
-  const [selectedDays, setSelectedDays]         = useState(30);
-  const [productTab, setProductTab]             = useState<"spend" | "roas">("spend");
-  const [campaignSearch, setCampaignSearch]     = useState("");
+  const [productTab, setProductTab]         = useState<"spend" | "roas">("spend");
+  const [campaignSearch, setCampaignSearch] = useState("");
 
+  // ── Filters (same hook used by MercadoLivre.tsx) ──
+  const filters = useMLFilters();
+  const {
+    period, setPeriod, customRange, setCustomRange,
+    periodLabel, currentFrom, currentTo, prevFrom, prevTo, fetchFrom,
+  } = filters;
+
+  // Fetch enough data to cover both current and previous period for delta comparison
   const { daily, campaigns, products, summary, loading, connected, sync, syncing } =
-    useMLAds({ daysBack: selectedDays });
+    useMLAds({ dateFrom: fetchFrom, dateTo: currentTo });
 
-  // ── Chart data ──
+  // ── Confirm handler ──
+  const handleConfirm = useCallback(() => {
+    if (filters.pendingRange?.from) {
+      const resolvedTo = filters.pendingRange.to ?? filters.pendingRange.from;
+      setCustomRange({ from: filters.pendingRange.from, to: resolvedTo });
+      setPeriod(0);
+      filters.setPopoverOpen(false);
+    } else if (filters.pendingPeriod !== null) {
+      setCustomRange(null);
+      setPeriod(filters.pendingPeriod);
+      filters.setPopoverOpen(false);
+    }
+  }, [filters, setCustomRange, setPeriod]);
+
+  // ── Chart data — only current range ──
   const chartData = useMemo(() => {
-    return [...daily].slice(-selectedDays).map((d) => ({
-      label: format(parseISO(d.date), "dd/MM", { locale: ptBR }),
-      date: d.date,
-      "Gasto": d.spend,
-      "Receita Atribuída": d.attributed_revenue,
-      "ROAS": d.roas,
-      "Cliques": d.clicks,
-    }));
-  }, [daily, selectedDays]);
+    return daily
+      .filter((d) => d.date >= currentFrom && d.date <= currentTo)
+      .map((d) => ({
+        label: format(parseISO(d.date), "dd/MM", { locale: ptBR }),
+        date: d.date,
+        "Gasto": d.spend,
+        "Receita Atribuída": d.attributed_revenue,
+        "ROAS": d.roas,
+        "Cliques": d.clicks,
+      }));
+  }, [daily, currentFrom, currentTo]);
+
+  // ── Summary for current period ──
+  const currentSummary = useMemo(() => {
+    const slice = daily.filter((d) => d.date >= currentFrom && d.date <= currentTo);
+    if (slice.length === 0) return summary; // fallback to hook summary when ranges match
+    const ti = slice.reduce((s, d) => s + d.impressions, 0);
+    const tc = slice.reduce((s, d) => s + d.clicks, 0);
+    const ts = Math.round(slice.reduce((s, d) => s + d.spend, 0) * 100) / 100;
+    const tr = Math.round(slice.reduce((s, d) => s + d.attributed_revenue, 0) * 100) / 100;
+    const to = slice.reduce((s, d) => s + d.attributed_orders, 0);
+    return {
+      total_impressions: ti,
+      total_clicks: tc,
+      total_spend: ts,
+      total_attributed_revenue: tr,
+      total_attributed_orders: to,
+      avg_cpc:  tc > 0 ? Math.round((ts / tc) * 100) / 100 : 0,
+      avg_ctr:  ti > 0 ? Math.round((tc / ti) * 10000) / 100 : 0,
+      avg_roas: ts > 0 ? Math.round((tr / ts) * 100) / 100 : 0,
+    };
+  }, [daily, currentFrom, currentTo, summary]);
+
+  // ── Previous period summary for delta ──
+  const prevSummaryCalc = useMemo(() => {
+    const slice = daily.filter((d) => d.date >= prevFrom && d.date <= prevTo);
+    if (slice.length === 0) return null;
+    const tc = slice.reduce((s, d) => s + d.clicks, 0);
+    const ts = slice.reduce((s, d) => s + d.spend, 0);
+    return {
+      spend:  ts,
+      roas:   slice.length > 0 ? slice.reduce((s, d) => s + d.roas, 0) / slice.length : 0,
+      cpc:    slice.length > 0 ? slice.reduce((s, d) => s + d.cpc, 0) / slice.length : 0,
+      clicks: tc,
+      orders: slice.reduce((s, d) => s + d.attributed_orders, 0),
+    };
+  }, [daily, prevFrom, prevTo]);
+
+  const delta = (curr: number, prev: number | undefined) =>
+    prev && prev > 0 ? ((curr - prev) / prev) * 100 : 0;
 
   // ── Funnel data ──
   const funnelData = useMemo(() => [
-    { name: "Impressões", value: summary.total_impressions,      fill: "#6366f1" },
-    { name: "Cliques",    value: summary.total_clicks,           fill: "#8b5cf6" },
-    { name: "Pedidos",    value: summary.total_attributed_orders, fill: "#a855f7" },
-  ], [summary]);
+    { name: "Impressões", value: currentSummary.total_impressions,      fill: "#6366f1" },
+    { name: "Cliques",    value: currentSummary.total_clicks,           fill: "#8b5cf6" },
+    { name: "Pedidos",    value: currentSummary.total_attributed_orders, fill: "#a855f7" },
+  ], [currentSummary]);
 
   // ── Sorted product lists ──
   const topBySpend = useMemo(() => [...products].sort((a, b) => b.spend - a.spend).slice(0, 8),  [products]);
@@ -108,22 +165,6 @@ export default function MLAnuncios() {
     const q = campaignSearch.trim().toLowerCase();
     return q ? campaigns.filter((c) => c.name.toLowerCase().includes(q)) : campaigns;
   }, [campaigns, campaignSearch]);
-
-  // ── Previous period delta ──
-  const prevSummary = useMemo(() => {
-    const prevSlice = [...daily].slice(-selectedDays * 2, -selectedDays);
-    if (prevSlice.length === 0) return null;
-    return {
-      spend:  prevSlice.reduce((s, d) => s + d.spend, 0),
-      roas:   prevSlice.length > 0 ? prevSlice.reduce((s, d) => s + d.roas, 0) / prevSlice.length : 0,
-      cpc:    prevSlice.length > 0 ? prevSlice.reduce((s, d) => s + d.cpc, 0) / prevSlice.length : 0,
-      clicks: prevSlice.reduce((s, d) => s + d.clicks, 0),
-      orders: prevSlice.reduce((s, d) => s + d.attributed_orders, 0),
-    };
-  }, [daily, selectedDays]);
-
-  const delta = (curr: number, prev: number | undefined) =>
-    prev && prev > 0 ? ((curr - prev) / prev) * 100 : 0;
 
   if (!loading && !connected) return <NotConnected />;
 
@@ -148,22 +189,22 @@ export default function MLAnuncios() {
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4 min-w-0">
           <MLPageHeader title="Publicidade" lastUpdated={null} />
           <div className="flex items-center gap-2 flex-wrap min-w-0">
-            {/* Date range pills */}
-            <div className="flex gap-1 overflow-x-auto no-scrollbar">
-              {QUICK_RANGES.map((r) => (
-                <button
-                  key={r.days}
-                  onClick={() => setSelectedDays(r.days)}
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors border shrink-0 ${
-                    selectedDays === r.days
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-background border-border text-muted-foreground hover:bg-muted"
-                  }`}
-                >
-                  {r.label}
-                </button>
-              ))}
-            </div>
+
+            {/* Date picker — same component as Vendas page */}
+            <MLPeriodPicker
+              periodLabel={periodLabel}
+              popoverOpen={filters.popoverOpen}
+              setPopoverOpen={filters.setPopoverOpen}
+              pendingRange={filters.pendingRange}
+              setPendingRange={filters.setPendingRange}
+              pendingPeriod={filters.pendingPeriod}
+              setPendingPeriod={filters.setPendingPeriod}
+              pendingLabel={filters.pendingLabel}
+              canConfirm={filters.canConfirm}
+              customRange={customRange}
+              period={period}
+              onConfirm={handleConfirm}
+            />
 
             {/* Tabs */}
             <TabsList className="h-8 overflow-x-auto no-scrollbar max-w-full">
@@ -171,7 +212,7 @@ export default function MLAnuncios() {
               <TabsTrigger value="relatorios"  className="text-xs px-3 h-7">Relatórios</TabsTrigger>
             </TabsList>
 
-            {/* Atualizar button */}
+            {/* Atualizar */}
             <Button
               variant="ghost"
               size="sm"
@@ -194,45 +235,48 @@ export default function MLAnuncios() {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
           <KPICard
             title="Gasto Total"
-            value={currFmt(summary.total_spend)}
+            value={currFmt(currentSummary.total_spend)}
             icon={<DollarSign className="w-4 h-4" />}
-            delta={delta(summary.total_spend, prevSummary?.spend)}
+            delta={delta(currentSummary.total_spend, prevSummaryCalc?.spend)}
             variant="minimal"
             iconClassName="bg-destructive/10 text-destructive"
             size="compact"
           />
           <KPICard
             title="Receita Atribuída"
-            value={currFmt(summary.total_attributed_revenue)}
+            value={currFmt(currentSummary.total_attributed_revenue)}
             icon={<TrendingUp className="w-4 h-4" />}
-            delta={delta(summary.total_attributed_revenue, prevSummary ? prevSummary.spend * summary.avg_roas : 0)}
+            delta={delta(
+              currentSummary.total_attributed_revenue,
+              prevSummaryCalc ? prevSummaryCalc.spend * currentSummary.avg_roas : undefined,
+            )}
             variant="minimal"
             iconClassName="bg-success/10 text-success"
             size="compact"
           />
           <KPICard
             title="ROAS"
-            value={`${summary.avg_roas.toFixed(2)}x`}
+            value={`${currentSummary.avg_roas.toFixed(2)}x`}
             icon={<Zap className="w-4 h-4" />}
-            delta={delta(summary.avg_roas, prevSummary?.roas)}
+            delta={delta(currentSummary.avg_roas, prevSummaryCalc?.roas)}
             variant="minimal"
             iconClassName="bg-accent/10 text-accent"
             size="compact"
           />
           <KPICard
             title="CPC Médio"
-            value={currFmt(summary.avg_cpc)}
+            value={currFmt(currentSummary.avg_cpc)}
             icon={<MousePointerClick className="w-4 h-4" />}
-            delta={-delta(summary.avg_cpc, prevSummary?.cpc)}
+            delta={-delta(currentSummary.avg_cpc, prevSummaryCalc?.cpc)}
             variant="minimal"
             iconClassName="bg-primary/10 text-primary"
             size="compact"
           />
           <KPICard
             title="Pedidos via ADS"
-            value={numFmt(summary.total_attributed_orders)}
+            value={numFmt(currentSummary.total_attributed_orders)}
             icon={<ShoppingCart className="w-4 h-4" />}
-            delta={delta(summary.total_attributed_orders, prevSummary?.orders)}
+            delta={delta(currentSummary.total_attributed_orders, prevSummaryCalc?.orders)}
             variant="minimal"
             iconClassName="bg-[hsl(270,70%,50%)]/10 text-[hsl(270,70%,50%)]"
             size="compact"
@@ -241,10 +285,11 @@ export default function MLAnuncios() {
 
         {/* ── Performance Chart + Funnel ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Main chart — 2/3 width */}
           <Card className="lg:col-span-2">
             <div className="px-4 pt-4 pb-3">
-              <span className="text-sm font-medium text-foreground">Gasto vs Receita Atribuída</span>
+              <span className="text-sm font-medium text-foreground">
+                Gasto vs Receita Atribuída — {periodLabel}
+              </span>
             </div>
             <CardContent className="px-4 pb-2 pt-0">
               <ResponsiveContainer width="100%" height={220}>
@@ -254,7 +299,7 @@ export default function MLAnuncios() {
                     dataKey="label"
                     tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
                     tickLine={false} axisLine={false}
-                    interval={selectedDays <= 7 ? 0 : selectedDays <= 15 ? 1 : Math.floor(chartData.length / 6)}
+                    interval={chartData.length <= 7 ? 0 : chartData.length <= 15 ? 1 : Math.floor(chartData.length / 6)}
                   />
                   <YAxis
                     yAxisId="brl"
@@ -283,7 +328,6 @@ export default function MLAnuncios() {
             </CardContent>
           </Card>
 
-          {/* Funnel — 1/3 width */}
           <Card>
             <div className="px-4 pt-4 pb-3">
               <span className="text-sm font-medium text-foreground">Funil de Conversão</span>
@@ -304,30 +348,30 @@ export default function MLAnuncios() {
 
               <div className="space-y-2 pt-1">
                 {[
-                  { label: "Impressões → Cliques", value: summary.avg_ctr, suffix: "% (CTR)" },
+                  { label: "Impressões → Cliques", value: currentSummary.avg_ctr, suffix: "(CTR)" },
                   {
                     label: "Cliques → Pedidos",
-                    value: summary.total_clicks > 0
-                      ? Math.round((summary.total_attributed_orders / summary.total_clicks) * 10000) / 100
+                    value: currentSummary.total_clicks > 0
+                      ? Math.round((currentSummary.total_attributed_orders / currentSummary.total_clicks) * 10000) / 100
                       : 0,
-                    suffix: "% (CVR)",
+                    suffix: "(CVR)",
                   },
                 ].map((row) => (
                   <div key={row.label} className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground">{row.label}</span>
                     <span className="font-semibold tabular-nums">
                       {pctFmt(row.value)}{" "}
-                      <span className="text-muted-foreground font-normal">{row.suffix.split(" ")[1]}</span>
+                      <span className="text-muted-foreground font-normal">{row.suffix}</span>
                     </span>
                   </div>
                 ))}
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-muted-foreground">CPC Médio</span>
-                  <span className="font-semibold tabular-nums">{currFmt(summary.avg_cpc)}</span>
+                  <span className="font-semibold tabular-nums">{currFmt(currentSummary.avg_cpc)}</span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-muted-foreground">Total Impressões</span>
-                  <span className="font-semibold tabular-nums">{numFmt(summary.total_impressions)}</span>
+                  <span className="font-semibold tabular-nums">{numFmt(currentSummary.total_impressions)}</span>
                 </div>
               </div>
             </CardContent>
@@ -383,8 +427,6 @@ export default function MLAnuncios() {
                 </tbody>
               </table>
             </div>
-
-            {/* Totals row */}
             <div className="border-t border-border/60 bg-muted/20 px-6 py-2.5 flex items-center gap-8 text-xs text-muted-foreground">
               <span className="font-semibold text-foreground">{filteredCampaigns.length} campanhas</span>
               <span>Gasto total: <strong className="text-foreground tabular-nums">{currFmt(filteredCampaigns.reduce((s, c) => s + c.spend, 0))}</strong></span>
