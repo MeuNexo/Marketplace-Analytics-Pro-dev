@@ -484,11 +484,35 @@ export default function MLAnuncios() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border/60 bg-muted/30">
-                    {["Campanha", "Status", "Orçamento/dia", "Gasto", "Impressões", "Cliques", "CTR", "Pedidos", "ROAS"].map((h) => (
-                      <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap first:pl-6 last:pr-6">
-                        {h}
+                    <th className="px-4 py-2.5 pl-6 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Campanha</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Status</th>
+                    {([
+                      ["daily_budget", "Orçamento/dia"],
+                      ["spend", "Gasto"],
+                    ] as const).map(([key, label]) => (
+                      <th
+                        key={key}
+                        onClick={() => toggleCampaignSort(key)}
+                        className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
+                      >
+                        <span className="inline-flex items-center gap-1">{label} <CampaignSortIcon k={key} /></span>
                       </th>
                     ))}
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Impressões</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Cliques</th>
+                    <th
+                      onClick={() => toggleCampaignSort("ctr")}
+                      className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
+                    >
+                      <span className="inline-flex items-center gap-1">CTR <CampaignSortIcon k="ctr" /></span>
+                    </th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Pedidos</th>
+                    <th
+                      onClick={() => toggleCampaignSort("roas")}
+                      className="px-4 py-2.5 pr-6 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
+                    >
+                      <span className="inline-flex items-center gap-1">ROAS <CampaignSortIcon k="roas" /></span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -558,19 +582,20 @@ export default function MLAnuncios() {
                       <th
                         key={key}
                         onClick={() => toggleSort(key)}
-                        className={`px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground ${i === arr.length - 1 ? "pr-6" : ""}`}
+                        className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
                       >
                         <span className="inline-flex items-center gap-1">
                           {label} <SortIcon k={key} />
                         </span>
                       </th>
                     ))}
+                    <th className="px-4 py-2.5 pr-6 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Estoque</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sortedProducts.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="px-6 py-8 text-center text-sm text-muted-foreground">
+                      <td colSpan={9} className="px-6 py-8 text-center text-sm text-muted-foreground">
                         Nenhum produto patrocinado encontrado.
                       </td>
                     </tr>
@@ -597,7 +622,16 @@ export default function MLAnuncios() {
                       <td className="px-4 py-3 tabular-nums">{pctFmt(p.ctr)}</td>
                       <td className="px-4 py-3 tabular-nums">{numFmt(p.attributed_orders)}</td>
                       <td className="px-4 py-3 tabular-nums">{currFmt(p.attributed_revenue)}</td>
-                      <td className="px-4 py-3 pr-6">{roasBadge(p.roas)}</td>
+                      <td className="px-4 py-3">{roasBadge(p.roas)}</td>
+                      <td className="px-4 py-3 pr-6 tabular-nums">
+                        {(() => {
+                          const stock = stockByItem.get(p.item_id);
+                          if (stock === undefined) return <span className="text-muted-foreground">—</span>;
+                          if (stock === 0) return <span className="text-red-600 font-medium">0</span>;
+                          if (stock < 5) return <span className="text-amber-600 font-medium">{numFmt(stock)}</span>;
+                          return numFmt(stock);
+                        })()}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
