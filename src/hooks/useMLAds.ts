@@ -3,18 +3,82 @@ import { format, subDays } from "date-fns";
 import { useMLStore } from "@/contexts/MLStoreContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import {
-  getMockAdsDailyStats,
-  getMockAdsCampaigns,
-  getMockAdsProducts,
-  computeAdsSummary,
-  type AdsDailyStat,
-  type AdsCampaign,
-  type AdsProductStat,
-  type AdsSummary,
-} from "@/data/adsMockData";
 
-// Module-level cache survives component unmount/remount (navigation)
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface AdsDailyStat {
+  date: string;
+  impressions: number;
+  clicks: number;
+  spend: number;
+  attributed_revenue: number;
+  attributed_orders: number;
+  cpc: number;
+  ctr: number;
+  roas: number;
+}
+
+export interface AdsCampaign {
+  id: string;
+  name: string;
+  status: "active" | "paused" | "ended";
+  daily_budget: number;
+  impressions: number;
+  clicks: number;
+  spend: number;
+  attributed_revenue: number;
+  attributed_orders: number;
+  cpc: number;
+  ctr: number;
+  roas: number;
+}
+
+export interface AdsProductStat {
+  item_id: string;
+  title: string;
+  thumbnail: string | null;
+  impressions: number;
+  clicks: number;
+  spend: number;
+  attributed_revenue: number;
+  attributed_orders: number;
+  cpc: number;
+  ctr: number;
+  roas: number;
+}
+
+export interface AdsSummary {
+  total_impressions: number;
+  total_clicks: number;
+  total_spend: number;
+  total_attributed_revenue: number;
+  total_attributed_orders: number;
+  avg_cpc: number;
+  avg_ctr: number;
+  avg_roas: number;
+}
+
+export function computeAdsSummary(daily: AdsDailyStat[]): AdsSummary {
+  if (daily.length === 0) {
+    return {
+      total_impressions: 0, total_clicks: 0, total_spend: 0,
+      total_attributed_revenue: 0, total_attributed_orders: 0,
+      avg_cpc: 0, avg_ctr: 0, avg_roas: 0,
+    };
+  }
+  const total_impressions = daily.reduce((s, d) => s + d.impressions, 0);
+  const total_clicks      = daily.reduce((s, d) => s + d.clicks, 0);
+  const total_spend       = Math.round(daily.reduce((s, d) => s + d.spend, 0) * 100) / 100;
+  const total_attributed_revenue = Math.round(daily.reduce((s, d) => s + d.attributed_revenue, 0) * 100) / 100;
+  const total_attributed_orders  = daily.reduce((s, d) => s + d.attributed_orders, 0);
+  const avg_cpc  = total_clicks      > 0 ? Math.round((total_spend / total_clicks) * 100) / 100 : 0;
+  const avg_ctr  = total_impressions > 0 ? Math.round((total_clicks / total_impressions) * 10000) / 100 : 0;
+  const avg_roas = total_spend       > 0 ? Math.round((total_attributed_revenue / total_spend) * 100) / 100 : 0;
+  return { total_impressions, total_clicks, total_spend, total_attributed_revenue, total_attributed_orders, avg_cpc, avg_ctr, avg_roas };
+}
+
+// ─── Cache ────────────────────────────────────────────────────────────────────
+
 interface AdsCache {
   daily: AdsDailyStat[];
   campaigns: AdsCampaign[];
@@ -23,9 +87,9 @@ interface AdsCache {
   fetchedAt: number;
 }
 const adsCache = new Map<string, AdsCache>();
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL_MS = 5 * 60 * 1000;
 
-export type { AdsDailyStat, AdsCampaign, AdsProductStat, AdsSummary };
+// ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export interface UseMLAdsOptions {
   daysBack?: number;
@@ -46,6 +110,8 @@ export interface UseMLAdsResult {
   syncing: boolean;
 }
 
+const EMPTY_SUMMARY = computeAdsSummary([]);
+
 export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
   const { daysBack = 30, dateFrom, dateTo } = opts;
   const { stores, selectedStore, loading: storeLoading, scopeKey, hasMLConnection } = useMLStore();
@@ -61,18 +127,13 @@ export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
   const [adsAvailable, setAdsAvailable] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // When a specific store is selected use it; when "all" use all store IDs
   const targetStoreIds = useMemo(() => {
     if (selectedStore !== "all" && selectedStore) return [selectedStore];
     return stores.map((s) => s.ml_user_id);
   }, [selectedStore, stores]);
 
-  // Single storeId used as cache key and mock seed (first store or specific)
-  const storeId = targetStoreIds[0] ?? "default-store";
-
   const connected = stores.length > 0;
 
-  // Compute effective date range
   const effectiveDateFrom = useMemo(() => {
     if (dateFrom) return dateFrom;
     return format(subDays(new Date(), daysBack - 1), "yyyy-MM-dd");
@@ -83,19 +144,8 @@ export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
     return format(new Date(), "yyyy-MM-dd");
   }, [dateTo]);
 
-  const effectiveDaysBack = useMemo(() => {
-    if (dateFrom && dateTo) {
-      const from = new Date(dateFrom);
-      const to = new Date(dateTo);
-      return Math.max(1, Math.round((to.getTime() - from.getTime()) / 86400000) + 1);
-    }
-    return daysBack;
-  }, [daysBack, dateFrom, dateTo]);
-
-  // Include scopeKey in cache key so seller/store changes invalidate cache
   const cacheKey = `${scopeKey}:${effectiveDateFrom}:${effectiveDateTo}`;
 
-  // Fetch one store's ads data from the edge function
   const fetchOneStore = useCallback(async (
     targetStoreId: string,
     accessToken: string,
@@ -122,7 +172,6 @@ export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
     return res.json();
   }, [effectiveDateFrom, effectiveDateTo]);
 
-  // Fetch real data — handles single store or aggregates multiple stores
   const fetchRealData = useCallback(async (force = false) => {
     if (!connected || !user || targetStoreIds.length === 0) return;
 
@@ -132,20 +181,14 @@ export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
     try {
       const session = await supabase.auth.getSession();
       const accessToken = session.data.session?.access_token;
-      if (!accessToken) {
-        console.warn("ml-ads: No auth session, falling back to mock");
-        return;
-      }
+      if (!accessToken) return;
 
       const results = await Promise.all(
         targetStoreIds.map((id) => fetchOneStore(id, accessToken, force)),
       );
 
-      // Aggregate across stores
       const aggregated: { daily: AdsDailyStat[]; campaigns: AdsCampaign[]; products: AdsProductStat[] } = {
-        daily: [],
-        campaigns: [],
-        products: [],
+        daily: [], campaigns: [], products: [],
       };
       let anyAvailable = false;
 
@@ -156,9 +199,11 @@ export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
           for (const row of result.daily as AdsDailyStat[]) {
             const existing = aggregated.daily.find((d) => d.date === row.date);
             if (existing) {
-              existing.impressions = (existing.impressions ?? 0) + (row.impressions ?? 0);
-              existing.clicks      = (existing.clicks      ?? 0) + (row.clicks      ?? 0);
-              existing.spend       = (existing.spend       ?? 0) + (row.spend       ?? 0);
+              existing.impressions        = (existing.impressions        ?? 0) + (row.impressions        ?? 0);
+              existing.clicks             = (existing.clicks             ?? 0) + (row.clicks             ?? 0);
+              existing.spend              = (existing.spend              ?? 0) + (row.spend              ?? 0);
+              existing.attributed_revenue = (existing.attributed_revenue ?? 0) + (row.attributed_revenue ?? 0);
+              existing.attributed_orders  = (existing.attributed_orders  ?? 0) + (row.attributed_orders  ?? 0);
             } else {
               aggregated.daily.push({ ...row });
             }
@@ -168,36 +213,30 @@ export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
         if (result.products?.length)  aggregated.products.push(...result.products);
       }
 
-      if (anyAvailable) setAdsAvailable(true);
+      setAdsAvailable(anyAvailable);
 
-      if (aggregated.daily.length > 0) {
-        const summary = computeAdsSummary(aggregated.daily);
-        const cached: AdsCache = { ...aggregated, summary, fetchedAt: Date.now() };
-        setRealData({ ...aggregated, summary });
-        adsCache.set(cacheKey, cached);
-        setIsRealData(true);
-        console.log(`ml-ads: loaded ${targetStoreIds.length} store(s)`);
-      } else {
-        console.log("ml-ads: no data for period, using mock");
-      }
+      const summary = computeAdsSummary(aggregated.daily);
+      const cached: AdsCache = { ...aggregated, summary, fetchedAt: Date.now() };
+      setRealData({ ...aggregated, summary });
+      adsCache.set(cacheKey, cached);
+      setIsRealData(true);
     } catch (err) {
-      console.warn("ml-ads: Error fetching real data, falling back to mock", err);
+      console.warn("ml-ads: Error fetching data", err);
     } finally {
       setLoading(false);
     }
   }, [connected, user, targetStoreIds, cacheKey, fetchOneStore]);
 
-  // Reset when scope changes (seller/store switch)
+  // Reset ao trocar seller/store
   useEffect(() => {
     setRealData(null);
     setIsRealData(false);
     setAdsAvailable(null);
   }, [scopeKey]);
 
-  // Auto-fetch on mount and when params change — skip if cache is still fresh
+  // Auto-fetch
   useEffect(() => {
     if (!hasMLConnection) return;
-
     const cached = adsCache.get(cacheKey);
     const cacheValid = !!(cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS);
     if (cacheValid) {
@@ -210,30 +249,6 @@ export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
     fetchRealData();
   }, [fetchRealData, cacheKey, hasMLConnection]);
 
-  // Mock data fallback
-  const allDaily = useMemo(
-    () => getMockAdsDailyStats(storeId, Math.max(effectiveDaysBack, 30)),
-    [storeId, effectiveDaysBack]
-  );
-
-  const mockDaily = useMemo(() => {
-    if (dateFrom && dateTo) {
-      return allDaily.filter((d) => d.date >= dateFrom && d.date <= dateTo);
-    }
-    const cutoff = format(subDays(new Date(), effectiveDaysBack - 1), "yyyy-MM-dd");
-    return allDaily.filter((d) => d.date >= cutoff);
-  }, [allDaily, dateFrom, dateTo, effectiveDaysBack]);
-
-  const mockCampaigns = useMemo(() => getMockAdsCampaigns(storeId), [storeId]);
-  const mockProducts = useMemo(() => getMockAdsProducts(storeId), [storeId]);
-  const mockSummary = useMemo(() => computeAdsSummary(mockDaily), [mockDaily]);
-
-  // Use real data if available, otherwise mock
-  const daily = realData?.daily ?? mockDaily;
-  const campaigns = realData?.campaigns ?? mockCampaigns;
-  const products = realData?.products ?? mockProducts;
-  const summary = realData?.summary ?? mockSummary;
-
   const sync = useCallback(async () => {
     if (!connected) return;
     setSyncing(true);
@@ -242,10 +257,10 @@ export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
   }, [connected, fetchRealData]);
 
   return {
-    daily,
-    campaigns,
-    products,
-    summary,
+    daily:     realData?.daily     ?? [],
+    campaigns: realData?.campaigns ?? [],
+    products:  realData?.products  ?? [],
+    summary:   realData?.summary   ?? EMPTY_SUMMARY,
     loading: storeLoading || loading,
     connected,
     isRealData,

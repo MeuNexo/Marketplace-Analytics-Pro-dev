@@ -10,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMLAds } from "@/hooks/useMLAds";
-import { computeAdsSummary } from "@/data/adsMockData";
+import { computeAdsSummary } from "@/hooks/useMLAds";
 import { useMLReputation } from "@/hooks/useMLReputation";
 import { useMLFilters, getFilterDates, todayUTC, getComparisonRanges } from "@/hooks/useMLFilters";
 import { useMLDailyQuery, useMLHourlyQuery, useMLProductsQuery, useMLUserQuery, useMLMonthlyDailyQuery, type DailyBreakdown, type HourlyBreakdown } from "@/hooks/useMLQueries";
