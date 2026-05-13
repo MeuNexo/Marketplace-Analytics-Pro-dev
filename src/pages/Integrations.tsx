@@ -31,11 +31,6 @@ import {
   Link2Off,
   RefreshCw,
   ShieldCheck,
-  Zap,
-  DollarSign,
-  ShoppingCart,
-  Tag,
-  TrendingUp,
   Store,
   Pencil,
   Check as CheckIcon,
@@ -109,7 +104,6 @@ export default function Integrations() {
   const [connectDialog, setConnectDialog] = useState<MarketplaceIntegration | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [connecting, setConnecting] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [mlCodeDialog, setMlCodeDialog] = useState(false);
   const [mlCodeInput, setMlCodeInput] = useState("");
   const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);
@@ -428,49 +422,6 @@ export default function Integrations() {
     });
   };
 
-  const handleSyncML = async () => {
-    setSyncing(true);
-    try {
-      // Use ml_user_id from MLStoreContext instead of access_token from localStorage
-      const firstStore = mlStores[0];
-      if (!firstStore) {
-        toast({
-          title: "Erro",
-          description: "Nenhuma conta do Mercado Livre conectada. Conecte-se primeiro.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const today = new Date().toISOString().substring(0, 10);
-      const { data, error } = await supabase.functions.invoke("mercado-libre-integration", {
-        body: { ml_user_id: firstStore.ml_user_id, date_from: today, date_to: today, seller_id: selectedSeller?.id || null },
-      });
-
-      if (error || !data?.success) {
-        toast({
-          title: "Erro ao sincronizar",
-          description: data?.error || error?.message || "Falha ao buscar dados do Mercado Livre.",
-          variant: "destructive",
-        });
-      } else {
-        setMlMetrics(data.metrics);
-        setMlUser(data.user);
-        toast({
-          title: "Sincronização concluída!",
-          description: `Dados do Mercado Livre importados com sucesso.`,
-        });
-      }
-    } catch (err: any) {
-      toast({
-        title: "Erro",
-        description: err.message || "Erro inesperado na sincronização.",
-        variant: "destructive",
-      });
-    } finally {
-      setSyncing(false);
-    }
-  };
 
   const handleManualCodeExchange = async () => {
     if (!mlCodeInput.trim()) return;
@@ -766,14 +717,9 @@ export default function Integrations() {
                         <span className="flex-1 text-xs text-muted-foreground">Apenas owner/admin pode gerenciar</span>
                       )}
                       {integration.id === "ml" && canManage && (
-                        <>
-                          <Button variant="ghost" size="sm" onClick={() => handleConnect(integration)} title="Adicionar outra loja ML">
-                            <Store className="w-4 h-4" />
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={handleSyncML} disabled={syncing} title="Sincronizar pedidos e vendas">
-                            <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} />
-                          </Button>
-                        </>
+                        <Button variant="ghost" size="sm" onClick={() => handleConnect(integration)} title="Adicionar outra loja ML">
+                          <Store className="w-4 h-4" />
+                        </Button>
                       )}
                     </>
                   ) : (
