@@ -866,7 +866,7 @@ export default function MLProdutos() {
           <MLPageHeader title="Anúncios" lastUpdated={lastUpdated} />
           <div className="flex items-center gap-3">
             <TabsList className="h-8">
-              <TabsTrigger value="catalogo" className="text-xs px-3 h-7">Catálogo</TabsTrigger>
+              <TabsTrigger value="catalogo" className="text-xs px-3 h-7">Anúncios</TabsTrigger>
               <TabsTrigger value="relatorios" className="text-xs px-3 h-7">Relatórios</TabsTrigger>
             </TabsList>
             <Button
