@@ -148,7 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (roleRow?.role === "admin") {
         await supabase.auth.signOut().catch(() => {});
         return {
-          error: new Error("Acesso não permitido aqui. Use o painel administrativo."),
+          error: new Error("E-mail ou senha incorretos."),
         };
       }
     }

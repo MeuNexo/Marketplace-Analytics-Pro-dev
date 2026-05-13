@@ -58,7 +58,7 @@ export function Header({ title, subtitle, showSellerSwitcher = true, showSellerM
           <OrganizationSwitcher />
         </div>
         {showSellerMarketplaceBar && !hideStores ? (
-          <div className="min-w-0 flex-1 overflow-hidden">
+          <div className="min-w-0 shrink-0 overflow-hidden">
             <SellerMarketplaceBar showStores />
           </div>
         ) : null}

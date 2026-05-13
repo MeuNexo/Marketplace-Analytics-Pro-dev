@@ -18,7 +18,8 @@ export function StoreGroupSelector({ className }: Props) {
     [selectedSeller]
   );
 
-  if (activeStores.length === 0 || !scope) return null;
+  // With a single store there's nothing to switch — hide entirely
+  if (activeStores.length <= 1 || !scope) return null;
 
   const { storeId, setStoreId } = scope;
 
