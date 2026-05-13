@@ -40,6 +40,32 @@ function subDaysStr(n: number): string {
 function todayStr(): string { return new Date().toISOString().substring(0, 10); }
 function round2(n: number)  { return Math.round(n * 100) / 100; }
 
+function metricsArrayToObject(value: unknown): Record<string, unknown> | null {
+  if (!Array.isArray(value)) return null;
+
+  const entries = value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const key = String((entry as Record<string, unknown>).key ?? (entry as Record<string, unknown>).name ?? (entry as Record<string, unknown>).metric ?? "").trim();
+      const rawValue = (entry as Record<string, unknown>).value
+        ?? (entry as Record<string, unknown>).amount
+        ?? (entry as Record<string, unknown>).metric_value
+        ?? (entry as Record<string, unknown>).total;
+      return key ? [key, rawValue] as const : null;
+    })
+    .filter((entry): entry is readonly [string, unknown] => Boolean(entry));
+
+  return entries.length > 0 ? Object.fromEntries(entries) : null;
+}
+
+function normalizeMetrics(item: Record<string, unknown>) {
+  return metricsArrayToObject(item.metrics_summary)
+    ?? (item.metrics_summary && typeof item.metrics_summary === "object" && !Array.isArray(item.metrics_summary) ? item.metrics_summary as Record<string, unknown> : null)
+    ?? metricsArrayToObject(item.metrics)
+    ?? (item.metrics && typeof item.metrics === "object" && !Array.isArray(item.metrics) ? item.metrics as Record<string, unknown> : null)
+    ?? item;
+}
+
 // ── ML token retrieval ────────────────────────────────────────────────────────
 
 async function getAccessToken(admin: any, mlUserId: string): Promise<string> {
@@ -161,12 +187,9 @@ async function syncAds(
       }
 
       for (const it of items) {
-        // ML Ads v2 API may return metrics flat on item OR nested under
-        // `metrics` (object) / `metrics_summary` (object). Support all shapes.
-        const m = (it.metrics && !Array.isArray(it.metrics) ? it.metrics : null)
-               ?? (Array.isArray(it.metrics) ? it.metrics[0] : null)
-               ?? it.metrics_summary
-               ?? it;
+        // ML Ads v2 API may return metrics flat on item, nested as an object,
+        // or as an array of { key, value } entries. Support all shapes.
+        const m = normalizeMetrics(it);
         const p   = Number(m.prints        ?? m.impressions    ?? 0);
         const cl  = Number(m.clicks        ?? 0);
         const sp  = Number(m.cost          ?? m.spend          ?? 0);
