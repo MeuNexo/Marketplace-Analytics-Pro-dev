@@ -282,8 +282,9 @@ function SubTabTopProdutos({ orders }: { orders: ProcessedOrder[] }) {
 // ── Report: Distribuição por UF ───────────────────────────────────────────────
 
 const UF_COLORS = [
-  "#6366f1","#8b5cf6","#a855f7","#ec4899","#f43f5e",
-  "#f97316","#eab308","#22c55e","#14b8a6","#0ea5e9",
+  "#2563eb","#3b82f6","#60a5fa","#93c5fd",
+  "#1d4ed8","#0284c7","#0369a1","#075985",
+  "#6366f1","#4f46e5",
 ];
 
 function SubTabUF({ orders }: { orders: ProcessedOrder[] }) {
@@ -294,7 +295,8 @@ function SubTabUF({ orders }: { orders: ProcessedOrder[] }) {
     }>();
 
     for (const o of orders) {
-      const uf = o.estado?.trim() || "N/D";
+      const uf = o.estado?.trim() || null;
+      if (!uf) continue; // ignora pedidos sem estado identificado
       if (!map.has(uf)) {
         map.set(uf, { uf, orderIds: new Set(), gross: 0, net: 0, cancelledIds: new Set() });
       }
@@ -333,7 +335,7 @@ function SubTabUF({ orders }: { orders: ProcessedOrder[] }) {
       <div className="grid grid-cols-3 gap-3">
         <Card><CardContent className="pt-4 pb-4">
           <p className="text-xs text-muted-foreground">Estados ativos</p>
-          <p className="text-2xl font-bold mt-1">{states.filter(s => s.uf !== "N/D").length}</p>
+          <p className="text-2xl font-bold mt-1">{states.length}</p>
         </CardContent></Card>
         <Card><CardContent className="pt-4 pb-4">
           <p className="text-xs text-muted-foreground">Maior mercado</p>
