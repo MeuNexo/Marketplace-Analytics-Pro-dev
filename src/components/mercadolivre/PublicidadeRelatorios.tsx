@@ -292,66 +292,9 @@ export function PublicidadeRelatorios({
         </div>
       </Section>
 
-      {/* ── 3. Weekday heatmap ──────────────────────────────── */}
-      <Section
-        title="3. Mapa de Calor por Dia da Semana"
-        subtitle="Padrões semanais — intensidade da cor representa o valor da métrica selecionada."
-        action={
-          <div className="flex items-center gap-1 text-xs">
-            <button
-              onClick={() => setHeatMode("roas")}
-              className={`px-2 h-7 rounded-md ${heatMode === "roas" ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-muted"}`}
-            >ROAS</button>
-            <button
-              onClick={() => setHeatMode("spend")}
-              className={`px-2 h-7 rounded-md ${heatMode === "spend" ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-muted"}`}
-            >Gasto</button>
-          </div>
-        }
-      >
-        {heat.weeks.length === 0 ? (
-          <p className="text-xs text-muted-foreground">Sem dados para gerar o mapa.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <div className="inline-block min-w-full">
-              <div className="grid gap-1" style={{ gridTemplateColumns: `auto repeat(7, minmax(40px, 1fr))` }}>
-                <div />
-                {WEEKDAYS.map((d) => (
-                  <div key={d} className="text-[10px] text-muted-foreground text-center">{d}</div>
-                ))}
-                {heat.weeks.map((w, wi) => (
-                  <>
-                    <div key={`l-${wi}`} className="text-[10px] text-muted-foreground pr-2 self-center">{w.label}</div>
-                    {w.cells.map((cell, di) => {
-                      const intensity = heat.max > 0 ? cell.value / heat.max : 0;
-                      const empty = !cell.date;
-                      return (
-                        <div
-                          key={`c-${wi}-${di}`}
-                          title={cell.date ? `${cell.date} — ${heatMode === "roas" ? `${cell.value.toFixed(2)}x ROAS` : currFmt(cell.value)}` : ""}
-                          className="h-9 rounded flex items-center justify-center text-[10px] tabular-nums"
-                          style={{
-                            background: empty
-                              ? "hsl(var(--muted) / 0.3)"
-                              : `hsl(var(--primary) / ${0.1 + intensity * 0.85})`,
-                            color: intensity > 0.5 ? "hsl(var(--primary-foreground))" : "hsl(var(--foreground))",
-                          }}
-                        >
-                          {!empty && cell.value > 0 ? (heatMode === "roas" ? `${cell.value.toFixed(1)}` : `${(cell.value / 1000).toFixed(1)}k`) : ""}
-                        </div>
-                      );
-                    })}
-                  </>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-      </Section>
-
       {/* ── 4. Spend × ROAS matrix ─────────────────────────── */}
       <Section
-        title="4. Eficiência por Produto (Gasto × ROAS)"
+        title="3. Eficiência por Produto (Gasto × ROAS)"
         subtitle="Quadrantes ajudam a decidir: Escale, Pause, Invista mais ou Descarte."
       >
         <ResponsiveContainer width="100%" height={320}>
@@ -421,7 +364,7 @@ export function PublicidadeRelatorios({
 
       {/* ── 5. Campaign comparison ─────────────────────────── */}
       <Section
-        title="5. Comparativo de Campanhas vs Período Anterior"
+        title="4. Comparativo de Campanhas vs Período Anterior"
         subtitle="Variação de Gasto, ROAS e Pedidos. Ranking pelo maior ganho combinado."
       >
         <div className="overflow-x-auto">
@@ -457,43 +400,9 @@ export function PublicidadeRelatorios({
         </div>
       </Section>
 
-      {/* ── 6. Funnel per campaign ─────────────────────────── */}
-      <Section
-        title="6. Funil de Eficiência por Campanha"
-        subtitle="Top 10 por impressões. CTR e CVR mostram onde está o gargalo."
-      >
-        <div className="space-y-3">
-          {funnelData.length === 0 && (
-            <p className="text-xs text-muted-foreground">Sem campanhas com impressões no período.</p>
-          )}
-          {funnelData.map((c) => (
-            <div key={c.fullName} className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-medium truncate max-w-[60%]" title={c.fullName}>{c.name}</span>
-                <div className="flex items-center gap-3 text-[11px] text-muted-foreground tabular-nums">
-                  <span>CTR <strong className="text-foreground">{pctFmt(c.ctr)}</strong></span>
-                  <span>CVR <strong className="text-foreground">{pctFmt(c.cvr)}</strong></span>
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-1">
-                <div className="h-5 rounded-sm bg-indigo-500/70 flex items-center px-2 text-[10px] text-white tabular-nums">
-                  {numFmt(c.impressions)} impr.
-                </div>
-                <div className="h-5 rounded-sm bg-violet-500/70 flex items-center px-2 text-[10px] text-white tabular-nums" style={{ width: `${Math.max(8, c.clicksPct)}%` }}>
-                  {numFmt(c.clicks)} cliq.
-                </div>
-                <div className="h-5 rounded-sm bg-fuchsia-500/70 flex items-center px-2 text-[10px] text-white tabular-nums" style={{ width: `${Math.max(8, c.ordersPct)}%` }}>
-                  {numFmt(c.orders)} ped.
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </Section>
-
       {/* ── 7. CPA over time ───────────────────────────────── */}
       <Section
-        title="7. Custo por Pedido (CPA) ao Longo do Tempo"
+        title="5. Custo por Pedido (CPA) ao Longo do Tempo"
         subtitle="CPA diário comparado com o ticket médio atribuído aos anúncios."
         action={
           <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
