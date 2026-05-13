@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect } from "react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip as RechartsTooltip, Legend, ReferenceLine,
-  PieChart, Pie, Cell, ScatterChart, Scatter, ZAxis,
+  PieChart, Pie, Cell,
 } from "recharts";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -135,31 +135,47 @@ export function PublicidadeRelatorios({
     const arr = [...validProducts].map((p) => p.spend).sort((a, b) => a - b);
     return arr[Math.floor(arr.length / 2)];
   }, [validProducts]);
-  const scatterData = useMemo(() => validProducts.map((p) => ({
-    x: p.spend,
-    y: p.roas,
-    z: p.attributed_orders + 1,
-    title: p.title,
-    item_id: p.item_id,
-  })), [validProducts]);
+  const productBuckets = useMemo(() => {
+    const buckets: Record<"escale" | "pause" | "invista" | "descarte", AdsProductStat[]> = {
+      escale: [], pause: [], invista: [], descarte: [],
+    };
+    validProducts.forEach((p) => {
+      const highSpend = p.spend >= medianSpend;
+      const goodRoas  = p.roas  >= roasGoal;
+      if (highSpend && goodRoas)        buckets.escale.push(p);
+      else if (highSpend && !goodRoas)  buckets.pause.push(p);
+      else if (!highSpend && goodRoas)  buckets.invista.push(p);
+      else                              buckets.descarte.push(p);
+    });
+    (Object.keys(buckets) as (keyof typeof buckets)[]).forEach((k) => {
+      buckets[k].sort((a, b) => b.spend - a.spend);
+    });
+    return buckets;
+  }, [validProducts, medianSpend, roasGoal]);
 
   // ─── 5. Campaign comparison vs previous period ─────────────────────────
   const compareData = useMemo(() => {
     const prevMap = new Map(prevCampaigns.map((c) => [c.id || c.name, c]));
     return campaigns.map((c) => {
       const prev = prevMap.get(c.id || c.name);
+      const isNew = !prev;
       return {
         id: c.id,
         name: c.name,
         spend: c.spend,
         roas:  c.roas,
         orders: c.attributed_orders,
+        isNew,
         deltaSpend:  deltaPct(c.spend, prev?.spend ?? 0),
         deltaRoas:   deltaPct(c.roas,  prev?.roas  ?? 0),
         deltaOrders: deltaPct(c.attributed_orders, prev?.attributed_orders ?? 0),
-        score: deltaPct(c.roas, prev?.roas ?? 0) + deltaPct(c.attributed_orders, prev?.attributed_orders ?? 0),
+        score: isNew ? -Infinity : deltaPct(c.roas, prev?.roas ?? 0) + deltaPct(c.attributed_orders, prev?.attributed_orders ?? 0),
       };
-    }).sort((a, b) => b.score - a.score);
+    }).sort((a, b) => {
+      if (a.isNew && !b.isNew) return 1;
+      if (b.isNew && !a.isNew) return -1;
+      return b.score - a.score;
+    });
   }, [campaigns, prevCampaigns]);
 
   // ─── 7. CPA over time ─────────────────────────────────────────────────
