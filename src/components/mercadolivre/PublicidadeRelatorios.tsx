@@ -6,10 +6,9 @@ import {
 } from "recharts";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { TrendingUp, TrendingDown, Target, LineChart as LineChartIcon, PieChart as PieChartIcon, GitCompare, Coins } from "lucide-react";
+import { Target, LineChart as LineChartIcon, PieChart as PieChartIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import type {
   AdsDailyStat, AdsCampaign,
@@ -18,32 +17,8 @@ import type {
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
 const currFmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const numFmt  = (v: number) => v.toLocaleString("pt-BR");
 
 function safeDiv(a: number, b: number) { return b > 0 ? a / b : 0; }
-
-function deltaPct(curr: number, prev: number) {
-  if (!prev || prev === 0) return curr > 0 ? 100 : 0;
-  return ((curr - prev) / prev) * 100;
-}
-
-function DeltaBadge({ value, invert = false }: { value: number; invert?: boolean }) {
-  const v = Number.isFinite(value) ? value : 0;
-  const positive = invert ? v < 0 : v > 0;
-  const negative = invert ? v > 0 : v < 0;
-  if (Math.abs(v) < 0.05) return <span className="text-muted-foreground tabular-nums text-xs">—</span>;
-  const Icon = v > 0 ? TrendingUp : TrendingDown;
-  const cls = positive
-    ? "text-emerald-600"
-    : negative
-      ? "text-red-600"
-      : "text-muted-foreground";
-  return (
-    <span className={`inline-flex items-center gap-0.5 tabular-nums text-xs ${cls}`}>
-      <Icon className="w-3 h-3" />{Math.abs(v).toFixed(1)}%
-    </span>
-  );
-}
 
 // ─── Props ─────────────────────────────────────────────────────────────────
 
@@ -80,8 +55,8 @@ function Section({ title, subtitle, children, action }: { title: string; subtitl
 // ─── Main component ───────────────────────────────────────────────────────
 
 export function PublicidadeRelatorios({
-  daily, campaigns, prevCampaigns,
-  currentFrom, currentTo, prevFrom, prevTo,
+  daily, campaigns,
+  currentFrom, currentTo,
 }: Props) {
   // ROAS goal — persisted
   const [roasGoal, setRoasGoal] = useState<number>(() => {
@@ -128,50 +103,6 @@ export function PublicidadeRelatorios({
   }, [campaigns, totalSpend, totalRevenue]);
   const DONUT_COLORS = ["hsl(var(--primary))", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#84cc16"];
 
-  // ─── 5. Campaign comparison vs previous period ─────────────────────────
-  const compareData = useMemo(() => {
-    const prevMap = new Map(prevCampaigns.map((c) => [c.id || c.name, c]));
-    return campaigns.map((c) => {
-      const prev = prevMap.get(c.id || c.name);
-      const isNew = !prev;
-      return {
-        id: c.id,
-        name: c.name,
-        spend: c.spend,
-        roas:  c.roas,
-        orders: c.attributed_orders,
-        isNew,
-        deltaSpend:  deltaPct(c.spend, prev?.spend ?? 0),
-        deltaRoas:   deltaPct(c.roas,  prev?.roas  ?? 0),
-        deltaOrders: deltaPct(c.attributed_orders, prev?.attributed_orders ?? 0),
-        score: isNew ? -Infinity : deltaPct(c.roas, prev?.roas ?? 0) + deltaPct(c.attributed_orders, prev?.attributed_orders ?? 0),
-      };
-    }).sort((a, b) => {
-      if (a.isNew && !b.isNew) return 1;
-      if (b.isNew && !a.isNew) return -1;
-      return b.score - a.score;
-    });
-  }, [campaigns, prevCampaigns]);
-
-  // ─── 7. CPA over time ─────────────────────────────────────────────────
-  const cpaData = useMemo(() => currDaily.map((d) => {
-    const cpa = safeDiv(d.spend, d.attributed_orders);
-    const ticket = safeDiv(d.attributed_revenue, d.attributed_orders);
-    return {
-      label: format(parseISO(d.date), "dd/MM", { locale: ptBR }),
-      CPA:    Number(cpa.toFixed(2)),
-      Ticket: Number(ticket.toFixed(2)),
-    };
-  }), [currDaily]);
-  const avgCpa = useMemo(() => {
-    const valid = cpaData.filter((d) => d.CPA > 0);
-    return valid.length > 0 ? valid.reduce((s, d) => s + d.CPA, 0) / valid.length : 0;
-  }, [cpaData]);
-  const avgTicket = useMemo(() => {
-    const valid = cpaData.filter((d) => d.Ticket > 0);
-    return valid.length > 0 ? valid.reduce((s, d) => s + d.Ticket, 0) / valid.length : 0;
-  }, [cpaData]);
-
   // ─── Empty state ──────────────────────────────────────────────────────
   if (currDaily.length === 0 && campaigns.length === 0) {
     return (
@@ -187,8 +118,6 @@ export function PublicidadeRelatorios({
       <TabsList className="h-8 w-auto overflow-x-auto no-scrollbar">
         <TabsTrigger value="evolucao"   className="text-xs px-3 h-7 gap-1.5"><LineChartIcon className="w-3.5 h-3.5" />Evolução</TabsTrigger>
         <TabsTrigger value="distribuicao" className="text-xs px-3 h-7 gap-1.5"><PieChartIcon className="w-3.5 h-3.5" />Distribuição do Gasto</TabsTrigger>
-        <TabsTrigger value="comparativo" className="text-xs px-3 h-7 gap-1.5"><GitCompare className="w-3.5 h-3.5" />Comparativo</TabsTrigger>
-        <TabsTrigger value="cpa"        className="text-xs px-3 h-7 gap-1.5"><Coins className="w-3.5 h-3.5" />CPA</TabsTrigger>
       </TabsList>
 
       {/* ── 1. Performance evolution ─────────────────────────── */}
@@ -291,97 +220,6 @@ export function PublicidadeRelatorios({
             </table>
           </div>
         </div>
-      </Section>
-      </TabsContent>
-
-      {/* ── 5. Campaign comparison ─────────────────────────── */}
-      <TabsContent value="comparativo" className="mt-0">
-      <Section
-        title="Comparativo de Campanhas vs Período Anterior"
-        subtitle="Variação de Gasto, ROAS e Pedidos vs período imediatamente anterior. Campanhas sem histórico aparecem como Novas."
-      >
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border/60 text-muted-foreground bg-muted/30">
-                <th className="px-3 py-2 text-left font-semibold">Campanha</th>
-                <th className="px-3 py-2 text-right font-semibold">Gasto</th>
-                <th className="px-3 py-2 text-right font-semibold">Δ Gasto</th>
-                <th className="px-3 py-2 text-right font-semibold">ROAS</th>
-                <th className="px-3 py-2 text-right font-semibold">Δ ROAS</th>
-                <th className="px-3 py-2 text-right font-semibold">Pedidos</th>
-                <th className="px-3 py-2 text-right font-semibold">Δ Pedidos</th>
-              </tr>
-            </thead>
-            <tbody>
-              {compareData.length === 0 && (
-                <tr><td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">Sem campanhas no período.</td></tr>
-              )}
-              {compareData.map((c) => (
-                <tr key={c.id} className="border-b border-border/30">
-                  <td className="px-3 py-2 max-w-[260px] truncate font-medium">
-                    {c.name}
-                    {c.isNew && <Badge variant="secondary" className="ml-2 text-[10px] py-0 px-1.5 h-4 hover:bg-secondary">Nova</Badge>}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">{currFmt(c.spend)}</td>
-                  <td className="px-3 py-2 text-right">{c.isNew ? <span className="text-muted-foreground text-xs">—</span> : <DeltaBadge value={c.deltaSpend} invert />}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{c.roas.toFixed(2)}x</td>
-                  <td className="px-3 py-2 text-right">{c.isNew ? <span className="text-muted-foreground text-xs">—</span> : <DeltaBadge value={c.deltaRoas} />}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{numFmt(c.orders)}</td>
-                  <td className="px-3 py-2 text-right">{c.isNew ? <span className="text-muted-foreground text-xs">—</span> : <DeltaBadge value={c.deltaOrders} />}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {compareData.length > 0 && prevCampaigns.length === 0 && (
-          <p className="mt-3 text-[11px] text-muted-foreground">
-            Sem dados do período anterior ({prevFrom} a {prevTo}) para comparar — as variações aparecerão na próxima sincronização.
-          </p>
-        )}
-      </Section>
-      </TabsContent>
-
-      {/* ── 7. CPA over time ───────────────────────────────── */}
-      <TabsContent value="cpa" className="mt-0">
-      <Section
-        title="Custo por Pedido (CPA) ao Longo do Tempo"
-        subtitle="CPA diário comparado com o ticket médio atribuído aos anúncios."
-        action={
-          <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-            <span>CPA médio: <strong className="text-foreground tabular-nums">{currFmt(avgCpa)}</strong></span>
-            <span>Ticket médio: <strong className="text-foreground tabular-nums">{currFmt(avgTicket)}</strong></span>
-          </div>
-        }
-      >
-        <ResponsiveContainer width="100%" height={220}>
-          <LineChart data={cpaData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.5} />
-            <XAxis dataKey="label" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false}
-              interval={cpaData.length <= 7 ? 0 : Math.floor(cpaData.length / 7)} />
-            <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} width={52}
-              tickFormatter={(v) => `R$${v}`} />
-            <RechartsTooltip
-              contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
-              formatter={(v: number, name: string) => [currFmt(v), name]}
-            />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
-            <ReferenceLine y={avgTicket} stroke="#10b981" strokeDasharray="4 3" label={{ value: "Ticket médio", position: "right", fill: "#10b981", fontSize: 10 }} />
-            <Line type="monotone" dataKey="CPA"    stroke="#ef4444" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="Ticket" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} strokeDasharray="3 3" />
-          </LineChart>
-        </ResponsiveContainer>
-        {avgCpa > 0 && avgTicket > 0 && (
-          <div className="mt-3">
-            <Badge className={`hover:bg-inherit ${avgCpa < avgTicket * 0.5 ? "bg-emerald-500/15 text-emerald-700 border-emerald-500/30" : avgCpa < avgTicket ? "bg-amber-500/15 text-amber-700 border-amber-500/30" : "bg-red-500/15 text-red-700 border-red-500/30"}`}>
-              {avgCpa < avgTicket * 0.5
-                ? "Saudável: CPA representa menos da metade do ticket médio."
-                : avgCpa < avgTicket
-                  ? "Atenção: CPA acima de 50% do ticket médio."
-                  : "Alerta: CPA superior ao ticket médio — você gasta mais do que vende."}
-            </Badge>
-          </div>
-        )}
       </Section>
       </TabsContent>
     </Tabs>
