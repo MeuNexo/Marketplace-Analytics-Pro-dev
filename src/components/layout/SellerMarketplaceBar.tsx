@@ -32,38 +32,28 @@ export function SellerMarketplaceBar({ className, showStores = true }: Props) {
   const showSellerDropdown = displaySellers.length > 1;
   const showStoreSelector = showStores && hasStores && activeStores.length > 1;
 
-  // Single seller + single store → static context badge, no switching needed
+  // Single seller + single store → static chip matching StoreGroupSelector style
   if (!showSellerDropdown && !showStoreSelector) {
     const singleStore = activeStores[0];
     const brand = singleStore ? getMarketplaceBrand(singleStore.marketplace) : undefined;
     const BrandIcon = brand?.icon;
+    if (!brand) return null;
 
     return (
       <div
         className={cn(
-          "flex items-center gap-1.5 rounded-xl border border-border/60 bg-card px-2.5 py-1 sm:py-1.5 shadow-sm h-9 shrink-0",
+          "flex items-center gap-1.5 rounded-xl border border-border/60 bg-card px-1.5 sm:px-2 py-1 sm:py-1.5 shadow-sm",
           className
         )}
       >
-        {selectedSeller?.logo_url ? (
-          <img src={selectedSeller.logo_url} alt={selectedSeller.name} className="h-5 w-5 rounded object-cover" />
-        ) : (
-          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-primary/10 text-[10px] font-bold text-primary">
-            {selectedSeller?.initials ?? "?"}
-          </span>
-        )}
-        <span className="text-sm font-medium text-foreground">{selectedSeller?.name ?? "Seller"}</span>
-        {brand && (
-          <>
-            <span className="text-muted-foreground/50">·</span>
-            {BrandIcon && (
-              <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded bg-gradient-to-br ${brand.gradient}`}>
-                <BrandIcon className="h-2.5 w-2.5 text-white" />
-              </div>
-            )}
-            <span className="text-sm text-muted-foreground">{brand.name}</span>
-          </>
-        )}
+        <span className="h-7 px-2.5 text-xs rounded-lg border font-medium select-none inline-flex items-center gap-1.5 whitespace-nowrap bg-primary/10 text-primary border-primary/30">
+          {BrandIcon && (
+            <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded bg-gradient-to-br ${brand.gradient}`}>
+              <BrandIcon className="h-2.5 w-2.5 text-white" />
+            </div>
+          )}
+          {brand.name}
+        </span>
       </div>
     );
   }
