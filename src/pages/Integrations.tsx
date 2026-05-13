@@ -90,7 +90,8 @@ const statusConfig = {
 
 export default function Integrations() {
   const { selectedSeller, refreshSellers } = useSeller();
-  const { currentOrg } = useOrganization();
+  const { currentOrg, orgRole } = useOrganization();
+  const canManage = orgRole === "owner" || orgRole === "admin";
   const { stores: mlStores, refresh: refreshMLStores } = useMLStore();
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -750,16 +751,21 @@ export default function Integrations() {
                 <div className="flex items-center gap-2 pt-2 border-t border-border">
                   {isConnected ? (
                     <>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => { setDisconnectTarget(integration.id); setDisconnectPassword(""); setDisconnectError(""); }}
-                      >
-                        <Link2Off className="w-4 h-4 mr-1.5" />
-                        Desconectar
-                      </Button>
-                      {integration.id === "ml" && (
+                      {canManage && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1"
+                          onClick={() => { setDisconnectTarget(integration.id); setDisconnectPassword(""); setDisconnectError(""); }}
+                        >
+                          <Link2Off className="w-4 h-4 mr-1.5" />
+                          Desconectar
+                        </Button>
+                      )}
+                      {!canManage && (
+                        <span className="flex-1 text-xs text-muted-foreground">Apenas owner/admin pode gerenciar</span>
+                      )}
+                      {integration.id === "ml" && canManage && (
                         <>
                           <Button variant="ghost" size="sm" onClick={() => handleConnect(integration)} title="Adicionar outra loja ML">
                             <Store className="w-4 h-4" />
@@ -776,11 +782,12 @@ export default function Integrations() {
                         size="sm"
                         className="flex-1"
                         onClick={() => handleConnect(integration)}
+                        disabled={!canManage}
                       >
                         <Link2 className="w-4 h-4 mr-1.5" />
                         Conectar
                       </Button>
-                      {(integration.id === "ml") && (
+                      {integration.id === "ml" && canManage && (
                         <Button variant="outline" size="sm" onClick={() => setMlCodeDialog(true)} title="Colar código manualmente">
                           📋
                         </Button>
