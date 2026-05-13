@@ -24,6 +24,7 @@ import { PublicidadeRelatorios } from "@/components/mercadolivre/PublicidadeRela
 import { KPICard } from "@/components/dashboard/KPICard";
 import { useMLAds, type AdsCampaign } from "@/hooks/useMLAds";
 import { useMLFilters } from "@/hooks/useMLFilters";
+import { useMLInventory } from "@/contexts/MLInventoryContext";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -64,6 +65,7 @@ export default function MLAnuncios() {
   const [productSort, setProductSort]       = useState<{ key: "spend" | "roas" | "clicks" | "attributed_orders" | "attributed_revenue" | "ctr"; dir: "asc" | "desc" }>({ key: "spend", dir: "desc" });
   const [productPage, setProductPage]       = useState(1);
   const [productPageSize, setProductPageSize] = useState<number>(20);
+  const [campaignSort, setCampaignSort]     = useState<{ key: "daily_budget" | "spend" | "ctr" | "roas"; dir: "asc" | "desc" } | null>(null);
 
   // ── Filters — default 30 days (ads data is not real-time, "Hoje" would be zeros) ──
   const filters = useMLFilters(30);
@@ -76,6 +78,14 @@ export default function MLAnuncios() {
   // fetchFrom already includes the previous window (e.g. 61 days back for a 30d period).
   const { daily, campaigns, products, summary, loading, connected, sync, syncing } =
     useMLAds({ dateFrom: fetchFrom, dateTo: currentTo });
+
+  // Inventory for "Estoque" column on sponsored products
+  const { items: inventoryItems } = useMLInventory();
+  const stockByItem = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const it of inventoryItems) map.set(it.id, it.available_quantity ?? 0);
+    return map;
+  }, [inventoryItems]);
 
   // Period-scoped fetches for the Relatórios tab (campaigns/products are returned
   // aggregated for the requested range — we need them per-period for deltas).
@@ -204,8 +214,27 @@ export default function MLAnuncios() {
   // ── Filtered campaigns ──
   const filteredCampaigns = useMemo(() => {
     const q = campaignSearch.trim().toLowerCase();
-    return q ? campaigns.filter((c) => c.name.toLowerCase().includes(q)) : campaigns;
-  }, [campaigns, campaignSearch]);
+    const list = q ? campaigns.filter((c) => c.name.toLowerCase().includes(q)) : campaigns;
+    if (!campaignSort) return list;
+    const { key, dir } = campaignSort;
+    const mult = dir === "desc" ? -1 : 1;
+    return [...list].sort((a, b) => ((a[key] ?? 0) - (b[key] ?? 0)) * mult);
+  }, [campaigns, campaignSearch, campaignSort]);
+
+  const toggleCampaignSort = useCallback((key: NonNullable<typeof campaignSort>["key"]) => {
+    setCampaignSort((prev) =>
+      prev?.key === key
+        ? { key, dir: prev.dir === "desc" ? "asc" : "desc" }
+        : { key, dir: "desc" },
+    );
+  }, []);
+
+  const CampaignSortIcon = ({ k }: { k: NonNullable<typeof campaignSort>["key"] }) => {
+    if (campaignSort?.key !== k) return <ArrowUpDown className="w-3 h-3 opacity-40" />;
+    return campaignSort.dir === "desc"
+      ? <ArrowDown className="w-3 h-3 text-foreground" />
+      : <ArrowUp   className="w-3 h-3 text-foreground" />;
+  };
 
   if (!loading && !connected) return <NotConnected />;
 
