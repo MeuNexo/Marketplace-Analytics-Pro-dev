@@ -630,7 +630,16 @@ export default function MLAnuncios() {
 
       {/* ═══════════════════ ABA RELATÓRIOS ═══════════════════ */}
       <TabsContent value="relatorios" className="mt-0 animate-fade-in">
-        <PublicidadeRelatorios />
+        <PublicidadeRelatorios
+          daily={daily}
+          campaigns={currentScoped.campaigns}
+          products={currentScoped.products}
+          prevCampaigns={prevScoped.campaigns}
+          currentFrom={currentFrom}
+          currentTo={currentTo}
+          prevFrom={prevFrom}
+          prevTo={prevTo}
+        />
       </TabsContent>
 
     </Tabs>
