@@ -486,14 +486,39 @@ export default function MLAnuncios() {
         {/* ── Top Products ── */}
         <Card>
           <div className="px-4 pt-4 pb-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-foreground">Top Produtos Patrocinados</span>
-              <Tabs value={productTab} onValueChange={(v) => setProductTab(v as "spend" | "roas")}>
-                <TabsList className="h-7">
-                  <TabsTrigger value="spend" className="text-xs px-2.5 h-6">Maior Gasto</TabsTrigger>
-                  <TabsTrigger value="roas"  className="text-xs px-2.5 h-6">Maior ROAS</TabsTrigger>
-                </TabsList>
-              </Tabs>
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <span className="text-sm font-medium text-foreground">
+                Produtos Patrocinados ({sortedProducts.length})
+              </span>
+              <div className="flex items-center gap-2">
+                <div className="hidden sm:flex items-center gap-1">
+                  <Button
+                    variant={productSort.key === "spend" ? "secondary" : "ghost"}
+                    size="sm"
+                    onClick={() => toggleSort("spend")}
+                    className="h-7 px-2 text-xs gap-1"
+                  >
+                    Gasto <SortIcon k="spend" />
+                  </Button>
+                  <Button
+                    variant={productSort.key === "roas" ? "secondary" : "ghost"}
+                    size="sm"
+                    onClick={() => toggleSort("roas")}
+                    className="h-7 px-2 text-xs gap-1"
+                  >
+                    ROAS <SortIcon k="roas" />
+                  </Button>
+                </div>
+                <div className="relative w-44">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                  <Input
+                    placeholder="Buscar..."
+                    value={productSearch}
+                    onChange={(e) => setProductSearch(e.target.value)}
+                    className="pl-8 h-8 text-xs"
+                  />
+                </div>
+              </div>
             </div>
           </div>
           <CardContent className="p-0">
@@ -501,15 +526,37 @@ export default function MLAnuncios() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border/60 bg-muted/30">
-                    {["#", "Produto", "Gasto", "Cliques", "CTR", "Pedidos", "Receita ADS", "ROAS"].map((h) => (
-                      <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap first:pl-6 last:pr-6">
-                        {h}
+                    <th className="px-4 py-2.5 pl-6 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">#</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Produto</th>
+                    {([
+                      ["spend", "Gasto"],
+                      ["clicks", "Cliques"],
+                      ["ctr", "CTR"],
+                      ["attributed_orders", "Pedidos"],
+                      ["attributed_revenue", "Receita ADS"],
+                      ["roas", "ROAS"],
+                    ] as const).map(([key, label], i, arr) => (
+                      <th
+                        key={key}
+                        onClick={() => toggleSort(key)}
+                        className={`px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground ${i === arr.length - 1 ? "pr-6" : ""}`}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          {label} <SortIcon k={key} />
+                        </span>
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {(productTab === "spend" ? topBySpend : topByRoas).map((p, i) => (
+                  {sortedProducts.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="px-6 py-8 text-center text-sm text-muted-foreground">
+                        Nenhum produto patrocinado encontrado.
+                      </td>
+                    </tr>
+                  )}
+                  {sortedProducts.map((p, i) => (
                     <tr
                       key={p.item_id}
                       className={`border-b border-border/40 transition-colors hover:bg-muted/20 ${i % 2 === 0 ? "" : "bg-muted/10"}`}
