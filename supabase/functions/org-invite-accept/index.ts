@@ -103,6 +103,14 @@ serve(async (req) => {
       return new Response(JSON.stringify({ ok: false, error: memberErr.message }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    // Se o convite é de owner, transfere a propriedade da org
+    if (invite.role === "owner") {
+      await admin
+        .from("organizations")
+        .update({ owner_id: userId })
+        .eq("id", invite.organization_id);
+    }
+
     // Mark invite accepted
     await admin
       .from("organization_invites")

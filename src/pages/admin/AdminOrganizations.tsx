@@ -25,7 +25,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Copy, Check, ExternalLink } from "lucide-react";
 import { formatDate } from "@/lib/formatters";
 
 interface OrgRow {
@@ -48,6 +48,8 @@ export default function AdminOrganizations() {
   const [createName, setCreateName] = useState("");
   const [createOwnerEmail, setCreateOwnerEmail] = useState("");
   const [creating, setCreating] = useState(false);
+  const [createdInviteUrl, setCreatedInviteUrl] = useState<string | null>(null);
+  const [copiedInvite, setCopiedInvite] = useState(false);
 
   // Edit dialog
   const [editTarget, setEditTarget] = useState<OrgRow | null>(null);
@@ -87,7 +89,7 @@ export default function AdminOrganizations() {
   async function handleCreate() {
     if (!createName.trim()) return;
     setCreating(true);
-    const { error } = await supabase.functions.invoke("super-admin-orgs", {
+    const { data, error } = await supabase.functions.invoke("super-admin-orgs", {
       body: {
         action: "create",
         name: createName.trim(),
@@ -95,15 +97,27 @@ export default function AdminOrganizations() {
       },
     });
     setCreating(false);
-    if (error) {
-      toast({ title: "Erro ao criar", description: error.message, variant: "destructive" });
+    if (error || data?.error) {
+      toast({ title: "Erro ao criar", description: data?.error ?? error?.message, variant: "destructive" });
       return;
     }
-    toast({ title: "Organização criada" });
+    setCreatedInviteUrl(data?.invite_url ?? null);
+    load();
+  }
+
+  function handleCloseCreate() {
     setCreateOpen(false);
+    setCreatedInviteUrl(null);
+    setCopiedInvite(false);
     setCreateName("");
     setCreateOwnerEmail("");
-    load();
+  }
+
+  async function handleCopyInvite() {
+    if (!createdInviteUrl) return;
+    await navigator.clipboard.writeText(createdInviteUrl);
+    setCopiedInvite(true);
+    setTimeout(() => setCopiedInvite(false), 2000);
   }
 
   async function handleUpdate() {
@@ -207,31 +221,66 @@ export default function AdminOrganizations() {
       </Card>
 
       {/* Create */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog open={createOpen} onOpenChange={(o) => { if (!o) handleCloseCreate(); }}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Nova organização</DialogTitle>
-            <DialogDescription>
-              O slug é gerado automaticamente. Se nenhum email de owner for informado, você (super admin) será o owner.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label htmlFor="create-name">Nome</Label>
-              <Input id="create-name" value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="Acme Comércio" />
-            </div>
-            <div>
-              <Label htmlFor="create-owner">Email do owner (opcional)</Label>
-              <Input id="create-owner" type="email" value={createOwnerEmail} onChange={(e) => setCreateOwnerEmail(e.target.value)} placeholder="owner@empresa.com" />
-              <p className="text-[11px] text-muted-foreground mt-1">Deve ser um usuário já cadastrado no sistema.</p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>Cancelar</Button>
-            <Button onClick={handleCreate} disabled={creating || !createName.trim()}>
-              {creating ? "Criando..." : "Criar"}
-            </Button>
-          </DialogFooter>
+          {!createdInviteUrl ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Nova organização</DialogTitle>
+                <DialogDescription>
+                  O slug é gerado automaticamente. Informe o email do owner para gerar um link de acesso.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="create-name">Nome</Label>
+                  <Input id="create-name" value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="Acme Comércio" />
+                </div>
+                <div>
+                  <Label htmlFor="create-owner">Email do owner (opcional)</Label>
+                  <Input id="create-owner" type="email" value={createOwnerEmail} onChange={(e) => setCreateOwnerEmail(e.target.value)} placeholder="owner@empresa.com" />
+                  <p className="text-[11px] text-muted-foreground mt-1">Um link de convite será gerado para você compartilhar. Expira em 30 dias.</p>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={handleCloseCreate} disabled={creating}>Cancelar</Button>
+                <Button onClick={handleCreate} disabled={creating || !createName.trim()}>
+                  {creating ? "Criando..." : "Criar"}
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>Organização criada</DialogTitle>
+                <DialogDescription>
+                  Compartilhe o link abaixo com o owner. Ele poderá criar sua senha e acessar a organização.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2.5">
+                  <ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="flex-1 truncate text-sm font-mono text-foreground">{createdInviteUrl}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0"
+                    onClick={handleCopyInvite}
+                  >
+                    {copiedInvite
+                      ? <Check className="h-4 w-4 text-emerald-500" />
+                      : <Copy className="h-4 w-4" />}
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Este link expira em 30 dias. Você pode revogar o convite a qualquer momento na aba de membros da organização.
+                </p>
+              </div>
+              <DialogFooter>
+                <Button onClick={handleCloseCreate}>Fechar</Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 

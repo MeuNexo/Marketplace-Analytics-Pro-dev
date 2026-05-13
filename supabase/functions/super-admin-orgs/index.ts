@@ -1,6 +1,17 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
+async function sha256(input: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function genToken(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -110,29 +121,6 @@ serve(async (req) => {
         });
       }
 
-      // Resolve owner: por email (se enviado) ou usa o caller
-      let ownerId = caller.id;
-      if (ownerEmail) {
-        const { data: usersList } = await adminClient.auth.admin.listUsers();
-        const found = usersList?.users.find(
-          (u) => (u.email ?? "").toLowerCase() === ownerEmail,
-        );
-        if (!found) {
-          // Convida o usuário por email (envia email de definição de senha)
-          const { data: invited, error: inviteErr } =
-            await adminClient.auth.admin.inviteUserByEmail(ownerEmail);
-          if (inviteErr || !invited?.user) {
-            return new Response(
-              JSON.stringify({ error: `Falha ao convidar usuário: ${inviteErr?.message ?? "desconhecido"}` }),
-              { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-            );
-          }
-          ownerId = invited.user.id;
-        } else {
-          ownerId = found.id;
-        }
-      }
-
       let slug = slugify(name);
       if (!slug) slug = `org-${Date.now()}`;
       // Garante slug único
@@ -144,41 +132,63 @@ serve(async (req) => {
           .select("id")
           .eq("slug", candidate)
           .maybeSingle();
-        if (!existing) {
-          slug = candidate;
-          break;
-        }
+        if (!existing) { slug = candidate; break; }
         suffix++;
-        if (suffix > 100) {
-          slug = `${slug}-${Date.now()}`;
-          break;
-        }
+        if (suffix > 100) { slug = `${slug}-${Date.now()}`; break; }
       }
 
+      // Cria a org com o super admin como owner temporário
       const { data: newOrg, error: orgErr } = await adminClient
         .from("organizations")
-        .insert({ name, slug, owner_id: ownerId })
+        .insert({ name, slug, owner_id: caller.id })
         .select()
         .single();
       if (orgErr) throw orgErr;
 
+      // Adiciona super admin como membro owner (temporário)
       const { error: memberErr } = await adminClient
         .from("organization_members")
-        .insert({ organization_id: newOrg.id, user_id: ownerId, role: "owner" });
+        .insert({ organization_id: newOrg.id, user_id: caller.id, role: "owner" });
       if (memberErr) {
-        // Rollback
         await adminClient.from("organizations").delete().eq("id", newOrg.id);
         throw memberErr;
+      }
+
+      let invite_url: string | null = null;
+
+      // Se foi informado email do owner, gera convite com token (igual ao fluxo de membros)
+      if (ownerEmail) {
+        const token = genToken();
+        const token_hash = await sha256(token);
+        const expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 dias
+
+        const { error: inviteErr } = await adminClient
+          .from("organization_invites")
+          .insert({
+            organization_id: newOrg.id,
+            email: ownerEmail,
+            role: "owner",
+            token_hash,
+            invited_by: caller.id,
+            expires_at,
+          });
+
+        if (inviteErr) {
+          console.error("Falha ao criar invite de owner:", inviteErr.message);
+        } else {
+          const origin = req.headers.get("origin") ?? "";
+          invite_url = `${origin}/aceitar-convite?token=${token}`;
+        }
       }
 
       await adminClient.rpc("insert_audit_log", {
         _actor_id: caller.id,
         _action: "super_admin.org.create",
-        _target_user_id: ownerId,
-        _details: { org_id: newOrg.id, org_name: name },
+        _target_user_id: caller.id,
+        _details: { org_id: newOrg.id, org_name: name, owner_email: ownerEmail || null },
       });
 
-      return new Response(JSON.stringify({ org: newOrg }), {
+      return new Response(JSON.stringify({ org: newOrg, invite_url }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
