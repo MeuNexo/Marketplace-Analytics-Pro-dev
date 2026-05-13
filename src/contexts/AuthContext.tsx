@@ -138,9 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     if (data.user) {
-      // Super-admins (user_roles.role = 'admin') don't belong to any org —
-      // skip the membership check entirely so they can access /admin/* without
-      // being blocked or signed out by the main app's auth flow.
+      // Super-admins must use /admin/login — block them from the main app.
       const { data: roleRow } = await supabase
         .from("user_roles")
         .select("role")
@@ -148,7 +146,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .maybeSingle();
 
       if (roleRow?.role === "admin") {
-        return { error: null };
+        await supabase.auth.signOut().catch(() => {});
+        return {
+          error: new Error("Acesso não permitido aqui. Use o painel administrativo."),
+        };
       }
     }
 

@@ -1,19 +1,21 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Building2, Users, LogOut, ShieldCheck } from "lucide-react";
+import {
+  AreaChart, Building2, LayoutDashboard, LogOut, ShieldCheck, Users,
+} from "lucide-react";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const navItems = [
-  { to: "/admin",              label: "Visão geral",    icon: LayoutDashboard, end: true },
-  { to: "/admin/organizacoes", label: "Organizações",   icon: Building2 },
-  { to: "/admin/usuarios",     label: "Usuários",       icon: Users },
+  { to: "/admin",              label: "Visão geral",  icon: LayoutDashboard, end: true },
+  { to: "/admin/organizacoes", label: "Organizações", icon: Building2 },
+  { to: "/admin/usuarios",     label: "Usuários",     icon: Users },
 ];
 
 export function AdminLayout() {
-  const { signOut } = useAdminAuth();
-  const location    = useLocation();
-  const navigate    = useNavigate();
+  const { signOut }  = useAdminAuth();
+  const location     = useLocation();
+  const navigate     = useNavigate();
 
   const handleSignOut = async () => {
     await signOut();
@@ -22,52 +24,69 @@ export function AdminLayout() {
 
   return (
     <div className="min-h-screen flex w-full bg-background">
-      <aside className="w-60 border-r border-border bg-card flex flex-col">
-        <div className="px-5 py-5 border-b border-border flex items-center gap-2">
-          <ShieldCheck className="h-5 w-5 text-primary" />
-          <div>
-            <div className="text-sm font-semibold leading-tight">Super Admin</div>
-            <div className="text-[11px] text-muted-foreground leading-tight">Painel do sistema</div>
+
+      {/* ── Sidebar ── */}
+      <aside className="w-56 flex-shrink-0 flex h-screen flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
+
+        {/* Brand */}
+        <div className="flex items-center gap-3 overflow-hidden px-6 py-6">
+          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-primary shadow-glow">
+            <AreaChart className="h-5 w-5 text-primary-foreground" />
+          </div>
+          <div className="overflow-hidden whitespace-nowrap">
+            <h1 className="text-base font-semibold tracking-tight">Analytics Pro</h1>
+            <p className="text-xs text-sidebar-foreground/60 flex items-center gap-1">
+              <ShieldCheck className="h-3 w-3" />
+              Super Admin
+            </p>
           </div>
         </div>
 
-        <nav className="flex-1 px-2 py-3 space-y-0.5">
+        {/* Nav */}
+        <nav className="flex flex-1 flex-col overflow-y-auto px-3 pb-4 gap-0.5 pt-2">
           {navItems.map((item) => {
             const isActive = item.end
               ? location.pathname === item.to
               : location.pathname.startsWith(item.to);
+
             return (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={cn(
-                  "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors",
-                  isActive
-                    ? "bg-muted text-foreground font-medium"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                <item.icon className="h-4 w-4" />
-                {item.label}
-              </NavLink>
+              <Tooltip key={item.to} delayDuration={0}>
+                <TooltipTrigger asChild>
+                  <NavLink
+                    to={item.to}
+                    end={item.end}
+                    className={cn(
+                      "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                      isActive
+                        ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-glow"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    )}
+                  >
+                    <item.icon className="h-4.5 w-4.5 flex-shrink-0 h-5 w-5" />
+                    {item.label}
+                  </NavLink>
+                </TooltipTrigger>
+              </Tooltip>
             );
           })}
         </nav>
 
-        <div className="p-3 border-t border-border">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start text-muted-foreground hover:text-destructive"
+        {/* Footer */}
+        <div className="px-3 pb-4 border-t border-sidebar-border/40 pt-3">
+          <button
             onClick={handleSignOut}
+            className={cn(
+              "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+              "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            )}
           >
-            <LogOut className="h-4 w-4 mr-2" />
+            <LogOut className="h-5 w-5 flex-shrink-0" />
             Sair
-          </Button>
+          </button>
         </div>
       </aside>
 
+      {/* ── Main ── */}
       <main className="flex-1 overflow-auto">
         <Outlet />
       </main>
