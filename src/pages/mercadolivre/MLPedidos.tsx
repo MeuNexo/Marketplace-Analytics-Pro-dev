@@ -282,9 +282,9 @@ function SubTabTopProdutos({ orders }: { orders: ProcessedOrder[] }) {
 // ── Report: Distribuição por UF ───────────────────────────────────────────────
 
 const UF_COLORS = [
-  "#2563eb","#3b82f6","#60a5fa","#93c5fd",
-  "#1d4ed8","#0284c7","#0369a1","#075985",
-  "#6366f1","#4f46e5",
+  "hsl(var(--primary))", "hsl(var(--accent))", "hsl(25,95%,53%)", "hsl(270,70%,50%)",
+  "hsl(160,60%,45%)", "hsl(340,75%,55%)", "hsl(200,70%,50%)", "hsl(45,93%,47%)",
+  "hsl(120,40%,55%)", "hsl(0,65%,50%)",
 ];
 
 function SubTabUF({ orders }: { orders: ProcessedOrder[] }) {
