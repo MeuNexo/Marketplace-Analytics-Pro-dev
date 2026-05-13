@@ -413,10 +413,6 @@ export default function MercadoLivre() {
                   <span className="hidden sm:inline">Modo TV</span>
                 </Button>
               </Link>
-              <TabsList className="h-8 overflow-x-auto no-scrollbar max-w-full">
-                <TabsTrigger value="vendas" className="text-xs px-3 h-7">Vendas</TabsTrigger>
-                <TabsTrigger value="relatorios" className="text-xs px-3 h-7">Relatórios</TabsTrigger>
-              </TabsList>
               <MLPeriodPicker
                 periodLabel={periodLabel}
                 popoverOpen={filters.popoverOpen}
@@ -431,6 +427,10 @@ export default function MercadoLivre() {
                 period={period}
                 onConfirm={handleConfirm}
               />
+              <TabsList className="h-8 overflow-x-auto no-scrollbar max-w-full">
+                <TabsTrigger value="vendas" className="text-xs px-3 h-7">Vendas</TabsTrigger>
+                <TabsTrigger value="relatorios" className="text-xs px-3 h-7">Relatórios</TabsTrigger>
+              </TabsList>
             </div>
           </div>
         </div>
