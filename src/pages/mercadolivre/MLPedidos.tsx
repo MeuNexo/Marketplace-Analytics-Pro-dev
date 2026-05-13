@@ -111,7 +111,7 @@ const LISTING_LABELS: Record<ListingType, string> = {
 function StatusBadge({ status }: { status: OrderStatus }) {
   const cfg = STATUS_CONFIG[status];
   return (
-    <Badge className={`${cfg.bg} ${cfg.color} ${cfg.border} whitespace-nowrap text-xs`}>
+    <Badge className={`${cfg.bg} ${cfg.color} ${cfg.border} whitespace-nowrap text-xs pointer-events-none`}>
       {cfg.label}
     </Badge>
   );
