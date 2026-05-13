@@ -333,21 +333,39 @@ export default function MLAnuncios() {
             <div className="px-4 pt-4 pb-3">
               <span className="text-sm font-medium text-foreground">Funil de Conversão</span>
             </div>
-            <CardContent className="space-y-3">
-              <ResponsiveContainer width="100%" height={160}>
-                <FunnelChart>
-                  <Funnel dataKey="value" data={funnelData} isAnimationActive>
-                    <LabelList position="center" fill="#fff" fontSize={11} fontWeight={600}
-                      formatter={(v: number) => numFmt(v)} />
-                  </Funnel>
-                  <RechartsTooltip
-                    contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
-                    formatter={(value: number, _: string, props: any) => [numFmt(value), props?.payload?.name]}
-                  />
-                </FunnelChart>
-              </ResponsiveContainer>
+            <CardContent className="space-y-4">
+              <div className="space-y-3">
+                {funnelData.map((step, i) => {
+                  const top = funnelData[0]?.value || 0;
+                  const prev = i === 0 ? step.value : funnelData[i - 1].value;
+                  const pctTop = top > 0 ? (step.value / top) * 100 : 0;
+                  const pctPrev = prev > 0 ? (step.value / prev) * 100 : 0;
+                  return (
+                    <div key={step.name} className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: step.fill }} />
+                          <span className="text-muted-foreground truncate">{step.name}</span>
+                        </div>
+                        <div className="flex items-baseline gap-1.5 tabular-nums">
+                          <span className="text-sm font-semibold text-foreground">{numFmt(step.value)}</span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {i === 0 ? "100%" : `${pctPrev.toFixed(1)}%`}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="h-2 rounded-full bg-muted/60 overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{ width: `${Math.max(pctTop, 2)}%`, background: step.fill }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
 
-              <div className="space-y-2 pt-1">
+              <div className="space-y-2 pt-2 border-t border-border">
                 {[
                   { label: "Impressões → Cliques", value: currentSummary.avg_ctr, suffix: "(CTR)" },
                   {
@@ -369,10 +387,6 @@ export default function MLAnuncios() {
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-muted-foreground">CPC Médio</span>
                   <span className="font-semibold tabular-nums">{currFmt(currentSummary.avg_cpc)}</span>
-                </div>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Total Impressões</span>
-                  <span className="font-semibold tabular-nums">{numFmt(currentSummary.total_impressions)}</span>
                 </div>
               </div>
             </CardContent>
