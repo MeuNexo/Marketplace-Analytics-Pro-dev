@@ -6,13 +6,13 @@ import {
 } from "recharts";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { TrendingUp, TrendingDown, Target, LineChart as LineChartIcon, PieChart as PieChartIcon, Crosshair, GitCompare, Coins } from "lucide-react";
+import { TrendingUp, TrendingDown, Target, LineChart as LineChartIcon, PieChart as PieChartIcon, GitCompare, Coins } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import type {
-  AdsDailyStat, AdsCampaign, AdsProductStat,
+  AdsDailyStat, AdsCampaign,
 } from "@/hooks/useMLAds";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -50,7 +50,7 @@ function DeltaBadge({ value, invert = false }: { value: number; invert?: boolean
 interface Props {
   daily: AdsDailyStat[];
   campaigns: AdsCampaign[];
-  products: AdsProductStat[];
+  products: unknown[];
   prevCampaigns: AdsCampaign[];
   currentFrom: string;
   currentTo: string;
@@ -80,7 +80,7 @@ function Section({ title, subtitle, children, action }: { title: string; subtitl
 // ─── Main component ───────────────────────────────────────────────────────
 
 export function PublicidadeRelatorios({
-  daily, campaigns, products, prevCampaigns,
+  daily, campaigns, prevCampaigns,
   currentFrom, currentTo, prevFrom, prevTo,
 }: Props) {
   // ROAS goal — persisted
@@ -128,31 +128,6 @@ export function PublicidadeRelatorios({
   }, [campaigns, totalSpend, totalRevenue]);
   const DONUT_COLORS = ["hsl(var(--primary))", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#84cc16"];
 
-  // ─── 4. Spend × ROAS matrix (products) ──────────────────────────────────
-  const validProducts = useMemo(() => products.filter((p) => p.spend > 0), [products]);
-  const medianSpend   = useMemo(() => {
-    if (validProducts.length === 0) return 0;
-    const arr = [...validProducts].map((p) => p.spend).sort((a, b) => a - b);
-    return arr[Math.floor(arr.length / 2)];
-  }, [validProducts]);
-  const productBuckets = useMemo(() => {
-    const buckets: Record<"escale" | "pause" | "invista" | "descarte", AdsProductStat[]> = {
-      escale: [], pause: [], invista: [], descarte: [],
-    };
-    validProducts.forEach((p) => {
-      const highSpend = p.spend >= medianSpend;
-      const goodRoas  = p.roas  >= roasGoal;
-      if (highSpend && goodRoas)        buckets.escale.push(p);
-      else if (highSpend && !goodRoas)  buckets.pause.push(p);
-      else if (!highSpend && goodRoas)  buckets.invista.push(p);
-      else                              buckets.descarte.push(p);
-    });
-    (Object.keys(buckets) as (keyof typeof buckets)[]).forEach((k) => {
-      buckets[k].sort((a, b) => b.spend - a.spend);
-    });
-    return buckets;
-  }, [validProducts, medianSpend, roasGoal]);
-
   // ─── 5. Campaign comparison vs previous period ─────────────────────────
   const compareData = useMemo(() => {
     const prevMap = new Map(prevCampaigns.map((c) => [c.id || c.name, c]));
@@ -198,7 +173,7 @@ export function PublicidadeRelatorios({
   }, [cpaData]);
 
   // ─── Empty state ──────────────────────────────────────────────────────
-  if (currDaily.length === 0 && campaigns.length === 0 && products.length === 0) {
+  if (currDaily.length === 0 && campaigns.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[40vh] gap-3 text-center text-muted-foreground">
         <Target className="w-10 h-10 opacity-30" />
@@ -212,7 +187,6 @@ export function PublicidadeRelatorios({
       <TabsList className="h-8 w-auto overflow-x-auto no-scrollbar">
         <TabsTrigger value="evolucao"   className="text-xs px-3 h-7 gap-1.5"><LineChartIcon className="w-3.5 h-3.5" />Evolução</TabsTrigger>
         <TabsTrigger value="distribuicao" className="text-xs px-3 h-7 gap-1.5"><PieChartIcon className="w-3.5 h-3.5" />Distribuição do Gasto</TabsTrigger>
-        <TabsTrigger value="eficiencia" className="text-xs px-3 h-7 gap-1.5"><Crosshair className="w-3.5 h-3.5" />Eficiência por Produto</TabsTrigger>
         <TabsTrigger value="comparativo" className="text-xs px-3 h-7 gap-1.5"><GitCompare className="w-3.5 h-3.5" />Comparativo</TabsTrigger>
         <TabsTrigger value="cpa"        className="text-xs px-3 h-7 gap-1.5"><Coins className="w-3.5 h-3.5" />CPA</TabsTrigger>
       </TabsList>
@@ -317,71 +291,6 @@ export function PublicidadeRelatorios({
             </table>
           </div>
         </div>
-      </Section>
-      </TabsContent>
-
-      {/* ── 4. Spend × ROAS matrix ─────────────────────────── */}
-      <TabsContent value="eficiencia" className="mt-0">
-      <Section
-        title="Eficiência por Produto"
-        subtitle={`Cada produto é classificado em um dos 4 grupos comparando gasto (mediana ${currFmt(medianSpend)}) com ROAS (meta ${roasGoal}x).`}
-      >
-        {validProducts.length === 0 ? (
-          <p className="text-xs text-muted-foreground py-6 text-center">Sem produtos com gasto no período.</p>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {([
-              { key: "escale",   label: "Escale",        hint: "Alto gasto · ROAS acima da meta",  tone: "emerald" },
-              { key: "invista",  label: "Invista mais",  hint: "Baixo gasto · ROAS acima da meta", tone: "primary" },
-              { key: "pause",    label: "Pause / Revise",hint: "Alto gasto · ROAS abaixo da meta", tone: "red" },
-              { key: "descarte", label: "Descarte",      hint: "Baixo gasto · ROAS abaixo da meta",tone: "muted" },
-            ] as const).map(({ key, label, hint, tone }) => {
-              const list = productBuckets[key];
-              const toneCls =
-                tone === "emerald" ? "bg-emerald-500/5 border-emerald-500/30"
-                : tone === "primary" ? "bg-primary/5 border-primary/30"
-                : tone === "red"     ? "bg-red-500/5 border-red-500/30"
-                : "bg-muted/40 border-border";
-              const titleCls =
-                tone === "emerald" ? "text-emerald-700"
-                : tone === "primary" ? "text-primary"
-                : tone === "red"     ? "text-red-700"
-                : "text-muted-foreground";
-              return (
-                <div key={key} className={`rounded-md border ${toneCls} p-3`}>
-                  <div className="flex items-baseline justify-between mb-2">
-                    <div>
-                      <p className={`text-xs font-semibold ${titleCls}`}>{label}</p>
-                      <p className="text-[10px] text-muted-foreground">{hint}</p>
-                    </div>
-                    <span className="text-[11px] tabular-nums text-muted-foreground">{list.length} {list.length === 1 ? "produto" : "produtos"}</span>
-                  </div>
-                  {list.length === 0 ? (
-                    <p className="text-[11px] text-muted-foreground py-2">Nenhum produto neste grupo.</p>
-                  ) : (
-                    <ul className="divide-y divide-border/40">
-                      {list.slice(0, 5).map((p) => (
-                        <li key={p.item_id} className="py-1.5 flex items-center gap-2 text-[11px]">
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate font-medium" title={p.title}>{p.title}</p>
-                            <p className="text-[10px] text-muted-foreground font-mono">{p.item_id}</p>
-                          </div>
-                          <div className="text-right tabular-nums shrink-0">
-                            <p>{currFmt(p.spend)}</p>
-                            <p className={p.roas >= roasGoal ? "text-emerald-600" : "text-red-600"}>{p.roas.toFixed(2)}x</p>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {list.length > 5 && (
-                    <p className="text-[10px] text-muted-foreground mt-1">+ {list.length - 5} outros</p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
       </Section>
       </TabsContent>
 
