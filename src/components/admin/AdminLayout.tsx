@@ -1,18 +1,24 @@
-import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { LayoutDashboard, Building2, Users, ArrowLeft, ShieldCheck } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { LayoutDashboard, Building2, Users, LogOut, ShieldCheck } from "lucide-react";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { to: "/admin", label: "Visão geral", icon: LayoutDashboard, end: true },
-  { to: "/admin/organizacoes", label: "Organizações", icon: Building2 },
-  { to: "/admin/usuarios", label: "Usuários globais", icon: Users },
+  { to: "/admin",              label: "Visão geral",    icon: LayoutDashboard, end: true },
+  { to: "/admin/organizacoes", label: "Organizações",   icon: Building2 },
+  { to: "/admin/usuarios",     label: "Usuários",       icon: Users },
 ];
 
 export function AdminLayout() {
-  const { signOut } = useAuth();
-  const location = useLocation();
+  const { signOut } = useAdminAuth();
+  const location    = useLocation();
+  const navigate    = useNavigate();
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/admin/login", { replace: true });
+  };
 
   return (
     <div className="min-h-screen flex w-full bg-background">
@@ -24,6 +30,7 @@ export function AdminLayout() {
             <div className="text-[11px] text-muted-foreground leading-tight">Painel do sistema</div>
           </div>
         </div>
+
         <nav className="flex-1 px-2 py-3 space-y-0.5">
           {navItems.map((item) => {
             const isActive = item.end
@@ -47,18 +54,20 @@ export function AdminLayout() {
             );
           })}
         </nav>
-        <div className="p-3 border-t border-border space-y-1">
-          <Button asChild variant="ghost" size="sm" className="w-full justify-start">
-            <NavLink to="/">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Voltar ao app
-            </NavLink>
-          </Button>
-          <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground" onClick={signOut}>
+
+        <div className="p-3 border-t border-border">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start text-muted-foreground hover:text-destructive"
+            onClick={handleSignOut}
+          >
+            <LogOut className="h-4 w-4 mr-2" />
             Sair
           </Button>
         </div>
       </aside>
+
       <main className="flex-1 overflow-auto">
         <Outlet />
       </main>

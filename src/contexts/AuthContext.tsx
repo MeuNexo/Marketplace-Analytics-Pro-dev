@@ -137,6 +137,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: error as Error | null };
     }
 
+    if (data.user) {
+      // Super-admins (user_roles.role = 'admin') don't belong to any org —
+      // skip the membership check entirely so they can access /admin/* without
+      // being blocked or signed out by the main app's auth flow.
+      const { data: roleRow } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", data.user.id)
+        .maybeSingle();
+
+      if (roleRow?.role === "admin") {
+        return { error: null };
+      }
+    }
+
     if (!options?.allowWithoutOrganization && data.user) {
       const { data: memberships, error: membershipError } = await supabase
         .from("organization_members")

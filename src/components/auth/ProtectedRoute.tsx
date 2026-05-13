@@ -5,24 +5,32 @@ import { useOrganization } from "@/contexts/OrganizationContext";
 import { PageLoader } from "@/components/ui/PageLoader";
 
 export function ProtectedRoute() {
-  const { user, loading: authLoading, signOut } = useAuth();
+  const { user, role, loading: authLoading, signOut } = useAuth();
   const { currentOrg, loading: orgLoading } = useOrganization();
   const revokingAccessRef = useRef(false);
 
+  const isSuperAdmin = role === "admin";
+
   useEffect(() => {
-    if (authLoading || orgLoading || !user || currentOrg || revokingAccessRef.current) {
+    // Super-admins have no org — don't sign them out; redirect to /admin instead.
+    if (authLoading || orgLoading || !user || currentOrg || isSuperAdmin || revokingAccessRef.current) {
       return;
     }
 
     revokingAccessRef.current = true;
     void signOut();
-  }, [authLoading, currentOrg, orgLoading, signOut, user]);
+  }, [authLoading, currentOrg, isSuperAdmin, orgLoading, signOut, user]);
 
   if (authLoading || orgLoading) {
     return <PageLoader />;
   }
 
   if (!user) return <Navigate to="/login" replace />;
+
+  // Super-admin accessing a main-app route → send to admin panel
+  if (isSuperAdmin && !currentOrg) {
+    return <Navigate to="/admin" replace />;
+  }
 
   if (!currentOrg) {
     return <PageLoader />;
