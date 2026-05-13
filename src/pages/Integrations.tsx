@@ -208,6 +208,7 @@ export default function Integrations() {
           } else {
             await supabase.from("seller_stores").insert({
               seller_id: sellerId,
+              organization_id: currentOrg.id,
               marketplace: "ml",
               external_id: mlUserId,
               store_name: `Loja ML ${mlUserId}`,
