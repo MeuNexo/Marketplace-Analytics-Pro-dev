@@ -2,9 +2,9 @@ import { useMemo, useState, useEffect } from "react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip as RechartsTooltip, Legend, ReferenceLine,
-  PieChart, Pie, Cell, ScatterChart, Scatter, ZAxis, BarChart, Bar,
+  PieChart, Pie, Cell, ScatterChart, Scatter, ZAxis,
 } from "recharts";
-import { format, parseISO, startOfWeek, differenceInCalendarWeeks } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { TrendingUp, TrendingDown, Target } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,9 +18,6 @@ import type {
 
 const currFmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const numFmt  = (v: number) => v.toLocaleString("pt-BR");
-const pctFmt  = (v: number) => `${v.toFixed(2)}%`;
-
-const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
 function safeDiv(a: number, b: number) { return b > 0 ? a / b : 0; }
 
@@ -130,36 +127,6 @@ export function PublicidadeRelatorios({
   }, [campaigns, totalSpend, totalRevenue]);
   const DONUT_COLORS = ["hsl(var(--primary))", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#84cc16"];
 
-  // ─── 3. Weekly heatmap (weekday × week) ─────────────────────────────────
-  type HeatMode = "roas" | "spend";
-  const [heatMode, setHeatMode] = useState<HeatMode>("roas");
-  const heat = useMemo(() => {
-    if (currDaily.length === 0) return { weeks: [] as { label: string; cells: { value: number; date?: string }[] }[], max: 0 };
-    const weekStart = startOfWeek(parseISO(currDaily[0].date), { weekStartsOn: 0 });
-    const lastWeek  = startOfWeek(parseISO(currDaily[currDaily.length - 1].date), { weekStartsOn: 0 });
-    const totalWeeks = differenceInCalendarWeeks(lastWeek, weekStart, { weekStartsOn: 0 }) + 1;
-    const weeks: { label: string; cells: { value: number; date?: string }[] }[] = [];
-    for (let w = 0; w < totalWeeks; w++) {
-      const cells: { value: number; date?: string }[] = Array.from({ length: 7 }, () => ({ value: 0 }));
-      weeks.push({
-        label: format(new Date(weekStart.getTime() + w * 7 * 86400000), "dd/MM", { locale: ptBR }),
-        cells,
-      });
-    }
-    let max = 0;
-    currDaily.forEach((d) => {
-      const date = parseISO(d.date);
-      const wIdx = differenceInCalendarWeeks(date, weekStart, { weekStartsOn: 0 });
-      const dIdx = date.getDay();
-      const value = heatMode === "roas" ? Number(d.roas ?? 0) : Number(d.spend ?? 0);
-      if (weeks[wIdx]) {
-        weeks[wIdx].cells[dIdx] = { value, date: d.date };
-        if (value > max) max = value;
-      }
-    });
-    return { weeks, max };
-  }, [currDaily, heatMode]);
-
   // ─── 4. Spend × ROAS matrix (products) ──────────────────────────────────
   const validProducts = useMemo(() => products.filter((p) => p.spend > 0), [products]);
   const medianSpend   = useMemo(() => {
@@ -193,29 +160,6 @@ export function PublicidadeRelatorios({
       };
     }).sort((a, b) => b.score - a.score);
   }, [campaigns, prevCampaigns]);
-
-  // ─── 6. Funnel per campaign ────────────────────────────────────────────
-  const funnelData = useMemo(() => {
-    return [...campaigns]
-      .filter((c) => c.impressions > 0)
-      .sort((a, b) => b.impressions - a.impressions)
-      .slice(0, 10)
-      .map((c) => {
-        const ctr = safeDiv(c.clicks, c.impressions) * 100;
-        const cvr = safeDiv(c.attributed_orders, c.clicks) * 100;
-        return {
-          name: c.name.length > 24 ? c.name.slice(0, 24) + "…" : c.name,
-          fullName: c.name,
-          impressionsPct: 100,
-          clicksPct: Math.min(100, ctr * 10), // visualize CTR scaled
-          ordersPct:  Math.min(100, cvr * 10),
-          impressions: c.impressions,
-          clicks: c.clicks,
-          orders: c.attributed_orders,
-          ctr, cvr,
-        };
-      });
-  }, [campaigns]);
 
   // ─── 7. CPA over time ─────────────────────────────────────────────────
   const cpaData = useMemo(() => currDaily.map((d) => {
@@ -348,66 +292,9 @@ export function PublicidadeRelatorios({
         </div>
       </Section>
 
-      {/* ── 3. Weekday heatmap ──────────────────────────────── */}
-      <Section
-        title="3. Mapa de Calor por Dia da Semana"
-        subtitle="Padrões semanais — intensidade da cor representa o valor da métrica selecionada."
-        action={
-          <div className="flex items-center gap-1 text-xs">
-            <button
-              onClick={() => setHeatMode("roas")}
-              className={`px-2 h-7 rounded-md ${heatMode === "roas" ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-muted"}`}
-            >ROAS</button>
-            <button
-              onClick={() => setHeatMode("spend")}
-              className={`px-2 h-7 rounded-md ${heatMode === "spend" ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-muted"}`}
-            >Gasto</button>
-          </div>
-        }
-      >
-        {heat.weeks.length === 0 ? (
-          <p className="text-xs text-muted-foreground">Sem dados para gerar o mapa.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <div className="inline-block min-w-full">
-              <div className="grid gap-1" style={{ gridTemplateColumns: `auto repeat(7, minmax(40px, 1fr))` }}>
-                <div />
-                {WEEKDAYS.map((d) => (
-                  <div key={d} className="text-[10px] text-muted-foreground text-center">{d}</div>
-                ))}
-                {heat.weeks.map((w, wi) => (
-                  <>
-                    <div key={`l-${wi}`} className="text-[10px] text-muted-foreground pr-2 self-center">{w.label}</div>
-                    {w.cells.map((cell, di) => {
-                      const intensity = heat.max > 0 ? cell.value / heat.max : 0;
-                      const empty = !cell.date;
-                      return (
-                        <div
-                          key={`c-${wi}-${di}`}
-                          title={cell.date ? `${cell.date} — ${heatMode === "roas" ? `${cell.value.toFixed(2)}x ROAS` : currFmt(cell.value)}` : ""}
-                          className="h-9 rounded flex items-center justify-center text-[10px] tabular-nums"
-                          style={{
-                            background: empty
-                              ? "hsl(var(--muted) / 0.3)"
-                              : `hsl(var(--primary) / ${0.1 + intensity * 0.85})`,
-                            color: intensity > 0.5 ? "hsl(var(--primary-foreground))" : "hsl(var(--foreground))",
-                          }}
-                        >
-                          {!empty && cell.value > 0 ? (heatMode === "roas" ? `${cell.value.toFixed(1)}` : `${(cell.value / 1000).toFixed(1)}k`) : ""}
-                        </div>
-                      );
-                    })}
-                  </>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-      </Section>
-
       {/* ── 4. Spend × ROAS matrix ─────────────────────────── */}
       <Section
-        title="4. Eficiência por Produto (Gasto × ROAS)"
+        title="3. Eficiência por Produto (Gasto × ROAS)"
         subtitle="Quadrantes ajudam a decidir: Escale, Pause, Invista mais ou Descarte."
       >
         <ResponsiveContainer width="100%" height={320}>
@@ -477,7 +364,7 @@ export function PublicidadeRelatorios({
 
       {/* ── 5. Campaign comparison ─────────────────────────── */}
       <Section
-        title="5. Comparativo de Campanhas vs Período Anterior"
+        title="4. Comparativo de Campanhas vs Período Anterior"
         subtitle="Variação de Gasto, ROAS e Pedidos. Ranking pelo maior ganho combinado."
       >
         <div className="overflow-x-auto">
@@ -513,43 +400,9 @@ export function PublicidadeRelatorios({
         </div>
       </Section>
 
-      {/* ── 6. Funnel per campaign ─────────────────────────── */}
-      <Section
-        title="6. Funil de Eficiência por Campanha"
-        subtitle="Top 10 por impressões. CTR e CVR mostram onde está o gargalo."
-      >
-        <div className="space-y-3">
-          {funnelData.length === 0 && (
-            <p className="text-xs text-muted-foreground">Sem campanhas com impressões no período.</p>
-          )}
-          {funnelData.map((c) => (
-            <div key={c.fullName} className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-medium truncate max-w-[60%]" title={c.fullName}>{c.name}</span>
-                <div className="flex items-center gap-3 text-[11px] text-muted-foreground tabular-nums">
-                  <span>CTR <strong className="text-foreground">{pctFmt(c.ctr)}</strong></span>
-                  <span>CVR <strong className="text-foreground">{pctFmt(c.cvr)}</strong></span>
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-1">
-                <div className="h-5 rounded-sm bg-indigo-500/70 flex items-center px-2 text-[10px] text-white tabular-nums">
-                  {numFmt(c.impressions)} impr.
-                </div>
-                <div className="h-5 rounded-sm bg-violet-500/70 flex items-center px-2 text-[10px] text-white tabular-nums" style={{ width: `${Math.max(8, c.clicksPct)}%` }}>
-                  {numFmt(c.clicks)} cliq.
-                </div>
-                <div className="h-5 rounded-sm bg-fuchsia-500/70 flex items-center px-2 text-[10px] text-white tabular-nums" style={{ width: `${Math.max(8, c.ordersPct)}%` }}>
-                  {numFmt(c.orders)} ped.
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </Section>
-
       {/* ── 7. CPA over time ───────────────────────────────── */}
       <Section
-        title="7. Custo por Pedido (CPA) ao Longo do Tempo"
+        title="5. Custo por Pedido (CPA) ao Longo do Tempo"
         subtitle="CPA diário comparado com o ticket médio atribuído aos anúncios."
         action={
           <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
