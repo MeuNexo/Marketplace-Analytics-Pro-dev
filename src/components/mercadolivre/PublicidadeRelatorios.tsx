@@ -323,72 +323,65 @@ export function PublicidadeRelatorios({
       {/* ── 4. Spend × ROAS matrix ─────────────────────────── */}
       <TabsContent value="eficiencia" className="mt-0">
       <Section
-        title="Eficiência por Produto (Gasto × ROAS)"
-        subtitle="Quadrantes ajudam a decidir: Escale, Pause, Invista mais ou Descarte."
+        title="Eficiência por Produto"
+        subtitle={`Cada produto é classificado em um dos 4 grupos comparando gasto (mediana ${currFmt(medianSpend)}) com ROAS (meta ${roasGoal}x).`}
       >
-        <ResponsiveContainer width="100%" height={320}>
-          <ScatterChart margin={{ top: 16, right: 24, left: 8, bottom: 8 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.5} />
-            <XAxis
-              type="number" dataKey="x" name="Gasto"
-              tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-              tickFormatter={(v) => `R$${(v / 1000).toFixed(1)}k`}
-              tickLine={false} axisLine={false}
-            />
-            <YAxis
-              type="number" dataKey="y" name="ROAS"
-              tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-              tickFormatter={(v) => `${v}x`}
-              tickLine={false} axisLine={false} width={42}
-            />
-            <ZAxis type="number" dataKey="z" range={[40, 280]} />
-            <ReferenceLine x={medianSpend} stroke="hsl(var(--muted-foreground))" strokeDasharray="3 3" />
-            <ReferenceLine y={roasGoal} stroke="#10b981" strokeDasharray="3 3" label={{ value: `Meta ${roasGoal}x`, position: "right", fill: "#10b981", fontSize: 10 }} />
-            <RechartsTooltip
-              cursor={{ strokeDasharray: "3 3" }}
-              contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
-              formatter={(value: number, name: string) => {
-                if (name === "Gasto") return [currFmt(value), "Gasto"];
-                if (name === "ROAS") return [`${value.toFixed(2)}x`, "ROAS"];
-                return [value, name];
-              }}
-              labelFormatter={() => ""}
-              content={({ active, payload }) => {
-                if (!active || !payload?.[0]?.payload) return null;
-                const p = payload[0].payload as { title: string; item_id: string; x: number; y: number };
-                return (
-                  <div className="rounded-md border border-border bg-card p-2 text-xs shadow-sm max-w-[260px]">
-                    <p className="font-medium leading-tight line-clamp-2">{p.title}</p>
-                    <p className="text-[10px] text-muted-foreground font-mono">{p.item_id}</p>
-                    <div className="mt-1 flex justify-between gap-3 tabular-nums">
-                      <span>Gasto: {currFmt(p.x)}</span>
-                      <span>ROAS: {p.y.toFixed(2)}x</span>
+        {validProducts.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-6 text-center">Sem produtos com gasto no período.</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {([
+              { key: "escale",   label: "Escale",        hint: "Alto gasto · ROAS acima da meta",  tone: "emerald" },
+              { key: "invista",  label: "Invista mais",  hint: "Baixo gasto · ROAS acima da meta", tone: "primary" },
+              { key: "pause",    label: "Pause / Revise",hint: "Alto gasto · ROAS abaixo da meta", tone: "red" },
+              { key: "descarte", label: "Descarte",      hint: "Baixo gasto · ROAS abaixo da meta",tone: "muted" },
+            ] as const).map(({ key, label, hint, tone }) => {
+              const list = productBuckets[key];
+              const toneCls =
+                tone === "emerald" ? "bg-emerald-500/5 border-emerald-500/30"
+                : tone === "primary" ? "bg-primary/5 border-primary/30"
+                : tone === "red"     ? "bg-red-500/5 border-red-500/30"
+                : "bg-muted/40 border-border";
+              const titleCls =
+                tone === "emerald" ? "text-emerald-700"
+                : tone === "primary" ? "text-primary"
+                : tone === "red"     ? "text-red-700"
+                : "text-muted-foreground";
+              return (
+                <div key={key} className={`rounded-md border ${toneCls} p-3`}>
+                  <div className="flex items-baseline justify-between mb-2">
+                    <div>
+                      <p className={`text-xs font-semibold ${titleCls}`}>{label}</p>
+                      <p className="text-[10px] text-muted-foreground">{hint}</p>
                     </div>
+                    <span className="text-[11px] tabular-nums text-muted-foreground">{list.length} {list.length === 1 ? "produto" : "produtos"}</span>
                   </div>
-                );
-              }}
-            />
-            <Scatter data={scatterData} fill="hsl(var(--primary))" fillOpacity={0.65} />
-          </ScatterChart>
-        </ResponsiveContainer>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3 text-[11px]">
-          <div className="rounded-md bg-emerald-500/10 border border-emerald-500/20 px-2 py-1.5">
-            <p className="font-semibold text-emerald-700">↑ Gasto · ↑ ROAS</p>
-            <p className="text-muted-foreground">Escale</p>
+                  {list.length === 0 ? (
+                    <p className="text-[11px] text-muted-foreground py-2">Nenhum produto neste grupo.</p>
+                  ) : (
+                    <ul className="divide-y divide-border/40">
+                      {list.slice(0, 5).map((p) => (
+                        <li key={p.item_id} className="py-1.5 flex items-center gap-2 text-[11px]">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-medium" title={p.title}>{p.title}</p>
+                            <p className="text-[10px] text-muted-foreground font-mono">{p.item_id}</p>
+                          </div>
+                          <div className="text-right tabular-nums shrink-0">
+                            <p>{currFmt(p.spend)}</p>
+                            <p className={p.roas >= roasGoal ? "text-emerald-600" : "text-red-600"}>{p.roas.toFixed(2)}x</p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {list.length > 5 && (
+                    <p className="text-[10px] text-muted-foreground mt-1">+ {list.length - 5} outros</p>
+                  )}
+                </div>
+              );
+            })}
           </div>
-          <div className="rounded-md bg-red-500/10 border border-red-500/20 px-2 py-1.5">
-            <p className="font-semibold text-red-700">↑ Gasto · ↓ ROAS</p>
-            <p className="text-muted-foreground">Pause / Revise</p>
-          </div>
-          <div className="rounded-md bg-primary/10 border border-primary/20 px-2 py-1.5">
-            <p className="font-semibold text-primary">↓ Gasto · ↑ ROAS</p>
-            <p className="text-muted-foreground">Invista mais</p>
-          </div>
-          <div className="rounded-md bg-muted/60 border border-border px-2 py-1.5">
-            <p className="font-semibold text-muted-foreground">↓ Gasto · ↓ ROAS</p>
-            <p className="text-muted-foreground">Descarte</p>
-          </div>
-        </div>
+        )}
       </Section>
       </TabsContent>
 
