@@ -2,9 +2,9 @@ import { useMemo, useState, useEffect } from "react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip as RechartsTooltip, Legend, ReferenceLine,
-  PieChart, Pie, Cell, ScatterChart, Scatter, ZAxis, BarChart, Bar,
+  PieChart, Pie, Cell, ScatterChart, Scatter, ZAxis,
 } from "recharts";
-import { format, parseISO, startOfWeek, differenceInCalendarWeeks } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { TrendingUp, TrendingDown, Target } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,9 +18,6 @@ import type {
 
 const currFmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const numFmt  = (v: number) => v.toLocaleString("pt-BR");
-const pctFmt  = (v: number) => `${v.toFixed(2)}%`;
-
-const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
 function safeDiv(a: number, b: number) { return b > 0 ? a / b : 0; }
 
@@ -130,36 +127,6 @@ export function PublicidadeRelatorios({
   }, [campaigns, totalSpend, totalRevenue]);
   const DONUT_COLORS = ["hsl(var(--primary))", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#84cc16"];
 
-  // ─── 3. Weekly heatmap (weekday × week) ─────────────────────────────────
-  type HeatMode = "roas" | "spend";
-  const [heatMode, setHeatMode] = useState<HeatMode>("roas");
-  const heat = useMemo(() => {
-    if (currDaily.length === 0) return { weeks: [] as { label: string; cells: { value: number; date?: string }[] }[], max: 0 };
-    const weekStart = startOfWeek(parseISO(currDaily[0].date), { weekStartsOn: 0 });
-    const lastWeek  = startOfWeek(parseISO(currDaily[currDaily.length - 1].date), { weekStartsOn: 0 });
-    const totalWeeks = differenceInCalendarWeeks(lastWeek, weekStart, { weekStartsOn: 0 }) + 1;
-    const weeks: { label: string; cells: { value: number; date?: string }[] }[] = [];
-    for (let w = 0; w < totalWeeks; w++) {
-      const cells: { value: number; date?: string }[] = Array.from({ length: 7 }, () => ({ value: 0 }));
-      weeks.push({
-        label: format(new Date(weekStart.getTime() + w * 7 * 86400000), "dd/MM", { locale: ptBR }),
-        cells,
-      });
-    }
-    let max = 0;
-    currDaily.forEach((d) => {
-      const date = parseISO(d.date);
-      const wIdx = differenceInCalendarWeeks(date, weekStart, { weekStartsOn: 0 });
-      const dIdx = date.getDay();
-      const value = heatMode === "roas" ? Number(d.roas ?? 0) : Number(d.spend ?? 0);
-      if (weeks[wIdx]) {
-        weeks[wIdx].cells[dIdx] = { value, date: d.date };
-        if (value > max) max = value;
-      }
-    });
-    return { weeks, max };
-  }, [currDaily, heatMode]);
-
   // ─── 4. Spend × ROAS matrix (products) ──────────────────────────────────
   const validProducts = useMemo(() => products.filter((p) => p.spend > 0), [products]);
   const medianSpend   = useMemo(() => {
@@ -193,29 +160,6 @@ export function PublicidadeRelatorios({
       };
     }).sort((a, b) => b.score - a.score);
   }, [campaigns, prevCampaigns]);
-
-  // ─── 6. Funnel per campaign ────────────────────────────────────────────
-  const funnelData = useMemo(() => {
-    return [...campaigns]
-      .filter((c) => c.impressions > 0)
-      .sort((a, b) => b.impressions - a.impressions)
-      .slice(0, 10)
-      .map((c) => {
-        const ctr = safeDiv(c.clicks, c.impressions) * 100;
-        const cvr = safeDiv(c.attributed_orders, c.clicks) * 100;
-        return {
-          name: c.name.length > 24 ? c.name.slice(0, 24) + "…" : c.name,
-          fullName: c.name,
-          impressionsPct: 100,
-          clicksPct: Math.min(100, ctr * 10), // visualize CTR scaled
-          ordersPct:  Math.min(100, cvr * 10),
-          impressions: c.impressions,
-          clicks: c.clicks,
-          orders: c.attributed_orders,
-          ctr, cvr,
-        };
-      });
-  }, [campaigns]);
 
   // ─── 7. CPA over time ─────────────────────────────────────────────────
   const cpaData = useMemo(() => currDaily.map((d) => {
