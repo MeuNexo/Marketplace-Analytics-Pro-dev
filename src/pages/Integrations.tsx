@@ -247,16 +247,15 @@ export default function Integrations() {
     }
   };
 
-  // Check for existing ML tokens on mount (DB only, no localStorage)
+  // Check for existing ML tokens on mount — scoped to org, not just current user
   useEffect(() => {
     const checkTokens = async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+        if (!currentOrg?.id) return;
         const { data: dbTokens } = await supabase
           .from("ml_tokens")
           .select("ml_user_id, expires_at")
-          .eq("user_id", user.id)
+          .eq("organization_id", currentOrg.id)
           .order("created_at", { ascending: false })
           .limit(1);
 
@@ -275,7 +274,7 @@ export default function Integrations() {
       } catch (e) { /* ignore */ }
     };
     checkTokens();
-  }, []);
+  }, [currentOrg?.id]);
 
   // Handle ML OAuth callback
   useEffect(() => {
@@ -354,10 +353,9 @@ export default function Integrations() {
   const handleDisconnect = async (integrationId: string) => {
     if (integrationId === "ml") {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          await supabase.from("ml_tokens").delete().eq("user_id", user.id);
-          await supabase.from("ml_user_cache").delete().eq("user_id", user.id);
+        if (currentOrg?.id) {
+          await supabase.from("ml_tokens").delete().eq("organization_id", currentOrg.id);
+          await supabase.from("ml_user_cache").delete().eq("organization_id", currentOrg.id);
         }
       } catch (e) {
         console.error("Failed to delete ML tokens from DB:", e);
