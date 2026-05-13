@@ -86,19 +86,17 @@ serve(async (req) => {
         return json({ success: false, error: tokenData.message || "Token exchange failed" }, tokenResponse.status);
       }
 
+      // Salva tokens no DB via service role (contorna RLS)
+      const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+
       // Resolve user_id a partir do JWT enviado pelo frontend (se houver)
       let userId: string | null = null;
       const authHeader = req.headers.get("authorization") ?? "";
-      if (authHeader.startsWith("Bearer ") && SERVICE_KEY) {
-        const userClient = createClient(SUPABASE_URL, authHeader.replace("Bearer ", ""), {
-          auth: { persistSession: false },
-        });
-        const { data: { user } } = await userClient.auth.getUser();
+      if (authHeader.startsWith("Bearer ")) {
+        const jwt = authHeader.slice(7);
+        const { data: { user } } = await admin.auth.getUser(jwt);
         userId = user?.id ?? null;
       }
-
-      // Salva tokens no DB via service role (contorna RLS)
-      const admin = createClient(SUPABASE_URL, SERVICE_KEY);
       const mlUserId = String(tokenData.user_id);
       const expiresAt = new Date(Date.now() + (tokenData.expires_in || 21600) * 1000).toISOString();
 
