@@ -389,7 +389,7 @@ export function PublicidadeRelatorios({
       <TabsContent value="comparativo" className="mt-0">
       <Section
         title="Comparativo de Campanhas vs Período Anterior"
-        subtitle="Variação de Gasto, ROAS e Pedidos. Ranking pelo maior ganho combinado."
+        subtitle="Variação de Gasto, ROAS e Pedidos vs período imediatamente anterior. Campanhas sem histórico aparecem como Novas."
       >
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
@@ -410,18 +410,26 @@ export function PublicidadeRelatorios({
               )}
               {compareData.map((c) => (
                 <tr key={c.id} className="border-b border-border/30">
-                  <td className="px-3 py-2 max-w-[260px] truncate font-medium">{c.name}</td>
+                  <td className="px-3 py-2 max-w-[260px] truncate font-medium">
+                    {c.name}
+                    {c.isNew && <Badge variant="secondary" className="ml-2 text-[10px] py-0 px-1.5 h-4 hover:bg-secondary">Nova</Badge>}
+                  </td>
                   <td className="px-3 py-2 text-right tabular-nums">{currFmt(c.spend)}</td>
-                  <td className="px-3 py-2 text-right"><DeltaBadge value={c.deltaSpend} invert /></td>
+                  <td className="px-3 py-2 text-right">{c.isNew ? <span className="text-muted-foreground text-xs">—</span> : <DeltaBadge value={c.deltaSpend} invert />}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{c.roas.toFixed(2)}x</td>
-                  <td className="px-3 py-2 text-right"><DeltaBadge value={c.deltaRoas} /></td>
+                  <td className="px-3 py-2 text-right">{c.isNew ? <span className="text-muted-foreground text-xs">—</span> : <DeltaBadge value={c.deltaRoas} />}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{numFmt(c.orders)}</td>
-                  <td className="px-3 py-2 text-right"><DeltaBadge value={c.deltaOrders} /></td>
+                  <td className="px-3 py-2 text-right">{c.isNew ? <span className="text-muted-foreground text-xs">—</span> : <DeltaBadge value={c.deltaOrders} />}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        {compareData.length > 0 && prevCampaigns.length === 0 && (
+          <p className="mt-3 text-[11px] text-muted-foreground">
+            Sem dados do período anterior ({prevFrom} a {prevTo}) para comparar — as variações aparecerão na próxima sincronização.
+          </p>
+        )}
       </Section>
       </TabsContent>
 
