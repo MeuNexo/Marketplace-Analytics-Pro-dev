@@ -36,6 +36,7 @@ import {
   X,
   Building2,
   Loader2,
+  ExternalLink,
 } from "lucide-react";
 
 interface MarketplaceIntegration {
