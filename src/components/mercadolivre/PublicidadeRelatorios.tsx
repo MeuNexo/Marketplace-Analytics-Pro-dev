@@ -81,7 +81,7 @@ function Section({ title, subtitle, children, action }: { title: string; subtitl
 
 export function PublicidadeRelatorios({
   daily, campaigns, products, prevCampaigns,
-  currentFrom, currentTo,
+  currentFrom, currentTo, prevFrom, prevTo,
 }: Props) {
   // ROAS goal — persisted
   const [roasGoal, setRoasGoal] = useState<number>(() => {
