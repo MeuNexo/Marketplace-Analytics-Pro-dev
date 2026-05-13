@@ -856,14 +856,12 @@ function EstoqueRelatorios({ items, coverageMap, coveragePeriod }: RelatoriosPro
         <TabsTrigger value="marca" className="text-xs px-3 h-7 gap-1.5"><Tag className="w-3.5 h-3.5" />Por Marca</TabsTrigger>
         <TabsTrigger value="valor" className="text-xs px-3 h-7 gap-1.5"><DollarSign className="w-3.5 h-3.5" />Valor em Risco</TabsTrigger>
         <TabsTrigger value="abc" className="text-xs px-3 h-7 gap-1.5"><BarChart3 className="w-3.5 h-3.5" />Curva ABC</TabsTrigger>
-        <TabsTrigger value="saude" className="text-xs px-3 h-7 gap-1.5"><Activity className="w-3.5 h-3.5" />Saúde</TabsTrigger>
         <TabsTrigger value="logistica" className="text-xs px-3 h-7 gap-1.5"><Truck className="w-3.5 h-3.5" />Logística</TabsTrigger>
       </TabsList>
       <TabsContent value="cobertura"><SubTabCobertura items={items} coverageMap={coverageMap} coveragePeriod={coveragePeriod} /></TabsContent>
       <TabsContent value="marca"><SubTabEstoqueMarca items={items} /></TabsContent>
       <TabsContent value="valor"><SubTabValorRisco items={items} coverageMap={coverageMap} /></TabsContent>
       <TabsContent value="abc"><SubTabCurvaABC items={items} /></TabsContent>
-      <TabsContent value="saude"><SubTabSaude items={items} /></TabsContent>
       <TabsContent value="logistica"><SubTabLogistica items={items} /></TabsContent>
     </Tabs>
   );
