@@ -512,102 +512,6 @@ function SubTabCurvaABC({ items }: Pick<RelatoriosProps, "items">) {
   );
 }
 
-function SubTabSaude({ items }: Pick<RelatoriosProps, "items">) {
-  const { buckets, byVisits, unhealthy } = useMemo(() => {
-    const withHealth = items.filter((i) => i.health !== null) as (ProductItem & { health: number })[];
-    const buckets = [
-      { name: "Ótimo (≥80%)", count: withHealth.filter((i) => i.health >= 0.8).length, color: "#22c55e" },
-      { name: "Bom (60-80%)", count: withHealth.filter((i) => i.health >= 0.6 && i.health < 0.8).length, color: "#84cc16" },
-      { name: "Regular (40-60%)", count: withHealth.filter((i) => i.health >= 0.4 && i.health < 0.6).length, color: "#f59e0b" },
-      { name: "Ruim (<40%)", count: withHealth.filter((i) => i.health < 0.4).length, color: "#ef4444" },
-    ];
-    const byVisits = [...withHealth].sort((a, b) => b.visits - a.visits).slice(0, 10);
-    const unhealthy = withHealth.filter((i) => i.health < 0.6).sort((a, b) => b.visits - a.visits).slice(0, 10);
-    return { buckets, byVisits, unhealthy };
-  }, [items]);
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Distribuição de Saúde</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie data={buckets.filter((b) => b.count > 0)} dataKey="count" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3}>
-                  {buckets.filter((b) => b.count > 0).map((entry, i) => (
-                    <Cell key={i} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Top por Visitas (com saúde)</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-xs">Produto</TableHead>
-                  <TableHead className="text-xs text-right">Visitas</TableHead>
-                  <TableHead className="text-xs">Saúde</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {byVisits.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="text-xs max-w-[160px] truncate">{item.title}</TableCell>
-                    <TableCell className="text-xs text-right">{numFmt(item.visits)}</TableCell>
-                    <TableCell><HealthBar health={item.health} /></TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </div>
-
-      {unhealthy.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-foreground">
-              Anúncios com Saúde Baixa (&lt;60%) — por Visitas
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-xs">Produto</TableHead>
-                  <TableHead className="text-xs text-right">Visitas</TableHead>
-                  <TableHead className="text-xs">Saúde</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {unhealthy.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="text-xs max-w-[240px] truncate">{item.title}</TableCell>
-                    <TableCell className="text-xs text-right">{numFmt(item.visits)}</TableCell>
-                    <TableCell><HealthBar health={item.health} /></TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  );
-}
-
 function SubTabLogistica({ items }: Pick<RelatoriosProps, "items">) {
   const { logisticData, shippingData, listingData, fulfillmentComparison } = useMemo(() => {
     const logisticCounts: Record<string, number> = {};
@@ -856,14 +760,12 @@ function EstoqueRelatorios({ items, coverageMap, coveragePeriod }: RelatoriosPro
         <TabsTrigger value="marca" className="text-xs px-3 h-7 gap-1.5"><Tag className="w-3.5 h-3.5" />Por Marca</TabsTrigger>
         <TabsTrigger value="valor" className="text-xs px-3 h-7 gap-1.5"><DollarSign className="w-3.5 h-3.5" />Valor em Risco</TabsTrigger>
         <TabsTrigger value="abc" className="text-xs px-3 h-7 gap-1.5"><BarChart3 className="w-3.5 h-3.5" />Curva ABC</TabsTrigger>
-        <TabsTrigger value="saude" className="text-xs px-3 h-7 gap-1.5"><Activity className="w-3.5 h-3.5" />Saúde</TabsTrigger>
         <TabsTrigger value="logistica" className="text-xs px-3 h-7 gap-1.5"><Truck className="w-3.5 h-3.5" />Logística</TabsTrigger>
       </TabsList>
       <TabsContent value="cobertura"><SubTabCobertura items={items} coverageMap={coverageMap} coveragePeriod={coveragePeriod} /></TabsContent>
       <TabsContent value="marca"><SubTabEstoqueMarca items={items} /></TabsContent>
       <TabsContent value="valor"><SubTabValorRisco items={items} coverageMap={coverageMap} /></TabsContent>
       <TabsContent value="abc"><SubTabCurvaABC items={items} /></TabsContent>
-      <TabsContent value="saude"><SubTabSaude items={items} /></TabsContent>
       <TabsContent value="logistica"><SubTabLogistica items={items} /></TabsContent>
     </Tabs>
   );
