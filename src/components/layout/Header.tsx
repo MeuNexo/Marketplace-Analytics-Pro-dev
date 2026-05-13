@@ -1,4 +1,4 @@
-import { Activity, Bell, Check, ChevronDown, LogOut, Menu, Settings, ShieldCheck, Store, User } from "lucide-react";
+import { Activity, Bell, Check, ChevronDown, LogOut, Menu, Settings, Store, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,7 +45,6 @@ export function Header({ title, subtitle, showSellerSwitcher = true, showSellerM
     orgRole === "admin" ? "Admin" :
     orgRole === "member" ? "Member" : "Viewer";
   const isOrgAdmin = orgRole === "owner" || orgRole === "admin";
-  const isSuperAdmin = appRole === "admin";
 
   return (
     <header className="flex items-center justify-between border-b border-border bg-card px-3 md:px-8 py-2.5 md:py-4 gap-2">
@@ -167,15 +166,6 @@ export function Header({ title, subtitle, showSellerSwitcher = true, showSellerM
                 <Activity className="mr-2 h-4 w-4 text-muted-foreground" />
                 Monitoramento
               </DropdownMenuItem>
-            )}
-            {isSuperAdmin && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigate("/admin")} className="rounded-lg px-2 py-2 text-sm hover:bg-muted focus:bg-muted">
-                  <ShieldCheck className="mr-2 h-4 w-4 text-primary" />
-                  Painel super admin
-                </DropdownMenuItem>
-              </>
             )}
             <DropdownMenuSeparator />
             <DropdownMenuItem className="rounded-lg px-2 py-2 text-sm text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:text-destructive" onClick={signOut}>
