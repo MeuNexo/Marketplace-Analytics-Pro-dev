@@ -948,29 +948,12 @@ export default function MLEstoque() {
   const [coverageFilter, setCoverageFilter] = useState("all");
   const [sortBy, setSortBy] = useState("title");
   const [hideOutOfStock, setHideOutOfStock] = useState(true);
-  const [logisticFilter, setLogisticFilter] = useState("all");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const brands = useMemo(() => {
     const set = new Set<string>();
     items.forEach((i) => { if (i.brand) set.add(i.brand); });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [items]);
-
-  const LOGISTIC_LABELS: Record<string, string> = {
-    fulfillment: "Full (Fulfillment)",
-    default: "Padrão",
-    drop_off: "Drop-off",
-    xd_drop_off: "XD Drop-off",
-    self_service: "Flex (Coleta)",
-    me2: "Mercado Envios 2",
-    not_specified: "Não especificado",
-  };
-
-  const logisticTypes = useMemo(() => {
-    const set = new Set<string>();
-    items.forEach((i) => { if (i.logistic_type) set.add(i.logistic_type); });
-    return Array.from(set).sort();
   }, [items]);
 
   const filteredItems = useMemo(() => {
@@ -991,7 +974,6 @@ export default function MLEstoque() {
         return cd?.coverage_class === coverageFilter;
       });
     }
-    if (logisticFilter !== "all") result = result.filter((i) => (i.logistic_type ?? "not_specified") === logisticFilter);
     result.sort((a, b) => {
       switch (sortBy) {
         case "price_desc": return b.price - a.price;
@@ -1007,7 +989,7 @@ export default function MLEstoque() {
       }
     });
     return result;
-  }, [items, search, brandFilter, coverageFilter, logisticFilter, sortBy, hideOutOfStock, coverageMap]);
+  }, [items, search, brandFilter, coverageFilter, sortBy, hideOutOfStock, coverageMap]);
 
   // KPI stats derived from filtered items so cards react to active filters
   const filteredStats = useMemo(() => {
@@ -1215,15 +1197,6 @@ export default function MLEstoque() {
                     })}
                   </SelectContent>
                 </Select>
-                <Select value={logisticFilter} onValueChange={setLogisticFilter}>
-                  <SelectTrigger className="w-36 h-8 text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Logística</SelectItem>
-                    {logisticTypes.map((lt) => (
-                      <SelectItem key={lt} value={lt}>{LOGISTIC_LABELS[lt] ?? lt}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
                 <div className="flex items-center gap-1.5 cursor-pointer opacity-60 hover:opacity-100 transition-opacity"
                   onClick={(e) => { e.preventDefault(); setHideOutOfStock((v) => !v); }}
                 >
@@ -1238,7 +1211,7 @@ export default function MLEstoque() {
             {filteredItems.length === 0 ? (
               <div className="p-8 text-center text-muted-foreground">
                 <Package className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                <p className="text-sm">{search || brandFilter !== "all" || coverageFilter !== "all" || logisticFilter !== "all" ? "Nenhum produto encontrado" : "Nenhum produto no inventário"}</p>
+                <p className="text-sm">{search || brandFilter !== "all" || coverageFilter !== "all" ? "Nenhum produto encontrado" : "Nenhum produto no inventário"}</p>
               </div>
             ) : (
               <div className="max-h-[600px] overflow-auto">
