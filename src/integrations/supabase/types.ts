@@ -722,6 +722,102 @@ export type Database = {
           },
         ]
       }
+      orders: {
+        Row: {
+          cidade: string | null
+          comissao: number | null
+          comprador: string | null
+          data_pagamento: string | null
+          data_pedido: string | null
+          estado: string | null
+          frete: number | null
+          id: string
+          item_id: string
+          listing_type: string | null
+          ml_order_id: string
+          ml_user_id: string
+          organization_id: string | null
+          preco_unit: number | null
+          quantidade: number
+          receita_bruta: number | null
+          receita_liquida: number | null
+          seller_id: string | null
+          sku: string | null
+          status: string | null
+          synced_at: string
+          titulo: string | null
+          user_id: string
+          variation_id: string
+        }
+        Insert: {
+          cidade?: string | null
+          comissao?: number | null
+          comprador?: string | null
+          data_pagamento?: string | null
+          data_pedido?: string | null
+          estado?: string | null
+          frete?: number | null
+          id?: string
+          item_id: string
+          listing_type?: string | null
+          ml_order_id: string
+          ml_user_id: string
+          organization_id?: string | null
+          preco_unit?: number | null
+          quantidade?: number
+          receita_bruta?: number | null
+          receita_liquida?: number | null
+          seller_id?: string | null
+          sku?: string | null
+          status?: string | null
+          synced_at?: string
+          titulo?: string | null
+          user_id: string
+          variation_id?: string
+        }
+        Update: {
+          cidade?: string | null
+          comissao?: number | null
+          comprador?: string | null
+          data_pagamento?: string | null
+          data_pedido?: string | null
+          estado?: string | null
+          frete?: number | null
+          id?: string
+          item_id?: string
+          listing_type?: string | null
+          ml_order_id?: string
+          ml_user_id?: string
+          organization_id?: string | null
+          preco_unit?: number | null
+          quantidade?: number
+          receita_bruta?: number | null
+          receita_liquida?: number | null
+          seller_id?: string | null
+          sku?: string | null
+          status?: string | null
+          synced_at?: string
+          titulo?: string | null
+          user_id?: string
+          variation_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "sellers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_invites: {
         Row: {
           accepted_at: string | null
