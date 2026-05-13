@@ -277,21 +277,28 @@ export default function MLPedidos() {
 
   // ── Summary ─────────────────────────────────────────────────────────────────
   const summary = useMemo(() => {
-    const active    = orders.filter(o => o.status !== "cancelled" && o.status !== "returned");
-    const cancelled = orders.filter(o => o.status === "cancelled" || o.status === "returned");
-    const gross     = active.reduce((s, o) => s + o.gross_revenue, 0);
-    const net       = active.reduce((s, o) => s + o.net_revenue, 0);
-    const commission = active.reduce((s, o) => s + o.ml_commission, 0);
-    const shipping   = active.reduce((s, o) => s + o.shipping_cost, 0);
+    const CONFIRMED_STATUSES: OrderStatus[] = ["paid", "shipped", "delivered"];
+    const cancelled  = orders.filter(o => o.status === "cancelled" || o.status === "returned");
+    const pending    = orders.filter(o => o.status === "pending");
+    // Revenue KPIs only count confirmed orders (payment received)
+    const confirmed  = orders.filter(o => CONFIRMED_STATUSES.includes(o.status));
+    const gross      = confirmed.reduce((s, o) => s + o.gross_revenue, 0);
+    const net        = confirmed.reduce((s, o) => s + o.net_revenue, 0);
+    const commission = confirmed.reduce((s, o) => s + o.ml_commission, 0);
+    const shipping   = confirmed.reduce((s, o) => s + o.shipping_cost, 0);
+    // Total active = confirmed + pending (exclude cancelled/returned)
+    const totalActive = confirmed.length + pending.length;
     return {
-      total_orders:     active.length,
+      total_orders:     totalActive,
+      confirmed_orders: confirmed.length,
+      pending_orders:   pending.length,
       cancelled_orders: cancelled.length,
       gross_revenue:    gross,
       net_revenue:      net,
       ml_commission:    commission,
       shipping_cost:    shipping,
       net_margin_pct:   gross > 0 ? (net / gross) * 100 : 0,
-      avg_ticket:       active.length > 0 ? gross / active.length : 0,
+      avg_ticket:       confirmed.length > 0 ? gross / confirmed.length : 0,
     };
   }, [orders]);
 
@@ -304,7 +311,9 @@ export default function MLPedidos() {
     const slice = days.length > 60 ? days.slice(-60) : days;
     return slice.map(d => {
       const date = format(d, "yyyy-MM-dd");
-      const day  = orders.filter(o => o.date === date && o.status !== "cancelled" && o.status !== "returned");
+      // Only confirmed (paid/shipped/delivered) orders in revenue chart
+      const CONFIRMED: OrderStatus[] = ["paid", "shipped", "delivered"];
+      const day  = orders.filter(o => o.date === date && CONFIRMED.includes(o.status));
       return {
         date:              format(d, "dd/MM", { locale: ptBR }),
         "Receita Bruta":   Math.round(day.reduce((s, o) => s + o.gross_revenue, 0) * 100) / 100,
@@ -409,7 +418,11 @@ export default function MLPedidos() {
               iconClassName="bg-primary/10 text-primary"
               size="compact"
               icon={<ClipboardList className="w-4 h-4" />}
-              subtitle={`${summary.cancelled_orders} cancelados/devolvidos`}
+              subtitle={
+                summary.pending_orders > 0
+                  ? `${summary.confirmed_orders} confirmados · ${summary.pending_orders} pendentes`
+                  : `${summary.cancelled_orders} cancelados/devolvidos`
+              }
             />
             <KPICard
               title="Receita bruta"
@@ -418,7 +431,7 @@ export default function MLPedidos() {
               iconClassName="bg-accent/10 text-accent"
               size="compact"
               icon={<DollarSign className="w-4 h-4" />}
-              subtitle={periodLabel}
+              subtitle="Apenas pedidos confirmados"
             />
             <KPICard
               title="Receita líquida"
@@ -436,7 +449,7 @@ export default function MLPedidos() {
               iconClassName="bg-[hsl(25,95%,53%)]/10 text-[hsl(25,95%,53%)]"
               size="compact"
               icon={<Package className="w-4 h-4" />}
-              subtitle="Por pedido ativo"
+              subtitle="Por pedido confirmado"
             />
           </div>
 

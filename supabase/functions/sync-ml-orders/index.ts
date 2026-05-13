@@ -141,7 +141,8 @@ function expandOrder(
 
   return (order.order_items || []).map((item: any) => {
     const prod           = item.item ?? {};
-    const listingTypeRaw = prod.listing_type_id ?? prod.listing_type ?? "";
+    // listing_type_id lives at the order_item level, NOT inside item.item
+    const listingTypeRaw = item.listing_type_id ?? prod.listing_type_id ?? prod.listing_type ?? "";
     const listing_type   = LISTING_TYPE_MAP[listingTypeRaw] ?? listingTypeRaw ?? null;
 
     return {
@@ -158,10 +159,17 @@ function expandOrder(
       quantidade:      Number(item.quantity || 0),
       preco_unit:      item.unit_price  != null ? Number(item.unit_price)  : null,
       comissao:        item.sale_fee    != null ? Number(item.sale_fee)    : null,
-      frete:
-        order.shipping?.cost != null && Number(order.shipping.cost) > 0
-          ? Number(order.shipping.cost)
-          : null,
+      // shipping.cost = buyer-facing cost (0 for frete grátis).
+      // When that is 0/null, fall back to payments[0].shipping_cost which
+      // captures the seller-absorbed shipping amount.
+      frete: (() => {
+        const buyerCost = order.shipping?.cost != null ? Number(order.shipping.cost) : null;
+        if (buyerCost != null && buyerCost > 0) return buyerCost;
+        const sellerCost = order.payments?.[0]?.shipping_cost != null
+          ? Number(order.payments[0].shipping_cost)
+          : null;
+        return sellerCost != null && sellerCost > 0 ? sellerCost : null;
+      })(),
       status:          order.status ?? null,
       data_pedido:     datePedido,
       data_pagamento:  dataPagamento,
