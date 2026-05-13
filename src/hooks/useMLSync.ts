@@ -3,6 +3,7 @@ import { format, startOfDay } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMLStore } from "@/contexts/MLStoreContext";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { useToast } from "@/hooks/use-toast";
 import { useInvalidateMLQueries } from "./useMLQueries";
 import type { DateRange } from "./useMLFilters";
@@ -54,6 +55,7 @@ export function useMLSync(opts: UseMLSyncOptions) {
   const { user } = useAuth();
   const { toast } = useToast();
   const { stores, resolvedMLUserIds } = useMLStore();
+  const { currentOrg } = useOrganization();
   const invalidate = useInvalidateMLQueries();
   const autoSyncTriggeredRef = useRef(false);
 
@@ -73,6 +75,8 @@ export function useMLSync(opts: UseMLSyncOptions) {
   mlUserIdsRef.current = resolvedMLUserIds;
   const userRef = useRef(user);
   userRef.current = user;
+  const orgIdRef = useRef<string | null>(currentOrg?.id ?? null);
+  orgIdRef.current = currentOrg?.id ?? null;
 
   const syncFromAPI = useCallback(
     (syncOpts?: { from?: Date; to?: Date; periodDays?: number }) => {
@@ -93,6 +97,11 @@ export function useMLSync(opts: UseMLSyncOptions) {
       const capturedStores = [...storesRef.current];
       const capturedMLUserIds = [...mlUserIdsRef.current];
       const userId = currentUser.id;
+      const orgId = orgIdRef.current;
+      if (!orgId) {
+        toastRef.current({ title: "Erro", description: "Selecione uma organização antes de sincronizar.", variant: "destructive" });
+        return;
+      }
 
       const run = async () => {
         _emit({ syncing: true, progress: null });
@@ -170,6 +179,7 @@ export function useMLSync(opts: UseMLSyncOptions) {
             await supabase.from("ml_sync_log").upsert(
               {
                 user_id: userId,
+                organization_id: orgId,
                 ml_user_id: mlUserId,
                 date_from: fromDateStr,
                 date_to: toDateStr,
