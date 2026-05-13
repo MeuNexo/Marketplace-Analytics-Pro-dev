@@ -504,24 +504,6 @@ export default function MLAnuncios() {
                 Produtos Patrocinados ({sortedProducts.length})
               </span>
               <div className="flex items-center gap-2">
-                <div className="hidden sm:flex items-center gap-1">
-                  <Button
-                    variant={productSort.key === "spend" ? "secondary" : "ghost"}
-                    size="sm"
-                    onClick={() => toggleSort("spend")}
-                    className="h-7 px-2 text-xs gap-1"
-                  >
-                    Gasto <SortIcon k="spend" />
-                  </Button>
-                  <Button
-                    variant={productSort.key === "roas" ? "secondary" : "ghost"}
-                    size="sm"
-                    onClick={() => toggleSort("roas")}
-                    className="h-7 px-2 text-xs gap-1"
-                  >
-                    ROAS <SortIcon k="roas" />
-                  </Button>
-                </div>
                 <div className="relative w-44">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
                   <Input
