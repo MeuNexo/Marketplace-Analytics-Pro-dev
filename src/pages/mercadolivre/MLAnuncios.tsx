@@ -71,14 +71,15 @@ export default function MLAnuncios() {
   const [productTab, setProductTab]         = useState<"spend" | "roas">("spend");
   const [campaignSearch, setCampaignSearch] = useState("");
 
-  // ── Filters (same hook used by MercadoLivre.tsx) ──
-  const filters = useMLFilters();
+  // ── Filters — default 30 days (ads data is not real-time, "Hoje" would be zeros) ──
+  const filters = useMLFilters(30);
   const {
     period, setPeriod, customRange, setCustomRange,
     periodLabel, currentFrom, currentTo, prevFrom, prevTo, fetchFrom,
   } = filters;
 
-  // Fetch enough data to cover both current and previous period for delta comparison
+  // Fetch enough data to cover both current and previous period for delta comparison.
+  // fetchFrom already includes the previous window (e.g. 61 days back for a 30d period).
   const { daily, campaigns, products, summary, loading, connected, sync, syncing } =
     useMLAds({ dateFrom: fetchFrom, dateTo: currentTo });
 

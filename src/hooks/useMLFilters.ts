@@ -84,8 +84,8 @@ export function getComparisonRanges(customRange: DateRange, period: number) {
   };
 }
 
-export function useMLFilters() {
-  const [period, setPeriod] = useState(0);
+export function useMLFilters(initialPeriod = 0) {
+  const [period, setPeriod] = useState(initialPeriod);
   const [customRange, setCustomRange] = useState<DateRange>(null);
   const [chartMode, setChartMode] = useState<ChartMode>("hourly");
   const [popoverOpen, setPopoverOpen] = useState(false);
