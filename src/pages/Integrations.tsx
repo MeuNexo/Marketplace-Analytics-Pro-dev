@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useSeller } from "@/contexts/SellerContext";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { SellerMarketplaceBar } from "@/components/layout/SellerMarketplaceBar";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { Seller } from "@/types/seller";
@@ -89,6 +90,7 @@ const statusConfig = {
 
 export default function Integrations() {
   const { selectedSeller, refreshSellers } = useSeller();
+  const { currentOrg } = useOrganization();
   const { stores: mlStores, refresh: refreshMLStores } = useMLStore();
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -162,9 +164,12 @@ export default function Integrations() {
       // Clean up the persisted seller
       localStorage.removeItem("ml_oauth_seller_id");
 
-      await supabase.from("ml_tokens").upsert(
+      const organizationId = currentOrg?.id ?? null;
+
+      const { error: upsertErr } = await supabase.from("ml_tokens").upsert(
         {
           user_id: userId,
+          organization_id: organizationId,
           access_token: tokenData.access_token,
           refresh_token: tokenData.refresh_token,
           expires_at: expiresAt,
@@ -174,6 +179,11 @@ export default function Integrations() {
         },
         { onConflict: "user_id,ml_user_id" },
       );
+
+      if (upsertErr) {
+        console.error("Failed to upsert ml_tokens:", upsertErr);
+        throw new Error(`Erro ao salvar token: ${upsertErr.message}`);
+      }
 
       // Sync seller_stores.external_id so the header store filter works.
       if (sellerId) {
@@ -214,6 +224,7 @@ export default function Integrations() {
       }
     } catch (e) {
       console.error("Failed to save ML tokens to DB:", e);
+      throw e; // propaga para o chamador mostrar o erro ao usuário
     }
   };
 
