@@ -24,6 +24,7 @@ import { PublicidadeRelatorios } from "@/components/mercadolivre/PublicidadeRela
 import { KPICard } from "@/components/dashboard/KPICard";
 import { useMLAds, type AdsCampaign } from "@/hooks/useMLAds";
 import { useMLFilters } from "@/hooks/useMLFilters";
+import { useMLInventory } from "@/contexts/MLInventoryContext";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -64,6 +65,7 @@ export default function MLAnuncios() {
   const [productSort, setProductSort]       = useState<{ key: "spend" | "roas" | "clicks" | "attributed_orders" | "attributed_revenue" | "ctr"; dir: "asc" | "desc" }>({ key: "spend", dir: "desc" });
   const [productPage, setProductPage]       = useState(1);
   const [productPageSize, setProductPageSize] = useState<number>(20);
+  const [campaignSort, setCampaignSort]     = useState<{ key: "daily_budget" | "spend" | "ctr" | "roas"; dir: "asc" | "desc" } | null>(null);
 
   // ── Filters — default 30 days (ads data is not real-time, "Hoje" would be zeros) ──
   const filters = useMLFilters(30);
@@ -76,6 +78,14 @@ export default function MLAnuncios() {
   // fetchFrom already includes the previous window (e.g. 61 days back for a 30d period).
   const { daily, campaigns, products, summary, loading, connected, sync, syncing } =
     useMLAds({ dateFrom: fetchFrom, dateTo: currentTo });
+
+  // Inventory for "Estoque" column on sponsored products
+  const { items: inventoryItems } = useMLInventory();
+  const stockByItem = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const it of inventoryItems) map.set(it.id, it.available_quantity ?? 0);
+    return map;
+  }, [inventoryItems]);
 
   // Period-scoped fetches for the Relatórios tab (campaigns/products are returned
   // aggregated for the requested range — we need them per-period for deltas).
@@ -204,8 +214,27 @@ export default function MLAnuncios() {
   // ── Filtered campaigns ──
   const filteredCampaigns = useMemo(() => {
     const q = campaignSearch.trim().toLowerCase();
-    return q ? campaigns.filter((c) => c.name.toLowerCase().includes(q)) : campaigns;
-  }, [campaigns, campaignSearch]);
+    const list = q ? campaigns.filter((c) => c.name.toLowerCase().includes(q)) : campaigns;
+    if (!campaignSort) return list;
+    const { key, dir } = campaignSort;
+    const mult = dir === "desc" ? -1 : 1;
+    return [...list].sort((a, b) => ((a[key] ?? 0) - (b[key] ?? 0)) * mult);
+  }, [campaigns, campaignSearch, campaignSort]);
+
+  const toggleCampaignSort = useCallback((key: NonNullable<typeof campaignSort>["key"]) => {
+    setCampaignSort((prev) =>
+      prev?.key === key
+        ? { key, dir: prev.dir === "desc" ? "asc" : "desc" }
+        : { key, dir: "desc" },
+    );
+  }, []);
+
+  const CampaignSortIcon = ({ k }: { k: NonNullable<typeof campaignSort>["key"] }) => {
+    if (campaignSort?.key !== k) return <ArrowUpDown className="w-3 h-3 opacity-40" />;
+    return campaignSort.dir === "desc"
+      ? <ArrowDown className="w-3 h-3 text-foreground" />
+      : <ArrowUp   className="w-3 h-3 text-foreground" />;
+  };
 
   if (!loading && !connected) return <NotConnected />;
 
@@ -455,11 +484,35 @@ export default function MLAnuncios() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border/60 bg-muted/30">
-                    {["Campanha", "Status", "Orçamento/dia", "Gasto", "Impressões", "Cliques", "CTR", "Pedidos", "ROAS"].map((h) => (
-                      <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap first:pl-6 last:pr-6">
-                        {h}
+                    <th className="px-4 py-2.5 pl-6 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Campanha</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Status</th>
+                    {([
+                      ["daily_budget", "Orçamento/dia"],
+                      ["spend", "Gasto"],
+                    ] as const).map(([key, label]) => (
+                      <th
+                        key={key}
+                        onClick={() => toggleCampaignSort(key)}
+                        className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
+                      >
+                        <span className="inline-flex items-center gap-1">{label} <CampaignSortIcon k={key} /></span>
                       </th>
                     ))}
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Impressões</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Cliques</th>
+                    <th
+                      onClick={() => toggleCampaignSort("ctr")}
+                      className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
+                    >
+                      <span className="inline-flex items-center gap-1">CTR <CampaignSortIcon k="ctr" /></span>
+                    </th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Pedidos</th>
+                    <th
+                      onClick={() => toggleCampaignSort("roas")}
+                      className="px-4 py-2.5 pr-6 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
+                    >
+                      <span className="inline-flex items-center gap-1">ROAS <CampaignSortIcon k="roas" /></span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -529,19 +582,20 @@ export default function MLAnuncios() {
                       <th
                         key={key}
                         onClick={() => toggleSort(key)}
-                        className={`px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground ${i === arr.length - 1 ? "pr-6" : ""}`}
+                        className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
                       >
                         <span className="inline-flex items-center gap-1">
                           {label} <SortIcon k={key} />
                         </span>
                       </th>
                     ))}
+                    <th className="px-4 py-2.5 pr-6 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Estoque</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sortedProducts.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="px-6 py-8 text-center text-sm text-muted-foreground">
+                      <td colSpan={9} className="px-6 py-8 text-center text-sm text-muted-foreground">
                         Nenhum produto patrocinado encontrado.
                       </td>
                     </tr>
@@ -568,7 +622,16 @@ export default function MLAnuncios() {
                       <td className="px-4 py-3 tabular-nums">{pctFmt(p.ctr)}</td>
                       <td className="px-4 py-3 tabular-nums">{numFmt(p.attributed_orders)}</td>
                       <td className="px-4 py-3 tabular-nums">{currFmt(p.attributed_revenue)}</td>
-                      <td className="px-4 py-3 pr-6">{roasBadge(p.roas)}</td>
+                      <td className="px-4 py-3">{roasBadge(p.roas)}</td>
+                      <td className="px-4 py-3 pr-6 tabular-nums">
+                        {(() => {
+                          const stock = stockByItem.get(p.item_id);
+                          if (stock === undefined) return <span className="text-muted-foreground">—</span>;
+                          if (stock === 0) return <span className="text-red-600 font-medium">0</span>;
+                          if (stock < 5) return <span className="text-amber-600 font-medium">{numFmt(stock)}</span>;
+                          return numFmt(stock);
+                        })()}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
