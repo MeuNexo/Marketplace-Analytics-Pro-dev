@@ -12,13 +12,23 @@ const ML_API = "https://api.mercadolibre.com";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // Normalise ML listing_type_id → "classic" | "premium" | "free"
+// Current Brazil tiers (2024):
+//   gold_special  → Clássico  ~11%
+//   gold_pro      → Premium   ~16%
+//   gold_premium  → Premium   ~16%  (legacy name)
+//   gold          → Clássico  (legacy tier)
+//   gold_extra_full → Premium (some categories)
+//   silver / bronze / free → Grátis ~0%
 const LISTING_TYPE_MAP: Record<string, string> = {
-  gold_special: "classic",
-  gold_pro:     "premium",
-  gold:         "classic",
-  silver:       "free",
-  bronze:       "free",
-  free:         "free",
+  gold_special:      "classic",
+  gold_pro:          "premium",
+  gold_premium:      "premium",
+  gold_extra_full:   "premium",
+  gold:              "classic",
+  silver:            "free",
+  bronze:            "free",
+  free:              "free",
+  gold_extra:        "classic",
 };
 
 // ── ML fetch helper (same pattern as mercado-libre-integration) ───────────────
@@ -95,6 +105,56 @@ async function fetchOrdersPage(
   return allOrders;
 }
 
+// ── Batch-fetch seller shipping cost from /shipments/{id} ─────────────────────
+// order.shipping.cost = buyer-paid (0 for frete grátis).
+// The seller-absorbed cost only exists in the Shipments API → base_cost.
+// We fetch up to MAX_SHIPMENTS concurrently in chunks of CONCURRENCY.
+
+async function fetchShipmentCosts(
+  orders: any[],
+  accessToken: string,
+  maxShipments = 300,
+): Promise<Map<number, number>> {
+  const costMap = new Map<number, number>();
+
+  // Collect unique shipment IDs for orders where the buyer paid 0 shipping
+  const seen = new Set<number>();
+  const ids: number[] = [];
+  for (const order of orders) {
+    const buyerCost = order.shipping?.cost;
+    const shipId    = order.shipping?.id ? Number(order.shipping.id) : null;
+    if (shipId && !seen.has(shipId) && (buyerCost == null || Number(buyerCost) === 0)) {
+      seen.add(shipId);
+      ids.push(shipId);
+      if (ids.length >= maxShipments) break;
+    }
+  }
+
+  if (!ids.length) return costMap;
+  console.log(`Fetching ${ids.length} shipments for frete grátis cost…`);
+
+  const CONCURRENCY = 10;
+  for (let i = 0; i < ids.length; i += CONCURRENCY) {
+    const batch = ids.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map(async (id) => {
+        const s = await mlFetch(`/shipments/${id}`, accessToken, 8_000);
+        // base_cost = seller-facing gross shipping cost
+        const cost = s.base_cost ?? s.cost?.gross ?? null;
+        return { id, cost };
+      }),
+    );
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value.cost != null && Number(r.value.cost) > 0) {
+        costMap.set(r.value.id, Number(r.value.cost));
+      }
+    }
+  }
+
+  console.log(`Shipment costs resolved: ${costMap.size} / ${ids.length}`);
+  return costMap;
+}
+
 // ── Expand one ML order object into one row per order_item ────────────────────
 
 function safeStr(v: unknown): string | null {
@@ -104,12 +164,13 @@ function safeStr(v: unknown): string | null {
 }
 
 function expandOrder(
-  order:          any,
-  mlUserId:       string,
-  sellerId:       string | null,
-  userId:         string,
-  organizationId: string | null,
-  syncAt:         string,
+  order:           any,
+  mlUserId:        string,
+  sellerId:        string | null,
+  userId:          string,
+  organizationId:  string | null,
+  syncAt:          string,
+  shipmentCostMap: Map<number, number>,
 ): Array<Record<string, unknown>> {
   const datePedido    = (order.date_created || "").substring(0, 10) || null;
   const dataPagamento = (order.date_approved || "").substring(0, 10) || null;
@@ -159,16 +220,16 @@ function expandOrder(
       quantidade:      Number(item.quantity || 0),
       preco_unit:      item.unit_price  != null ? Number(item.unit_price)  : null,
       comissao:        item.sale_fee    != null ? Number(item.sale_fee)    : null,
-      // shipping.cost = buyer-facing cost (0 for frete grátis).
-      // When that is 0/null, fall back to payments[0].shipping_cost which
-      // captures the seller-absorbed shipping amount.
+      // Shipping cost resolution:
+      //  1. order.shipping.cost  → buyer-paid (non-zero for paid shipping)
+      //  2. shipmentCostMap       → seller-absorbed cost fetched from /shipments/{id}
+      //     (base_cost on frete grátis / Mercado Envios Full orders)
       frete: (() => {
         const buyerCost = order.shipping?.cost != null ? Number(order.shipping.cost) : null;
         if (buyerCost != null && buyerCost > 0) return buyerCost;
-        const sellerCost = order.payments?.[0]?.shipping_cost != null
-          ? Number(order.payments[0].shipping_cost)
-          : null;
-        return sellerCost != null && sellerCost > 0 ? sellerCost : null;
+        const shipId = order.shipping?.id ? Number(order.shipping.id) : null;
+        if (shipId && shipmentCostMap.has(shipId)) return shipmentCostMap.get(shipId)!;
+        return null;
       })(),
       status:          order.status ?? null,
       data_pedido:     datePedido,
@@ -300,9 +361,12 @@ serve(async (req) => {
 
     console.log(`sync-ml-orders: ${orders.length} unique orders`);
 
+    // ── Resolve seller shipping cost via /shipments/{id} for frete grátis ────
+    const shipmentCostMap = await fetchShipmentCosts(orders, accessToken);
+
     // ── Expand + upsert ───────────────────────────────────────────────────────
     const records = orders.flatMap((o) =>
-      expandOrder(o, ml_user_id, effectiveSellerId, userId, organizationId, syncAt),
+      expandOrder(o, ml_user_id, effectiveSellerId, userId, organizationId, syncAt, shipmentCostMap),
     );
 
     let upserted = 0;

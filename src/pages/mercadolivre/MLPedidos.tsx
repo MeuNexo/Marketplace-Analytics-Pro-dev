@@ -91,6 +91,14 @@ const STATUS_CONFIG: Record<OrderStatus, { label: string; color: string; bg: str
   pending:   { label: "Pendente",  color: "text-amber-600",   bg: "bg-amber-500/15",   border: "border-amber-500/30"   },
 };
 
+// Approximate standard ML Brazil commission rates per listing type.
+// Actual rate per order = comissao / receita_bruta (already stored in DB).
+const LISTING_RATE: Record<ListingType, string> = {
+  classic: "~11%",
+  premium: "~16%",
+  free:    "0%",
+};
+
 const LISTING_LABELS: Record<ListingType, string> = {
   classic: "Clássico",
   premium: "Premium",
@@ -462,6 +470,15 @@ export default function MLPedidos() {
                 <p className="text-xs text-muted-foreground mt-1">
                   {pctFmt(summary.gross_revenue > 0 ? (summary.ml_commission / summary.gross_revenue) * 100 : 0)} da receita bruta
                 </p>
+                {/* Listing type legend */}
+                <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-border/50">
+                  {(["classic", "premium", "free"] as ListingType[]).map(t => (
+                    <span key={t} className="inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/60 rounded px-2 py-0.5">
+                      <span className="font-medium text-foreground">{LISTING_LABELS[t]}</span>
+                      <span>{LISTING_RATE[t]}</span>
+                    </span>
+                  ))}
+                </div>
               </CardContent>
             </Card>
             <Card>
@@ -602,7 +619,8 @@ export default function MLPedidos() {
                             <p className="text-[10px] text-muted-foreground/60">{order.comprador} · {order.quantidade}x</p>
                           </td>
                           <td className="px-3 py-3 text-xs text-muted-foreground">
-                            {LISTING_LABELS[order.listing_type]}
+                            <span>{LISTING_LABELS[order.listing_type]}</span>
+                            <span className="ml-1 text-[10px] opacity-60">{LISTING_RATE[order.listing_type]}</span>
                           </td>
                           <td className="px-3 py-3">
                             <StatusBadge status={order.status} />
