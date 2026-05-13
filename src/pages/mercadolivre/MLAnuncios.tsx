@@ -20,6 +20,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { MLPeriodPicker } from "@/components/mercadolivre/MLPeriodPicker";
+import { PublicidadeRelatorios } from "@/components/mercadolivre/PublicidadeRelatorios";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { useMLAds, type AdsCampaign } from "@/hooks/useMLAds";
 import { useMLFilters } from "@/hooks/useMLFilters";
@@ -55,17 +56,6 @@ function NotConnected() {
   );
 }
 
-// ─── Placeholder for future Relatórios tab ────────────────────────────────────
-
-function PublicidadeRelatorios() {
-  return (
-    <div className="flex flex-col items-center justify-center min-h-[40vh] gap-3 text-center text-muted-foreground">
-      <TrendingUp className="w-10 h-10 opacity-30" />
-      <p className="text-sm">Relatórios de publicidade em breve.</p>
-    </div>
-  );
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function MLAnuncios() {
@@ -86,6 +76,11 @@ export default function MLAnuncios() {
   // fetchFrom already includes the previous window (e.g. 61 days back for a 30d period).
   const { daily, campaigns, products, summary, loading, connected, sync, syncing } =
     useMLAds({ dateFrom: fetchFrom, dateTo: currentTo });
+
+  // Period-scoped fetches for the Relatórios tab (campaigns/products are returned
+  // aggregated for the requested range — we need them per-period for deltas).
+  const currentScoped = useMLAds({ dateFrom: currentFrom, dateTo: currentTo });
+  const prevScoped    = useMLAds({ dateFrom: prevFrom,    dateTo: prevTo });
 
   // ── Confirm handler ──
   const handleConfirm = useCallback(() => {
@@ -635,7 +630,16 @@ export default function MLAnuncios() {
 
       {/* ═══════════════════ ABA RELATÓRIOS ═══════════════════ */}
       <TabsContent value="relatorios" className="mt-0 animate-fade-in">
-        <PublicidadeRelatorios />
+        <PublicidadeRelatorios
+          daily={daily}
+          campaigns={currentScoped.campaigns}
+          products={currentScoped.products}
+          prevCampaigns={prevScoped.campaigns}
+          currentFrom={currentFrom}
+          currentTo={currentTo}
+          prevFrom={prevFrom}
+          prevTo={prevTo}
+        />
       </TabsContent>
 
     </Tabs>
