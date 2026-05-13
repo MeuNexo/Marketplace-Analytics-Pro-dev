@@ -9,7 +9,6 @@ import { ptBR } from "date-fns/locale";
 import { Target, LineChart as LineChartIcon, PieChart as PieChartIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import type {
   AdsDailyStat, AdsCampaign,
