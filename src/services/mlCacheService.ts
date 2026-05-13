@@ -305,6 +305,7 @@ export async function fetchInventory(mlUserId: string) {
 export async function upsertDailyCache(
   userId: string,
   mlUserIdStr: string,
+  organizationId: string,
   dailyRows: Array<{
     date: string;
     total: number;
@@ -319,6 +320,7 @@ export async function upsertDailyCache(
   const syncedAt = new Date().toISOString();
   const rows = dailyRows.map((d) => ({
     user_id: userId,
+    organization_id: organizationId,
     ml_user_id: mlUserIdStr,
     date: d.date,
     total_revenue: d.total,
@@ -341,6 +343,7 @@ export async function upsertDailyCache(
 export async function upsertSyncLog(
   userId: string,
   mlUserId: string,
+  organizationId: string,
   dateFrom: string,
   dateTo: string,
   daysCount: number,
@@ -349,6 +352,7 @@ export async function upsertSyncLog(
   await supabase.from("ml_sync_log").upsert(
     {
       user_id: userId,
+      organization_id: organizationId,
       ml_user_id: mlUserId,
       date_from: dateFrom,
       date_to: dateTo,
