@@ -43,10 +43,12 @@ function round2(n: number)  { return Math.round(n * 100) / 100; }
 // ── ML token retrieval ────────────────────────────────────────────────────────
 
 async function getAccessToken(admin: any, mlUserId: string): Promise<string> {
-  // Service role bypasses the REVOKE on ml_access_token / ml_refresh_token
+  const ML_APP_ID       = Deno.env.get("ML_APP_ID")!;
+  const ML_CLIENT_SECRET = Deno.env.get("ML_CLIENT_SECRET")!;
+
   const { data: row } = await admin
     .from("ml_tokens")
-    .select("ml_access_token,ml_refresh_token,ml_expires_at,seller_id")
+    .select("access_token,refresh_token,expires_at")
     .eq("ml_user_id", mlUserId)
     .order("updated_at", { ascending: false })
     .limit(1)
@@ -54,36 +56,40 @@ async function getAccessToken(admin: any, mlUserId: string): Promise<string> {
 
   if (!row) throw new Error("No ML token for ml_user_id=" + mlUserId);
 
+  // Se o token ainda é válido (com 5min de margem), retorna direto
+  const expiresTs = row.expires_at ? new Date(row.expires_at).getTime() / 1000 : 0;
   const now = Date.now() / 1000;
-  if (row.ml_access_token && row.ml_expires_at && (row.ml_expires_at - now) > 300) {
-    return row.ml_access_token;
+  if (row.access_token && expiresTs - now > 300) {
+    return row.access_token;
   }
 
-  if (!row.ml_refresh_token) throw new Error("No refresh token available");
-  if (!row.seller_id)        throw new Error("seller_id missing — cannot refresh token");
+  if (!row.refresh_token) throw new Error("No refresh token available for ml_user_id=" + mlUserId);
 
-  const { data: creds } = await admin.rpc("get_seller_api_credentials", { p_seller_id: row.seller_id });
-  if (!creds?.ml_client_id || !creds?.ml_client_secret) throw new Error("No ML credentials found");
-
+  // Renova usando as credenciais do app (env vars)
   const resp = await fetch(ML_API + "/oauth/token", {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
       grant_type:    "refresh_token",
-      client_id:     creds.ml_client_id,
-      client_secret: creds.ml_client_secret,
-      refresh_token: row.ml_refresh_token,
+      client_id:     ML_APP_ID,
+      client_secret: ML_CLIENT_SECRET,
+      refresh_token: row.refresh_token,
     }),
   });
   if (!resp.ok) throw new Error("Token refresh failed: " + resp.status);
 
   const data = await resp.json();
-  await admin.rpc("set_seller_ml_tokens", {
-    p_seller_id: row.seller_id,
-    p_access:    data.access_token,
-    p_refresh:   data.refresh_token ?? row.ml_refresh_token,
-    p_expires:   now + (data.expires_in || 21600),
-  });
+  const newExpiresAt = new Date(Date.now() + (data.expires_in || 21600) * 1000).toISOString();
+
+  await admin
+    .from("ml_tokens")
+    .update({
+      access_token:  data.access_token,
+      refresh_token: data.refresh_token ?? row.refresh_token,
+      expires_at:    newExpiresAt,
+    })
+    .eq("ml_user_id", mlUserId);
+
   return data.access_token;
 }
 
