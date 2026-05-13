@@ -62,7 +62,7 @@ function NotConnected() {
 export default function MLAnuncios() {
   const [campaignSearch, setCampaignSearch] = useState("");
   const [productSearch, setProductSearch]   = useState("");
-  const [productSort, setProductSort]       = useState<{ key: "spend" | "roas" | "clicks" | "attributed_orders" | "attributed_revenue" | "ctr"; dir: "asc" | "desc" }>({ key: "spend", dir: "desc" });
+  const [productSort, setProductSort]       = useState<{ key: "spend" | "roas" | "clicks" | "attributed_orders" | "attributed_revenue" | "ctr" | "stock"; dir: "asc" | "desc" }>({ key: "spend", dir: "desc" });
   const [productPage, setProductPage]       = useState(1);
   const [productPageSize, setProductPageSize] = useState<number>(20);
   const [campaignSort, setCampaignSort]     = useState<{ key: "daily_budget" | "spend" | "ctr" | "roas"; dir: "asc" | "desc" } | null>(null);
@@ -181,9 +181,15 @@ export default function MLAnuncios() {
         const bValid = b.spend > 0;
         if (aValid !== bValid) return aValid ? -1 : 1;
       }
+      if (key === "stock") {
+        const aHas = stockByItem.has(a.item_id);
+        const bHas = stockByItem.has(b.item_id);
+        if (aHas !== bHas) return aHas ? -1 : 1;
+        return ((stockByItem.get(a.item_id) ?? 0) - (stockByItem.get(b.item_id) ?? 0)) * mult;
+      }
       return ((a[key] ?? 0) - (b[key] ?? 0)) * mult;
     });
-  }, [products, productSearch, productSort]);
+  }, [products, productSearch, productSort, stockByItem]);
 
   const toggleSort = useCallback((key: typeof productSort.key) => {
     setProductSort((prev) =>
@@ -589,7 +595,12 @@ export default function MLAnuncios() {
                         </span>
                       </th>
                     ))}
-                    <th className="px-4 py-2.5 pr-6 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Estoque</th>
+                    <th
+                      onClick={() => toggleSort("stock")}
+                      className="px-4 py-2.5 pr-6 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
+                    >
+                      <span className="inline-flex items-center gap-1">Estoque <SortIcon k="stock" /></span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
