@@ -282,12 +282,28 @@ export default function Integrations() {
     const exchangeCode = async () => {
       setMlOAuthConnecting(true);
       setMlOAuthStep("verifying");
+
       const redirectUri = "https://analytics.alcavie.com/integracoes";
       const codeVerifier = localStorage.getItem("ml_pkce_code_verifier") || undefined;
+      // Recupera seller/org salvos antes do redirect (currentOrg/selectedSeller podem ainda ser null)
+      const sellerId = selectedSeller?.id || localStorage.getItem("ml_oauth_seller_id") || undefined;
+      const organizationId = currentOrg?.id || localStorage.getItem("ml_oauth_org_id") || undefined;
 
       const { data, error } = await supabase.functions.invoke("ml-oauth", {
-        body: { action: "exchange_code", code, redirect_uri: redirectUri, code_verifier: codeVerifier },
+        body: {
+          action: "exchange_code",
+          code,
+          redirect_uri: redirectUri,
+          code_verifier: codeVerifier,
+          seller_id: sellerId,
+          organization_id: organizationId,
+        },
       });
+
+      // Limpa localStorage após uso
+      localStorage.removeItem("ml_pkce_code_verifier");
+      localStorage.removeItem("ml_oauth_seller_id");
+      localStorage.removeItem("ml_oauth_org_id");
 
       if (error || !data?.success) {
         setMlOAuthStep("error");
@@ -304,24 +320,12 @@ export default function Integrations() {
       }
 
       setMlOAuthStep("saving");
-      try {
-        await saveMLTokens(data);
-      } catch (saveErr: any) {
-        setMlOAuthStep("error");
-        toast({
-          title: "Erro ao salvar integração",
-          description: saveErr?.message || "Não foi possível salvar os tokens.",
-          variant: "destructive",
-        });
-        setTimeout(() => {
-          setMlOAuthConnecting(false);
-          setSearchParams({}, { replace: true });
-        }, 2000);
-        return;
-      }
+      // Tokens já foram salvos pela edge function via service role.
+      // Apenas atualiza contexto local.
+      await refreshSellers();
       updateIntegrationStatus("ml", "connected");
       setMlOAuthStep("done");
-      toast({ title: "Mercado Livre conectado!", description: `Conta conectada com sucesso.` });
+      toast({ title: "Mercado Livre conectado!", description: "Sua conta foi integrada com sucesso." });
       setTimeout(() => {
         setMlOAuthConnecting(false);
         setSearchParams({}, { replace: true });
