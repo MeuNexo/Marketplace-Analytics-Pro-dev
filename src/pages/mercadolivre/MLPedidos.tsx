@@ -552,13 +552,13 @@ export default function MLPedidos() {
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <span className="text-sm font-medium text-foreground">Pedidos ({filtered.length})</span>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <div className="relative w-52">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                  <div className="relative w-44">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
                     <Input
-                      placeholder="Pedido, produto ou comprador…"
+                      placeholder="Buscar..."
                       value={search}
                       onChange={e => setSearch(e.target.value)}
-                      className="pl-9 h-8 text-xs"
+                      className="pl-8 h-8 text-xs"
                     />
                   </div>
                   <Select value={statusFilter} onValueChange={v => setStatusFilter(v as StatusFilter)}>

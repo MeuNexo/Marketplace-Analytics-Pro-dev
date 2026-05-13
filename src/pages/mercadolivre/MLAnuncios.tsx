@@ -8,11 +8,12 @@ import { format, subDays, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Megaphone, TrendingUp, TrendingDown, MousePointerClick, Eye,
-  ShoppingCart, DollarSign, Zap, RefreshCw, Info, BarChart3, ListFilter, Plug,
+  ShoppingCart, DollarSign, Zap, RefreshCw, Info, BarChart3, ListFilter, Plug, Search,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -67,6 +68,7 @@ function NotConnected() {
 export default function MLAnuncios() {
   const [selectedDays, setSelectedDays] = useState(30);
   const [productTab, setProductTab] = useState<"spend" | "roas">("spend");
+  const [campaignSearch, setCampaignSearch] = useState("");
 
   const { daily, campaigns, products, summary, loading, connected, isRealData, sync, syncing } =
     useMLAds({ daysBack: selectedDays });
@@ -100,6 +102,13 @@ export default function MLAnuncios() {
     () => [...products].filter((p) => p.spend > 0).sort((a, b) => b.roas - a.roas).slice(0, 8),
     [products]
   );
+
+  // ── Filtered campaigns ──
+  const filteredCampaigns = useMemo(() => {
+    const q = campaignSearch.trim().toLowerCase();
+    if (!q) return campaigns;
+    return campaigns.filter((c) => c.name.toLowerCase().includes(q));
+  }, [campaigns, campaignSearch]);
 
   // ── Previous period delta (simulate) ──
   const prevSummary = useMemo(() => {
@@ -337,7 +346,18 @@ export default function MLAnuncios() {
       {/* ── Campaigns Table ── */}
       <Card>
         <div className="px-4 pt-4 pb-3">
-          <span className="text-sm font-medium text-foreground">Campanhas</span>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <span className="text-sm font-medium text-foreground">Campanhas ({filteredCampaigns.length})</span>
+            <div className="relative w-44">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Buscar..."
+                value={campaignSearch}
+                onChange={(e) => setCampaignSearch(e.target.value)}
+                className="pl-8 h-8 text-xs"
+              />
+            </div>
+          </div>
         </div>
 
         <CardContent className="p-0">
@@ -353,7 +373,7 @@ export default function MLAnuncios() {
                 </tr>
               </thead>
               <tbody>
-                {campaigns.map((c, i) => (
+                {filteredCampaigns.map((c, i) => (
                   <tr
                     key={c.id}
                     className={`border-b border-border/40 transition-colors hover:bg-muted/20 ${i % 2 === 0 ? "" : "bg-muted/10"}`}
@@ -375,10 +395,10 @@ export default function MLAnuncios() {
 
           {/* Campaign totals row */}
           <div className="border-t border-border/60 bg-muted/20 px-6 py-2.5 flex items-center gap-8 text-xs text-muted-foreground">
-            <span className="font-semibold text-foreground">{campaigns.length} campanhas</span>
-            <span>Gasto total: <strong className="text-foreground tabular-nums">{currFmt(campaigns.reduce((s, c) => s + c.spend, 0))}</strong></span>
-            <span>Impressões: <strong className="text-foreground tabular-nums">{numFmt(campaigns.reduce((s, c) => s + c.impressions, 0))}</strong></span>
-            <span>Pedidos: <strong className="text-foreground tabular-nums">{numFmt(campaigns.reduce((s, c) => s + c.attributed_orders, 0))}</strong></span>
+            <span className="font-semibold text-foreground">{filteredCampaigns.length} campanhas</span>
+            <span>Gasto total: <strong className="text-foreground tabular-nums">{currFmt(filteredCampaigns.reduce((s, c) => s + c.spend, 0))}</strong></span>
+            <span>Impressões: <strong className="text-foreground tabular-nums">{numFmt(filteredCampaigns.reduce((s, c) => s + c.impressions, 0))}</strong></span>
+            <span>Pedidos: <strong className="text-foreground tabular-nums">{numFmt(filteredCampaigns.reduce((s, c) => s + c.attributed_orders, 0))}</strong></span>
           </div>
         </CardContent>
       </Card>
