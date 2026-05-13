@@ -259,8 +259,13 @@ async function syncAds(
   while (true) {
     let camps: any[] = [], total = 0;
     try {
+      const qs = new URLSearchParams({
+        date_from: dateFrom, date_to: dateTo,
+        metrics: METRICS, metrics_summary: "true",
+        limit: "50", offset: String(campOff),
+      });
       const data = await mlGet(
-        ML_API + "/advertising/advertisers/" + advertiserId + "/product_ads/campaigns?limit=50&offset=" + campOff,
+        ML_API + "/advertising/advertisers/" + advertiserId + "/product_ads/campaigns?" + qs,
         token,
       );
       camps = data?.campaigns ?? data?.results ?? [];
@@ -271,16 +276,30 @@ async function syncAds(
     if (camps.length === 0 || campOff >= total) break;
   }
   if (allCamps.length > 0) {
-    const campRows = allCamps.map((c: any) => ({
-      user_id: userId, organization_id: orgId, ml_user_id: mlUserId, seller_id: sellerId,
-      campaign_id:  String(c.id ?? c.campaign_id ?? ""),
-      name:         c.name ?? "",
-      status:       (c.status ?? "unknown").toLowerCase(),
-      daily_budget: Number(c.budget_amount ?? c.daily_budget ?? 0),
-      impressions: 0, clicks: 0, spend: 0, attributed_revenue: 0, attributed_orders: 0,
-      ctr: 0, cpc: 0, roas: 0,
-      synced_at: syncedAt,
-    }));
+    const campRows = allCamps.map((c: any, idx: number) => {
+      const m = normalizeMetrics(c);
+      const imp = Number(m.prints ?? m.impressions ?? 0);
+      const cl  = Number(m.clicks ?? 0);
+      const sp  = Number(m.cost ?? m.spend ?? 0);
+      const rev = Number(m.total_amount ?? m.direct_amount ?? 0);
+      const ord = Number(m.units_quantity ?? m.direct_units_quantity ?? 0);
+      if (idx === 0) {
+        console.log("ml-ads campaign sample keys:", Object.keys(c).join(","), "| metrics:", JSON.stringify(m).slice(0, 300));
+      }
+      return {
+        user_id: userId, organization_id: orgId, ml_user_id: mlUserId, seller_id: sellerId,
+        campaign_id:  String(c.id ?? c.campaign_id ?? ""),
+        name:         c.name ?? "",
+        status:       (c.status ?? "unknown").toLowerCase(),
+        daily_budget: Number(c.budget_amount ?? c.daily_budget ?? c.budget ?? 0),
+        impressions: imp, clicks: cl,
+        spend: round2(sp), attributed_revenue: round2(rev), attributed_orders: ord,
+        ctr:  imp > 0 ? round2(cl  / imp * 100) : 0,
+        cpc:  cl  > 0 ? round2(sp  / cl)        : 0,
+        roas: sp  > 0 ? round2(rev / sp)        : 0,
+        synced_at: syncedAt,
+      };
+    });
     await admin.from("ml_ads_campaigns_cache").delete().eq("ml_user_id", mlUserId);
     await admin.from("ml_ads_campaigns_cache").insert(campRows);
   }
