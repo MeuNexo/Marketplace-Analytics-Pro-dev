@@ -161,11 +161,21 @@ async function syncAds(
       }
 
       for (const it of items) {
-        const p   = Number(it.prints        ?? 0);
-        const cl  = Number(it.clicks        ?? 0);
-        const sp  = Number(it.cost          ?? 0);
-        const rev = Number(it.total_amount  ?? 0);
-        const ord = Number(it.units_quantity ?? 0);
+        // ML Ads v2 API may return metrics flat on item OR nested under
+        // `metrics` (object) / `metrics_summary` (object). Support all shapes.
+        const m = (it.metrics && !Array.isArray(it.metrics) ? it.metrics : null)
+               ?? (Array.isArray(it.metrics) ? it.metrics[0] : null)
+               ?? it.metrics_summary
+               ?? it;
+        const p   = Number(m.prints        ?? m.impressions    ?? 0);
+        const cl  = Number(m.clicks        ?? 0);
+        const sp  = Number(m.cost          ?? m.spend          ?? 0);
+        const rev = Number(m.total_amount  ?? m.direct_amount  ?? 0);
+        const ord = Number(m.units_quantity ?? m.direct_units_quantity ?? 0);
+
+        if (offset === 0 && day === days[0] && itemAgg.size === 0) {
+          console.log("ml-ads sample item keys:", Object.keys(it).join(","), "| metrics:", JSON.stringify(m).slice(0, 300));
+        }
 
         const d = dailyAgg.get(day) ?? { impressions: 0, clicks: 0, spend: 0, revenue: 0, orders: 0 };
         d.impressions += p; d.clicks += cl; d.spend += sp; d.revenue += rev; d.orders += ord;
