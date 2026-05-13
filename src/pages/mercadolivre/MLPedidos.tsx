@@ -609,6 +609,7 @@ export default function MLPedidos() {
   const [rows, setRows]                 = useState<OrderRow[]>([]);
   const [loading, setLoading]           = useState(false);
   const [syncing, setSyncing]           = useState(false);
+  const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [search, setSearch]             = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -679,26 +680,38 @@ export default function MLPedidos() {
     if (connected) loadOrders();
   }, [connected, loadOrders]);
 
-  // ── Sync ────────────────────────────────────────────────────────────────────
+  // ── Sync — fatiado por dia para evitar timeout da edge function ──────────────
   const handleSync = useCallback(async () => {
     if (!resolvedMLUserIds.length || syncing) return;
     setSyncing(true);
+    setSyncProgress(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Sessão expirada");
 
+      // Gera lista de datas individuais no range
+      const days = eachDayOfInterval({ start: parseISO(dateFrom), end: parseISO(dateTo) });
+      const total = days.length * resolvedMLUserIds.length;
+      let current = 0;
+
       for (const ml_user_id of resolvedMLUserIds) {
         const store = stores.find(s => s.ml_user_id === ml_user_id);
-        const { data, error } = await supabase.functions.invoke("sync-ml-orders", {
-          body: {
-            ml_user_id,
-            date_from: dateFrom,
-            date_to:   dateTo,
-            seller_id: store?.seller_id ?? null,
-          },
-        });
-        if (error) throw error;
-        if (!data?.success) throw new Error(data?.error || "Sync failed");
+        for (const day of days) {
+          const dateStr = format(day, "yyyy-MM-dd");
+          current++;
+          setSyncProgress({ current, total });
+
+          const { data, error } = await supabase.functions.invoke("sync-ml-orders", {
+            body: {
+              ml_user_id,
+              date_from: dateStr,
+              date_to:   dateStr,
+              seller_id: store?.seller_id ?? null,
+            },
+          });
+          if (error) throw error;
+          if (!data?.success) throw new Error(data?.error || "Sync failed");
+        }
       }
 
       const now = new Date();
@@ -709,6 +722,7 @@ export default function MLPedidos() {
       toast({ title: "Erro na sincronização", description: err.message, variant: "destructive" });
     } finally {
       setSyncing(false);
+      setSyncProgress(null);
     }
   }, [resolvedMLUserIds, stores, syncing, dateFrom, dateTo, loadOrders, toast]);
 
@@ -866,7 +880,11 @@ export default function MLPedidos() {
               aria-label="Atualizar"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} />
-              <span className="hidden sm:inline">{syncing ? "Sincronizando..." : "Atualizar"}</span>
+              <span className="hidden sm:inline">
+                {syncProgress
+                  ? `${syncProgress.current}/${syncProgress.total} dias`
+                  : syncing ? "Sincronizando..." : "Atualizar"}
+              </span>
             </Button>
           </div>
         </div>
