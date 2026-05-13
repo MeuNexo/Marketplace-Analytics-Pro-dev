@@ -72,6 +72,8 @@ export default function MLAnuncios() {
   const [campaignSearch, setCampaignSearch] = useState("");
   const [productSearch, setProductSearch]   = useState("");
   const [productSort, setProductSort]       = useState<{ key: "spend" | "roas" | "clicks" | "attributed_orders" | "attributed_revenue" | "ctr"; dir: "asc" | "desc" }>({ key: "spend", dir: "desc" });
+  const [productPage, setProductPage]       = useState(1);
+  const [productPageSize, setProductPageSize] = useState<number>(20);
 
   // ── Filters — default 30 days (ads data is not real-time, "Hoje" would be zeros) ──
   const filters = useMLFilters(30);
@@ -185,6 +187,17 @@ export default function MLAnuncios() {
         : { key, dir: "desc" },
     );
   }, []);
+
+  // Reset to first page when filters/sort/data change
+  useEffect(() => { setProductPage(1); }, [productSearch, productSort, productPageSize, products.length]);
+
+  const productTotalPages = Math.max(1, Math.ceil(sortedProducts.length / productPageSize));
+  const productPageSafe   = Math.min(productPage, productTotalPages);
+  const pageStart         = (productPageSafe - 1) * productPageSize;
+  const pagedProducts     = useMemo(
+    () => sortedProducts.slice(pageStart, pageStart + productPageSize),
+    [sortedProducts, pageStart, productPageSize],
+  );
 
   const SortIcon = ({ k }: { k: typeof productSort.key }) => {
     if (productSort.key !== k) return <ArrowUpDown className="w-3 h-3 opacity-40" />;
@@ -556,12 +569,12 @@ export default function MLAnuncios() {
                       </td>
                     </tr>
                   )}
-                  {sortedProducts.map((p, i) => (
+                  {pagedProducts.map((p, i) => (
                     <tr
                       key={p.item_id}
                       className={`border-b border-border/40 transition-colors hover:bg-muted/20 ${i % 2 === 0 ? "" : "bg-muted/10"}`}
                     >
-                      <td className="px-4 py-3 pl-6 text-muted-foreground font-mono text-xs">{i + 1}</td>
+                      <td className="px-4 py-3 pl-6 text-muted-foreground font-mono text-xs">{pageStart + i + 1}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2.5 min-w-[200px]">
                           {p.thumbnail && (
@@ -584,6 +597,38 @@ export default function MLAnuncios() {
                 </tbody>
               </table>
             </div>
+            {sortedProducts.length > 0 && (
+              <div className="border-t border-border/60 bg-muted/20 px-6 py-2.5 flex items-center justify-between flex-wrap gap-3 text-xs text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <span>
+                    {pageStart + 1}–{Math.min(pageStart + productPageSize, sortedProducts.length)} de{" "}
+                    <strong className="text-foreground tabular-nums">{sortedProducts.length}</strong>
+                  </span>
+                  <span className="hidden sm:inline">·</span>
+                  <label className="hidden sm:inline-flex items-center gap-1.5">
+                    Por página:
+                    <select
+                      value={productPageSize}
+                      onChange={(e) => setProductPageSize(Number(e.target.value))}
+                      className="h-7 rounded-md border border-border bg-background px-1.5 text-xs"
+                    >
+                      {[10, 20, 50, 100].map((n) => (
+                        <option key={n} value={n}>{n}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" disabled={productPageSafe <= 1} onClick={() => setProductPage(1)}>« Início</Button>
+                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" disabled={productPageSafe <= 1} onClick={() => setProductPage((p) => Math.max(1, p - 1))}>‹ Anterior</Button>
+                  <span className="px-2 tabular-nums text-foreground">
+                    {productPageSafe} / {productTotalPages}
+                  </span>
+                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" disabled={productPageSafe >= productTotalPages} onClick={() => setProductPage((p) => Math.min(productTotalPages, p + 1))}>Próxima ›</Button>
+                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" disabled={productPageSafe >= productTotalPages} onClick={() => setProductPage(productTotalPages)}>Fim »</Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
