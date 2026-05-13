@@ -159,7 +159,9 @@ export default function Integrations() {
       // Clean up the persisted seller
       localStorage.removeItem("ml_oauth_seller_id");
 
-      const organizationId = currentOrg?.id ?? null;
+      // currentOrg pode ser null logo após o redirect OAuth — usa o valor salvo antes do redirect
+      const organizationId = currentOrg?.id ?? localStorage.getItem("ml_oauth_org_id") ?? null;
+      localStorage.removeItem("ml_oauth_org_id");
 
       const { error: upsertErr } = await supabase.from("ml_tokens").upsert(
         {
@@ -208,7 +210,7 @@ export default function Integrations() {
           } else {
             await supabase.from("seller_stores").insert({
               seller_id: sellerId,
-              organization_id: currentOrg.id,
+              organization_id: organizationId,
               marketplace: "ml",
               external_id: mlUserId,
               store_name: `Loja ML ${mlUserId}`,
@@ -302,7 +304,21 @@ export default function Integrations() {
       }
 
       setMlOAuthStep("saving");
-      await saveMLTokens(data);
+      try {
+        await saveMLTokens(data);
+      } catch (saveErr: any) {
+        setMlOAuthStep("error");
+        toast({
+          title: "Erro ao salvar integração",
+          description: saveErr?.message || "Não foi possível salvar os tokens.",
+          variant: "destructive",
+        });
+        setTimeout(() => {
+          setMlOAuthConnecting(false);
+          setSearchParams({}, { replace: true });
+        }, 2000);
+        return;
+      }
       updateIntegrationStatus("ml", "connected");
       setMlOAuthStep("done");
       toast({ title: "Mercado Livre conectado!", description: `Conta conectada com sucesso.` });
@@ -335,9 +351,12 @@ export default function Integrations() {
         localStorage.setItem("ml_pkce_code_verifier", data.code_verifier);
       }
 
-      // Persist selected seller so it survives the OAuth redirect
+      // Persist seller + org so eles sobrevivem ao redirect OAuth
       if (selectedSeller?.id) {
         localStorage.setItem("ml_oauth_seller_id", selectedSeller.id);
+      }
+      if (currentOrg?.id) {
+        localStorage.setItem("ml_oauth_org_id", currentOrg.id);
       }
 
       window.location.href = data.auth_url;
