@@ -1031,7 +1031,9 @@ export default function MLEstoque() {
     );
   }
 
-  if (isLoading) {
+  // Only show full-page skeleton on initial load (no data yet).
+  // On subsequent refreshes keep the current view and just animate the button.
+  if (isLoading && items.length === 0) {
     return (
       <div className="p-6 space-y-4">
         <Skeleton className="h-8 w-48" />
