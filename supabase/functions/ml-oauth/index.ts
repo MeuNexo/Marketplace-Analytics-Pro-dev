@@ -104,10 +104,6 @@ serve(async (req) => {
         {
           user_id: userId,
           organization_id: organization_id ?? null,
-          ml_access_token: tokenData.access_token,
-          ml_refresh_token: tokenData.refresh_token,
-          ml_expires_at: Math.floor(Date.now() / 1000) + (tokenData.expires_in || 21600),
-          // Colunas legacy (mantidas para compatibilidade)
           access_token: tokenData.access_token,
           refresh_token: tokenData.refresh_token,
           expires_at: expiresAt,
