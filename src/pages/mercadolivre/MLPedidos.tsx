@@ -156,13 +156,29 @@ export default function MLPedidos() {
   const [rows, setRows]                 = useState<OrderRow[]>([]);
   const [loading, setLoading]           = useState(false);
   const [syncing, setSyncing]           = useState(false);
-  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [search, setSearch]             = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sortKey, setSortKey]           = useState<SortKey>("date");
   const [sortDir, setSortDir]           = useState<SortDir>("desc");
 
   const connected = stores.length > 0;
+
+  // ── Load last sync time from ml_sync_log on mount ───────────────────────────
+  useEffect(() => {
+    if (!resolvedMLUserIds.length) return;
+    supabase
+      .from("ml_sync_log")
+      .select("synced_at")
+      .in("ml_user_id", resolvedMLUserIds)
+      .eq("source", "orders")
+      .order("synced_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.synced_at) setLastSyncedAt(new Date(data.synced_at));
+      });
+  }, [resolvedMLUserIds]);
 
   // Confirma a seleção do picker (igual ao padrão de Vendas)
   const handleConfirmPeriod = useCallback(() => {
@@ -247,7 +263,7 @@ export default function MLPedidos() {
         if (!data?.success) throw new Error(data?.error || "Sync failed");
       }
 
-      const now = new Date().toISOString();
+      const now = new Date();
       setLastSyncedAt(now);
       await loadOrders();
       toast({ title: "Sincronizado", description: `Pedidos atualizados: ${dateFrom} → ${dateTo}.` });
@@ -388,13 +404,15 @@ export default function MLPedidos() {
               onConfirm={handleConfirmPeriod}
             />
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
               disabled={syncing || loading}
               onClick={handleSync}
+              className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted hover:text-muted-foreground"
+              aria-label="Atualizar"
             >
-              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${syncing ? "animate-spin" : ""}`} />
-              {syncing ? "Sincronizando…" : "Atualizar"}
+              <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline">{syncing ? "Sincronizando..." : "Atualizar"}</span>
             </Button>
           </div>
         </div>
