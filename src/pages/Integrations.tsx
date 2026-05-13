@@ -26,7 +26,6 @@ import {
 import {
   AlertCircle,
   CheckCircle2,
-  ExternalLink,
   Link2,
   Link2Off,
   RefreshCw,
@@ -36,6 +35,7 @@ import {
   Check as CheckIcon,
   X,
   Building2,
+  Loader2,
 } from "lucide-react";
 
 interface MarketplaceIntegration {
@@ -104,8 +104,8 @@ export default function Integrations() {
   const [connectDialog, setConnectDialog] = useState<MarketplaceIntegration | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [connecting, setConnecting] = useState(false);
-  const [mlCodeDialog, setMlCodeDialog] = useState(false);
-  const [mlCodeInput, setMlCodeInput] = useState("");
+  const [mlOAuthConnecting, setMlOAuthConnecting] = useState(false);
+  const [mlOAuthStep, setMlOAuthStep] = useState<"verifying" | "saving" | "done" | "error">("verifying");
   const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);
   const [disconnectPassword, setDisconnectPassword] = useState("");
   const [disconnecting, setDisconnecting] = useState(false);
@@ -733,16 +733,6 @@ export default function Integrations() {
                       >
                         <Link2 className="w-4 h-4 mr-1.5" />
                         Conectar
-                      </Button>
-                      {integration.id === "ml" && canManage && (
-                        <Button variant="outline" size="sm" onClick={() => setMlCodeDialog(true)} title="Colar código manualmente">
-                          📋
-                        </Button>
-                      )}
-                      <Button variant="ghost" size="sm" asChild>
-                        <a href={integration.docsUrl} target="_blank" rel="noopener noreferrer">
-                          <ExternalLink className="w-4 h-4" />
-                        </a>
                       </Button>
                     </>
                   )}
