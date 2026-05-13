@@ -9,6 +9,7 @@ import { ptBR } from "date-fns/locale";
 import {
   TrendingUp, TrendingDown, MousePointerClick,
   ShoppingCart, DollarSign, Zap, RefreshCw, Plug, Search,
+  ArrowUpDown, ArrowDown, ArrowUp,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
@@ -68,8 +69,9 @@ function PublicidadeRelatorios() {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function MLAnuncios() {
-  const [productTab, setProductTab]         = useState<"spend" | "roas">("spend");
   const [campaignSearch, setCampaignSearch] = useState("");
+  const [productSearch, setProductSearch]   = useState("");
+  const [productSort, setProductSort]       = useState<{ key: "spend" | "roas" | "clicks" | "attributed_orders" | "attributed_revenue" | "ctr"; dir: "asc" | "desc" }>({ key: "spend", dir: "desc" });
 
   // ── Filters — default 30 days (ads data is not real-time, "Hoje" would be zeros) ──
   const filters = useMLFilters(30);
@@ -157,9 +159,39 @@ export default function MLAnuncios() {
     { name: "Pedidos",    value: currentSummary.total_attributed_orders, fill: "#a855f7" },
   ], [currentSummary]);
 
-  // ── Sorted product lists ──
-  const topBySpend = useMemo(() => [...products].sort((a, b) => b.spend - a.spend).slice(0, 8),  [products]);
-  const topByRoas  = useMemo(() => [...products].filter((p) => p.spend > 0).sort((a, b) => b.roas - a.roas).slice(0, 8), [products]);
+  // ── Sorted + filtered product list (all sponsored products) ──
+  const sortedProducts = useMemo(() => {
+    const q = productSearch.trim().toLowerCase();
+    const filtered = q
+      ? products.filter((p) => p.title.toLowerCase().includes(q) || p.item_id.toLowerCase().includes(q))
+      : products;
+    const { key, dir } = productSort;
+    const mult = dir === "desc" ? -1 : 1;
+    return [...filtered].sort((a, b) => {
+      // For ROAS sorting, push items with zero spend to the bottom (no meaningful ROAS).
+      if (key === "roas") {
+        const aValid = a.spend > 0;
+        const bValid = b.spend > 0;
+        if (aValid !== bValid) return aValid ? -1 : 1;
+      }
+      return ((a[key] ?? 0) - (b[key] ?? 0)) * mult;
+    });
+  }, [products, productSearch, productSort]);
+
+  const toggleSort = useCallback((key: typeof productSort.key) => {
+    setProductSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === "desc" ? "asc" : "desc" }
+        : { key, dir: "desc" },
+    );
+  }, []);
+
+  const SortIcon = ({ k }: { k: typeof productSort.key }) => {
+    if (productSort.key !== k) return <ArrowUpDown className="w-3 h-3 opacity-40" />;
+    return productSort.dir === "desc"
+      ? <ArrowDown className="w-3 h-3 text-foreground" />
+      : <ArrowUp   className="w-3 h-3 text-foreground" />;
+  };
 
   // ── Filtered campaigns ──
   const filteredCampaigns = useMemo(() => {
