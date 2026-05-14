@@ -707,7 +707,7 @@ serve(async (req) => {
                 productBatches.map((batch) =>
                   supabaseAdmin
                     .from("ml_product_daily_cache")
-                    .upsert(batch, { onConflict: "user_id,ml_user_id,date,item_id" })
+                    .upsert(batch, { onConflict: "organization_id,ml_user_id,date,item_id" })
                     .then(({ error }) => { if (error) console.error("Product cache upsert error:", error); }),
                 ),
               );

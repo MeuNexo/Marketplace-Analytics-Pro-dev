@@ -588,7 +588,7 @@ export default function MLProdutos() {
   const [rankingPopoverOpen, setRankingPopoverOpen] = useState(false);
   const [pendingPeriod, setPendingPeriod] = useState<number | null>(TOTAL_PERIOD);
   const [pendingRange, setPendingRange] = useState<DateRange | null>(null);
-  const [rankingRawData, setRankingRawData] = useState<{ item_id: string; qty_sold: number; revenue: number }[]>([]);
+  const [rankingRawData, setRankingRawData] = useState<{ item_id: string; qty_sold: number; revenue: number; ml_user_id: string | null; date: string | null }[]>([]);
 
   const fetchRankingSales = useCallback(async () => {
     if (!user) return;
@@ -612,7 +612,7 @@ export default function MLProdutos() {
     }
     let query = supabase
       .from("ml_product_daily_cache")
-      .select("item_id, qty_sold, revenue")
+      .select("item_id, qty_sold, revenue, ml_user_id, date")
       .gte("date", fromDate)
       .lte("date", toDate);
     if (selectedStore !== "all") {
@@ -626,21 +626,35 @@ export default function MLProdutos() {
 
   useEffect(() => { fetchRankingSales(); }, [fetchRankingSales]);
 
+  // Deduplicate raw rows by (ml_user_id, date, item_id) before aggregating.
+  // Guard against duplicate rows that arise when multiple members of the same
+  // org sync the same store on the same day (unique constraint was previously
+  // per-user, not per-org, so two rows could coexist with identical data).
+  const rankingDeduped = useMemo(() => {
+    const seen = new Set<string>();
+    return rankingRawData.filter((row) => {
+      const key = `${row.ml_user_id ?? ""}:${row.date ?? ""}:${row.item_id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [rankingRawData]);
+
   const rankingSoldMap = useMemo(() => {
     const map = new Map<string, number>();
-    for (const row of rankingRawData) {
+    for (const row of rankingDeduped) {
       map.set(row.item_id, (map.get(row.item_id) ?? 0) + row.qty_sold);
     }
     return map;
-  }, [rankingRawData]);
+  }, [rankingDeduped]);
 
   const rankingRevenueMap = useMemo(() => {
     const map = new Map<string, number>();
-    for (const row of rankingRawData) {
+    for (const row of rankingDeduped) {
       map.set(row.item_id, (map.get(row.item_id) ?? 0) + (row.revenue ?? 0));
     }
     return map;
-  }, [rankingRawData]);
+  }, [rankingDeduped]);
 
   const rankingLabel = rankingRange
     ? `${format(rankingRange.from, "dd/MM")} – ${format(rankingRange.to, "dd/MM")}`
