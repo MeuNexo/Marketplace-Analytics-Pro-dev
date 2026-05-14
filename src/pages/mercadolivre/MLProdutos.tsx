@@ -1214,10 +1214,8 @@ export default function MLProdutos() {
                                     />
                                   </TableCell>
                                   <TableCell className="text-right">
-                                    <div className="flex flex-col items-end gap-0">
-                                      <span className="text-xs text-destructive font-mono tabular-nums">−{currencyFmt(commission)}</span>
-                                      <span className="text-[10px] text-muted-foreground">{listingBadge(item.listing_type_id, commRate)}</span>
-                                    </div>
+                                    <span className="text-xs text-destructive font-mono tabular-nums">−{currencyFmt(commission)}</span>
+                                    <span className="text-[10px] text-muted-foreground ml-1">({(commRate * 100).toFixed(0)}%)</span>
                                   </TableCell>
                                   <TableCell className="text-right">
                                     {marginBruta != null
@@ -1347,7 +1345,10 @@ export default function MLProdutos() {
                                                 <>
                                                   <TableCell className="py-2 text-right text-xs text-muted-foreground italic">↑ item</TableCell>
                                                   <TableCell className="py-2 text-right text-xs text-muted-foreground italic">↑ item</TableCell>
-                                                  <TableCell className="py-2 text-xs text-right text-destructive font-mono tabular-nums">−{currencyFmt(commission)}</TableCell>
+                                                  <TableCell className="py-2 text-right">
+                                                    <span className="text-xs text-destructive font-mono tabular-nums">−{currencyFmt(commission)}</span>
+                                                    <span className="text-[10px] text-muted-foreground ml-1">({(commRate * 100).toFixed(0)}%)</span>
+                                                  </TableCell>
                                                   <TableCell className="py-2 text-right">
                                                     {marginBruta != null ? <span className={`text-xs font-bold ${mgBrutaColor}`}>{marginBruta.toFixed(1)}%</span> : <span className="text-xs text-muted-foreground/40">—</span>}
                                                   </TableCell>
