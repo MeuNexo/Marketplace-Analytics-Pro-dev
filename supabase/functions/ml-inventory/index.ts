@@ -143,6 +143,12 @@ serve(async (req) => {
         if (entry.code === 200 && entry.body) {
           const b = entry.body;
           const rawVariations: any[] = b.variations || [];
+          // Helper: resolve SKU from seller_custom_field OR attributes[SELLER_SKU]
+          const resolveSku = (obj: any): string | null =>
+            obj.seller_custom_field
+              ?? (obj.attributes as any[] | undefined)?.find((a: any) => a.id === "SELLER_SKU")?.value_name
+              ?? null;
+
           const variations = rawVariations.map((v: any) => ({
             variation_id: String(v.id),
             attribute_combinations: (v.attribute_combinations || []).map((a: any) => ({
@@ -154,7 +160,7 @@ serve(async (req) => {
             sold_quantity: v.sold_quantity ?? 0,
             price: v.price ?? b.price ?? 0,
             picture_id: v.picture_ids?.[0] ?? null,
-            seller_custom_field: v.seller_custom_field ?? null,
+            seller_custom_field: resolveSku(v),
           }));
           const brandAttr = (b.attributes || []).find((a: any) => a.id === "BRAND");
           const brand = brandAttr?.value_name || null;
@@ -172,7 +178,7 @@ serve(async (req) => {
             health: b.health ?? null,
             visits: 0,
             brand,
-            seller_custom_field: b.seller_custom_field ?? null,
+            seller_custom_field: resolveSku(b),
             has_variations: variations.length > 1,
             variations,
             logistic_type: b.shipping?.logistic_type ?? null,
