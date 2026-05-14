@@ -30,6 +30,14 @@ import { Link } from "react-router-dom";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+export const LOGISTIC_LABELS: Record<string, string> = {
+  fulfillment:    "Full",
+  default:        "Padrão",
+  drop_off:       "Drop-off",
+  xd_drop_off:    "XD Drop-off",
+  not_specified:  "Não especif.",
+};
+
 const currencyFmt = (v: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 
@@ -529,7 +537,7 @@ function SubTabLogistica({ items }: Pick<RelatoriosProps, "items">) {
       else { otherSold += item.sold_quantity; otherCount++; }
     });
 
-    const LOGISTIC_LABELS: Record<string, string> = {
+    const LOGISTIC_LABELS_FULL: Record<string, string> = {
       fulfillment: "Full (Fulfillment)",
       default: "Padrão",
       drop_off: "Drop-off",
@@ -538,7 +546,7 @@ function SubTabLogistica({ items }: Pick<RelatoriosProps, "items">) {
     };
     const logisticColors = ["#6366f1", "#22c55e", "#f59e0b", "#f97316", "#94a3b8"];
     const logisticData = Object.entries(logisticCounts).map(([k, v], i) => ({
-      name: LOGISTIC_LABELS[k] ?? k,
+      name: LOGISTIC_LABELS_FULL[k] ?? k,
       value: v,
       color: logisticColors[i % logisticColors.length],
     }));
@@ -848,6 +856,7 @@ export default function MLEstoque() {
   const [search, setSearch] = useState("");
   const [brandFilter, setBrandFilter] = useState("all");
   const [coverageFilter, setCoverageFilter] = useState("all");
+  const [logisticFilter, setLogisticFilter] = useState("all");
   const [sortBy, setSortBy] = useState("title");
   const [hideOutOfStock, setHideOutOfStock] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -876,6 +885,9 @@ export default function MLEstoque() {
         return cd?.coverage_class === coverageFilter;
       });
     }
+    if (logisticFilter !== "all") {
+      result = result.filter((i) => (i.logistic_type ?? "not_specified") === logisticFilter);
+    }
     result.sort((a, b) => {
       switch (sortBy) {
         case "price_desc": return b.price - a.price;
@@ -887,11 +899,15 @@ export default function MLEstoque() {
         case "health_asc": return (a.health ?? 1) - (b.health ?? 1);
         case "health_desc": return (b.health ?? 0) - (a.health ?? 0);
         case "title_desc": return b.title.localeCompare(a.title);
+        case "logistic_asc": return (a.logistic_type ?? "").localeCompare(b.logistic_type ?? "");
+        case "logistic_desc": return (b.logistic_type ?? "").localeCompare(a.logistic_type ?? "");
+        case "shipping_desc": return (b.free_shipping ? 1 : 0) - (a.free_shipping ? 1 : 0);
+        case "shipping_asc": return (a.free_shipping ? 1 : 0) - (b.free_shipping ? 1 : 0);
         default: return a.title.localeCompare(b.title);
       }
     });
     return result;
-  }, [items, search, brandFilter, coverageFilter, sortBy, hideOutOfStock, coverageMap]);
+  }, [items, search, brandFilter, coverageFilter, logisticFilter, sortBy, hideOutOfStock, coverageMap]);
 
   // KPI stats derived from filtered items so cards react to active filters
   const filteredStats = useMemo(() => {
@@ -1101,6 +1117,15 @@ export default function MLEstoque() {
                     })}
                   </SelectContent>
                 </Select>
+                <Select value={logisticFilter} onValueChange={setLogisticFilter}>
+                  <SelectTrigger className="w-36 h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Logística</SelectItem>
+                    {Object.entries(LOGISTIC_LABELS).map(([k, label]) => (
+                      <SelectItem key={k} value={k}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <div className="flex items-center gap-1.5 cursor-pointer opacity-60 hover:opacity-100 transition-opacity"
                   onClick={(e) => { e.preventDefault(); setHideOutOfStock((v) => !v); }}
                 >
@@ -1131,6 +1156,8 @@ export default function MLEstoque() {
                       <TableHead className="text-xs text-right">Unid/dia</TableHead>
                       <TableHead className="text-xs">Cobertura</TableHead>
                       <SortableHead label="Saúde" sortAsc="health_asc" sortDesc="health_desc" current={sortBy} onSort={setSortBy} />
+                      <SortableHead label="Logística" sortAsc="logistic_asc" sortDesc="logistic_desc" current={sortBy} onSort={setSortBy} />
+                      <SortableHead label="Frete" sortAsc="shipping_asc" sortDesc="shipping_desc" current={sortBy} onSort={setSortBy} />
                       <TableHead className="w-8" />
                     </TableRow>
                   </TableHeader>
@@ -1167,7 +1194,7 @@ export default function MLEstoque() {
                               <div className="text-muted-foreground text-[10px] flex gap-1 flex-wrap mt-0.5">
                                 <span>{item.id}</span>
                                 {item.seller_custom_field && <Badge variant="outline" className="text-[10px] h-4 px-1">{item.seller_custom_field}</Badge>}
-                                {item.free_shipping && <Badge className="text-[10px] h-4 px-1 bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300 border-0">Frete grátis</Badge>}
+
                                 {item.has_variations && item.variations.length > 0 && (
                                   <Badge variant="outline" className="text-[10px] h-4 px-1">{item.variations.length} var.</Badge>
                                 )}
@@ -1205,6 +1232,14 @@ export default function MLEstoque() {
                               )}
                             </TableCell>
                             <TableCell><HealthBar health={item.health} /></TableCell>
+                            <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                              {LOGISTIC_LABELS[item.logistic_type ?? "not_specified"] ?? item.logistic_type ?? "—"}
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              {item.free_shipping
+                                ? <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">Grátis</span>
+                                : <span className="text-muted-foreground">—</span>}
+                            </TableCell>
                             <TableCell className="p-1">
                               <a
                                 href={`https://produto.mercadolivre.com.br/${item.id.replace(/^(MLB)(\d+)$/, "$1-$2")}`}
