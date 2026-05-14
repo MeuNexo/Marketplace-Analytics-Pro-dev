@@ -1175,9 +1175,9 @@ export default function MLEstoque() {
                       <SortableHead label={`Vendidos (${coveragePeriod}d)`} sortAsc="sold_asc" sortDesc="sold_desc" current={sortBy} onSort={setSortBy} className="text-right" />
                       <TableHead className="text-xs text-right">Unid/dia</TableHead>
                       <TableHead className="text-xs">Cobertura</TableHead>
-                      <SortableHead label="Saúde" sortAsc="health_asc" sortDesc="health_desc" current={sortBy} onSort={setSortBy} />
                       <SortableHead label="Logística" sortAsc="logistic_asc" sortDesc="logistic_desc" current={sortBy} onSort={setSortBy} />
                       <SortableHead label="Frete" sortAsc="shipping_asc" sortDesc="shipping_desc" current={sortBy} onSort={setSortBy} />
+                      <SortableHead label="Saúde" sortAsc="health_asc" sortDesc="health_desc" current={sortBy} onSort={setSortBy} />
                       <TableHead className="w-8" />
                     </TableRow>
                   </TableHeader>
@@ -1251,15 +1251,15 @@ export default function MLEstoque() {
                                 <span className="text-xs text-muted-foreground">—</span>
                               )}
                             </TableCell>
-                            <TableCell><HealthBar health={item.health} /></TableCell>
                             <TableCell>
                               <LogisticBadge type={item.logistic_type} />
                             </TableCell>
-                            <TableCell className="text-xs">
+                            <TableCell>
                               {item.free_shipping
-                                ? <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">Grátis</span>
-                                : <span className="text-muted-foreground">—</span>}
+                                ? <Badge className="text-[10px] h-4 px-1 bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300 border-0">Frete grátis</Badge>
+                                : <span className="text-xs text-muted-foreground">—</span>}
                             </TableCell>
+                            <TableCell><HealthBar health={item.health} /></TableCell>
                             <TableCell className="p-1">
                               <a
                                 href={`https://produto.mercadolivre.com.br/${item.id.replace(/^(MLB)(\d+)$/, "$1-$2")}`}
