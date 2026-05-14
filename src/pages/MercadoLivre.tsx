@@ -23,7 +23,7 @@ import { MLTopProducts } from "@/components/mercadolivre/MLTopProducts";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { GoalsCard } from "@/components/mercadolivre/GoalsCard";
 import type { ProductSalesRow } from "@/components/mercadolivre/TopSellingProducts";
-import { Plug, Info, Loader2, Monitor } from "lucide-react";
+import { Plug, Info, Loader2, Monitor, RefreshCw } from "lucide-react";
 import { format, parseISO, startOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import MLRelatorios from "./mercadolivre/MLRelatorios";
@@ -431,6 +431,17 @@ export default function MercadoLivre() {
                 <TabsTrigger value="vendas" className="text-xs px-3 h-7">Vendas</TabsTrigger>
                 <TabsTrigger value="relatorios" className="text-xs px-3 h-7">Relatórios</TabsTrigger>
               </TabsList>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => syncFromAPI()}
+                disabled={syncing || !connected}
+                className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted hover:text-muted-foreground"
+                aria-label="Atualizar"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
+                <span className="hidden sm:inline">{syncing ? "Atualizando..." : "Atualizar"}</span>
+              </Button>
             </div>
           </div>
         </div>
@@ -441,7 +452,7 @@ export default function MercadoLivre() {
               <CardContent className="flex items-center gap-3 py-4">
                 <Info className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                 <p className="text-xs text-muted-foreground">
-                  Nenhum dado no cache. Clique em <strong>Sincronizar</strong> ou use <strong>Histórico</strong>.
+                  Nenhum dado no cache. Clique em <strong>Atualizar</strong> ou use <strong>Histórico</strong>.
                 </p>
               </CardContent>
             </Card>
