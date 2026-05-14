@@ -38,6 +38,26 @@ export const LOGISTIC_LABELS: Record<string, string> = {
   not_specified:  "Não especif.",
 };
 
+// Tailwind bg/text pairs — one colour per logistics type
+const LOGISTIC_BADGE: Record<string, { bg: string; text: string }> = {
+  fulfillment:   { bg: "bg-violet-500/15", text: "text-violet-600 dark:text-violet-400" },
+  default:       { bg: "bg-blue-500/15",   text: "text-blue-600 dark:text-blue-400" },
+  drop_off:      { bg: "bg-amber-500/15",  text: "text-amber-600 dark:text-amber-400" },
+  xd_drop_off:   { bg: "bg-orange-500/15", text: "text-orange-600 dark:text-orange-400" },
+  not_specified: { bg: "bg-muted",         text: "text-muted-foreground" },
+};
+
+function LogisticBadge({ type }: { type: string | null }) {
+  const key   = type ?? "not_specified";
+  const label = LOGISTIC_LABELS[key] ?? key;
+  const style = LOGISTIC_BADGE[key] ?? LOGISTIC_BADGE.not_specified;
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${style.bg} ${style.text}`}>
+      {label}
+    </span>
+  );
+}
+
 const currencyFmt = (v: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 
@@ -1232,8 +1252,8 @@ export default function MLEstoque() {
                               )}
                             </TableCell>
                             <TableCell><HealthBar health={item.health} /></TableCell>
-                            <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                              {LOGISTIC_LABELS[item.logistic_type ?? "not_specified"] ?? item.logistic_type ?? "—"}
+                            <TableCell>
+                              <LogisticBadge type={item.logistic_type} />
                             </TableCell>
                             <TableCell className="text-xs">
                               {item.free_shipping
