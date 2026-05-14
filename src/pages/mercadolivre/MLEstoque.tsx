@@ -1255,9 +1255,11 @@ export default function MLEstoque() {
                               <LogisticBadge type={item.logistic_type} />
                             </TableCell>
                             <TableCell>
-                              {item.free_shipping
-                                ? <Badge className="text-[10px] h-4 px-1 bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300 border-0">Frete grátis</Badge>
-                                : <span className="text-xs text-muted-foreground">—</span>}
+                              {item.free_shipping ? (
+                                <Badge variant="outline" className="text-[10px] border-emerald-500 text-emerald-600 bg-emerald-50 px-[4px] py-px">
+                                  <Truck className="w-3 h-3 mr-0.5" /> Grátis
+                                </Badge>
+                              ) : <span className="text-xs text-muted-foreground">—</span>}
                             </TableCell>
                             <TableCell><HealthBar health={item.health} /></TableCell>
                             <TableCell className="p-1">
