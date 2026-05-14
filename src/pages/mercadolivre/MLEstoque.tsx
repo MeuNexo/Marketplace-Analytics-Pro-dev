@@ -40,10 +40,10 @@ export const LOGISTIC_LABELS: Record<string, string> = {
 
 // Tailwind bg/text pairs — one colour per logistics type
 const LOGISTIC_BADGE: Record<string, { bg: string; text: string }> = {
-  fulfillment:   { bg: "bg-violet-500/15", text: "text-violet-600 dark:text-violet-400" },
-  default:       { bg: "bg-blue-500/15",   text: "text-blue-600 dark:text-blue-400" },
+  fulfillment:   { bg: "bg-blue-500/15",   text: "text-blue-600 dark:text-blue-400" },
+  default:       { bg: "bg-violet-500/15", text: "text-violet-600 dark:text-violet-400" },
   drop_off:      { bg: "bg-amber-500/15",  text: "text-amber-600 dark:text-amber-400" },
-  xd_drop_off:   { bg: "bg-orange-500/15", text: "text-orange-600 dark:text-orange-400" },
+  xd_drop_off:   { bg: "bg-muted",         text: "text-muted-foreground" },
   not_specified: { bg: "bg-muted",         text: "text-muted-foreground" },
 };
 
