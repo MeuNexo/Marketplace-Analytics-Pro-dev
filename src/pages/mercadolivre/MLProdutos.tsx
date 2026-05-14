@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { STORE_BADGE_COLORS } from "@/config/storeColors";
 import { useMLInventory } from "@/contexts/MLInventoryContext";
 import type { ProductVariation } from "@/contexts/MLInventoryContext";
@@ -25,14 +25,16 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   ShoppingBag, RefreshCw, Search, ExternalLink, Plug, DollarSign, Tag, TrendingUp, Package,
-  ChevronDown, ChevronRight, Receipt, LayoutGrid, Truck, ArrowUpDown, ArrowUp, ArrowDown,
+  ChevronDown, ChevronRight, Receipt, Truck, ArrowUpDown, ArrowUp, ArrowDown,
   BookOpen, CalendarIcon, X, Check, Lightbulb, BarChart2, CheckCircle2, TrendingDown, AlertCircle, Download,
+  Pencil,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Link } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useMLProductCosts } from "@/hooks/useMLProductCosts";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer,
   PieChart, Pie, Cell, ComposedChart, Line, Area, ReferenceLine, CartesianGrid,
@@ -79,7 +81,7 @@ type StatusFilter = "all" | "active" | "paused";
 type StockFilter = "all" | "in_stock" | "low" | "out";
 type SortBy = "title_asc" | "title_desc" | "price_desc" | "price_asc" | "stock_desc" | "stock_asc";
 type LogisticFilter = "all" | "fulfillment" | "cross_docking" | "self_service" | "drop_off";
-type ColumnView = "estoque" | "financeiro" | "preco";
+type ColumnView = "financeiro" | "preco";
 
 const healthBadge = (health: number | null) => {
   if (health === null) return <span className="text-xs text-muted-foreground">—</span>;
@@ -150,6 +152,76 @@ function SortableHead({ label, field, current, onSort, className = "" }: {
         )}
       </div>
     </TableHead>
+  );
+}
+
+// ─── Inline editable cell ────────────────────────────────────────────────────
+
+function InlineEditCell({
+  value,
+  onSave,
+  format = "currency",
+}: {
+  value: number | null;
+  onSave: (v: number | null) => Promise<void>;
+  format?: "currency" | "percent";
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
+
+  const commit = async () => {
+    const raw = draft.trim().replace(",", ".");
+    const parsed = raw === "" ? null : Number(raw);
+    const v = parsed === null || isNaN(parsed) || parsed < 0 ? null : parsed;
+    setSaving(true);
+    await onSave(v);
+    setSaving(false);
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <div className="flex items-center justify-end gap-1">
+        {format === "currency" && <span className="text-[10px] text-muted-foreground">R$</span>}
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); commit(); }
+            if (e.key === "Escape") setEditing(false);
+          }}
+          className="w-20 text-xs text-right border border-primary/40 rounded px-1.5 py-0.5 bg-background outline-none ring-1 ring-primary/30"
+          type="number"
+          min={0}
+          step={format === "percent" ? "0.1" : "0.01"}
+        />
+        {format === "percent" && <span className="text-[10px] text-muted-foreground">%</span>}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="group flex items-center justify-end gap-1 cursor-pointer select-none"
+      onClick={(e) => { e.stopPropagation(); setDraft(value != null ? String(value) : ""); setEditing(true); }}
+    >
+      {saving ? (
+        <span className="text-xs text-muted-foreground animate-pulse">…</span>
+      ) : value != null ? (
+        <span className="text-xs tabular-nums font-mono">
+          {format === "currency" ? currencyFmt(value) : `${value.toFixed(1)}%`}
+        </span>
+      ) : (
+        <span className="text-xs text-muted-foreground italic">Informar</span>
+      )}
+      <Pencil className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-60 transition-opacity shrink-0" />
+    </div>
   );
 }
 
@@ -477,7 +549,7 @@ export default function MLProdutos() {
   const [stockFilter, setStockFilter] = useState<StockFilter>("all");
   const [sortBy, setSortBy] = useState<SortBy>("title_asc");
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-  const [columnView, setColumnView] = useState<ColumnView>("estoque");
+  const [columnView, setColumnView] = useState<ColumnView>("financeiro");
   const [brandFilter, setBrandFilter] = useState("all");
   const [hideOutOfStock, setHideOutOfStock] = useState(true);
   const [logisticFilter, setLogisticFilter] = useState<LogisticFilter>("all");
@@ -494,6 +566,7 @@ export default function MLProdutos() {
   const [suggestion, setSuggestion] = useState<MLItemSuggestion | null>(null);
   const [noSuggestion, setNoSuggestion] = useState(false);
   const { fetchItemSuggestion, refresh: precosRefresh } = useMLPrecosCustos();
+  const { costs, upsert: upsertCost } = useMLProductCosts();
 
   // Cache lazy: busca current_price via suggestions API apenas para itens com deal_ids
   // (promoção ativa), ao entrar na view "Preço"
@@ -969,16 +1042,10 @@ export default function MLProdutos() {
                   <TooltipTrigger asChild>
                     <div className="flex items-center gap-0.5 bg-muted rounded-lg p-0.5">
                       <button
-                        onClick={() => setColumnView("estoque")}
-                        className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-all ${columnView === "estoque" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-                      >
-                        <LayoutGrid className="w-3 h-3" /> Estoque
-                      </button>
-                      <button
                         onClick={() => setColumnView("financeiro")}
                         className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-all ${columnView === "financeiro" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
                       >
-                        <Receipt className="w-3 h-3" /> Margem
+                        <Receipt className="w-3 h-3" /> Financeiro
                       </button>
                       <button
                         onClick={() => setColumnView("preco")}
@@ -1010,23 +1077,33 @@ export default function MLProdutos() {
                 <Table>
                   <TableHeader className="sticky top-0 bg-card z-10">
                     <TableRow>
-                      <TableHead className="w-8"></TableHead>
-                      <TableHead className="w-12"></TableHead>
+                      <TableHead className="w-8" />
+                      <TableHead className="w-12" />
                       <SortableHead label="Anúncio" field="title" current={sortBy} onSort={toggleSort} />
-                      <TableHead className="text-xs text-left w-24">Marca</TableHead>
+                      <TableHead className="text-xs w-24">SKU</TableHead>
                       <SortableHead label="Preço" field="price" current={sortBy} onSort={toggleSort} className="text-right w-24" />
-                      {columnView === "estoque" ? (
+                      <SortableHead label="Estoque" field="stock" current={sortBy} onSort={toggleSort} className="text-right w-20" />
+                      {columnView === "financeiro" ? (
                         <>
-                          <SortableHead label="Estoque" field="stock" current={sortBy} onSort={toggleSort} className="text-center w-20" />
-                          <TableHead className="text-xs text-center w-24">Logística</TableHead>
-                          <TableHead className="text-xs text-center w-20">Frete</TableHead>
-                        </>
-                      ) : columnView === "financeiro" ? (
-                        <>
-                          <TableHead className="text-xs text-right w-24">Custo</TableHead>
-                          <TableHead className="text-xs text-left w-36">Tipo / Comissão</TableHead>
-                          <TableHead className="text-xs text-right w-32">Comissão/unid.</TableHead>
-                          <TableHead className="text-xs text-right w-28">Margem est.</TableHead>
+                          <TableHead className="text-xs text-right w-28">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="cursor-help border-b border-dashed border-muted-foreground/40">Custo</span>
+                              </TooltipTrigger>
+                              <TooltipContent className="text-xs max-w-[200px]">Custo do produto (CMV). Clique na célula para editar.</TooltipContent>
+                            </Tooltip>
+                          </TableHead>
+                          <TableHead className="text-xs text-right w-24">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="cursor-help border-b border-dashed border-muted-foreground/40">Impostos</span>
+                              </TooltipTrigger>
+                              <TooltipContent className="text-xs max-w-[200px]">Alíquota de imposto sobre a receita (ex: 15%). Clique para editar.</TooltipContent>
+                            </Tooltip>
+                          </TableHead>
+                          <TableHead className="text-xs text-right w-28">Comissão ML</TableHead>
+                          <TableHead className="text-xs text-right w-28">Mg. Bruta</TableHead>
+                          <TableHead className="text-xs text-right w-28">Mg. Líq.</TableHead>
                         </>
                       ) : (
                         <>
@@ -1044,7 +1121,6 @@ export default function MLProdutos() {
                           <TableHead className="text-xs text-center w-28">Análise</TableHead>
                         </>
                       )}
-                      
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1083,12 +1159,7 @@ export default function MLProdutos() {
                                 {item.title} <ExternalLink className="w-3 h-3 inline mb-0.5 ml-0.5" />
                               </a>
                               <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                                <p className="text-xs text-muted-foreground">{item.id}</p>
-                                {sku && (
-                                  <Badge variant="outline" className="text-[10px] font-mono px-[4px] py-px">
-                                    {sku}
-                                  </Badge>
-                                )}
+                                <p className="text-xs text-muted-foreground font-mono">{item.id}</p>
                                 {item.has_variations && item.variations.length > 0 && (
                                   <Badge variant="outline" className="text-[10px] h-4 px-1">
                                     {item.variations.length} var.
@@ -1099,55 +1170,64 @@ export default function MLProdutos() {
                               </div>
                             </TableCell>
 
-                            <TableCell className="text-left text-xs text-muted-foreground">{item.brand || "—"}</TableCell>
-                            
+                            {/* SKU — dedicated column */}
+                            <TableCell className="text-xs text-muted-foreground font-mono">
+                              {sku || <span className="text-muted-foreground/40">—</span>}
+                            </TableCell>
+
                             <TableCell className="text-right text-xs font-medium">{currencyFmt(item.price)}</TableCell>
 
-                            {columnView === "estoque" ? (
-                              <>
-                                <TableCell className="text-center">
-                                  <span className={`text-xs font-semibold ${item.available_quantity === 0 ? "text-destructive" : "text-foreground"}`}>
-                                    {item.available_quantity}
-                                  </span>
-                                </TableCell>
-                                <TableCell className="text-center">
-                                  {item.logistic_type ? (
-                                    <Badge variant="outline" className={`text-[10px] ${
-                                      item.logistic_type === "fulfillment" ? "border-blue-500 text-blue-600 bg-blue-50" :
-                                      item.logistic_type === "self_service" ? "border-amber-500 text-amber-600 bg-amber-50" :
-                                      ""
-                                    } px-[4px] py-px`}>
-                                      {item.logistic_type === "fulfillment" ? "Full" :
-                                       item.logistic_type === "cross_docking" ? "Coleta" :
-                                       item.logistic_type === "self_service" ? "Flex" :
-                                       item.logistic_type === "drop_off" || item.logistic_type === "xd_drop_off" ? "Drop Off" :
-                                       item.logistic_type}
-                                    </Badge>
-                                  ) : <span className="text-xs text-muted-foreground">—</span>}
-                                </TableCell>
-                                <TableCell className="text-center">
-                                  {item.free_shipping ? (
-                                    <Badge variant="outline" className="text-[10px] border-emerald-500 text-emerald-600 bg-emerald-50 px-[4px] py-px">
-                                      <Truck className="w-3 h-3 mr-0.5" /> Grátis
-                                    </Badge>
-                                  ) : <span className="text-xs text-muted-foreground">Pago</span>}
-                                </TableCell>
-                              </>
-                            ) : columnView === "financeiro" ? (() => {
+                            {/* Estoque — always visible */}
+                            <TableCell className="text-right">
+                              <span className={`text-xs font-semibold tabular-nums ${item.available_quantity === 0 ? "text-destructive" : "text-foreground"}`}>
+                                {item.available_quantity}
+                              </span>
+                            </TableCell>
+
+                            {columnView === "financeiro" ? (() => {
+                              const productCost = costs.get(item.id);
+                              const cost = productCost?.cost ?? null;
+                              const taxRate = productCost?.tax_rate ?? null;
                               const commRate = getCommissionRate(item.listing_type_id);
-                              const commPerUnit = Math.round(item.price * commRate * 100) / 100;
-                              const netPerUnit = Math.round((item.price - commPerUnit) * 100) / 100;
-                              const marginPct = item.price > 0 ? Math.round((netPerUnit / item.price) * 1000) / 10 : 0;
-                              const marginColor = marginPct >= 70 ? "text-emerald-600" : marginPct >= 50 ? "text-amber-600" : "text-red-600";
+                              const commission = item.price * commRate;
+                              const taxAmount = taxRate != null ? item.price * (taxRate / 100) : null;
+                              const marginBruta = cost != null && item.price > 0
+                                ? ((item.price - cost) / item.price) * 100 : null;
+                              const marginLiq = cost != null && item.price > 0
+                                ? ((item.price - cost - commission - (taxAmount ?? 0)) / item.price) * 100 : null;
+                              const mgBrutaColor = marginBruta == null ? "" : marginBruta >= 50 ? "text-emerald-600" : marginBruta >= 30 ? "text-amber-600" : "text-red-600";
+                              const mgLiqColor   = marginLiq   == null ? "" : marginLiq   >= 30 ? "text-emerald-600" : marginLiq   >= 10 ? "text-amber-600" : "text-red-600";
                               return (
                                 <>
-                                  <TableCell className="text-right text-xs text-muted-foreground italic">A informar</TableCell>
-                                  <TableCell className="text-left">
-                                    {listingBadge(item.listing_type_id, commRate)}
+                                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                                    <InlineEditCell
+                                      value={cost}
+                                      format="currency"
+                                      onSave={async (v) => { const prev = costs.get(item.id); await upsertCost(item.id, v, prev?.tax_rate ?? null); }}
+                                    />
                                   </TableCell>
-                                  <TableCell className="text-right text-xs text-destructive font-mono">−{currencyFmt(commPerUnit)}</TableCell>
+                                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                                    <InlineEditCell
+                                      value={taxRate}
+                                      format="percent"
+                                      onSave={async (v) => { const prev = costs.get(item.id); await upsertCost(item.id, prev?.cost ?? null, v); }}
+                                    />
+                                  </TableCell>
                                   <TableCell className="text-right">
-                                    <span className={`text-xs font-bold ${marginColor}`}>{marginPct.toFixed(1)}%</span>
+                                    <div className="flex flex-col items-end gap-0">
+                                      <span className="text-xs text-destructive font-mono tabular-nums">−{currencyFmt(commission)}</span>
+                                      <span className="text-[10px] text-muted-foreground">{listingBadge(item.listing_type_id, commRate)}</span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    {marginBruta != null
+                                      ? <span className={`text-xs font-bold tabular-nums ${mgBrutaColor}`}>{marginBruta.toFixed(1)}%</span>
+                                      : <span className="text-xs text-muted-foreground/40">—</span>}
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    {marginLiq != null
+                                      ? <span className={`text-xs font-bold tabular-nums ${mgLiqColor}`}>{marginLiq.toFixed(1)}%</span>
+                                      : <span className="text-xs text-muted-foreground/40">—</span>}
                                   </TableCell>
                                 </>
                               );
@@ -1211,7 +1291,7 @@ export default function MLProdutos() {
                           {/* Expanded variations sub-table */}
                           {item.has_variations && isExpanded && (
                             <TableRow key={`${item.id}-variations`}>
-                              <TableCell colSpan={10} className="p-0 bg-muted/20 border-b">
+                              <TableCell colSpan={columnView === "financeiro" ? 11 : 9} className="p-0 bg-muted/20 border-b">
                                 <div className="px-10 py-3">
                                   <Table>
                                     <TableHeader>
@@ -1219,17 +1299,14 @@ export default function MLProdutos() {
                                         <TableHead className="text-xs h-8 font-medium">Variação</TableHead>
                                         <TableHead className="text-xs h-8 font-medium text-left">SKU</TableHead>
                                         <TableHead className="text-xs h-8 font-medium text-right">Preço</TableHead>
-                                        {columnView === "estoque" ? (
-                                          <>
-                                            <TableHead className="text-xs h-8 font-medium text-center">Estoque</TableHead>
-                                            <TableHead className="text-xs h-8 font-medium text-center" colSpan={2}>—</TableHead>
-                                          </>
-                                        ) : columnView === "financeiro" ? (
+                                        <TableHead className="text-xs h-8 font-medium text-right">Estoque</TableHead>
+                                        {columnView === "financeiro" ? (
                                           <>
                                             <TableHead className="text-xs h-8 font-medium text-right">Custo</TableHead>
-                                            <TableHead className="text-xs h-8 font-medium text-left">Tipo / Comissão</TableHead>
-                                            <TableHead className="text-xs h-8 font-medium text-right">Comissão/unid.</TableHead>
-                                            <TableHead className="text-xs h-8 font-medium text-right">Margem est.</TableHead>
+                                            <TableHead className="text-xs h-8 font-medium text-right">Impostos</TableHead>
+                                            <TableHead className="text-xs h-8 font-medium text-right">Comissão ML</TableHead>
+                                            <TableHead className="text-xs h-8 font-medium text-right">Mg. Bruta</TableHead>
+                                            <TableHead className="text-xs h-8 font-medium text-right">Mg. Líq.</TableHead>
                                           </>
                                         ) : (
                                           <>
@@ -1248,32 +1325,34 @@ export default function MLProdutos() {
                                         return (
                                           <TableRow key={v.variation_id} className="border-b border-border/30 last:border-0">
                                             <TableCell className="py-2 text-xs font-medium">{variationLabel(v)}</TableCell>
-                                            <TableCell className="py-2 text-xs text-muted-foreground font-mono">{vSku}</TableCell>
+                                            <TableCell className="py-2 text-xs text-muted-foreground font-mono">{vSku || "—"}</TableCell>
                                             <TableCell className="py-2 text-xs text-right">{currencyFmt(v.price)}</TableCell>
-                                            {columnView === "estoque" ? (
-                                              <>
-                                                <TableCell className="py-2 text-center">
-                                                  <span className={`text-xs font-semibold ${v.available_quantity === 0 ? "text-destructive" : "text-foreground"}`}>
-                                                    {v.available_quantity}
-                                                  </span>
-                                                </TableCell>
-                                                <TableCell className="py-2" colSpan={2} />
-                                              </>
-                                            ) : columnView === "financeiro" ? (() => {
+                                            <TableCell className="py-2 text-right">
+                                              <span className={`text-xs font-semibold ${v.available_quantity === 0 ? "text-destructive" : "text-foreground"}`}>
+                                                {v.available_quantity}
+                                              </span>
+                                            </TableCell>
+                                            {columnView === "financeiro" ? (() => {
+                                              const productCost = costs.get(item.id);
+                                              const cost = productCost?.cost ?? null;
+                                              const taxRate = productCost?.tax_rate ?? null;
                                               const commRate = getCommissionRate(item.listing_type_id);
-                                              const commPerUnit = Math.round(v.price * commRate * 100) / 100;
-                                              const netPerUnit = Math.round((v.price - commPerUnit) * 100) / 100;
-                                              const marginPct = v.price > 0 ? Math.round((netPerUnit / v.price) * 1000) / 10 : 0;
-                                              const marginColor = marginPct >= 70 ? "text-emerald-600" : marginPct >= 50 ? "text-amber-600" : "text-red-600";
+                                              const commission = v.price * commRate;
+                                              const taxAmount = taxRate != null ? v.price * (taxRate / 100) : null;
+                                              const marginBruta = cost != null && v.price > 0 ? ((v.price - cost) / v.price) * 100 : null;
+                                              const marginLiq   = cost != null && v.price > 0 ? ((v.price - cost - commission - (taxAmount ?? 0)) / v.price) * 100 : null;
+                                              const mgBrutaColor = marginBruta == null ? "" : marginBruta >= 50 ? "text-emerald-600" : marginBruta >= 30 ? "text-amber-600" : "text-red-600";
+                                              const mgLiqColor   = marginLiq   == null ? "" : marginLiq   >= 30 ? "text-emerald-600" : marginLiq   >= 10 ? "text-amber-600" : "text-red-600";
                                               return (
                                                 <>
-                                                  <TableCell className="py-2 text-xs text-right text-muted-foreground italic">—</TableCell>
-                                                  <TableCell className="py-2 text-left">
-                                                    {listingBadge(item.listing_type_id, commRate)}
-                                                  </TableCell>
-                                                  <TableCell className="py-2 text-xs text-right text-destructive font-mono">−{currencyFmt(commPerUnit)}</TableCell>
+                                                  <TableCell className="py-2 text-right text-xs text-muted-foreground italic">↑ item</TableCell>
+                                                  <TableCell className="py-2 text-right text-xs text-muted-foreground italic">↑ item</TableCell>
+                                                  <TableCell className="py-2 text-xs text-right text-destructive font-mono tabular-nums">−{currencyFmt(commission)}</TableCell>
                                                   <TableCell className="py-2 text-right">
-                                                    <span className={`text-xs font-bold ${marginColor}`}>{marginPct.toFixed(1)}%</span>
+                                                    {marginBruta != null ? <span className={`text-xs font-bold ${mgBrutaColor}`}>{marginBruta.toFixed(1)}%</span> : <span className="text-xs text-muted-foreground/40">—</span>}
+                                                  </TableCell>
+                                                  <TableCell className="py-2 text-right">
+                                                    {marginLiq != null ? <span className={`text-xs font-bold ${mgLiqColor}`}>{marginLiq.toFixed(1)}%</span> : <span className="text-xs text-muted-foreground/40">—</span>}
                                                   </TableCell>
                                                 </>
                                               );
