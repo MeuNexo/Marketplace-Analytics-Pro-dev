@@ -565,12 +565,15 @@ export default function MLProdutos() {
   const [loadingSuggestion, setLoadingSuggestion] = useState(false);
   const [suggestion, setSuggestion] = useState<MLItemSuggestion | null>(null);
   const [noSuggestion, setNoSuggestion] = useState(false);
-  const { fetchItemSuggestion, refresh: precosRefresh } = useMLPrecosCustos();
+  const { fetchItemSuggestion, fetchCosts, refresh: precosRefresh } = useMLPrecosCustos();
   const { costs, upsert: upsertCost } = useMLProductCosts();
 
   // Cache lazy: busca current_price via suggestions API apenas para itens com deal_ids
   // (promoção ativa), ao entrar na view "Preço"
   const [dealPriceCache, setDealPriceCache] = useState<Map<string, number>>(new Map());
+
+  // Cache lazy: busca comissão real por produto via ML Listing Costs API ao entrar na view "Financeiro"
+  const [commCache, setCommCache] = useState<Map<string, { pct: number; amount: number }>>(new Map());
 
   const toggleRankingSort = (field: string) => {
     setRankingSort((prev) =>
@@ -761,6 +764,34 @@ export default function MLProdutos() {
       if (price != null) {
         setDealPriceCache(prev => new Map(prev).set(item.id, price));
       }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columnView, filteredItemKey]);
+
+  // Lazy-fetch da comissão real (ML Listing Costs API) para todos os itens visíveis
+  // ao entrar na view "Financeiro"
+  useEffect(() => {
+    if (columnView !== "financeiro" || !filteredItemKey) return;
+    const toFetch = filtered.filter(i => !commCache.has(i.id));
+    if (toFetch.length === 0) return;
+    toFetch.forEach(async (item) => {
+      const costs = await fetchCosts({
+        price: item.price,
+        categoryId: item.category_id ?? undefined,
+        logisticType: item.logistic_type ?? undefined,
+      });
+      if (!costs.length) return;
+      const lt = item.listing_type_id ?? "";
+      // Tenta correspondência exata, depois parcial, depois usa o primeiro resultado
+      const match =
+        costs.find(c => c.listing_type_id === lt) ??
+        costs.find(c => lt.includes(c.listing_type_id) || c.listing_type_id.includes(lt)) ??
+        costs[0];
+      if (!match) return;
+      const amount = match.sale_fee_amount > 0
+        ? match.sale_fee_amount
+        : item.price * match.percentage_fee / 100;
+      setCommCache(prev => new Map(prev).set(item.id, { pct: match.percentage_fee, amount }));
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [columnView, filteredItemKey]);
@@ -1188,8 +1219,9 @@ export default function MLProdutos() {
                               const productCost = costs.get(item.id);
                               const cost = productCost?.cost ?? null;
                               const taxRate = productCost?.tax_rate ?? null;
-                              const commRate = getCommissionRate(item.listing_type_id);
-                              const commission = item.price * commRate;
+                              const commCached = commCache.get(item.id);
+                              const commRate = commCached ? commCached.pct / 100 : getCommissionRate(item.listing_type_id);
+                              const commission = commCached?.amount ?? (item.price * commRate);
                               const taxAmount = taxRate != null ? item.price * (taxRate / 100) : null;
                               const marginBruta = cost != null && item.price > 0
                                 ? ((item.price - cost) / item.price) * 100 : null;
@@ -1215,7 +1247,9 @@ export default function MLProdutos() {
                                   </TableCell>
                                   <TableCell className="text-right">
                                     <span className="text-xs text-destructive font-mono tabular-nums">−{currencyFmt(commission)}</span>
-                                    <span className="text-[10px] text-muted-foreground ml-1">({(commRate * 100).toFixed(0)}%)</span>
+                                    {commCached
+                                      ? <span className="text-[10px] text-muted-foreground ml-1">({commCached.pct.toFixed(1)}%)</span>
+                                      : <span className="text-[10px] text-muted-foreground ml-1 animate-pulse">…</span>}
                                   </TableCell>
                                   <TableCell className="text-right">
                                     {marginBruta != null
@@ -1334,8 +1368,9 @@ export default function MLProdutos() {
                                               const productCost = costs.get(item.id);
                                               const cost = productCost?.cost ?? null;
                                               const taxRate = productCost?.tax_rate ?? null;
-                                              const commRate = getCommissionRate(item.listing_type_id);
-                                              const commission = v.price * commRate;
+                                              const commCachedV = commCache.get(item.id);
+                                              const commRateV = commCachedV ? commCachedV.pct / 100 : getCommissionRate(item.listing_type_id);
+                                              const commission = v.price * commRateV;
                                               const taxAmount = taxRate != null ? v.price * (taxRate / 100) : null;
                                               const marginBruta = cost != null && v.price > 0 ? ((v.price - cost) / v.price) * 100 : null;
                                               const marginLiq   = cost != null && v.price > 0 ? ((v.price - cost - commission - (taxAmount ?? 0)) / v.price) * 100 : null;
@@ -1347,7 +1382,9 @@ export default function MLProdutos() {
                                                   <TableCell className="py-2 text-right text-xs text-muted-foreground italic">↑ item</TableCell>
                                                   <TableCell className="py-2 text-right">
                                                     <span className="text-xs text-destructive font-mono tabular-nums">−{currencyFmt(commission)}</span>
-                                                    <span className="text-[10px] text-muted-foreground ml-1">({(commRate * 100).toFixed(0)}%)</span>
+                                                    {commCachedV
+                                                      ? <span className="text-[10px] text-muted-foreground ml-1">({commCachedV.pct.toFixed(1)}%)</span>
+                                                      : <span className="text-[10px] text-muted-foreground ml-1 animate-pulse">…</span>}
                                                   </TableCell>
                                                   <TableCell className="py-2 text-right">
                                                     {marginBruta != null ? <span className={`text-xs font-bold ${mgBrutaColor}`}>{marginBruta.toFixed(1)}%</span> : <span className="text-xs text-muted-foreground/40">—</span>}
