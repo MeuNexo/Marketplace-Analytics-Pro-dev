@@ -1273,18 +1273,72 @@ export default function MLEstoque() {
                               </a>
                             </TableCell>
                           </TableRow>
-                          {isOpen && visibleVariations.map((v) => (
-                            <TableRow key={v.variation_id} className="bg-muted/30">
-                              <TableCell />
-                              <TableCell />
-                              <TableCell className="text-xs pl-6 text-muted-foreground" colSpan={2}>
-                                {v.attribute_combinations?.map((a) => `${a.name}: ${a.value}`).join(" / ") || `Variação ${v.variation_id}`}
+                          {isOpen && hasVisibleVariations && (
+                            <TableRow key={`${item.id}-vars`}>
+                              <TableCell colSpan={12} className="p-0 bg-muted/20 border-b">
+                                <div className="px-10 py-3">
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow className="border-b border-border/50">
+                                        <TableHead className="text-xs h-8 font-medium">Variação</TableHead>
+                                        <TableHead className="text-xs h-8 font-medium text-right">Estoque</TableHead>
+                                        <TableHead className="text-xs h-8 font-medium text-right">Vendidos</TableHead>
+                                        <TableHead className="text-xs h-8 font-medium text-right">Unid/dia</TableHead>
+                                        <TableHead className="text-xs h-8 font-medium">Cobertura</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {visibleVariations.map((v) => {
+                                        const ratio = item.sold_quantity > 0 ? v.sold_quantity / item.sold_quantity : 0;
+                                        const avgDailyV = cd ? cd.avg_daily_sales * ratio : 0;
+                                        const coverageDaysV = avgDailyV > 0 ? Math.floor(v.available_quantity / avgDailyV) : null;
+                                        let covClassV: CoverageClass = "sem_giro";
+                                        if (v.available_quantity === 0) covClassV = "ruptura";
+                                        else if (avgDailyV > 0 && coverageDaysV !== null) {
+                                          if (coverageDaysV < thresholds.rupturaMax) covClassV = "ruptura";
+                                          else if (coverageDaysV < thresholds.criticoMax) covClassV = "critico";
+                                          else if (coverageDaysV < thresholds.alertaMax) covClassV = "alerta";
+                                          else covClassV = "ok";
+                                        }
+                                        return (
+                                          <TableRow key={v.variation_id} className="border-b border-border/30 last:border-0">
+                                            <TableCell className="py-2 text-xs font-medium">
+                                              {v.attribute_combinations?.map((a) => `${a.name}: ${a.value}`).join(" / ") || `Variação ${v.variation_id}`}
+                                            </TableCell>
+                                            <TableCell className={`py-2 text-xs text-right font-semibold ${v.available_quantity === 0 ? "text-red-500" : ""}`}>
+                                              {numFmt(v.available_quantity)}
+                                            </TableCell>
+                                            <TableCell className="py-2 text-xs text-right text-muted-foreground">
+                                              {numFmt(v.sold_quantity)}
+                                            </TableCell>
+                                            <TableCell className="py-2 text-xs text-right tabular-nums text-muted-foreground">
+                                              {avgDailyV > 0 ? avgDailyV.toFixed(1) : "—"}
+                                            </TableCell>
+                                            <TableCell className="py-2">
+                                              {v.available_quantity === 0 ? (
+                                                <span className="text-xs font-semibold" style={{ color: COVERAGE_COLORS.ruptura }}>Ruptura</span>
+                                              ) : avgDailyV === 0 ? (
+                                                <span className="text-xs text-muted-foreground">Sem giro</span>
+                                              ) : (
+                                                <div className="flex flex-col gap-0">
+                                                  <span className="text-xs font-semibold tabular-nums leading-tight" style={{ color: COVERAGE_COLORS[covClassV] }}>
+                                                    {coverageDaysV} dias
+                                                  </span>
+                                                  <span className="text-[10px] text-muted-foreground leading-tight">
+                                                    {COVERAGE_CLASS_LABELS[covClassV]}
+                                                  </span>
+                                                </div>
+                                              )}
+                                            </TableCell>
+                                          </TableRow>
+                                        );
+                                      })}
+                                    </TableBody>
+                                  </Table>
+                                </div>
                               </TableCell>
-                              <TableCell className="text-xs text-right font-medium">{numFmt(v.available_quantity)}</TableCell>
-                              <TableCell className="text-xs text-right text-muted-foreground">{numFmt(v.sold_quantity)}</TableCell>
-                              <TableCell colSpan={3} />
                             </TableRow>
-                          ))}
+                          )}
                         </>
                       );
                     })}
