@@ -211,7 +211,11 @@ export function SimuladorPrecificacao() {
   const reversedPrice = useMemo(() => {
     if (target <= 0) return null;
     const { salePrice, ...rest } = pricingInput;
-    return reversePrice(rest, target, state.objectiveMode);
+    // Para markup no formato multiplicador (ex: 1.5), converte para % sobre custo (50)
+    const effectiveTarget =
+      state.objectiveMode === "markup" ? (target - 1) * 100 : target;
+    if (effectiveTarget <= 0) return null;
+    return reversePrice(rest, effectiveTarget, state.objectiveMode);
   }, [target, state.objectiveMode, pricingInput]);
 
   // ── Product search ────────────────────────────────────────────────────────────
@@ -534,14 +538,16 @@ export function SimuladorPrecificacao() {
                   <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="margin">Margem (% sobre preço)</SelectItem>
-                    <SelectItem value="markup">Markup (% sobre custo)</SelectItem>
+                    <SelectItem value="markup">Markup (multiplicador)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label className="text-xs h-4 flex items-center">Alvo (%)</Label>
+                <Label className="text-xs h-4 flex items-center">
+                  {state.objectiveMode === "markup" ? "Alvo (×)" : "Alvo (%)"}
+                </Label>
                 <Input
-                  placeholder="Ex: 20"
+                  placeholder={state.objectiveMode === "markup" ? "Ex: 1,50" : "Ex: 20"}
                   value={state.objectiveTarget}
                   onChange={(e) => dispatch({ type: "set", key: "objectiveTarget", value: e.target.value })}
                   className="h-8 text-xs"
@@ -598,7 +604,7 @@ export function SimuladorPrecificacao() {
               </div>
               <div className="grid grid-cols-3 gap-2 mt-1.5 text-center">
                 <Stat label="Margem" value={formatPct(result.margemPct)} color={tierColor} />
-                <Stat label="Markup" value={formatPct(result.markupPct)} />
+                <Stat label="Markup" value={result.markupMultiplier > 0 ? `${result.markupMultiplier.toFixed(2)}×` : "—"} />
                 <Stat label="ROI"    value={formatPct(result.roiPct)} />
               </div>
             </div>

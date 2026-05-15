@@ -49,6 +49,7 @@ export interface PricingResult {
   lucro: number;
   margemPct: number;
   markupPct: number;
+  markupMultiplier: number;
   roiPct: number;
   breakEven: number;
   /** Percentual total de deduções proporcionais ao preço (comissão + imposto + difal + extras em %). */
@@ -94,6 +95,7 @@ export function computePricing(input: PricingInput): PricingResult {
   const lucro = receitaLiquida - input.cost;
   const margemPct = price > 0 ? (lucro / price) * 100 : 0;
   const markupPct = input.cost > 0 ? (lucro / input.cost) * 100 : 0;
+  const markupMultiplier = input.cost > 0 ? price / input.cost : 0;
   const roiPct = markupPct;
 
   const proportionalPct =
@@ -135,6 +137,7 @@ export function computePricing(input: PricingInput): PricingResult {
     lucro,
     margemPct,
     markupPct,
+    markupMultiplier,
     roiPct,
     breakEven,
     proportionalPct,
