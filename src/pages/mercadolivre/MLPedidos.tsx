@@ -946,6 +946,18 @@ export default function MLPedidos() {
             <Button
               variant="ghost"
               size="sm"
+              disabled={recalcing || syncing || loading}
+              onClick={handleRecalc}
+              className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted hover:text-muted-foreground"
+              aria-label="Recalcular custos e impostos"
+              title="Recalcular custo e impostos para o período"
+            >
+              <Calculator className={`w-3.5 h-3.5 ${recalcing ? "animate-pulse" : ""}`} />
+              <span className="hidden md:inline">{recalcing ? "Recalculando..." : "Recalcular"}</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               disabled={syncing || loading}
               onClick={handleSync}
               className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted hover:text-muted-foreground"
