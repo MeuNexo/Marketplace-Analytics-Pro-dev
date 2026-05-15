@@ -272,8 +272,8 @@ export function SimuladorPrecificacao() {
         {/* Search / selected product */}
         <Card>
           <CardHeader className="pb-3 space-y-1">
-            <CardTitle className="text-sm font-medium text-foreground">Produto</CardTitle>
-            <CardDescription className="text-xs leading-tight">
+            <CardTitle className="text-sm font-medium text-foreground leading-5">Produto</CardTitle>
+            <CardDescription className="text-xs leading-4 min-h-4">
               Busque por MLB ou SKU para preencher dados.
             </CardDescription>
           </CardHeader>
@@ -572,9 +572,10 @@ export function SimuladorPrecificacao() {
       <div className="lg:sticky lg:top-20 lg:self-start space-y-3">
         <Card>
           <CardHeader className="pb-3 space-y-1">
-            <CardTitle className="text-sm font-medium text-foreground">Preço de venda</CardTitle>
-            <CardDescription className="text-xs leading-tight">
-              Recalcula a cada digitação. {fetchingFee && <span className="text-amber-600">Atualizando comissão…</span>}
+            <CardTitle className="text-sm font-medium text-foreground leading-5">Preço de venda</CardTitle>
+            <CardDescription className="text-xs leading-4 min-h-4">
+              Recalcula a cada digitação.{" "}
+              {fetchingFee && <span className="text-amber-600">Atualizando comissão…</span>}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
