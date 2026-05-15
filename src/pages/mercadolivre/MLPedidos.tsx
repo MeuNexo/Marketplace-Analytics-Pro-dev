@@ -1083,12 +1083,12 @@ export default function MLPedidos() {
               />
               <KPICard
                 title="Receita líquida"
-                value={currFmt(summary.net_revenue)}
+                value={currFmt(summary.full_net_revenue)}
                 variant="minimal"
                 iconClassName="bg-success/10 text-success"
                 size="compact"
                 icon={<TrendingDown className="w-4 h-4" />}
-                subtitle={`Após comissão e frete · ${pctFmt(summary.net_margin_pct)}`}
+                subtitle={`Comissão, frete, custo e imposto · ${pctFmt(summary.full_net_margin_pct)}`}
               />
               <KPICard
                 title="Ticket médio"
@@ -1328,14 +1328,24 @@ export default function MLPedidos() {
                   </table>
                 </div>
                 {filtered.length > 0 && (
-                  <div className="px-6 py-3 border-t text-xs text-muted-foreground">
-                    {new Set(filtered.map(o => o.id)).size} pedidos
-                    {filtered.length !== new Set(filtered.map(o => o.id)).size && (
-                      <span className="ml-1 opacity-60">({filtered.length} itens)</span>
-                    )}
-                    {" · "}Líquido total:{" "}
-                    <span className="font-semibold text-foreground">
-                      {currFmt(filtered.reduce((s, o) => s + o.net_revenue, 0))}
+                  <div className="px-6 py-3 border-t text-xs text-muted-foreground flex items-center gap-3 flex-wrap">
+                    <span>
+                      {new Set(filtered.map(o => o.id)).size} pedidos
+                      {filtered.length !== new Set(filtered.map(o => o.id)).size && (
+                        <span className="ml-1 opacity-60">({filtered.length} itens)</span>
+                      )}
+                    </span>
+                    <span>
+                      Líquido (ML):{" "}
+                      <span className="font-semibold text-foreground">
+                        {currFmt(filtered.reduce((s, o) => s + o.net_revenue, 0))}
+                      </span>
+                    </span>
+                    <span>
+                      Líquido real:{" "}
+                      <span className="font-semibold text-foreground">
+                        {currFmt(filtered.reduce((s, o) => s + (o.full_net_revenue ?? o.net_revenue), 0))}
+                      </span>
                     </span>
                   </div>
                 )}
