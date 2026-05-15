@@ -2,7 +2,7 @@
 CREATE TABLE public.commercial_analysis_snapshots (
   id                uuid          NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   created_at        timestamptz   NOT NULL DEFAULT now(),
-  ml_user_id        text          NOT NULL REFERENCES public.ml_tokens(ml_user_id) ON DELETE CASCADE,
+  ml_user_id        text          NOT NULL,
   organization_id   uuid          NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
   item_id           text          NOT NULL,
   product_title     text          NOT NULL,
