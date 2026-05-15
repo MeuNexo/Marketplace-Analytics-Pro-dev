@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import {
   Dialog,
   DialogContent,
@@ -520,15 +521,10 @@ export default function MLFiscal() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-6 p-4 md:p-6">
-      {/* Page heading */}
-      <div>
-        <h1 className="text-xl font-semibold text-foreground tracking-tight">
-          Configuração Fiscal
-        </h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          Configure o regime tributário de cada conta Mercado Livre
-        </p>
+    <div className="space-y-5">
+      {/* ── Sticky header ── */}
+      <div className="sticky -top-4 md:-top-6 lg:-top-8 z-20 -mx-4 md:-mx-6 lg:-mx-8 -mt-4 md:-mt-6 lg:-mt-8 px-4 md:px-6 lg:px-8 pb-4 pt-4 bg-background/95 backdrop-blur-sm border-b border-border/40">
+        <MLPageHeader title="Fiscal" />
       </div>
 
       {/* FISCAL-07 — legal disclaimer */}
