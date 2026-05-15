@@ -345,17 +345,6 @@ function LucroRealForm({ initial, onSave, saving }: LRFormProps) {
       <div className="rounded-md border border-border/60 p-3 space-y-3 bg-muted/30">
         <div className="flex items-center gap-1">
           <Label className="text-xs font-medium">ICMS por destino</Label>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Info className="w-3 h-3 cursor-help text-muted-foreground" />
-            </TooltipTrigger>
-            <TooltipContent className="max-w-[260px] text-xs">
-              Aplicado por pedido, conforme UF do comprador.<br />
-              Quando UF destino = origem, usa "Intra-estadual".<br />
-              Quando UF destino é N/NE/CO/ES, usa 7%.<br />
-              Demais (S/SE), usa 12%.
-            </TooltipContent>
-          </Tooltip>
         </div>
         <div className="grid grid-cols-3 gap-3">
           <div className="space-y-1">
