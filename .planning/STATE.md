@@ -6,16 +6,16 @@ See: .planning/PROJECT.md (updated 2026-05-15)
 
 **Milestone:** v2.0 — Análise Comercial de Marketplace
 **Core value:** Ferramenta que transforma relatórios de pedidos em recomendações de preço GMV/Neutro/Margem, elasticidade e sugestões de compra/FULL.
-**Current focus:** Phase 4 em progresso — 04-01 concluído, próximo: 04-02 (migration SQL)
+**Current focus:** Phase 5 — Dashboard de Análise (DASH-01..03)
 
 ## Current Position
 
-Phase: Phase 4 (in progress)
-Plan: 04-02 (próxima a executar)
-Status: In progress — 1/3 planos completos
-Last activity: 2026-05-15 — 04-01 completo: motor de análise + 46 testes GREEN
+Phase: Phase 5 (next)
+Plan: 05-01 (a planejar)
+Status: Phase 4 COMPLETE ✅ — iniciando Phase 5
+Last activity: 2026-05-15 — Phase 4 completa: motor + migration + hook (46 testes GREEN, VERIFICATION PASSED)
 
-Progress: [█░░░░░░░░░] 10% (1/3 Phase 4 plans)
+Progress: [██░░░░░░░░] 25% (Phase 4/7 complete)
 
 ## Performance Metrics
 
@@ -28,7 +28,7 @@ Progress: [█░░░░░░░░░] 10% (1/3 Phase 4 plans)
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 4. Motor de Análise + Snapshots | 1 plan (04-01) | ~25 min | ~25 min |
+| 4. Motor de Análise + Snapshots | 3 plans ✅ | ~40 min | ~13 min |
 | 5. Dashboard de Análise | - | - | - |
 | 6. Recomendações de Compra & FULL | - | - | - |
 | 7. Histórico Comparativo | - | - | - |
@@ -78,5 +78,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-05-15
-Stopped at: Completed 04-01-PLAN.md — motor de análise puro (3 tasks, 46 testes GREEN)
+Stopped at: Phase 4 COMPLETE — todos os 3 planos executados e VERIFICATION PASSED
 Resume file: None
