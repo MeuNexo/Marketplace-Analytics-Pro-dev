@@ -9,7 +9,7 @@ import { ptBR } from "date-fns/locale";
 import {
   ClipboardList, DollarSign, TrendingDown, Package,
   Truck, RefreshCw, Plug, Search, ChevronDown, ChevronUp,
-  BarChart2, MapPin, Tag, TrendingUp,
+  BarChart2, MapPin, Tag, TrendingUp, Calculator, AlertTriangle,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,11 +19,13 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { KPICard } from "@/components/dashboard/KPICard";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { MLPeriodPicker } from "@/components/mercadolivre/MLPeriodPicker";
 import { useMLStore } from "@/contexts/MLStoreContext";
 import { useMLFilters } from "@/hooks/useMLFilters";
 import { useToast } from "@/hooks/use-toast";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { supabase } from "@/integrations/supabase/client";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -31,6 +33,7 @@ import { supabase } from "@/integrations/supabase/client";
 type OrderStatus = "paid" | "shipped" | "delivered" | "cancelled" | "returned" | "pending";
 type ListingType = "classic" | "premium" | "free";
 type SortKey     = "date" | "gross" | "net" | "margin" | "commission";
+// extended sort columns include cost / taxes / full net
 type SortDir     = "asc" | "desc";
 type StatusFilter = "all" | OrderStatus;
 
@@ -76,6 +79,8 @@ interface ProcessedOrder {
   tax_total:       number | null;
   tax_rate:        number | null;
   gross_margin_pct: number | null;
+  full_net_revenue: number | null;
+  full_net_margin_pct: number | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -174,13 +179,14 @@ function SubTabTopProdutos({ orders }: { orders: ProcessedOrder[] }) {
       item_id: string; titulo: string;
       orderIds: Set<string>; quantidade: number;
       gross: number; net: number; commission: number; frete: number;
+      cost: number; tax: number;
     }>();
 
     for (const o of orders) {
       if (o.status === "cancelled" || o.status === "returned") continue;
       const key = o.item_id || o.titulo;
       if (!map.has(key)) {
-        map.set(key, { item_id: o.item_id, titulo: o.titulo, orderIds: new Set(), quantidade: 0, gross: 0, net: 0, commission: 0, frete: 0 });
+        map.set(key, { item_id: o.item_id, titulo: o.titulo, orderIds: new Set(), quantidade: 0, gross: 0, net: 0, commission: 0, frete: 0, cost: 0, tax: 0 });
       }
       const p = map.get(key)!;
       p.orderIds.add(o.id);
@@ -189,13 +195,16 @@ function SubTabTopProdutos({ orders }: { orders: ProcessedOrder[] }) {
       p.net         += o.net_revenue;
       p.commission  += o.ml_commission;
       p.frete       += o.shipping_cost;
+      p.cost        += o.cost_total ?? 0;
+      p.tax         += o.tax_total  ?? 0;
     }
 
     return Array.from(map.values())
       .map(p => ({
         ...p,
         orders:          p.orderIds.size,
-        margin_pct:      p.gross > 0 ? (p.net         / p.gross) * 100 : 0,
+        full_net:        p.net - p.cost - p.tax,
+        margin_pct:      p.gross > 0 ? ((p.net - p.cost - p.tax) / p.gross) * 100 : 0,
         commission_rate: p.gross > 0 ? (p.commission  / p.gross) * 100 : 0,
       }))
       .sort((a, b) =>
@@ -239,6 +248,8 @@ function SubTabTopProdutos({ orders }: { orders: ProcessedOrder[] }) {
                   <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground">Bruto</th>
                   <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground">Comissão</th>
                   <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground">Frete</th>
+                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground">Custo</th>
+                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground">Imposto</th>
                   <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground">Líquido</th>
                   <th className="text-right px-4 py-2.5 text-xs font-semibold text-muted-foreground">Margem</th>
                 </tr>
@@ -266,6 +277,12 @@ function SubTabTopProdutos({ orders }: { orders: ProcessedOrder[] }) {
                     </td>
                     <td className="px-3 py-3 text-right text-xs tabular-nums text-orange-600">
                       {p.frete > 0 ? `−${currFmt(p.frete)}` : <span className="text-muted-foreground">—</span>}
+                    </td>
+                    <td className="px-3 py-3 text-right text-xs tabular-nums text-red-600">
+                      {p.cost > 0 ? `−${currFmt(p.cost)}` : <span className="text-muted-foreground/60">—</span>}
+                    </td>
+                    <td className="px-3 py-3 text-right text-xs tabular-nums text-violet-600">
+                      {p.tax > 0 ? `−${currFmt(p.tax)}` : <span className="text-muted-foreground/60">—</span>}
                     </td>
                     <td className="px-3 py-3 text-right text-xs tabular-nums font-mono font-semibold">{currFmt(p.net)}</td>
                     <td className="px-4 py-3 text-right">
@@ -298,14 +315,14 @@ function SubTabUF({ orders }: { orders: ProcessedOrder[] }) {
   const states = useMemo(() => {
     const map = new Map<string, {
       uf: string; orderIds: Set<string>;
-      gross: number; net: number; cancelledIds: Set<string>;
+      gross: number; net: number; cost: number; tax: number; cancelledIds: Set<string>;
     }>();
 
     for (const o of orders) {
       const uf = o.estado?.trim() || null;
       if (!uf) continue; // ignora pedidos sem estado identificado
       if (!map.has(uf)) {
-        map.set(uf, { uf, orderIds: new Set(), gross: 0, net: 0, cancelledIds: new Set() });
+        map.set(uf, { uf, orderIds: new Set(), gross: 0, net: 0, cost: 0, tax: 0, cancelledIds: new Set() });
       }
       const s = map.get(uf)!;
       s.orderIds.add(o.id);
@@ -314,6 +331,8 @@ function SubTabUF({ orders }: { orders: ProcessedOrder[] }) {
       } else {
         s.gross += o.gross_revenue;
         s.net   += o.net_revenue;
+        s.cost  += o.cost_total ?? 0;
+        s.tax   += o.tax_total  ?? 0;
       }
     }
 
@@ -323,10 +342,12 @@ function SubTabUF({ orders }: { orders: ProcessedOrder[] }) {
         orders:            s.orderIds.size,
         gross:             s.gross,
         net:               s.net,
+        cost:              s.cost,
+        tax:               s.tax,
         cancelled:         s.cancelledIds.size,
         avg_ticket:        (s.orderIds.size - s.cancelledIds.size) > 0 ? s.gross / (s.orderIds.size - s.cancelledIds.size) : 0,
         cancellation_rate: s.orderIds.size > 0 ? (s.cancelledIds.size / s.orderIds.size) * 100 : 0,
-        margin_pct:        s.gross > 0 ? (s.net / s.gross) * 100 : 0,
+        margin_pct:        s.gross > 0 ? ((s.net - s.cost - s.tax) / s.gross) * 100 : 0,
       }))
       .sort((a, b) => b.gross - a.gross);
   }, [orders]);
@@ -442,10 +463,14 @@ function SubTabTipoAnuncio({ orders }: { orders: ProcessedOrder[] }) {
       t.net        += o.net_revenue;
       t.commission += o.ml_commission;
       t.frete      += o.shipping_cost;
+      (t as any).cost = ((t as any).cost ?? 0) + (o.cost_total ?? 0);
+      (t as any).tax  = ((t as any).tax  ?? 0) + (o.tax_total  ?? 0);
     }
 
     return (["classic", "premium", "free"] as ListingType[]).map(type => {
       const d = map[type];
+      const cost = (d as any).cost ?? 0;
+      const tax  = (d as any).tax  ?? 0;
       return {
         type,
         label:           LISTING_LABELS[type],
@@ -455,7 +480,9 @@ function SubTabTipoAnuncio({ orders }: { orders: ProcessedOrder[] }) {
         net:             d.net,
         commission:      d.commission,
         frete:           d.frete,
-        margin_pct:      d.gross > 0 ? (d.net        / d.gross) * 100 : 0,
+        cost,
+        tax,
+        margin_pct:      d.gross > 0 ? ((d.net - cost - tax) / d.gross) * 100 : 0,
         commission_rate: d.gross > 0 ? (d.commission / d.gross) * 100 : 0,
         frete_rate:      d.gross > 0 ? (d.frete      / d.gross) * 100 : 0,
         avg_ticket:      d.orderIds.size > 0 ? d.gross / d.orderIds.size : 0,
@@ -505,6 +532,18 @@ function SubTabTipoAnuncio({ orders }: { orders: ProcessedOrder[] }) {
                   <span>Frete</span>
                   <span className="font-mono">
                     {t.frete > 0 ? `−${currFmt(t.frete)} (${pctFmt(t.frete_rate)})` : <span className="text-muted-foreground">—</span>}
+                  </span>
+                </div>
+                <div className="flex justify-between text-red-600">
+                  <span>Custo (CMV)</span>
+                  <span className="font-mono">
+                    {t.cost > 0 ? `−${currFmt(t.cost)}` : <span className="text-muted-foreground/60">—</span>}
+                  </span>
+                </div>
+                <div className="flex justify-between text-violet-600">
+                  <span>Impostos</span>
+                  <span className="font-mono">
+                    {t.tax > 0 ? `−${currFmt(t.tax)}` : <span className="text-muted-foreground/60">—</span>}
                   </span>
                 </div>
                 <div className="flex justify-between pt-2 border-t border-border/60">
@@ -600,6 +639,7 @@ function PedidosRelatorios({ orders }: { orders: ProcessedOrder[] }) {
 export default function MLPedidos() {
   const { stores, resolvedMLUserIds } = useMLStore();
   const { toast } = useToast();
+  const { currentOrg } = useOrganization();
 
   const {
     period, setPeriod,
@@ -617,6 +657,7 @@ export default function MLPedidos() {
   const [loading, setLoading]           = useState(false);
   const [syncing, setSyncing]           = useState(false);
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
+  const [recalcing, setRecalcing]       = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [search, setSearch]             = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -742,6 +783,34 @@ export default function MLPedidos() {
     setPendingPeriod(null);
   }, [pendingRange, pendingPeriod, setCustomRange, setPeriod, setPopoverOpen, setPendingRange, setPendingPeriod]);
 
+  // ── Recalcular custos/impostos para o período ───────────────────────────────
+  const handleRecalc = useCallback(async () => {
+    if (!resolvedMLUserIds.length || recalcing || !currentOrg?.id) return;
+    setRecalcing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("recalc-order-costs", {
+        body: {
+          ml_user_ids: resolvedMLUserIds,
+          date_from: dateFrom,
+          date_to: dateTo,
+          organization_id: currentOrg.id,
+          only_missing: false,
+        },
+      });
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error || "Falha no recálculo");
+      await loadOrders();
+      toast({
+        title: "Custos e impostos recalculados",
+        description: `${data.updated ?? 0} pedidos atualizados.`,
+      });
+    } catch (err: any) {
+      toast({ title: "Erro ao recalcular", description: err.message, variant: "destructive" });
+    } finally {
+      setRecalcing(false);
+    }
+  }, [resolvedMLUserIds, recalcing, currentOrg, dateFrom, dateTo, loadOrders, toast]);
+
   // ── Derived data ─────────────────────────────────────────────────────────────
   const orders = useMemo<ProcessedOrder[]>(() =>
     rows.map(r => ({
@@ -770,6 +839,17 @@ export default function MLPedidos() {
       gross_margin_pct: (r.custo_unit != null && Number(r.receita_bruta) > 0)
         ? ((Number(r.receita_bruta) - Number(r.custo_unit) * r.quantidade) / Number(r.receita_bruta)) * 100
         : null,
+      full_net_revenue: (r.custo_unit != null || r.tax_amount != null)
+        ? Number(r.receita_liquida ?? 0)
+          - (r.custo_unit != null ? Number(r.custo_unit) * r.quantidade : 0)
+          - (r.tax_amount != null ? Number(r.tax_amount) : 0)
+        : null,
+      full_net_margin_pct: (Number(r.receita_bruta) > 0 && (r.custo_unit != null || r.tax_amount != null))
+        ? ((Number(r.receita_liquida ?? 0)
+            - (r.custo_unit != null ? Number(r.custo_unit) * r.quantidade : 0)
+            - (r.tax_amount != null ? Number(r.tax_amount) : 0))
+           / Number(r.receita_bruta)) * 100
+        : null,
     })),
   [rows]);
 
@@ -795,6 +875,8 @@ export default function MLPedidos() {
     const costs      = confirmed.reduce((s, o) => s + (o.cost_total ?? 0), 0);
     const taxes      = confirmed.reduce((s, o) => s + (o.tax_total  ?? 0), 0);
     const fullNet    = net - costs - taxes;
+    const missingCost = confirmed.filter(o => o.cost_total == null).length;
+    const missingTax  = confirmed.filter(o => o.tax_total  == null).length;
 
     return {
       total_orders:     confirmedOrderIds.length + pendingOrderIds.length,
@@ -811,6 +893,9 @@ export default function MLPedidos() {
       full_net_margin_pct: gross > 0 ? (fullNet / gross) * 100 : 0,
       net_margin_pct:   gross > 0 ? (net / gross) * 100 : 0,
       avg_ticket:       confirmedOrderIds.length > 0 ? gross / confirmedOrderIds.length : 0,
+      missing_cost:     missingCost,
+      missing_tax:      missingTax,
+      confirmed_total:  confirmed.length,
     };
   }, [orders]);
 
@@ -895,6 +980,18 @@ export default function MLPedidos() {
             <Button
               variant="ghost"
               size="sm"
+              disabled={recalcing || syncing || loading}
+              onClick={handleRecalc}
+              className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted hover:text-muted-foreground"
+              aria-label="Recalcular custos e impostos"
+              title="Recalcular custo e impostos para o período"
+            >
+              <Calculator className={`w-3.5 h-3.5 ${recalcing ? "animate-pulse" : ""}`} />
+              <span className="hidden md:inline">{recalcing ? "Recalculando..." : "Recalcular"}</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               disabled={syncing || loading}
               onClick={handleSync}
               className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted hover:text-muted-foreground"
@@ -931,6 +1028,35 @@ export default function MLPedidos() {
 
         {!isEmpty && (
           <>
+            {/* Banner — configuração faltante */}
+            {(summary.missing_cost > 0 || summary.missing_tax > 0) && summary.confirmed_total > 0 && (
+              <Alert className="border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                <AlertDescription className="text-xs leading-relaxed flex items-center justify-between gap-3 flex-wrap">
+                  <span>
+                    {summary.missing_cost > 0 && (
+                      <>{summary.missing_cost} pedido(s) sem <strong>custo</strong> configurado.{" "}
+                        <Link to="/precos-custos" className="underline hover:no-underline">Configurar custos</Link>.{" "}</>
+                    )}
+                    {summary.missing_tax > 0 && (
+                      <>{summary.missing_tax} pedido(s) sem <strong>imposto</strong> calculado.{" "}
+                        <Link to="/fiscal" className="underline hover:no-underline">Configurar fiscal</Link>.</>
+                    )}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1.5"
+                    disabled={recalcing}
+                    onClick={handleRecalc}
+                  >
+                    <Calculator className={`w-3 h-3 ${recalcing ? "animate-pulse" : ""}`} />
+                    {recalcing ? "Recalculando..." : "Recalcular"}
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+
             {/* KPIs */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <KPICard
@@ -962,7 +1088,7 @@ export default function MLPedidos() {
                 iconClassName="bg-success/10 text-success"
                 size="compact"
                 icon={<TrendingDown className="w-4 h-4" />}
-                subtitle={`Margem média ${pctFmt(summary.net_margin_pct)}`}
+                subtitle={`Após comissão e frete · ${pctFmt(summary.net_margin_pct)}`}
               />
               <KPICard
                 title="Ticket médio"
@@ -976,7 +1102,7 @@ export default function MLPedidos() {
             </div>
 
             {/* Fee breakdown */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <Card>
                 <CardContent className="pt-4 pb-4">
                   <p className="text-xs text-muted-foreground font-medium">Comissão ML</p>
@@ -999,11 +1125,22 @@ export default function MLPedidos() {
               </Card>
               <Card>
                 <CardContent className="pt-4 pb-4">
-                  <p className="text-xs text-muted-foreground font-medium">Margem líquida média</p>
-                  <p className={`text-2xl font-bold mt-1 ${marginColor(summary.net_margin_pct)}`}>
-                    {pctFmt(summary.net_margin_pct)}
+                  <p className="text-xs text-muted-foreground font-medium">Custos + Impostos</p>
+                  <p className="text-2xl font-bold mt-1 text-violet-600">
+                    {currFmt(summary.costs + summary.taxes)}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">Bruto − Comissão − Frete</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    CMV {currFmt(summary.costs)} · Imp. {currFmt(summary.taxes)}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4 pb-4">
+                  <p className="text-xs text-muted-foreground font-medium">Margem líquida média</p>
+                  <p className={`text-2xl font-bold mt-1 ${marginColor(summary.full_net_margin_pct)}`}>
+                    {pctFmt(summary.full_net_margin_pct)}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Bruto − Comissão − Frete − Custo − Imposto</p>
                 </CardContent>
               </Card>
             </div>
@@ -1096,14 +1233,17 @@ export default function MLPedidos() {
                           </button>
                         </th>
                         <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">Frete</th>
+                        <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">Custo</th>
+                        <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">Imposto</th>
                         <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">
                           <button onClick={() => toggleSort("net")} className="hover:text-foreground transition-colors">
                             Líquido <SortIcon sortKey={sortKey} k="net" sortDir={sortDir} />
                           </button>
                         </th>
+                        <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">M. Bruta</th>
                         <th className="text-right px-6 py-3 text-xs text-muted-foreground font-medium">
                           <button onClick={() => toggleSort("margin")} className="hover:text-foreground transition-colors">
-                            Margem <SortIcon sortKey={sortKey} k="margin" sortDir={sortDir} />
+                            M. Líquida <SortIcon sortKey={sortKey} k="margin" sortDir={sortDir} />
                           </button>
                         </th>
                       </tr>
@@ -1111,7 +1251,7 @@ export default function MLPedidos() {
                     <tbody className="divide-y divide-border">
                       {filtered.length === 0 ? (
                         <tr>
-                          <td colSpan={9} className="text-center py-12 text-muted-foreground text-sm">
+                          <td colSpan={12} className="text-center py-12 text-muted-foreground text-sm">
                             Nenhum pedido encontrado
                           </td>
                         </tr>
@@ -1145,13 +1285,41 @@ export default function MLPedidos() {
                                 : <span className="text-muted-foreground">—</span>
                               }
                             </td>
+                            <td className="px-3 py-3 text-right text-xs">
+                              {order.cost_total != null
+                                ? <span className="text-red-600 font-mono">−{currFmt(order.cost_total)}</span>
+                                : <span className="text-muted-foreground/60" title="Custo não configurado">—</span>}
+                            </td>
+                            <td className="px-3 py-3 text-right text-xs">
+                              {order.tax_total != null
+                                ? (
+                                  <>
+                                    <span className="text-violet-600 font-mono">−{currFmt(order.tax_total)}</span>
+                                    {order.tax_rate != null && (
+                                      <span className="text-[10px] text-muted-foreground ml-1">({pctFmt(order.tax_rate)})</span>
+                                    )}
+                                  </>
+                                )
+                                : <span className="text-muted-foreground/60" title="Fiscal não configurado">—</span>}
+                            </td>
                             <td className="px-3 py-3 text-right font-mono text-xs font-semibold">
                               {currFmt(order.net_revenue)}
                             </td>
+                            <td className="px-3 py-3 text-right text-xs">
+                              {order.gross_margin_pct != null
+                                ? <span className={`font-semibold ${marginColor(order.gross_margin_pct)}`}>{pctFmt(order.gross_margin_pct)}</span>
+                                : <span className="text-muted-foreground/60">—</span>}
+                            </td>
                             <td className="px-6 py-3 text-right">
-                              <span className={`text-sm font-bold ${marginColor(order.net_margin_pct)}`}>
-                                {pctFmt(order.net_margin_pct)}
-                              </span>
+                              {order.full_net_margin_pct != null ? (
+                                <span className={`text-sm font-bold ${marginColor(order.full_net_margin_pct)}`}>
+                                  {pctFmt(order.full_net_margin_pct)}
+                                </span>
+                              ) : (
+                                <span className={`text-sm font-bold ${marginColor(order.net_margin_pct)} opacity-60`} title="Sem custo/imposto — usando margem parcial">
+                                  {pctFmt(order.net_margin_pct)}*
+                                </span>
+                              )}
                             </td>
                           </tr>
                         ))
