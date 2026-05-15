@@ -318,8 +318,13 @@ export function SimuladorPrecificacao() {
                         {itemsLoading ? "Carregando anúncios…" : "Nenhum anúncio encontrado."}
                       </CommandEmpty>
                       <CommandGroup>
-                        {filteredItems.map((it) => (
-                          <CommandItem key={it.item_id} value={it.item_id} onSelect={() => selectProduct(it)} className="gap-2">
+                       {filteredItems.map((it) => (
+                          <CommandItem
+                            key={it.item_id}
+                            value={it.item_id}
+                            onSelect={() => selectProduct(it)}
+                            className="gap-2 data-[selected=true]:bg-muted data-[selected=true]:text-foreground aria-selected:bg-muted aria-selected:text-foreground"
+                          >
                             {it.thumbnail
                               ? <img src={it.thumbnail} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />
                               : <Package className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
