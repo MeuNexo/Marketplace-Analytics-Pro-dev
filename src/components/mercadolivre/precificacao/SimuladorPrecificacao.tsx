@@ -569,7 +569,7 @@ export function SimuladorPrecificacao() {
       </div>
 
       {/* ── RIGHT: Live result ──────────────────────────────────────────── */}
-      <div className="lg:sticky lg:top-4 lg:self-start space-y-3">
+      <div className="lg:sticky lg:top-20 lg:self-start space-y-3">
         <Card>
           <CardHeader className="pb-3 space-y-1">
             <CardTitle className="text-sm font-medium text-foreground leading-5">Preço de venda</CardTitle>
