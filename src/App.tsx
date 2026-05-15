@@ -32,7 +32,7 @@ const MLReputacao        = React.lazy(() => import("./pages/mercadolivre/MLReput
 const MLDevolucoes       = React.lazy(() => import("./pages/mercadolivre/MLDevolucoes"));
 const MLPerguntas        = React.lazy(() => import("./pages/mercadolivre/MLPerguntas"));
 const MLMetas            = React.lazy(() => import("./pages/mercadolivre/MLMetas"));
-const MLPrecosCustos     = React.lazy(() => import("./pages/mercadolivre/MLPrecosCustos"));
+const MLPrecificacao     = React.lazy(() => import("./pages/mercadolivre/MLPrecificacao"));
 const MLFiscal           = React.lazy(() => import("./pages/mercadolivre/MLFiscal"));
 const TVModeVendas       = React.lazy(() => import("./pages/TVModeVendas"));
 const Sellers            = React.lazy(() => import("./pages/Sellers"));
@@ -129,7 +129,8 @@ const App = () => (
                             <Route path="/devolucoes" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na página de Devoluções"><MLDevolucoes /></ErrorBoundary></RoleRoute>} />
                             <Route path="/perguntas" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na página de Perguntas"><MLPerguntas /></ErrorBoundary></RoleRoute>} />
                             <Route path="/metas" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na página de Metas"><MLMetas /></ErrorBoundary></RoleRoute>} />
-                            <Route path="/precos-custos" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na página de Preços e Custos"><MLPrecosCustos /></ErrorBoundary></RoleRoute>} />
+                            <Route path="/precificacao" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na página de Precificação"><MLPrecificacao /></ErrorBoundary></RoleRoute>} />
+                            <Route path="/precos-custos" element={<Navigate to="/precificacao" replace />} />
                             <Route path="/sellers" element={<RoleRoute><Sellers /></RoleRoute>} />
                             <Route path="/integracoes" element={<RoleRoute><Integrations /></RoleRoute>} />
                             <Route path="/fiscal" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na página Fiscal"><MLFiscal /></ErrorBoundary></RoleRoute>} />

@@ -25,7 +25,7 @@ export const MENU_SECTIONS = [
       { label: "Anúncios", path: "/anuncios" },
       { label: "Estoque",  path: "/estoque" },
       { label: "Pedidos",  path: "/pedidos" },
-      { label: "Preços e Custos", path: "/precos-custos" },
+      { label: "Precificação", path: "/precificacao" },
     ],
   },
   {
