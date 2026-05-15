@@ -994,6 +994,35 @@ export default function MLPedidos() {
 
         {!isEmpty && (
           <>
+            {/* Banner — configuração faltante */}
+            {(summary.missing_cost > 0 || summary.missing_tax > 0) && summary.confirmed_total > 0 && (
+              <Alert className="border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                <AlertDescription className="text-xs leading-relaxed flex items-center justify-between gap-3 flex-wrap">
+                  <span>
+                    {summary.missing_cost > 0 && (
+                      <>{summary.missing_cost} pedido(s) sem <strong>custo</strong> configurado.{" "}
+                        <Link to="/precos-custos" className="underline hover:no-underline">Configurar custos</Link>.{" "}</>
+                    )}
+                    {summary.missing_tax > 0 && (
+                      <>{summary.missing_tax} pedido(s) sem <strong>imposto</strong> calculado.{" "}
+                        <Link to="/fiscal" className="underline hover:no-underline">Configurar fiscal</Link>.</>
+                    )}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1.5"
+                    disabled={recalcing}
+                    onClick={handleRecalc}
+                  >
+                    <Calculator className={`w-3 h-3 ${recalcing ? "animate-pulse" : ""}`} />
+                    {recalcing ? "Recalculando..." : "Recalcular"}
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+
             {/* KPIs */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <KPICard
