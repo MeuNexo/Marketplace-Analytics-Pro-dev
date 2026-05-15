@@ -749,6 +749,34 @@ export default function MLPedidos() {
     setPendingPeriod(null);
   }, [pendingRange, pendingPeriod, setCustomRange, setPeriod, setPopoverOpen, setPendingRange, setPendingPeriod]);
 
+  // ── Recalcular custos/impostos para o período ───────────────────────────────
+  const handleRecalc = useCallback(async () => {
+    if (!resolvedMLUserIds.length || recalcing || !currentOrg?.id) return;
+    setRecalcing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("recalc-order-costs", {
+        body: {
+          ml_user_ids: resolvedMLUserIds,
+          date_from: dateFrom,
+          date_to: dateTo,
+          organization_id: currentOrg.id,
+          only_missing: false,
+        },
+      });
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error || "Falha no recálculo");
+      await loadOrders();
+      toast({
+        title: "Custos e impostos recalculados",
+        description: `${data.updated ?? 0} pedidos atualizados.`,
+      });
+    } catch (err: any) {
+      toast({ title: "Erro ao recalcular", description: err.message, variant: "destructive" });
+    } finally {
+      setRecalcing(false);
+    }
+  }, [resolvedMLUserIds, recalcing, currentOrg, dateFrom, dateTo, loadOrders, toast]);
+
   // ── Derived data ─────────────────────────────────────────────────────────────
   const orders = useMemo<ProcessedOrder[]>(() =>
     rows.map(r => ({
