@@ -291,6 +291,17 @@ function LucroRealForm({ initial, onSave, saving }: LRFormProps) {
   const [icmsC, setIcmsC] = useState(
     initial?.lr_icms_credito != null ? String(initial.lr_icms_credito) : ""
   );
+  const [icmsIntra, setIcmsIntra] = useState(
+    initial?.lr_icms_aliquota_intra != null ? String(initial.lr_icms_aliquota_intra) : ""
+  );
+  const [icmsInterSE, setIcmsInterSE] = useState(
+    initial?.lr_icms_aliquota_inter_sul_sudeste != null
+      ? String(initial.lr_icms_aliquota_inter_sul_sudeste) : "12"
+  );
+  const [icmsInterNNE, setIcmsInterNNE] = useState(
+    initial?.lr_icms_aliquota_inter_norte_nordeste != null
+      ? String(initial.lr_icms_aliquota_inter_norte_nordeste) : "7"
+  );
 
   const debits = pct(pisD) + pct(cofinsD) + pct(icmsD);
   const credits = pct(pisC) + pct(cofinsC) + pct(icmsC);
@@ -330,6 +341,37 @@ function LucroRealForm({ initial, onSave, saving }: LRFormProps) {
         </div>
       </div>
 
+      <div className="rounded-md border border-border/60 p-3 space-y-3 bg-muted/30">
+        <div className="flex items-center gap-1">
+          <Label className="text-xs font-medium">ICMS por destino</Label>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Info className="w-3 h-3 cursor-help text-muted-foreground" />
+            </TooltipTrigger>
+            <TooltipContent className="max-w-[260px] text-xs">
+              Aplicado por pedido, conforme UF do comprador.<br />
+              Quando UF destino = origem, usa "Intra-estadual".<br />
+              Quando UF destino é N/NE/CO/ES, usa 7%.<br />
+              Demais (S/SE), usa 12%.
+            </TooltipContent>
+          </Tooltip>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="space-y-1">
+            <Label className="text-[11px] text-muted-foreground">Intra-estadual</Label>
+            <PercentInput value={icmsIntra} onChange={setIcmsIntra} placeholder={icmsD || "0,00"} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[11px] text-muted-foreground">Inter S/SE</Label>
+            <PercentInput value={icmsInterSE} onChange={setIcmsInterSE} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[11px] text-muted-foreground">Inter N/NE/CO/ES</Label>
+            <PercentInput value={icmsInterNNE} onChange={setIcmsInterNNE} />
+          </div>
+        </div>
+      </div>
+
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         Resultado líquido:{" "}
         <span className="font-medium text-foreground">{isCredit ? "0,00%" : fmtPct(net)}</span>
@@ -351,6 +393,9 @@ function LucroRealForm({ initial, onSave, saving }: LRFormProps) {
             lr_cofins_credito: pct(cofinsC) || null,
             lr_icms_debito: icmsD !== "" ? pct(icmsD) : null,
             lr_icms_credito: icmsC !== "" ? pct(icmsC) : null,
+            lr_icms_aliquota_intra: icmsIntra !== "" ? pct(icmsIntra) : null,
+            lr_icms_aliquota_inter_sul_sudeste: icmsInterSE !== "" ? pct(icmsInterSE) : null,
+            lr_icms_aliquota_inter_norte_nordeste: icmsInterNNE !== "" ? pct(icmsInterNNE) : null,
           })
         }
         disabled={saving}
