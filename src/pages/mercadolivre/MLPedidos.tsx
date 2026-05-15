@@ -79,6 +79,8 @@ interface ProcessedOrder {
   tax_total:       number | null;
   tax_rate:        number | null;
   gross_margin_pct: number | null;
+  full_net_revenue: number | null;
+  full_net_margin_pct: number | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
