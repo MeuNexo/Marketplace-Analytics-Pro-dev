@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { UF_LIST } from "@/lib/tax/regions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,6 +37,7 @@ type Regime = "simples_nacional" | "lucro_presumido" | "lucro_real";
 interface TaxConfig {
   ml_user_id: string;
   regime: Regime;
+  uf_origem: string | null;
   sn_aliquota_efetiva: number | null;
   lp_pis: number | null;
   lp_cofins: number | null;
@@ -47,6 +49,9 @@ interface TaxConfig {
   lr_cofins_credito: number | null;
   lr_icms_debito: number | null;
   lr_icms_credito: number | null;
+  lr_icms_aliquota_intra: number | null;
+  lr_icms_aliquota_inter_sul_sudeste: number | null;
+  lr_icms_aliquota_inter_norte_nordeste: number | null;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
