@@ -605,6 +605,7 @@ function PedidosRelatorios({ orders }: { orders: ProcessedOrder[] }) {
 export default function MLPedidos() {
   const { stores, resolvedMLUserIds } = useMLStore();
   const { toast } = useToast();
+  const { currentOrg } = useOrganization();
 
   const {
     period, setPeriod,
@@ -622,6 +623,7 @@ export default function MLPedidos() {
   const [loading, setLoading]           = useState(false);
   const [syncing, setSyncing]           = useState(false);
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
+  const [recalcing, setRecalcing]       = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [search, setSearch]             = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
