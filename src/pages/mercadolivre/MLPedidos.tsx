@@ -248,6 +248,8 @@ function SubTabTopProdutos({ orders }: { orders: ProcessedOrder[] }) {
                   <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground">Bruto</th>
                   <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground">Comissão</th>
                   <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground">Frete</th>
+                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground">Custo</th>
+                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground">Imposto</th>
                   <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground">Líquido</th>
                   <th className="text-right px-4 py-2.5 text-xs font-semibold text-muted-foreground">Margem</th>
                 </tr>
@@ -275,6 +277,12 @@ function SubTabTopProdutos({ orders }: { orders: ProcessedOrder[] }) {
                     </td>
                     <td className="px-3 py-3 text-right text-xs tabular-nums text-orange-600">
                       {p.frete > 0 ? `−${currFmt(p.frete)}` : <span className="text-muted-foreground">—</span>}
+                    </td>
+                    <td className="px-3 py-3 text-right text-xs tabular-nums text-red-600">
+                      {p.cost > 0 ? `−${currFmt(p.cost)}` : <span className="text-muted-foreground/60">—</span>}
+                    </td>
+                    <td className="px-3 py-3 text-right text-xs tabular-nums text-violet-600">
+                      {p.tax > 0 ? `−${currFmt(p.tax)}` : <span className="text-muted-foreground/60">—</span>}
                     </td>
                     <td className="px-3 py-3 text-right text-xs tabular-nums font-mono font-semibold">{currFmt(p.net)}</td>
                     <td className="px-4 py-3 text-right">
