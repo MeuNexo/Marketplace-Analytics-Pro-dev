@@ -438,6 +438,39 @@ export type Database = {
           },
         ]
       }
+      ml_product_costs: {
+        Row: {
+          cost: number | null
+          created_at: string
+          id: string
+          item_id: string
+          organization_id: string | null
+          tax_rate: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          cost?: number | null
+          created_at?: string
+          id?: string
+          item_id: string
+          organization_id?: string | null
+          tax_rate?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          cost?: number | null
+          created_at?: string
+          id?: string
+          item_id?: string
+          organization_id?: string | null
+          tax_rate?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       ml_product_daily_cache: {
         Row: {
           date: string
