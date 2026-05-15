@@ -120,7 +120,7 @@ function reducer(state: State, action: Action): State {
 
 export function SimuladorPrecificacao() {
   const [state, dispatch] = useReducer(reducer, initialState);
-  const { items, connected, loading: itemsLoading, fetchCosts } = useMLPrecosCustos();
+  const { items, connected, loading: itemsLoading, fetchCosts, fetchSalePrice } = useMLPrecosCustos();
   const { costs: productCosts } = useMLProductCosts();
   const { stores, selectedStore } = useMLStore();
   const { currentOrg } = useOrganization();
@@ -136,6 +136,32 @@ export function SimuladorPrecificacao() {
   // ── Live commission/fixed-fee fetch (debounced; only on price/logistic change) ──
   const [liveCommission, setLiveCommission] = useState<{ pct: number; fixed: number } | null>(null);
   const [fetchingFee, setFetchingFee] = useState(false);
+
+  // ── Promo price toggle ────────────────────────────────────────────────────────
+  const [usePromoPrice, setUsePromoPrice] = useState(false);
+  const [promoFetching, setPromoFetching] = useState(false);
+  const [regularSalePrice, setRegularSalePrice] = useState("");
+
+  const handlePromoPriceToggle = useCallback(async (checked: boolean) => {
+    if (checked) {
+      if (!state.itemId) return;
+      setPromoFetching(true);
+      try {
+        const { price_sale } = await fetchSalePrice(state.itemId);
+        if (price_sale != null) {
+          setRegularSalePrice(state.salePrice);
+          dispatch({ type: "set", key: "salePrice", value: String(price_sale).replace(".", ",") });
+          setUsePromoPrice(true);
+        }
+      } finally {
+        setPromoFetching(false);
+      }
+    } else {
+      dispatch({ type: "set", key: "salePrice", value: regularSalePrice });
+      setRegularSalePrice("");
+      setUsePromoPrice(false);
+    }
+  }, [state.itemId, state.salePrice, regularSalePrice, fetchSalePrice]);
 
   useEffect(() => {
     const price = parseNumber(state.salePrice);
@@ -252,6 +278,8 @@ export function SimuladorPrecificacao() {
         cost: cost?.cost != null ? String(cost.cost).replace(".", ",") : "",
       },
     });
+    setUsePromoPrice(false);
+    setRegularSalePrice("");
     setSearchOpen(false);
     setSearchQuery("");
   }
@@ -615,10 +643,27 @@ export function SimuladorPrecificacao() {
             </CardDescription>
           </CardHeader>
           <CardContent className="px-4 pb-3 space-y-3">
+            {state.itemId && (
+              <label className="flex items-center gap-2 cursor-pointer select-none w-fit">
+                <input
+                  type="checkbox"
+                  checked={usePromoPrice}
+                  disabled={promoFetching}
+                  onChange={(e) => handlePromoPriceToggle(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-border accent-primary cursor-pointer"
+                />
+                <span className="text-xs text-muted-foreground">
+                  {promoFetching ? "Buscando preço promocional…" : "Usar preço promocional"}
+                </span>
+              </label>
+            )}
             <Input
               placeholder="0,00"
               value={state.salePrice}
-              onChange={(e) => dispatch({ type: "set", key: "salePrice", value: e.target.value })}
+              onChange={(e) => {
+                dispatch({ type: "set", key: "salePrice", value: e.target.value });
+                if (usePromoPrice) { setUsePromoPrice(false); setRegularSalePrice(""); }
+              }}
               className="text-xl h-12 font-semibold tabular-nums"
             />
 
