@@ -53,6 +53,7 @@ interface State {
   listingType: ListingType;
   logisticType: string;
   shippingCost: string;
+  commissionPct: string;
 
   ufDestino: string;
   taxOverride: boolean;
@@ -81,6 +82,7 @@ const initialState: State = {
   listingType: "gold_pro",
   logisticType: "drop_off",
   shippingCost: "",
+  commissionPct: "",
   ufDestino: "",
   taxOverride: false,
   manualTaxPct: "",
@@ -109,7 +111,7 @@ function reducer(state: State, action: Action): State {
       return {
         ...state,
         itemId: null, title: "", thumbnail: "", categoryId: "",
-        cost: "", salePrice: "",
+        cost: "", salePrice: "", commissionPct: "",
       };
   }
 }
@@ -189,10 +191,15 @@ export function SimuladorPrecificacao() {
     ? parseNumber(state.shippingCost)
     : (opt?.estimate ?? 0);
 
+  const defaultCommissionPct = state.listingType === "gold_pro" ? 16 : 12;
+  const effectiveCommissionPct = state.commissionPct
+    ? parseNumber(state.commissionPct)
+    : (liveCommission?.pct ?? defaultCommissionPct);
+
   const pricingInput: PricingInput = {
     cost: parseNumber(state.cost),
     salePrice: parseNumber(state.salePrice),
-    commissionPct: liveCommission?.pct ?? (state.listingType === "gold_pro" ? 16 : 12),
+    commissionPct: effectiveCommissionPct,
     fixedFee: liveCommission?.fixed ?? 6,
     shippingCost,
     taxPct,
@@ -346,7 +353,7 @@ export function SimuladorPrecificacao() {
               </Popover>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               <div className="space-y-1">
                 <Label className="text-xs">Custo do produto (R$)</Label>
                 <Input
@@ -360,7 +367,12 @@ export function SimuladorPrecificacao() {
                 <Label className="text-xs">Tipo de anúncio</Label>
                 <Select
                   value={state.listingType}
-                  onValueChange={(v) => dispatch({ type: "set", key: "listingType", value: v })}
+                  onValueChange={(v) => {
+                    dispatch({ type: "set", key: "listingType", value: v });
+                    // Limpa override para que o default do novo tipo seja aplicado
+                    if (!state.commissionPct) return;
+                    dispatch({ type: "set", key: "commissionPct", value: "" });
+                  }}
                 >
                   <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -368,6 +380,21 @@ export function SimuladorPrecificacao() {
                     <SelectItem value="gold_special">Clássica</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs flex items-center gap-1">
+                  Comissão ML (%)
+                  <Tooltip>
+                    <TooltipTrigger asChild><Info className="w-3 h-3 text-muted-foreground cursor-help" /></TooltipTrigger>
+                    <TooltipContent>Vazio = taxa real do tipo de anúncio</TooltipContent>
+                  </Tooltip>
+                </Label>
+                <Input
+                  className="h-8 text-xs"
+                  placeholder={`${(liveCommission?.pct ?? defaultCommissionPct).toFixed(1)}`}
+                  value={state.commissionPct}
+                  onChange={(e) => dispatch({ type: "set", key: "commissionPct", value: e.target.value })}
+                />
               </div>
             </div>
           </CardContent>
