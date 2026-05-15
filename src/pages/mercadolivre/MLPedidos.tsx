@@ -792,6 +792,9 @@ export default function MLPedidos() {
     const net        = confirmed.reduce((s, o) => s + o.net_revenue,   0);
     const commission = confirmed.reduce((s, o) => s + o.ml_commission, 0);
     const shipping   = confirmed.reduce((s, o) => s + o.shipping_cost, 0);
+    const costs      = confirmed.reduce((s, o) => s + (o.cost_total ?? 0), 0);
+    const taxes      = confirmed.reduce((s, o) => s + (o.tax_total  ?? 0), 0);
+    const fullNet    = net - costs - taxes;
 
     return {
       total_orders:     confirmedOrderIds.length + pendingOrderIds.length,
@@ -802,6 +805,10 @@ export default function MLPedidos() {
       net_revenue:      net,
       ml_commission:    commission,
       shipping_cost:    shipping,
+      costs,
+      taxes,
+      full_net_revenue: fullNet,
+      full_net_margin_pct: gross > 0 ? (fullNet / gross) * 100 : 0,
       net_margin_pct:   gross > 0 ? (net / gross) * 100 : 0,
       avg_ticket:       confirmedOrderIds.length > 0 ? gross / confirmedOrderIds.length : 0,
     };
