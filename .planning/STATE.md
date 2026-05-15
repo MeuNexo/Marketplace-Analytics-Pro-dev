@@ -6,16 +6,16 @@ See: .planning/PROJECT.md (updated 2026-05-15)
 
 **Milestone:** v2.0 — Análise Comercial de Marketplace
 **Core value:** Ferramenta que transforma relatórios de pedidos em recomendações de preço GMV/Neutro/Margem, elasticidade e sugestões de compra/FULL.
-**Current focus:** Roadmap v2.0 criado — pronto para iniciar Phase 4
+**Current focus:** Phase 4 em progresso — 04-01 concluído, próximo: 04-02 (migration SQL)
 
 ## Current Position
 
-Phase: Phase 4 (planned, ready to execute)
-Plan: 3 plans (04-01, 04-02, 04-03) in 2 waves
-Status: Ready to execute
-Last activity: 2026-05-15 — Phase 4 planned (3 plans, verification passed)
+Phase: Phase 4 (in progress)
+Plan: 04-02 (próxima a executar)
+Status: In progress — 1/3 planos completos
+Last activity: 2026-05-15 — 04-01 completo: motor de análise + 46 testes GREEN
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] 10% (1/3 Phase 4 plans)
 
 ## Performance Metrics
 
@@ -28,7 +28,7 @@ Progress: [░░░░░░░░░░] 0%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 4. Motor de Análise + Snapshots | - | - | - |
+| 4. Motor de Análise + Snapshots | 1 plan (04-01) | ~25 min | ~25 min |
 | 5. Dashboard de Análise | - | - | - |
 | 6. Recomendações de Compra & FULL | - | - | - |
 | 7. Histórico Comparativo | - | - | - |
@@ -51,6 +51,9 @@ Recent decisions affecting current work:
 - Nova tabela `ml_tax_config` — não poluir `ml_tokens` com dados fiscais
 - Owner only para configuração fiscal — dado sensível
 - Motor de análise v2.0 como módulo TypeScript puro em `src/lib/analysis/` (testável independentemente da UI)
+- roundUpTo99 implementado como `Math.ceil(raw - 0.99) + 0.99` — fórmula compacta e correta para arredondamento comercial
+- Guard clause T-04-01: periodDays <= 0 ou orders vazio retornam ZERO_RESULT (sem exceção)
+- Fallback de priceNeutral (.99/.90) inacessível com spec atual — priceGmv sempre é candidato real no range
 - HIST-01 (snapshot save) alocado na Phase 4 junto ao motor — a tabela Supabase e a lógica de save são infraestrutura consumida por todas as fases seguintes
 - Fonte de dados: MLPedidos já sincronizados no Supabase; sem upload de CSV no v2.0
 - UI do módulo vive na seção "Precificação" existente do app
@@ -75,5 +78,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-05-15
-Stopped at: Roadmap v2.0 criado (Phases 4–7), aguardando início da Phase 4
+Stopped at: Completed 04-01-PLAN.md — motor de análise puro (3 tasks, 46 testes GREEN)
 Resume file: None

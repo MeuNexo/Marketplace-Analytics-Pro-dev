@@ -84,7 +84,7 @@ Quatro fases entregam a ferramenta de análise comercial completa: o motor de c�
   4. A tabela de snapshots existe no Supabase e o sistema salva automaticamente um registro completo (produto, período, curva, preços estratégicos, elasticidade, data) após cada análise executada
 **Plans**: 3 plans
 Plans:
-- [ ] 04-01-PLAN.md — Motor de análise puro: tipos, engine.ts e testes TDD (MOTOR-01 a MOTOR-05)
+- [x] 04-01-PLAN.md — Motor de análise puro: tipos, engine.ts e testes TDD (MOTOR-01 a MOTOR-05)
 - [ ] 04-02-PLAN.md — Migration SQL da tabela commercial_analysis_snapshots + supabase db push
 - [ ] 04-03-PLAN.md — Hook useAnalysisSnapshots: saveSnapshot, fetchSnapshots, updateStrategy
 
@@ -125,7 +125,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 4. Motor de Análise + Snapshots | 0/3 | Not started | - |
+| 4. Motor de Análise + Snapshots | 1/3 | In progress | - |
 | 5. Dashboard de Análise | 0/? | Not started | - |
 | 6. Recomendações de Compra & FULL | 0/? | Not started | - |
 | 7. Histórico Comparativo | 0/? | Not started | - |
