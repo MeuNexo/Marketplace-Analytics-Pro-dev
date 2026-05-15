@@ -75,6 +75,8 @@ export interface UseMLPrecosCustosResult {
   refreshing: boolean;
   /** Busca sugestão competitiva de um item específico */
   fetchItemSuggestion: (itemId: string, mlUserId?: string) => Promise<{ suggestion: MLItemSuggestion | null; no_suggestion: boolean }>;
+  /** Busca preço efetivo de venda incluindo promoções ativas */
+  fetchSalePrice: (itemId: string, mlUserId?: string) => Promise<{ price_sale: number | null; price_regular: number | null }>;
   /** Busca comissões com parâmetros dinâmicos (para a Calculadora) */
   fetchCosts: (params: {
     price: number;
@@ -186,6 +188,16 @@ export function useMLPrecosCustos(): UseMLPrecosCustosResult {
     [callEdgeFn],
   );
 
+  /** Busca preço efetivo de venda incluindo promoções ativas de canal */
+  const fetchSalePrice = useCallback(
+    async (itemId: string, mlUserId?: string): Promise<{ price_sale: number | null; price_regular: number | null }> => {
+      const data = await callEdgeFn("sale_price", { item_id: itemId }, mlUserId);
+      if (!data) return { price_sale: null, price_regular: null };
+      return { price_sale: data.price_sale ?? null, price_regular: data.price_regular ?? null };
+    },
+    [callEdgeFn],
+  );
+
   /** Busca comissões com parâmetros dinâmicos (para a Calculadora) */
   const fetchCosts = useCallback(
     async ({
@@ -237,6 +249,7 @@ export function useMLPrecosCustos(): UseMLPrecosCustosResult {
     refresh,
     refreshing,
     fetchItemSuggestion,
+    fetchSalePrice,
     fetchCosts,
   };
 }

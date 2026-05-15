@@ -206,6 +206,22 @@ async function handleListingCosts(mlToken: string, params: URLSearchParams) {
   return jsonResponse({ costs });
 }
 
+// ── type=sale_price: preço efetivo de venda (inclui promoções ativas) ────────
+//   GET /items/{id}/sale_price?context=channel_marketplace
+//   Retorna amount (preço que o comprador paga) e regular_amount (preço sem promoção)
+
+async function handleSalePrice(mlToken: string, itemId: string) {
+  const data = await mlGet(
+    `/items/${itemId}/sale_price?context=channel_marketplace`,
+    mlToken,
+  );
+  if (!data) return jsonResponse({ price_sale: null, price_regular: null });
+  return jsonResponse({
+    price_sale: data.amount ?? null,
+    price_regular: data.regular_amount ?? null,
+  });
+}
+
 // ── type=references: sugestão competitiva para um item específico ───────────
 //   Com ?item_id=MLB123 → detalhe de um item
 //   Sem item_id         → lista de itens que possuem sugestão (bulk)
@@ -321,6 +337,11 @@ serve(async (req) => {
     if (type === "references") {
       const itemId = url.searchParams.get("item_id") ?? undefined;
       return handlePriceReferences(mlUserId, mlToken, itemId);
+    }
+    if (type === "sale_price") {
+      const itemId = url.searchParams.get("item_id");
+      if (!itemId) return jsonResponse({ error: "item_id required" }, 400);
+      return handleSalePrice(mlToken, itemId);
     }
 
     return jsonResponse({ error: "Unknown type" }, 400);

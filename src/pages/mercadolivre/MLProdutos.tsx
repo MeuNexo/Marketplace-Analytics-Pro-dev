@@ -572,7 +572,7 @@ export default function MLProdutos() {
   const [loadingSuggestion, setLoadingSuggestion] = useState(false);
   const [suggestion, setSuggestion] = useState<MLItemSuggestion | null>(null);
   const [noSuggestion, setNoSuggestion] = useState(false);
-  const { fetchItemSuggestion, fetchCosts, refresh: precosRefresh } = useMLPrecosCustos();
+  const { fetchItemSuggestion, fetchSalePrice, fetchCosts, refresh: precosRefresh } = useMLPrecosCustos();
   const { costs, upsert: upsertCost } = useMLProductCosts();
 
   // Cache lazy: busca current_price via suggestions API apenas para itens com deal_ids
@@ -781,8 +781,10 @@ export default function MLProdutos() {
     const toFetch = filtered.filter(i => !dealPriceCache.has(i.id));
     if (toFetch.length === 0) return;
     toFetch.forEach(async (item) => {
-      const result = await fetchItemSuggestion(item.id, item._ml_user_id);
-      const price = result.suggestion?.current_price;
+      const result = await fetchSalePrice(item.id, item._ml_user_id);
+      // price_sale = preço efetivo que o comprador paga (inclui promoções de canal)
+      // Só sobrescreve item.price se houver realmente um preço promocional diferente
+      const price = result.price_sale;
       if (price != null) {
         setDealPriceCache(prev => new Map(prev).set(item.id, price));
       }
