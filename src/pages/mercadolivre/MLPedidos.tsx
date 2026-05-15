@@ -1054,7 +1054,7 @@ export default function MLPedidos() {
                 iconClassName="bg-success/10 text-success"
                 size="compact"
                 icon={<TrendingDown className="w-4 h-4" />}
-                subtitle={`Margem média ${pctFmt(summary.net_margin_pct)}`}
+                subtitle={`Após comissão e frete · ${pctFmt(summary.net_margin_pct)}`}
               />
               <KPICard
                 title="Ticket médio"
@@ -1068,7 +1068,7 @@ export default function MLPedidos() {
             </div>
 
             {/* Fee breakdown */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <Card>
                 <CardContent className="pt-4 pb-4">
                   <p className="text-xs text-muted-foreground font-medium">Comissão ML</p>
@@ -1091,11 +1091,22 @@ export default function MLPedidos() {
               </Card>
               <Card>
                 <CardContent className="pt-4 pb-4">
-                  <p className="text-xs text-muted-foreground font-medium">Margem líquida média</p>
-                  <p className={`text-2xl font-bold mt-1 ${marginColor(summary.net_margin_pct)}`}>
-                    {pctFmt(summary.net_margin_pct)}
+                  <p className="text-xs text-muted-foreground font-medium">Custos + Impostos</p>
+                  <p className="text-2xl font-bold mt-1 text-violet-600">
+                    {currFmt(summary.costs + summary.taxes)}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">Bruto − Comissão − Frete</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    CMV {currFmt(summary.costs)} · Imp. {currFmt(summary.taxes)}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4 pb-4">
+                  <p className="text-xs text-muted-foreground font-medium">Margem líquida média</p>
+                  <p className={`text-2xl font-bold mt-1 ${marginColor(summary.full_net_margin_pct)}`}>
+                    {pctFmt(summary.full_net_margin_pct)}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Bruto − Comissão − Frete − Custo − Imposto</p>
                 </CardContent>
               </Card>
             </div>
