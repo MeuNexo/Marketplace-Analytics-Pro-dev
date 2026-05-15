@@ -33,17 +33,21 @@ export const roleAccess: Record<string, OrgRole[]> = {
  * /perfil is always allowed for everyone (not in this list).
  */
 export const VIEWER_ELIGIBLE_ROUTES: { path: string; label: string }[] = [
-  { path: "/", label: "Vendas (Dashboard)" },
-  { path: "/estoque", label: "Estoque" },
-  { path: "/anuncios", label: "Anúncios" },
+  // Vendas
+  { path: "/", label: "Vendas" },
   { path: "/publicidade", label: "Publicidade" },
-  { path: "/reputacao", label: "Reputação" },
-  { path: "/financeiro", label: "Financeiro" },
+  { path: "/financeiro", label: "Margem" },
+  // Catálogo
+  { path: "/anuncios", label: "Anúncios" },
+  { path: "/estoque", label: "Estoque" },
   { path: "/pedidos", label: "Pedidos" },
-  { path: "/perguntas", label: "Perguntas" },
-  { path: "/devolucoes", label: "Devoluções" },
-  { path: "/metas", label: "Metas" },
   { path: "/precificacao", label: "Precificação" },
+  // Atendimento
+  { path: "/reputacao", label: "Reputação" },
+  { path: "/devolucoes", label: "Devoluções" },
+  { path: "/perguntas", label: "Mensagens" },
+  // Crescimento
+  { path: "/metas", label: "Metas" },
 ];
 
 const VIEWER_ELIGIBLE_SET = new Set(VIEWER_ELIGIBLE_ROUTES.map((r) => r.path));
