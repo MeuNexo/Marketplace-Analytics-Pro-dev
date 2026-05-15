@@ -192,36 +192,36 @@ serve(async (req) => {
     }
 
     // Second pass: enrich variation-level SKUs.
-    // The multi-get with attributes=... does not return variation.attributes, so
-    // resolveSku(v) only finds seller_custom_field. A full item GET returns the
-    // complete variation object (including its attributes array with SELLER_SKU).
-    const itemsWithVariations = items.filter((item: any) => item.has_variations && item.variations.length > 0);
-    if (itemsWithVariations.length > 0) {
-      for (let i = 0; i < itemsWithVariations.length; i += 20) {
-        const batch = itemsWithVariations.slice(i, i + 20);
-        const idsParam = batch.map((x: any) => x.id).join(",");
-        try {
-          // No attributes= filter → full item data including variation.attributes
-          const fullData = await mlFetch(`/items?ids=${idsParam}`, access_token);
-          for (const entry of fullData) {
-            if (entry.code === 200 && entry.body) {
-              const b = entry.body;
-              const item = items.find((x: any) => x.id === b.id);
-              if (!item) continue;
-              for (const variation of item.variations) {
-                const fullVar = (b.variations || []).find(
-                  (v: any) => String(v.id) === variation.variation_id,
-                );
-                if (fullVar) {
-                  variation.seller_custom_field =
-                    resolveSku(fullVar) ?? variation.seller_custom_field;
-                }
-              }
-            }
-          }
-        } catch (e) {
-          console.warn(`Variation SKU enrichment failed (non-critical):`, e);
+    // Neither multi-get nor full item GET (/items/{id}) returns variation.attributes.
+    // Only GET /items/{id}/variations/{variationId} returns the full attributes array
+    // (including SELLER_SKU). Fetch all variations concurrently, capped at 20 in-flight.
+    const variationFetches: Array<{ item: any; variation: any }> = [];
+    for (const item of items) {
+      if (item.has_variations) {
+        for (const variation of item.variations) {
+          variationFetches.push({ item, variation });
         }
+      }
+    }
+
+    if (variationFetches.length > 0) {
+      const CONCURRENCY = 20;
+      for (let i = 0; i < variationFetches.length; i += CONCURRENCY) {
+        const batch = variationFetches.slice(i, i + CONCURRENCY);
+        await Promise.all(
+          batch.map(async ({ item, variation }) => {
+            try {
+              const fullVar = await mlFetch(
+                `/items/${item.id}/variations/${variation.variation_id}`,
+                access_token,
+              );
+              variation.seller_custom_field =
+                resolveSku(fullVar) ?? variation.seller_custom_field;
+            } catch (e) {
+              console.warn(`Variation SKU fetch failed ${item.id}/${variation.variation_id}:`, e);
+            }
+          }),
+        );
       }
     }
 
