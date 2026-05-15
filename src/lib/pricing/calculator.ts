@@ -155,10 +155,8 @@ export function reversePrice(
   mode: ObjectiveMode,
 ): number | null {
   if (target <= 0) return null;
-  const baseDenom = 1 - input.proportionalPct ?? undefined;
-
-  // We can't trust a precomputed proportionalPct because deductions might
-  // be in R$. Compute proportional and fixed parts from the input directly.
+  // Compute proportional and fixed parts from the input directly because
+  // deductions can be in R$ (which only counts toward `fixed`).
   const proportional =
     input.commissionPct +
     input.taxPct +
@@ -186,7 +184,6 @@ export function reversePrice(
   const denom = 1 - proportional / 100;
   if (denom <= 0) return null;
   return (input.cost * (1 + target / 100) + fixed) / denom;
-  // Note: `baseDenom` reference suppresses unused-var lint without affecting logic.
 }
 
 /** Color tier for margin-based UI badges. */
