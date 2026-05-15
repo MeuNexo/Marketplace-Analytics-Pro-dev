@@ -560,6 +560,7 @@ export default function MLProdutos() {
   const [hideOutOfStock, setHideOutOfStock] = useState(true);
   const [logisticFilter, setLogisticFilter] = useState<LogisticFilter>("all");
   const [onlyDiscount, setOnlyDiscount] = useState(false);
+  const [usePromoPrice, setUsePromoPrice] = useState(false);
   const [rankingBrandFilter, setRankingBrandFilter] = useState("all");
   const [rankingSort, setRankingSort] = useState("revenue_desc");
   const [rankingSearch, setRankingSearch] = useState("");
@@ -775,7 +776,8 @@ export default function MLProdutos() {
   );
 
   useEffect(() => {
-    if (columnView !== "preco" || !filteredItemKey) return;
+    const needsFetch = columnView === "preco" || (columnView === "financeiro" && usePromoPrice);
+    if (!needsFetch || !filteredItemKey) return;
     const toFetch = filtered.filter(i => !dealPriceCache.has(i.id));
     if (toFetch.length === 0) return;
     toFetch.forEach(async (item) => {
@@ -786,7 +788,7 @@ export default function MLProdutos() {
       }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columnView, filteredItemKey]);
+  }, [columnView, usePromoPrice, filteredItemKey]);
 
   // Lazy-fetch da comissão real (ML Listing Costs API) para todos os itens visíveis
   // ao entrar na view "Financeiro"
@@ -1102,6 +1104,17 @@ export default function MLProdutos() {
                   </label>
                 )}
 
+                {columnView === "financeiro" && (
+                  <label className="flex items-center gap-1.5 cursor-pointer opacity-60 hover:opacity-100 transition-opacity">
+                    <Checkbox
+                      checked={usePromoPrice}
+                      onCheckedChange={(v) => setUsePromoPrice(!!v)}
+                      className="h-3.5 w-3.5"
+                    />
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">Preço promocional</span>
+                  </label>
+                )}
+
                 {/* Column view toggle */}
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -1240,7 +1253,28 @@ export default function MLProdutos() {
                               {sku || <span className="text-muted-foreground/40">—</span>}
                             </TableCell>
 
-                            <TableCell className="text-right text-xs font-medium">{currencyFmt(item.price)}</TableCell>
+                            <TableCell className="text-right text-xs font-medium">
+                              {(() => {
+                                if (columnView === "financeiro" && usePromoPrice) {
+                                  const promoP = dealPriceCache.get(item.id);
+                                  if (promoP != null && promoP < item.price) {
+                                    return (
+                                      <div className="flex flex-col items-end gap-0.5">
+                                        <div className="flex items-center gap-1">
+                                          <Badge className="text-[9px] font-bold bg-orange-500/15 text-orange-600 hover:bg-orange-500/15 border-0 px-1.5 py-0 h-4 leading-none pointer-events-none">
+                                            −{Math.round(((item.price - promoP) / item.price) * 100)}%
+                                          </Badge>
+                                          <span className="font-semibold tabular-nums">{currencyFmt(promoP)}</span>
+                                        </div>
+                                        <span className="text-[10px] font-mono tabular-nums text-muted-foreground line-through">{currencyFmt(item.price)}</span>
+                                      </div>
+                                    );
+                                  }
+                                  return <span>{currencyFmt(promoP ?? item.price)}</span>;
+                                }
+                                return <span>{currencyFmt(item.price)}</span>;
+                              })()}
+                            </TableCell>
 
                             {/* Estoque — always visible */}
                             <TableCell className="text-right">
@@ -1258,12 +1292,13 @@ export default function MLProdutos() {
                                 : (productCost?.tax_rate ?? null);
                               const commCached = commCache.get(item.id);
                               const commRate = commCached ? commCached.pct / 100 : getCommissionRate(item.listing_type_id);
-                              const commission = commCached?.amount ?? (item.price * commRate);
-                              const taxAmount = effectiveTaxRate != null ? item.price * (effectiveTaxRate / 100) : null;
-                              const marginBruta = cost != null && item.price > 0
-                                ? ((item.price - cost) / item.price) * 100 : null;
-                              const marginLiq = cost != null && item.price > 0
-                                ? ((item.price - cost - commission - (taxAmount ?? 0)) / item.price) * 100 : null;
+                              const effectivePrice = usePromoPrice ? (dealPriceCache.get(item.id) ?? item.price) : item.price;
+                              const commission = commCached ? effectivePrice * (commCached.pct / 100) : effectivePrice * commRate;
+                              const taxAmount = effectiveTaxRate != null ? effectivePrice * (effectiveTaxRate / 100) : null;
+                              const marginBruta = cost != null && effectivePrice > 0
+                                ? ((effectivePrice - cost) / effectivePrice) * 100 : null;
+                              const marginLiq = cost != null && effectivePrice > 0
+                                ? ((effectivePrice - cost - commission - (taxAmount ?? 0)) / effectivePrice) * 100 : null;
                               const mgBrutaColor = marginBruta == null ? "" : marginBruta >= 50 ? "text-emerald-600" : marginBruta >= 30 ? "text-amber-600" : "text-red-600";
                               const mgLiqColor   = marginLiq   == null ? "" : marginLiq   >= 30 ? "text-emerald-600" : marginLiq   >= 10 ? "text-amber-600" : "text-red-600";
                               return (
@@ -1278,7 +1313,7 @@ export default function MLProdutos() {
                                   <TableCell className="text-right">
                                     {effectiveTaxRate != null ? (
                                       <span className="text-xs font-mono tabular-nums">
-                                        {currencyFmt(item.price * (effectiveTaxRate / 100))}{" "}
+                                        {currencyFmt(effectivePrice * (effectiveTaxRate / 100))}{" "}
                                         ({(effectiveTaxRate).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%)
                                       </span>
                                     ) : (
@@ -1398,7 +1433,29 @@ export default function MLProdutos() {
                                           <TableRow key={v.variation_id} className="border-b border-border/30 last:border-0">
                                             <TableCell className="py-2 text-xs font-medium">{variationLabel(v)}</TableCell>
                                             <TableCell className="py-2 text-xs text-muted-foreground font-mono">{vSku || "—"}</TableCell>
-                                            <TableCell className="py-2 text-xs text-right">{currencyFmt(v.price)}</TableCell>
+                                            <TableCell className="py-2 text-xs text-right">
+                                              {(() => {
+                                                if (columnView === "financeiro" && usePromoPrice) {
+                                                  const promoP = dealPriceCache.get(item.id);
+                                                  const vPromo = promoP ?? v.price;
+                                                  if (promoP != null && promoP < v.price) {
+                                                    return (
+                                                      <div className="flex flex-col items-end gap-0.5">
+                                                        <div className="flex items-center gap-1">
+                                                          <Badge className="text-[9px] font-bold bg-orange-500/15 text-orange-600 hover:bg-orange-500/15 border-0 px-1.5 py-0 h-4 leading-none pointer-events-none">
+                                                            −{Math.round(((v.price - promoP) / v.price) * 100)}%
+                                                          </Badge>
+                                                          <span className="font-semibold tabular-nums">{currencyFmt(vPromo)}</span>
+                                                        </div>
+                                                        <span className="text-[10px] font-mono tabular-nums text-muted-foreground line-through">{currencyFmt(v.price)}</span>
+                                                      </div>
+                                                    );
+                                                  }
+                                                  return <span>{currencyFmt(vPromo)}</span>;
+                                                }
+                                                return <span>{currencyFmt(v.price)}</span>;
+                                              })()}
+                                            </TableCell>
                                             <TableCell className="py-2 text-right">
                                               <span className={`text-xs font-semibold ${v.available_quantity === 0 ? "text-destructive" : "text-foreground"}`}>
                                                 {v.available_quantity}
@@ -1413,10 +1470,11 @@ export default function MLProdutos() {
                                                 : (productCost?.tax_rate ?? null);
                                               const commCachedV = commCache.get(item.id);
                                               const commRateV = commCachedV ? commCachedV.pct / 100 : getCommissionRate(item.listing_type_id);
-                                              const commission = v.price * commRateV;
-                                              const taxAmount = effectiveTaxRate != null ? v.price * (effectiveTaxRate / 100) : null;
-                                              const marginBruta = cost != null && v.price > 0 ? ((v.price - cost) / v.price) * 100 : null;
-                                              const marginLiq   = cost != null && v.price > 0 ? ((v.price - cost - commission - (taxAmount ?? 0)) / v.price) * 100 : null;
+                                              const effectivePriceV = usePromoPrice ? (dealPriceCache.get(item.id) ?? v.price) : v.price;
+                                              const commission = effectivePriceV * commRateV;
+                                              const taxAmount = effectiveTaxRate != null ? effectivePriceV * (effectiveTaxRate / 100) : null;
+                                              const marginBruta = cost != null && effectivePriceV > 0 ? ((effectivePriceV - cost) / effectivePriceV) * 100 : null;
+                                              const marginLiq   = cost != null && effectivePriceV > 0 ? ((effectivePriceV - cost - commission - (taxAmount ?? 0)) / effectivePriceV) * 100 : null;
                                               const mgBrutaColor = marginBruta == null ? "" : marginBruta >= 50 ? "text-emerald-600" : marginBruta >= 30 ? "text-amber-600" : "text-red-600";
                                               const mgLiqColor   = marginLiq   == null ? "" : marginLiq   >= 30 ? "text-emerald-600" : marginLiq   >= 10 ? "text-amber-600" : "text-red-600";
                                               return (
@@ -1425,7 +1483,7 @@ export default function MLProdutos() {
                                                   <TableCell className="py-2 text-right">
                                                     {effectiveTaxRate != null ? (
                                                       <span className="text-xs font-mono tabular-nums text-muted-foreground">
-                                                        {currencyFmt(v.price * (effectiveTaxRate / 100))}{" "}
+                                                        {currencyFmt(effectivePriceV * (effectiveTaxRate / 100))}{" "}
                                                         ({(effectiveTaxRate).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%)
                                                       </span>
                                                     ) : (
