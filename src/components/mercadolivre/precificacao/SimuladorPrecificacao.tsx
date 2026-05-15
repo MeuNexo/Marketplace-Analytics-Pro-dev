@@ -677,7 +677,11 @@ function ExtraField({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <Switch checked={value.enabled} onCheckedChange={(v) => onChange({ enabled: v })} />
+      <Switch
+        checked={value.enabled}
+        onCheckedChange={(v) => onChange({ enabled: v })}
+        className="h-4 w-7 [&>span]:h-3 [&>span]:w-3 [&>span]:data-[state=checked]:translate-x-3"
+      />
       <span className={`text-xs flex-1 ${value.enabled ? "text-foreground" : "text-muted-foreground"}`}>{label}</span>
       <Select
         value={value.mode}
