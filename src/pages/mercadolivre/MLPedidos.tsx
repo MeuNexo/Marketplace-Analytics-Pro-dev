@@ -1036,7 +1036,7 @@ export default function MLPedidos() {
                   <span>
                     {summary.missing_cost > 0 && (
                       <>{summary.missing_cost} pedido(s) sem <strong>custo</strong> configurado.{" "}
-                        <Link to="/precos-custos" className="underline hover:no-underline">Configurar custos</Link>.{" "}</>
+                        <Link to="/anuncios" className="underline hover:no-underline">Configurar custos</Link>.{" "}</>
                     )}
                     {summary.missing_tax > 0 && (
                       <>{summary.missing_tax} pedido(s) sem <strong>imposto</strong> calculado.{" "}
