@@ -10,7 +10,7 @@ import {
   PackageX,
   Plug,
   Receipt,
-  DollarSign,
+  Calculator,
   Settings2,
   Handshake,
   ShoppingBag,
@@ -43,7 +43,7 @@ const apiSections: SidebarNavSection[] = [
           { icon: ShoppingBag,   label: "Anúncios", path: "/anuncios" },
           { icon: Package,       label: "Estoque",  path: "/estoque"  },
           { icon: ClipboardList, label: "Pedidos",  path: "/pedidos"  },
-          { icon: DollarSign,    label: "Preços e Custos", path: "/precos-custos" },
+          { icon: Calculator,    label: "Precificação", path: "/precificacao" },
         ],
       },
       {

@@ -19,7 +19,7 @@ export const roleAccess: Record<string, OrgRole[]> = {
   "/perguntas": OPERATIONAL,
   "/devolucoes": OPERATIONAL,
   "/metas": OPERATIONAL,
-  "/precos-custos": OPERATIONAL,
+  "/precificacao": OPERATIONAL,
   "/organizacao": ORG_ADMIN,
   "/sellers": OWNER_ONLY,
   "/integracoes": OWNER_ONLY,
@@ -43,7 +43,7 @@ export const VIEWER_ELIGIBLE_ROUTES: { path: string; label: string }[] = [
   { path: "/perguntas", label: "Perguntas" },
   { path: "/devolucoes", label: "Devoluções" },
   { path: "/metas", label: "Metas" },
-  { path: "/precos-custos", label: "Preços e Custos" },
+  { path: "/precificacao", label: "Precificação" },
 ];
 
 const VIEWER_ELIGIBLE_SET = new Set(VIEWER_ELIGIBLE_ROUTES.map((r) => r.path));
