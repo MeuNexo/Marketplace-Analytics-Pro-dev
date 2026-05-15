@@ -60,20 +60,20 @@ por R$1,00 e sugestões de compra e envio FULL, com histórico comparativo por p
 
 | REQ-ID | Phase | Notes |
 |--------|-------|-------|
-| MOTOR-01 | TBD | |
-| MOTOR-02 | TBD | |
-| MOTOR-03 | TBD | |
-| MOTOR-04 | TBD | |
-| MOTOR-05 | TBD | |
-| DASH-01 | TBD | |
-| DASH-02 | TBD | |
-| DASH-03 | TBD | |
-| COMP-01 | TBD | |
-| COMP-02 | TBD | |
-| COMP-03 | TBD | |
-| COMP-04 | TBD | |
-| HIST-01 | TBD | |
-| HIST-02 | TBD | |
+| MOTOR-01 | Phase 4 | Motor de Análise + Snapshots |
+| MOTOR-02 | Phase 4 | Motor de Análise + Snapshots |
+| MOTOR-03 | Phase 4 | Motor de Análise + Snapshots |
+| MOTOR-04 | Phase 4 | Motor de Análise + Snapshots |
+| MOTOR-05 | Phase 4 | Motor de Análise + Snapshots |
+| HIST-01 | Phase 4 | Motor de Análise + Snapshots — infra de persistência junto ao motor |
+| DASH-01 | Phase 5 | Dashboard de Análise |
+| DASH-02 | Phase 5 | Dashboard de Análise |
+| DASH-03 | Phase 5 | Dashboard de Análise |
+| COMP-01 | Phase 6 | Recomendações de Compra & FULL |
+| COMP-02 | Phase 6 | Recomendações de Compra & FULL |
+| COMP-03 | Phase 6 | Recomendações de Compra & FULL |
+| COMP-04 | Phase 6 | Recomendações de Compra & FULL |
+| HIST-02 | Phase 7 | Histórico Comparativo |
 
 ---
 
