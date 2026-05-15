@@ -1199,14 +1199,17 @@ export default function MLPedidos() {
                           </button>
                         </th>
                         <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">Frete</th>
+                        <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">Custo</th>
+                        <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">Imposto</th>
                         <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">
                           <button onClick={() => toggleSort("net")} className="hover:text-foreground transition-colors">
                             Líquido <SortIcon sortKey={sortKey} k="net" sortDir={sortDir} />
                           </button>
                         </th>
+                        <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">M. Bruta</th>
                         <th className="text-right px-6 py-3 text-xs text-muted-foreground font-medium">
                           <button onClick={() => toggleSort("margin")} className="hover:text-foreground transition-colors">
-                            Margem <SortIcon sortKey={sortKey} k="margin" sortDir={sortDir} />
+                            M. Líquida <SortIcon sortKey={sortKey} k="margin" sortDir={sortDir} />
                           </button>
                         </th>
                       </tr>
@@ -1214,7 +1217,7 @@ export default function MLPedidos() {
                     <tbody className="divide-y divide-border">
                       {filtered.length === 0 ? (
                         <tr>
-                          <td colSpan={9} className="text-center py-12 text-muted-foreground text-sm">
+                          <td colSpan={12} className="text-center py-12 text-muted-foreground text-sm">
                             Nenhum pedido encontrado
                           </td>
                         </tr>
@@ -1248,13 +1251,41 @@ export default function MLPedidos() {
                                 : <span className="text-muted-foreground">—</span>
                               }
                             </td>
+                            <td className="px-3 py-3 text-right text-xs">
+                              {order.cost_total != null
+                                ? <span className="text-red-600 font-mono">−{currFmt(order.cost_total)}</span>
+                                : <span className="text-muted-foreground/60" title="Custo não configurado">—</span>}
+                            </td>
+                            <td className="px-3 py-3 text-right text-xs">
+                              {order.tax_total != null
+                                ? (
+                                  <>
+                                    <span className="text-violet-600 font-mono">−{currFmt(order.tax_total)}</span>
+                                    {order.tax_rate != null && (
+                                      <span className="text-[10px] text-muted-foreground ml-1">({pctFmt(order.tax_rate)})</span>
+                                    )}
+                                  </>
+                                )
+                                : <span className="text-muted-foreground/60" title="Fiscal não configurado">—</span>}
+                            </td>
                             <td className="px-3 py-3 text-right font-mono text-xs font-semibold">
                               {currFmt(order.net_revenue)}
                             </td>
+                            <td className="px-3 py-3 text-right text-xs">
+                              {order.gross_margin_pct != null
+                                ? <span className={`font-semibold ${marginColor(order.gross_margin_pct)}`}>{pctFmt(order.gross_margin_pct)}</span>
+                                : <span className="text-muted-foreground/60">—</span>}
+                            </td>
                             <td className="px-6 py-3 text-right">
-                              <span className={`text-sm font-bold ${marginColor(order.net_margin_pct)}`}>
-                                {pctFmt(order.net_margin_pct)}
-                              </span>
+                              {order.full_net_margin_pct != null ? (
+                                <span className={`text-sm font-bold ${marginColor(order.full_net_margin_pct)}`}>
+                                  {pctFmt(order.full_net_margin_pct)}
+                                </span>
+                              ) : (
+                                <span className={`text-sm font-bold ${marginColor(order.net_margin_pct)} opacity-60`} title="Sem custo/imposto — usando margem parcial">
+                                  {pctFmt(order.net_margin_pct)}*
+                                </span>
+                              )}
                             </td>
                           </tr>
                         ))
