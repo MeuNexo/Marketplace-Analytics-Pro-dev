@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Search, Package, RefreshCw, ChevronDown, ChevronUp,
