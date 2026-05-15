@@ -435,9 +435,38 @@ serve(async (req) => {
     // ── Fetch shipment details (cost + address) for all orders ───────────────
     const shipmentMap = await fetchShipmentDetails(orders, accessToken);
 
+    // ── Load tax config + product costs for this store ──────────────────────
+    let taxConfig: any = null;
+    if (organizationId) {
+      const { data: cfg } = await supabaseAdmin
+        .from("ml_tax_config")
+        .select("*")
+        .eq("ml_user_id", ml_user_id)
+        .eq("organization_id", organizationId)
+        .maybeSingle();
+      taxConfig = cfg ?? null;
+    }
+
+    const itemIds = Array.from(new Set(
+      orders.flatMap((o) => (o.order_items ?? []).map((i: any) => String(i.item?.id ?? ""))).filter(Boolean),
+    ));
+    const costMap = new Map<string, number>();
+    if (itemIds.length > 0) {
+      const { data: costRows } = await supabaseAdmin
+        .from("ml_product_costs")
+        .select("item_id, cost, organization_id, user_id")
+        .in("item_id", itemIds);
+      for (const r of (costRows ?? []) as any[]) {
+        if (r.cost == null) continue;
+        const matchesOrg = organizationId && r.organization_id === organizationId;
+        const matchesUser = r.user_id === userId;
+        if (matchesOrg || matchesUser) costMap.set(r.item_id, Number(r.cost));
+      }
+    }
+
     // ── Expand + upsert ───────────────────────────────────────────────────────
     const records = orders.flatMap((o) =>
-      expandOrder(o, ml_user_id, effectiveSellerId, userId, organizationId, syncAt, shipmentMap),
+      expandOrder(o, ml_user_id, effectiveSellerId, userId, organizationId, syncAt, shipmentMap, costMap, taxConfig),
     );
 
     let upserted = 0;
