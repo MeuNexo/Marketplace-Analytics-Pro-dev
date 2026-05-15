@@ -9,7 +9,7 @@ import { ptBR } from "date-fns/locale";
 import {
   ClipboardList, DollarSign, TrendingDown, Package,
   Truck, RefreshCw, Plug, Search, ChevronDown, ChevronUp,
-  BarChart2, MapPin, Tag, TrendingUp,
+  BarChart2, MapPin, Tag, TrendingUp, Calculator, AlertTriangle,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,11 +19,13 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { KPICard } from "@/components/dashboard/KPICard";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { MLPeriodPicker } from "@/components/mercadolivre/MLPeriodPicker";
 import { useMLStore } from "@/contexts/MLStoreContext";
 import { useMLFilters } from "@/hooks/useMLFilters";
 import { useToast } from "@/hooks/use-toast";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { supabase } from "@/integrations/supabase/client";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
