@@ -35,6 +35,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useMLProductCosts } from "@/hooks/useMLProductCosts";
+import { useMLTaxConfig } from "@/hooks/useMLTaxConfig";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer,
   PieChart, Pie, Cell, ComposedChart, Line, Area, ReferenceLine, CartesianGrid,
@@ -544,6 +546,10 @@ function PriceDetailSheet({
 export default function MLProdutos() {
   const { items, loading, hasToken, lastUpdated, refresh } = useMLInventory();
   const { selectedStore, stores, sellerId, resolvedMLUserIds, scopeKey } = useMLStore();
+  const { currentOrg } = useOrganization();
+  const orgId = currentOrg?.id ?? null;
+  const { data: taxMap } = useMLTaxConfig(resolvedMLUserIds, orgId ?? "");
+  const showTaxBanner = !!taxMap && stores.some((s) => !taxMap.has(s.ml_user_id));
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [stockFilter, setStockFilter] = useState<StockFilter>("all");
@@ -1025,6 +1031,20 @@ export default function MLProdutos() {
           )}
         </div>
 
+        {/* CATALOG-02 — tax config missing banner */}
+        {showTaxBanner && (
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-amber-800">Regime tributário não configurado</p>
+              <p className="text-xs text-amber-700 mt-1">
+                Uma ou mais contas não têm regime tributário configurado. A coluna Impostos pode não refletir os valores corretos.{" "}
+                <Link to="/fiscal" className="underline font-medium">Configurar agora →</Link>
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Filters + Table */}
         <Card>
           <div className="px-4 pt-4 pb-3">
@@ -1143,7 +1163,7 @@ export default function MLProdutos() {
                               <TooltipTrigger asChild>
                                 <span className="cursor-help border-b border-dashed border-muted-foreground/40">Impostos</span>
                               </TooltipTrigger>
-                              <TooltipContent className="text-xs max-w-[200px]">Alíquota de imposto sobre a receita (ex: 15%). Clique para editar.</TooltipContent>
+                              <TooltipContent className="text-xs max-w-[220px]">Estimativa baseada no regime tributário configurado em Fiscal. Não considere créditos de entrada. Consulte seu contador.</TooltipContent>
                             </Tooltip>
                           </TableHead>
                           <TableHead className="text-xs text-right w-28">Comissão ML</TableHead>
@@ -1232,11 +1252,14 @@ export default function MLProdutos() {
                             {columnView === "financeiro" ? (() => {
                               const productCost = costs.get(item.id);
                               const cost = productCost?.cost ?? null;
-                              const taxRate = productCost?.tax_rate ?? null;
+                              const taxEntry = item._ml_user_id ? taxMap?.get(item._ml_user_id) : undefined;
+                              const effectiveTaxRate = taxEntry != null
+                                ? Math.max(0, taxEntry.effective_rate)
+                                : (productCost?.tax_rate ?? null);
                               const commCached = commCache.get(item.id);
                               const commRate = commCached ? commCached.pct / 100 : getCommissionRate(item.listing_type_id);
                               const commission = commCached?.amount ?? (item.price * commRate);
-                              const taxAmount = taxRate != null ? item.price * (taxRate / 100) : null;
+                              const taxAmount = effectiveTaxRate != null ? item.price * (effectiveTaxRate / 100) : null;
                               const marginBruta = cost != null && item.price > 0
                                 ? ((item.price - cost) / item.price) * 100 : null;
                               const marginLiq = cost != null && item.price > 0
@@ -1252,12 +1275,15 @@ export default function MLProdutos() {
                                       onSave={async (v) => { const prev = costs.get(item.id); await upsertCost(item.id, v, prev?.tax_rate ?? null); }}
                                     />
                                   </TableCell>
-                                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                                    <InlineEditCell
-                                      value={taxRate}
-                                      format="percent"
-                                      onSave={async (v) => { const prev = costs.get(item.id); await upsertCost(item.id, prev?.cost ?? null, v); }}
-                                    />
+                                  <TableCell className="text-right">
+                                    {effectiveTaxRate != null ? (
+                                      <span className="text-xs font-mono tabular-nums">
+                                        {currencyFmt(item.price * (effectiveTaxRate / 100))}{" "}
+                                        ({(effectiveTaxRate).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%)
+                                      </span>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground/40">—</span>
+                                    )}
                                   </TableCell>
                                   <TableCell className="text-right">
                                     <span className="text-xs text-destructive font-mono tabular-nums">−{currencyFmt(commission)}</span>
@@ -1381,11 +1407,14 @@ export default function MLProdutos() {
                                             {columnView === "financeiro" ? (() => {
                                               const productCost = costs.get(item.id);
                                               const cost = productCost?.cost ?? null;
-                                              const taxRate = productCost?.tax_rate ?? null;
+                                              const taxEntryV = item._ml_user_id ? taxMap?.get(item._ml_user_id) : undefined;
+                                              const effectiveTaxRate = taxEntryV != null
+                                                ? Math.max(0, taxEntryV.effective_rate)
+                                                : (productCost?.tax_rate ?? null);
                                               const commCachedV = commCache.get(item.id);
                                               const commRateV = commCachedV ? commCachedV.pct / 100 : getCommissionRate(item.listing_type_id);
                                               const commission = v.price * commRateV;
-                                              const taxAmount = taxRate != null ? v.price * (taxRate / 100) : null;
+                                              const taxAmount = effectiveTaxRate != null ? v.price * (effectiveTaxRate / 100) : null;
                                               const marginBruta = cost != null && v.price > 0 ? ((v.price - cost) / v.price) * 100 : null;
                                               const marginLiq   = cost != null && v.price > 0 ? ((v.price - cost - commission - (taxAmount ?? 0)) / v.price) * 100 : null;
                                               const mgBrutaColor = marginBruta == null ? "" : marginBruta >= 50 ? "text-emerald-600" : marginBruta >= 30 ? "text-amber-600" : "text-red-600";
@@ -1393,7 +1422,16 @@ export default function MLProdutos() {
                                               return (
                                                 <>
                                                   <TableCell className="py-2 text-right text-xs text-muted-foreground italic">↑ item</TableCell>
-                                                  <TableCell className="py-2 text-right text-xs text-muted-foreground italic">↑ item</TableCell>
+                                                  <TableCell className="py-2 text-right">
+                                                    {effectiveTaxRate != null ? (
+                                                      <span className="text-xs font-mono tabular-nums text-muted-foreground">
+                                                        {currencyFmt(v.price * (effectiveTaxRate / 100))}{" "}
+                                                        ({(effectiveTaxRate).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%)
+                                                      </span>
+                                                    ) : (
+                                                      <span className="text-xs text-muted-foreground/40">—</span>
+                                                    )}
+                                                  </TableCell>
                                                   <TableCell className="py-2 text-right">
                                                     <span className="text-xs text-destructive font-mono tabular-nums">−{currencyFmt(commission)}</span>
                                                     {commCachedV
