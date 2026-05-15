@@ -11,6 +11,48 @@ const corsHeaders = {
 const ML_API = "https://api.mercadolibre.com";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// ── UF → region (mirror of src/lib/tax/regions.ts) ───────────────────────────
+const UF_REGION: Record<string, "N" | "NE" | "CO" | "SE" | "S"> = {
+  AC:"N",AP:"N",AM:"N",PA:"N",RO:"N",RR:"N",TO:"N",
+  AL:"NE",BA:"NE",CE:"NE",MA:"NE",PB:"NE",PE:"NE",PI:"NE",RN:"NE",SE:"NE",
+  DF:"CO",GO:"CO",MT:"CO",MS:"CO",
+  ES:"SE",MG:"SE",RJ:"SE",SP:"SE",
+  PR:"S",RS:"S",SC:"S",
+};
+
+function isReducedInterstateDest(uf: string | null): boolean {
+  if (!uf) return false;
+  if (uf === "ES") return true;
+  const r = UF_REGION[uf];
+  return r === "N" || r === "NE" || r === "CO";
+}
+
+function computeOrderTaxRate(cfg: any, ufDest: string | null): number {
+  if (!cfg) return 0;
+  const c = (v: any) => Number(v ?? 0);
+  switch (cfg.regime) {
+    case "simples_nacional":
+      return Math.max(0, c(cfg.sn_aliquota_efetiva));
+    case "lucro_presumido":
+      return Math.max(0, c(cfg.lp_pis) + c(cfg.lp_cofins) + c(cfg.lp_irpj) + c(cfg.lp_csll));
+    case "lucro_real": {
+      const intra = cfg.lr_icms_aliquota_intra ?? cfg.lr_icms_debito ?? 0;
+      const interSE = cfg.lr_icms_aliquota_inter_sul_sudeste ?? 12;
+      const interNNE = cfg.lr_icms_aliquota_inter_norte_nordeste ?? 7;
+      const orig = (cfg.uf_origem ?? "").toString().toUpperCase() || null;
+      const dest = ufDest ? ufDest.toUpperCase() : null;
+      let icms = Number(intra);
+      if (orig && dest && orig !== dest) {
+        icms = isReducedInterstateDest(dest) ? Number(interNNE) : Number(interSE);
+      }
+      const debits  = c(cfg.lr_pis_debito) + c(cfg.lr_cofins_debito) + icms;
+      const credits = c(cfg.lr_pis_credito) + c(cfg.lr_cofins_credito) + c(cfg.lr_icms_credito);
+      return Math.max(0, debits - credits);
+    }
+  }
+  return 0;
+}
+
 // Normalise ML listing_type_id → "classic" | "premium" | "free"
 // Current Brazil tiers (2024):
 //   gold_special  → Clássico  ~11%
@@ -199,6 +241,8 @@ function expandOrder(
   organizationId: string | null,
   syncAt:         string,
   shipmentMap:    Map<number, ShipmentDetail>,
+  costMap:        Map<string, number>,
+  taxConfig:      any | null,
 ): Array<Record<string, unknown>> {
   const datePedido    = (order.date_created || "").substring(0, 10) || null;
   const dataPagamento = (order.date_approved || "").substring(0, 10) || null;
@@ -229,19 +273,29 @@ function expandOrder(
       ? buyerCost
       : (detail?.cost ?? null);
 
+    const itemId      = String(prod.id || "");
+    const quantidade  = Number(item.quantity || 0);
+    const precoUnit   = item.unit_price != null ? Number(item.unit_price) : null;
+    const custoUnit   = costMap.get(itemId) ?? null;
+    const taxRate     = taxConfig ? computeOrderTaxRate(taxConfig, estado) : null;
+    const taxAmount   = (taxRate != null && precoUnit != null)
+      ? (precoUnit * quantidade * taxRate) / 100
+      : null;
+    const ufOrigem    = taxConfig?.uf_origem ?? null;
+
     return {
       ml_order_id:     String(order.id),
       ml_user_id:      mlUserId,
       seller_id:       sellerId,
       user_id:         userId,
       organization_id: organizationId,
-      item_id:         String(prod.id || ""),
+      item_id:         itemId,
       variation_id:    prod.variation_id ? String(prod.variation_id) : "",
       sku:             prod.seller_custom_field ?? prod.seller_sku ?? null,
       titulo:          prod.title ?? null,
       listing_type,
-      quantidade:      Number(item.quantity || 0),
-      preco_unit:      item.unit_price  != null ? Number(item.unit_price)  : null,
+      quantidade,
+      preco_unit:      precoUnit,
       comissao:        item.sale_fee    != null ? Number(item.sale_fee)    : null,
       frete,
       status:          order.status ?? null,
@@ -251,6 +305,10 @@ function expandOrder(
       cidade,
       comprador,
       synced_at:       syncAt,
+      custo_unit:      custoUnit,
+      tax_rate:        taxRate,
+      tax_amount:      taxAmount,
+      uf_origem:       ufOrigem,
     };
   });
 }
