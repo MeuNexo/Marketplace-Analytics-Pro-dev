@@ -266,43 +266,43 @@ export function SimuladorPrecificacao() {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-4 items-start">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-3 items-start text-sm">
       {/* ── LEFT: Inputs ─────────────────────────────────────────────────── */}
-      <div className="space-y-4 min-w-0">
+      <div className="space-y-3 min-w-0">
         {/* Search / selected product */}
         <Card>
-          <CardHeader className="pb-3 space-y-1">
+          <CardHeader className="px-4 pt-3 pb-2 space-y-0.5">
             <CardTitle className="text-sm font-medium text-foreground leading-5">Produto</CardTitle>
-            <CardDescription className="text-xs leading-4 min-h-4">
+            <CardDescription className="text-xs leading-4">
               Busque por MLB ou SKU para preencher dados.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="px-4 pb-3 space-y-2.5">
             {state.itemId ? (
-              <div className="flex items-center gap-3 rounded-md border bg-muted/30 p-3">
+              <div className="flex items-center gap-2.5 rounded-md border bg-muted/30 p-2">
                 {state.thumbnail ? (
-                  <img src={state.thumbnail} alt="" className="w-12 h-12 rounded object-cover" />
+                  <img src={state.thumbnail} alt="" className="w-10 h-10 rounded object-cover" />
                 ) : (
-                  <div className="w-12 h-12 rounded bg-muted flex items-center justify-center">
-                    <Package className="w-5 h-5 text-muted-foreground" />
+                  <div className="w-10 h-10 rounded bg-muted flex items-center justify-center">
+                    <Package className="w-4 h-4 text-muted-foreground" />
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{state.title}</p>
-                  <p className="text-xs text-muted-foreground font-mono">{state.itemId}</p>
+                  <p className="text-xs font-medium truncate leading-4">{state.title}</p>
+                  <p className="text-[11px] text-muted-foreground font-mono leading-4">{state.itemId}</p>
                 </div>
                 <Button
-                  variant="ghost" size="sm" className="h-8 w-8 p-0"
+                  variant="ghost" size="sm" className="h-7 w-7 p-0"
                   onClick={() => dispatch({ type: "clearProduct" })}
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-3.5 h-3.5" />
                 </Button>
               </div>
             ) : (
               <Popover open={searchOpen} onOpenChange={setSearchOpen}>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-full justify-start gap-2 font-normal text-muted-foreground">
-                    <Search className="w-4 h-4" />
+                  <Button variant="outline" className="w-full h-9 justify-start gap-2 font-normal text-xs text-muted-foreground">
+                    <Search className="w-3.5 h-3.5" />
                     Buscar por MLB ou título…
                   </Button>
                 </PopoverTrigger>
@@ -342,22 +342,23 @@ export function SimuladorPrecificacao() {
               </Popover>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div className="space-y-1">
                 <Label className="text-xs">Custo do produto (R$)</Label>
                 <Input
+                  className="h-8 text-xs"
                   placeholder="0,00"
                   value={state.cost}
                   onChange={(e) => dispatch({ type: "set", key: "cost", value: e.target.value })}
                 />
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <Label className="text-xs">Tipo de anúncio</Label>
                 <Select
                   value={state.listingType}
                   onValueChange={(v) => dispatch({ type: "set", key: "listingType", value: v })}
                 >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="gold_pro">Premium</SelectItem>
                     <SelectItem value="gold_special">Clássica</SelectItem>
@@ -370,18 +371,18 @@ export function SimuladorPrecificacao() {
 
         {/* Logística */}
         <Card>
-          <CardHeader className="pb-3">
+          <CardHeader className="px-4 pt-3 pb-2">
             <CardTitle className="text-sm font-medium text-foreground">Logística</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
+          <CardContent className="px-4 pb-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div className="space-y-1">
                 <Label className="text-xs h-4 flex items-center">Modalidade</Label>
                 <Select
                   value={state.logisticType}
                   onValueChange={(v) => dispatch({ type: "set", key: "logisticType", value: v })}
                 >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {LOGISTIC_OPTIONS.map((o) => (
                       <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
@@ -389,7 +390,7 @@ export function SimuladorPrecificacao() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <Label className="text-xs h-4 flex items-center gap-1">
                   Custo de envio (R$)
                   <Tooltip>
@@ -398,6 +399,7 @@ export function SimuladorPrecificacao() {
                   </Tooltip>
                 </Label>
                 <Input
+                  className="h-8 text-xs"
                   placeholder={`Estimativa: ${formatBRL(opt?.estimate ?? 0)}`}
                   value={state.shippingCost}
                   onChange={(e) => dispatch({ type: "set", key: "shippingCost", value: e.target.value })}
@@ -409,7 +411,7 @@ export function SimuladorPrecificacao() {
 
         {/* Tributação */}
         <Card>
-          <CardHeader className="pb-3">
+          <CardHeader className="px-4 pt-3 pb-2">
             <div className="flex items-center justify-between gap-2">
               <div>
                 <CardTitle className="text-sm font-medium text-foreground">Tributação</CardTitle>
@@ -419,27 +421,27 @@ export function SimuladorPrecificacao() {
                     : "Configure o regime fiscal da loja para imposto automático."}
                 </CardDescription>
               </div>
-              <Button asChild variant="ghost" size="sm" className="text-xs h-7 gap-1">
+              <Button asChild variant="ghost" size="sm" className="text-xs h-7 px-2 gap-1">
                 <Link to="/fiscal"><Settings2 className="w-3 h-3" />Editar</Link>
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
+          <CardContent className="px-4 pb-3 space-y-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div className="space-y-1">
                 <Label className="text-xs">UF de destino</Label>
                 <Select
                   value={state.ufDestino || "__none__"}
                   onValueChange={(v) => dispatch({ type: "set", key: "ufDestino", value: v === "__none__" ? "" : v })}
                 >
-                  <SelectTrigger><SelectValue placeholder="Selecione…" /></SelectTrigger>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecione…" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">—</SelectItem>
                     {UF_LIST.map((uf) => (<SelectItem key={uf} value={uf}>{uf}</SelectItem>))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <Label className="text-xs flex items-center justify-between">
                   <span>Alíquota efetiva (%)</span>
                   <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
@@ -447,6 +449,7 @@ export function SimuladorPrecificacao() {
                   </span>
                 </Label>
                 <Input
+                  className="h-8 text-xs"
                   disabled={!state.taxOverride}
                   placeholder={formatPct(autoTaxRate)}
                   value={state.taxOverride ? state.manualTaxPct : autoTaxRate.toFixed(2)}
@@ -456,7 +459,7 @@ export function SimuladorPrecificacao() {
             </div>
 
             {taxConfig?.regime === "lucro_real" && (
-              <div className="rounded-md border bg-muted/20 p-3 space-y-2">
+              <div className="rounded-md border bg-muted/20 p-2.5 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <Label className="text-xs flex items-center gap-1">
                     DIFAL (consumidor final)
@@ -470,18 +473,18 @@ export function SimuladorPrecificacao() {
                   <Switch checked={state.difalEnabled} onCheckedChange={(v) => dispatch({ type: "set", key: "difalEnabled", value: v })} />
                 </div>
                 {state.difalEnabled && (
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-2.5">
                     <div className="space-y-1">
                       <Label className="text-[11px] text-muted-foreground">Alíq. interna destino (%)</Label>
                       <Input
                         value={state.internalAliquot}
                         onChange={(e) => dispatch({ type: "set", key: "internalAliquot", value: e.target.value })}
-                        className="h-8"
+                        className="h-8 text-xs"
                       />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-[11px] text-muted-foreground">DIFAL estimado</Label>
-                      <div className="h-8 px-3 rounded-md bg-background border flex items-center text-sm tabular-nums">
+                      <div className="h-8 px-3 rounded-md bg-background border flex items-center text-xs tabular-nums">
                         {formatPct(difalAutoPct)}
                       </div>
                     </div>
@@ -496,7 +499,7 @@ export function SimuladorPrecificacao() {
         <Collapsible>
           <Card>
             <CollapsibleTrigger asChild>
-              <CardHeader className="pb-3 cursor-pointer hover:bg-muted/30 transition-colors">
+              <CardHeader className="px-4 py-2.5 cursor-pointer hover:bg-muted/30 transition-colors">
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle className="text-sm font-medium text-foreground">Descontos extras</CardTitle>
@@ -507,7 +510,7 @@ export function SimuladorPrecificacao() {
               </CardHeader>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <CardContent className="space-y-3 pt-0">
+              <CardContent className="px-4 pb-3 pt-0 space-y-2">
                 <ExtraField label="Rebate Mercado Livre" value={state.rebate} onChange={(p) => dispatch({ type: "extra", key: "rebate", patch: p })} />
                 <ExtraField label="Cupom do vendedor"   value={state.cupom}  onChange={(p) => dispatch({ type: "extra", key: "cupom",  patch: p })} />
                 <ExtraField label="Comissão de afiliado" value={state.afiliado} onChange={(p) => dispatch({ type: "extra", key: "afiliado", patch: p })} />
@@ -519,16 +522,16 @@ export function SimuladorPrecificacao() {
 
         {/* Objetivo */}
         <Card>
-          <CardHeader className="pb-2">
+          <CardHeader className="px-4 pt-3 pb-2">
             <CardTitle className="text-sm font-medium text-foreground">Objetivo</CardTitle>
             <CardDescription className="text-xs leading-tight">Calcule o preço para atingir uma margem ou markup.</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-3">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-end">
               <div className="space-y-1">
                 <Label className="text-xs h-4 flex items-center">Modo</Label>
                 <Select value={state.objectiveMode} onValueChange={(v) => dispatch({ type: "set", key: "objectiveMode", value: v })}>
-                  <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="margin">Margem (% sobre preço)</SelectItem>
                     <SelectItem value="markup">Markup (% sobre custo)</SelectItem>
@@ -541,12 +544,12 @@ export function SimuladorPrecificacao() {
                   placeholder="Ex: 20"
                   value={state.objectiveTarget}
                   onChange={(e) => dispatch({ type: "set", key: "objectiveTarget", value: e.target.value })}
-                  className="h-9 text-xs"
+                  className="h-8 text-xs"
                 />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs h-4 flex items-center text-muted-foreground">Preço sugerido</Label>
-                <div className="h-9 px-2 rounded-md border bg-muted/30 flex items-center justify-between gap-1">
+                <div className="h-8 px-2 rounded-md border bg-muted/30 flex items-center justify-between gap-1">
                   <span className="text-xs font-semibold tabular-nums">
                     {reversedPrice != null ? formatBRL(reversedPrice) : "—"}
                   </span>
@@ -562,45 +565,45 @@ export function SimuladorPrecificacao() {
               </div>
             </div>
             {target > 0 && reversedPrice == null && (
-              <p className="text-xs text-destructive mt-2">Alvo inviável com as taxas atuais.</p>
+              <p className="text-xs text-destructive mt-1.5">Alvo inviável com as taxas atuais.</p>
             )}
           </CardContent>
         </Card>
       </div>
 
       {/* ── RIGHT: Live result ──────────────────────────────────────────── */}
-      <div className="lg:sticky lg:top-[4.5rem] lg:self-start space-y-3">
+      <div className="lg:sticky lg:top-[4.5rem] lg:self-start space-y-2.5">
         <Card>
-          <CardHeader className="pb-3 space-y-1">
+          <CardHeader className="px-4 pt-3 pb-2 space-y-0.5">
             <CardTitle className="text-sm font-medium text-foreground leading-5">Preço de venda</CardTitle>
-            <CardDescription className="text-xs leading-4 min-h-4">
+            <CardDescription className="text-xs leading-4">
               Recalcula a cada digitação.{" "}
               {fetchingFee && <span className="text-amber-600">Atualizando comissão…</span>}
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="px-4 pb-3 space-y-3">
             <Input
               placeholder="0,00"
               value={state.salePrice}
               onChange={(e) => dispatch({ type: "set", key: "salePrice", value: e.target.value })}
-              className="text-2xl h-14 font-semibold tabular-nums"
+              className="text-xl h-12 font-semibold tabular-nums"
             />
 
-            <div className={`rounded-lg border p-3 ${tierBg}`}>
+            <div className={`rounded-lg border p-2.5 ${tierBg}`}>
               <div className="flex items-baseline justify-between">
                 <span className="text-xs text-muted-foreground">Lucro</span>
-                <span className={`text-2xl font-bold tabular-nums ${tierColor}`}>
+                <span className={`text-xl font-bold tabular-nums ${tierColor}`}>
                   {formatBRL(result.lucro)}
                 </span>
               </div>
-              <div className="grid grid-cols-3 gap-2 mt-2 text-center">
+              <div className="grid grid-cols-3 gap-2 mt-1.5 text-center">
                 <Stat label="Margem" value={formatPct(result.margemPct)} color={tierColor} />
                 <Stat label="Markup" value={formatPct(result.markupPct)} />
                 <Stat label="ROI"    value={formatPct(result.roiPct)} />
               </div>
             </div>
 
-            <div className="space-y-1 text-xs">
+            <div className="space-y-0.5 text-xs">
               <Row label="Receita bruta" value={formatBRL(result.receitaBruta)} />
               <Row label={`Comissão ML (${formatPct(pricingInput.commissionPct)})`} value={`-${formatBRL(result.comissaoValor)}`} negative />
               <Row label="Taxa fixa" value={`-${formatBRL(result.taxaFixa)}`} negative />
