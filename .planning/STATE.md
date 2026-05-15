@@ -4,15 +4,16 @@
 
 See: .planning/PROJECT.md (updated 2026-05-15)
 
-**Core value:** Cada loja ML tem seu regime tributário configurado, e o imposto sobre cada anúncio é calculado corretamente — sem digitação manual por produto.
-**Current focus:** Ready to start Phase 1
+**Milestone:** v2.0 — Análise Comercial de Marketplace
+**Core value:** Ferramenta que transforma relatórios de pedidos em recomendações de preço GMV/Neutro/Margem, elasticidade e sugestões de compra/FULL.
+**Current focus:** Defining requirements for v2.0
 
 ## Current Position
 
-Phase: 0 of 3 (not started)
+Phase: Not started (defining requirements)
 Plan: —
-Status: Ready to plan
-Last activity: 2026-05-15 — Roadmap created
+Status: Defining requirements
+Last activity: 2026-05-15 — Milestone v2.0 started
 
 Progress: [░░░░░░░░░░] 0%
 

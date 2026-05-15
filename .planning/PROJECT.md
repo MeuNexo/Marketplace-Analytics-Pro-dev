@@ -1,4 +1,21 @@
-# Módulo Fiscal — Tributação por Regime
+# Garment Glow — Plataforma de Gestão ML
+
+## Current Milestone: v2.0 Análise Comercial de Marketplace
+
+**Goal:** Ferramenta de análise de preço × volume que transforma relatórios de pedidos em recomendações comerciais acionáveis (Preço GMV, Neutro, Margem), elasticidade por R$1,00 e sugestões de compra e envio FULL.
+
+**Target features:**
+- Curva Preço × Volume — agrupa pedidos por preço unitário, calcula unidades, GMV, venda diária, participações
+- Preço GMV, Preço Margem e Preço Neutro com regras de elegibilidade e arredondamento comercial
+- Elasticidade por R$1,00 com 4 classificações (Baixa/Média/Alta/Extrema)
+- Dashboard de cards por produto com frase descritiva da elasticidade
+- Tabela de análise com dropdown de Estratégia (GMV/Neutro/Margem) e destaque visual
+- Recomendações de compra e envio FULL com multiplicadores de demanda e cobertura
+- Histórico comparativo de análises do mesmo produto
+
+---
+
+# Módulo Fiscal — Tributação por Regime (v1.0)
 
 ## What This Is
 
