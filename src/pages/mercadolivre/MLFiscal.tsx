@@ -583,31 +583,6 @@ export default function MLFiscal() {
               </TabsTrigger>
             </TabsList>
 
-            <div className="space-y-1.5 pt-3">
-              <Label className="text-xs flex items-center gap-1">
-                UF de origem (loja)
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className="w-3 h-3 cursor-help text-muted-foreground" />
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-[260px] text-xs">
-                    Estado em que sua mercadoria sai. Usado para calcular ICMS interestadual quando o comprador for de outra UF (Lucro Real).
-                  </TooltipContent>
-                </Tooltip>
-              </Label>
-              <Select value={ufOrigem || "__none__"} onValueChange={(v) => setUfOrigem(v === "__none__" ? "" : v)}>
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder="Selecione a UF…" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">— não definida —</SelectItem>
-                  {UF_LIST.map((uf) => (
-                    <SelectItem key={uf} value={uf}>{uf}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
             <TabsContent value="simples_nacional">
               <SimplesForm
                 initial={currentConfig?.regime === "simples_nacional" ? currentConfig : undefined}
@@ -627,6 +602,30 @@ export default function MLFiscal() {
             </TabsContent>
 
             <TabsContent value="lucro_real">
+              <div className="space-y-1.5 pt-3">
+                <Label className="text-xs flex items-center gap-1">
+                  UF de origem (loja)
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="w-3 h-3 cursor-help text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-[260px] text-xs">
+                      Estado em que sua mercadoria sai. Usado para calcular ICMS interestadual quando o comprador for de outra UF.
+                    </TooltipContent>
+                  </Tooltip>
+                </Label>
+                <Select value={ufOrigem || "__none__"} onValueChange={(v) => setUfOrigem(v === "__none__" ? "" : v)}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Selecione a UF…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">— não definida —</SelectItem>
+                    {UF_LIST.map((uf) => (
+                      <SelectItem key={uf} value={uf}>{uf}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <LucroRealForm
                 initial={currentConfig?.regime === "lucro_real" ? currentConfig : undefined}
                 onSave={handleFormSave}
