@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { UF_LIST } from "@/lib/tax/regions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,6 +37,7 @@ type Regime = "simples_nacional" | "lucro_presumido" | "lucro_real";
 interface TaxConfig {
   ml_user_id: string;
   regime: Regime;
+  uf_origem: string | null;
   sn_aliquota_efetiva: number | null;
   lp_pis: number | null;
   lp_cofins: number | null;
@@ -47,6 +49,9 @@ interface TaxConfig {
   lr_cofins_credito: number | null;
   lr_icms_debito: number | null;
   lr_icms_credito: number | null;
+  lr_icms_aliquota_intra: number | null;
+  lr_icms_aliquota_inter_sul_sudeste: number | null;
+  lr_icms_aliquota_inter_norte_nordeste: number | null;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -286,6 +291,17 @@ function LucroRealForm({ initial, onSave, saving }: LRFormProps) {
   const [icmsC, setIcmsC] = useState(
     initial?.lr_icms_credito != null ? String(initial.lr_icms_credito) : ""
   );
+  const [icmsIntra, setIcmsIntra] = useState(
+    initial?.lr_icms_aliquota_intra != null ? String(initial.lr_icms_aliquota_intra) : ""
+  );
+  const [icmsInterSE, setIcmsInterSE] = useState(
+    initial?.lr_icms_aliquota_inter_sul_sudeste != null
+      ? String(initial.lr_icms_aliquota_inter_sul_sudeste) : "12"
+  );
+  const [icmsInterNNE, setIcmsInterNNE] = useState(
+    initial?.lr_icms_aliquota_inter_norte_nordeste != null
+      ? String(initial.lr_icms_aliquota_inter_norte_nordeste) : "7"
+  );
 
   const debits = pct(pisD) + pct(cofinsD) + pct(icmsD);
   const credits = pct(pisC) + pct(cofinsC) + pct(icmsC);
@@ -325,6 +341,37 @@ function LucroRealForm({ initial, onSave, saving }: LRFormProps) {
         </div>
       </div>
 
+      <div className="rounded-md border border-border/60 p-3 space-y-3 bg-muted/30">
+        <div className="flex items-center gap-1">
+          <Label className="text-xs font-medium">ICMS por destino</Label>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Info className="w-3 h-3 cursor-help text-muted-foreground" />
+            </TooltipTrigger>
+            <TooltipContent className="max-w-[260px] text-xs">
+              Aplicado por pedido, conforme UF do comprador.<br />
+              Quando UF destino = origem, usa "Intra-estadual".<br />
+              Quando UF destino é N/NE/CO/ES, usa 7%.<br />
+              Demais (S/SE), usa 12%.
+            </TooltipContent>
+          </Tooltip>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="space-y-1">
+            <Label className="text-[11px] text-muted-foreground">Intra-estadual</Label>
+            <PercentInput value={icmsIntra} onChange={setIcmsIntra} placeholder={icmsD || "0,00"} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[11px] text-muted-foreground">Inter S/SE</Label>
+            <PercentInput value={icmsInterSE} onChange={setIcmsInterSE} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[11px] text-muted-foreground">Inter N/NE/CO/ES</Label>
+            <PercentInput value={icmsInterNNE} onChange={setIcmsInterNNE} />
+          </div>
+        </div>
+      </div>
+
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         Resultado líquido:{" "}
         <span className="font-medium text-foreground">{isCredit ? "0,00%" : fmtPct(net)}</span>
@@ -346,6 +393,9 @@ function LucroRealForm({ initial, onSave, saving }: LRFormProps) {
             lr_cofins_credito: pct(cofinsC) || null,
             lr_icms_debito: icmsD !== "" ? pct(icmsD) : null,
             lr_icms_credito: icmsC !== "" ? pct(icmsC) : null,
+            lr_icms_aliquota_intra: icmsIntra !== "" ? pct(icmsIntra) : null,
+            lr_icms_aliquota_inter_sul_sudeste: icmsInterSE !== "" ? pct(icmsInterSE) : null,
+            lr_icms_aliquota_inter_norte_nordeste: icmsInterNNE !== "" ? pct(icmsInterNNE) : null,
           })
         }
         disabled={saving}
@@ -395,12 +445,16 @@ export default function MLFiscal() {
   // Saving state
   const [saving, setSaving] = useState(false);
 
+  // UF origem state (shared across all regimes)
+  const [ufOrigem, setUfOrigem] = useState<string>("");
+
   const currentConfig = configs.find((c) => c.ml_user_id === selectedStoreId);
 
   function openDialog(mlUserId: string) {
     setSelectedStoreId(mlUserId);
     const existing = configs.find((c) => c.ml_user_id === mlUserId);
     setSelectedTab(existing?.regime ?? "simples_nacional");
+    setUfOrigem(existing?.uf_origem ?? "");
     setPendingFields(null);
     setConfirmOpen(false);
     setDialogOpen(true);
@@ -413,7 +467,7 @@ export default function MLFiscal() {
       setConfirmOpen(true);
       return;
     }
-    void executeUpsert(fields);
+    void executeUpsert({ ...fields, uf_origem: ufOrigem || null });
   }
 
   async function executeUpsert(fields: Partial<TaxConfig>) {
@@ -441,7 +495,7 @@ export default function MLFiscal() {
   }
 
   function handleConfirmedSave() {
-    if (pendingFields) void executeUpsert(pendingFields);
+    if (pendingFields) void executeUpsert({ ...pendingFields, uf_origem: ufOrigem || null });
   }
 
   const selectedStore = stores.find((s) => s.ml_user_id === selectedStoreId);
@@ -543,6 +597,31 @@ export default function MLFiscal() {
                 Lucro Real
               </TabsTrigger>
             </TabsList>
+
+            <div className="space-y-1.5 pt-3">
+              <Label className="text-xs flex items-center gap-1">
+                UF de origem (loja)
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="w-3 h-3 cursor-help text-muted-foreground" />
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-[260px] text-xs">
+                    Estado em que sua mercadoria sai. Usado para calcular ICMS interestadual quando o comprador for de outra UF (Lucro Real).
+                  </TooltipContent>
+                </Tooltip>
+              </Label>
+              <Select value={ufOrigem || "__none__"} onValueChange={(v) => setUfOrigem(v === "__none__" ? "" : v)}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="Selecione a UF…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— não definida —</SelectItem>
+                  {UF_LIST.map((uf) => (
+                    <SelectItem key={uf} value={uf}>{uf}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
             <TabsContent value="simples_nacional">
               <SimplesForm

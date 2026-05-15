@@ -438,6 +438,39 @@ export type Database = {
           },
         ]
       }
+      ml_product_costs: {
+        Row: {
+          cost: number | null
+          created_at: string
+          id: string
+          item_id: string
+          organization_id: string | null
+          tax_rate: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          cost?: number | null
+          created_at?: string
+          id?: string
+          item_id: string
+          organization_id?: string | null
+          tax_rate?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          cost?: number | null
+          created_at?: string
+          id?: string
+          item_id?: string
+          organization_id?: string | null
+          tax_rate?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       ml_product_daily_cache: {
         Row: {
           date: string
@@ -619,6 +652,9 @@ export type Database = {
           lp_pis: number | null
           lr_cofins_credito: number | null
           lr_cofins_debito: number | null
+          lr_icms_aliquota_inter_norte_nordeste: number | null
+          lr_icms_aliquota_inter_sul_sudeste: number | null
+          lr_icms_aliquota_intra: number | null
           lr_icms_credito: number | null
           lr_icms_debito: number | null
           lr_pis_credito: number | null
@@ -627,6 +663,7 @@ export type Database = {
           organization_id: string
           regime: Database["public"]["Enums"]["tax_regime"]
           sn_aliquota_efetiva: number | null
+          uf_origem: string | null
           updated_at: string
         }
         Insert: {
@@ -639,6 +676,9 @@ export type Database = {
           lp_pis?: number | null
           lr_cofins_credito?: number | null
           lr_cofins_debito?: number | null
+          lr_icms_aliquota_inter_norte_nordeste?: number | null
+          lr_icms_aliquota_inter_sul_sudeste?: number | null
+          lr_icms_aliquota_intra?: number | null
           lr_icms_credito?: number | null
           lr_icms_debito?: number | null
           lr_pis_credito?: number | null
@@ -647,6 +687,7 @@ export type Database = {
           organization_id: string
           regime: Database["public"]["Enums"]["tax_regime"]
           sn_aliquota_efetiva?: number | null
+          uf_origem?: string | null
           updated_at?: string
         }
         Update: {
@@ -659,6 +700,9 @@ export type Database = {
           lp_pis?: number | null
           lr_cofins_credito?: number | null
           lr_cofins_debito?: number | null
+          lr_icms_aliquota_inter_norte_nordeste?: number | null
+          lr_icms_aliquota_inter_sul_sudeste?: number | null
+          lr_icms_aliquota_intra?: number | null
           lr_icms_credito?: number | null
           lr_icms_debito?: number | null
           lr_pis_credito?: number | null
@@ -667,6 +711,7 @@ export type Database = {
           organization_id?: string
           regime?: Database["public"]["Enums"]["tax_regime"]
           sn_aliquota_efetiva?: number | null
+          uf_origem?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -798,6 +843,7 @@ export type Database = {
           cidade: string | null
           comissao: number | null
           comprador: string | null
+          custo_unit: number | null
           data_pagamento: string | null
           data_pedido: string | null
           estado: string | null
@@ -816,7 +862,10 @@ export type Database = {
           sku: string | null
           status: string | null
           synced_at: string
+          tax_amount: number | null
+          tax_rate: number | null
           titulo: string | null
+          uf_origem: string | null
           user_id: string
           variation_id: string
         }
@@ -824,6 +873,7 @@ export type Database = {
           cidade?: string | null
           comissao?: number | null
           comprador?: string | null
+          custo_unit?: number | null
           data_pagamento?: string | null
           data_pedido?: string | null
           estado?: string | null
@@ -842,7 +892,10 @@ export type Database = {
           sku?: string | null
           status?: string | null
           synced_at?: string
+          tax_amount?: number | null
+          tax_rate?: number | null
           titulo?: string | null
+          uf_origem?: string | null
           user_id: string
           variation_id?: string
         }
@@ -850,6 +903,7 @@ export type Database = {
           cidade?: string | null
           comissao?: number | null
           comprador?: string | null
+          custo_unit?: number | null
           data_pagamento?: string | null
           data_pedido?: string | null
           estado?: string | null
@@ -868,7 +922,10 @@ export type Database = {
           sku?: string | null
           status?: string | null
           synced_at?: string
+          tax_amount?: number | null
+          tax_rate?: number | null
           titulo?: string | null
+          uf_origem?: string | null
           user_id?: string
           variation_id?: string
         }
