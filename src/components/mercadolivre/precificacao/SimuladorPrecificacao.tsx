@@ -355,7 +355,7 @@ export function SimuladorPrecificacao() {
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               <div className="space-y-1">
-                <Label className="text-xs">Custo do produto (R$)</Label>
+                <Label className="text-xs h-4 flex items-center">Custo do produto (R$)</Label>
                 <Input
                   className="h-8 text-xs"
                   placeholder="0,00"
@@ -364,7 +364,7 @@ export function SimuladorPrecificacao() {
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Tipo de anúncio</Label>
+                <Label className="text-xs h-4 flex items-center">Tipo de anúncio</Label>
                 <Select
                   value={state.listingType}
                   onValueChange={(v) => {
@@ -382,7 +382,7 @@ export function SimuladorPrecificacao() {
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label className="text-xs flex items-center gap-1">
+                <Label className="text-xs h-4 flex items-center gap-1">
                   Comissão ML (%)
                   <Tooltip>
                     <TooltipTrigger asChild><Info className="w-3 h-3 text-muted-foreground cursor-help" /></TooltipTrigger>
