@@ -179,13 +179,14 @@ function SubTabTopProdutos({ orders }: { orders: ProcessedOrder[] }) {
       item_id: string; titulo: string;
       orderIds: Set<string>; quantidade: number;
       gross: number; net: number; commission: number; frete: number;
+      cost: number; tax: number;
     }>();
 
     for (const o of orders) {
       if (o.status === "cancelled" || o.status === "returned") continue;
       const key = o.item_id || o.titulo;
       if (!map.has(key)) {
-        map.set(key, { item_id: o.item_id, titulo: o.titulo, orderIds: new Set(), quantidade: 0, gross: 0, net: 0, commission: 0, frete: 0 });
+        map.set(key, { item_id: o.item_id, titulo: o.titulo, orderIds: new Set(), quantidade: 0, gross: 0, net: 0, commission: 0, frete: 0, cost: 0, tax: 0 });
       }
       const p = map.get(key)!;
       p.orderIds.add(o.id);
@@ -194,13 +195,16 @@ function SubTabTopProdutos({ orders }: { orders: ProcessedOrder[] }) {
       p.net         += o.net_revenue;
       p.commission  += o.ml_commission;
       p.frete       += o.shipping_cost;
+      p.cost        += o.cost_total ?? 0;
+      p.tax         += o.tax_total  ?? 0;
     }
 
     return Array.from(map.values())
       .map(p => ({
         ...p,
         orders:          p.orderIds.size,
-        margin_pct:      p.gross > 0 ? (p.net         / p.gross) * 100 : 0,
+        full_net:        p.net - p.cost - p.tax,
+        margin_pct:      p.gross > 0 ? ((p.net - p.cost - p.tax) / p.gross) * 100 : 0,
         commission_rate: p.gross > 0 ? (p.commission  / p.gross) * 100 : 0,
       }))
       .sort((a, b) =>
