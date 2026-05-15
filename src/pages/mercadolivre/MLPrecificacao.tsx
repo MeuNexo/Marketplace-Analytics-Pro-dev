@@ -14,7 +14,7 @@ export default function MLPrecificacao() {
 
   return (
     <div className="space-y-6">
-      <MLPageHeader title="Precificação" hideSync>
+      <MLPageHeader title="Precificação" lastUpdated={null}>
         <div className="flex items-center gap-1 rounded-md border bg-card p-0.5">
           {TABS.map((t) => (
             <button

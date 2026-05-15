@@ -266,7 +266,7 @@ export function SimuladorPrecificacao() {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-4">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-4">
       {/* ── LEFT: Inputs ─────────────────────────────────────────────────── */}
       <div className="space-y-4 min-w-0">
         {/* Search / selected product */}
@@ -318,13 +318,8 @@ export function SimuladorPrecificacao() {
                         {itemsLoading ? "Carregando anúncios…" : "Nenhum anúncio encontrado."}
                       </CommandEmpty>
                       <CommandGroup>
-                       {filteredItems.map((it) => (
-                          <CommandItem
-                            key={it.item_id}
-                            value={it.item_id}
-                            onSelect={() => selectProduct(it)}
-                            className="gap-2 data-[selected=true]:bg-muted data-[selected=true]:text-foreground aria-selected:bg-muted aria-selected:text-foreground"
-                          >
+                        {filteredItems.map((it) => (
+                          <CommandItem key={it.item_id} value={it.item_id} onSelect={() => selectProduct(it)} className="gap-2">
                             {it.thumbnail
                               ? <img src={it.thumbnail} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />
                               : <Package className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
@@ -571,25 +566,18 @@ export function SimuladorPrecificacao() {
       <div className="lg:sticky lg:top-20 lg:self-start space-y-3">
         <Card>
           <CardHeader className="pb-3">
-            <div className="flex items-center justify-between gap-2">
-              <CardTitle className="text-sm font-medium text-foreground">Preço de venda</CardTitle>
-              {fetchingFee && (
-                <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                  <RefreshCw className="w-3 h-3 animate-spin" /> atualizando
-                </span>
-              )}
-            </div>
+            <CardTitle className="text-sm font-medium text-foreground">Preço de venda</CardTitle>
+            <CardDescription className="text-xs">
+              Recalcula automaticamente. {fetchingFee && <span className="text-amber-600">Atualizando comissão…</span>}
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">R$</span>
-              <Input
-                placeholder="0,00"
-                value={state.salePrice}
-                onChange={(e) => dispatch({ type: "set", key: "salePrice", value: e.target.value })}
-                className="pl-9 text-xl h-12 font-semibold tabular-nums"
-              />
-            </div>
+            <Input
+              placeholder="0,00"
+              value={state.salePrice}
+              onChange={(e) => dispatch({ type: "set", key: "salePrice", value: e.target.value })}
+              className="text-2xl h-14 font-semibold tabular-nums"
+            />
 
             <div className={`rounded-lg border p-3 ${tierBg}`}>
               <div className="flex items-baseline justify-between">
@@ -637,9 +625,9 @@ export function SimuladorPrecificacao() {
             )}
 
             {liveCommission && (
-              <p className="text-[10px] text-muted-foreground text-center">
-                Comissão real ML · {LISTING_LABELS[state.listingType]}
-              </p>
+              <Badge variant="outline" className="w-full justify-center text-[10px] gap-1">
+                <RefreshCw className="w-3 h-3" /> Comissão real ML para {LISTING_LABELS[state.listingType]}
+              </Badge>
             )}
           </CardContent>
         </Card>
