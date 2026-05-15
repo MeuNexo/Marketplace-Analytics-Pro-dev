@@ -13,22 +13,24 @@ export default function MLPrecificacao() {
   const [tab, setTab] = useState<TabId>("simulador");
 
   return (
-    <div className="space-y-6">
-      <MLPageHeader title="Precificação" lastUpdated={null}>
-        <div className="flex items-center gap-1 rounded-md border bg-card p-0.5">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
-                tab === t.id ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/50"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </MLPageHeader>
+    <div className="space-y-5">
+      <div className="sticky -top-4 md:-top-6 lg:-top-8 z-20 -mx-4 md:-mx-6 lg:-mx-8 -mt-4 md:-mt-6 lg:-mt-8 px-4 md:px-6 lg:px-8 pb-4 pt-4 bg-background/95 backdrop-blur-sm border-b border-border/40">
+        <MLPageHeader title="Precificação" lastUpdated={null}>
+          <div className="flex items-center gap-1 rounded-md border bg-card p-0.5">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                  tab === t.id ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/50"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </MLPageHeader>
+      </div>
 
       <AnimatePresence mode="wait">
         <motion.div
