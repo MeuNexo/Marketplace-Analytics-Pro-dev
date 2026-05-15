@@ -457,7 +457,7 @@ export default function MLFiscal() {
       setConfirmOpen(true);
       return;
     }
-    void executeUpsert({ ...fields, uf_origem: ufOrigem || null });
+    void executeUpsert({ ...fields, uf_origem: selectedTab === "lucro_real" ? (ufOrigem || null) : null });
   }
 
   async function executeUpsert(fields: Partial<TaxConfig>) {
@@ -485,7 +485,7 @@ export default function MLFiscal() {
   }
 
   function handleConfirmedSave() {
-    if (pendingFields) void executeUpsert({ ...pendingFields, uf_origem: ufOrigem || null });
+    if (pendingFields) void executeUpsert({ ...pendingFields, uf_origem: selectedTab === "lucro_real" ? (ufOrigem || null) : null });
   }
 
   const selectedStore = stores.find((s) => s.ml_user_id === selectedStoreId);
