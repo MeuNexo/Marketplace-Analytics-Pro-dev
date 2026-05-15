@@ -56,3 +56,6 @@ verify_jwt = true
 
 [functions.sync-ads]
 verify_jwt = false
+
+[functions.recalc-order-costs]
+verify_jwt = true
