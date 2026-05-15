@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { supabase } from "@/integrations/supabase/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -14,6 +15,7 @@ export interface ProductCost {
 
 export function useMLProductCosts() {
   const { user } = useAuth();
+  const { currentOrg } = useOrganization();
   const [costs, setCosts] = useState<Map<string, ProductCost>>(new Map());
   const [loading, setLoading] = useState(false);
 
@@ -58,6 +60,7 @@ export function useMLProductCosts() {
       const { error } = await supabase.from("ml_product_costs").upsert(
         {
           user_id: user.id,
+          organization_id: currentOrg?.id ?? null,
           item_id,
           cost,
           tax_rate,
@@ -67,7 +70,7 @@ export function useMLProductCosts() {
       );
       if (error) console.warn("useMLProductCosts upsert error", error);
     },
-    [user],
+    [user, currentOrg],
   );
 
   return { costs, loading, upsert };
