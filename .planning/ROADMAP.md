@@ -82,7 +82,11 @@ Quatro fases entregam a ferramenta de análise comercial completa: o motor de c�
   2. O módulo determina corretamente o Preço GMV, Preço Margem e Preço Neutro segundo as regras de elegibilidade e arredondamento (incluindo fallbacks com .99/.90)
   3. O módulo calcula a elasticidade por R$1,00 e classifica em Baixa/Média/Alta/Extrema com os thresholds definidos
   4. A tabela de snapshots existe no Supabase e o sistema salva automaticamente um registro completo (produto, período, curva, preços estratégicos, elasticidade, data) após cada análise executada
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 04-01-PLAN.md — Motor de análise puro: tipos, engine.ts e testes TDD (MOTOR-01 a MOTOR-05)
+- [ ] 04-02-PLAN.md — Migration SQL da tabela commercial_analysis_snapshots + supabase db push
+- [ ] 04-03-PLAN.md — Hook useAnalysisSnapshots: saveSnapshot, fetchSnapshots, updateStrategy
 
 ### Phase 5: Dashboard de Análise
 **Goal**: O usuário consegue visualizar os resultados da análise em cards de produto e numa tabela interativa com seleção de estratégia
@@ -121,7 +125,7 @@ Quatro fases entregam a ferramenta de análise comercial completa: o motor de c�
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 4. Motor de Análise + Snapshots | 0/? | Not started | - |
+| 4. Motor de Análise + Snapshots | 0/3 | Not started | - |
 | 5. Dashboard de Análise | 0/? | Not started | - |
 | 6. Recomendações de Compra & FULL | 0/? | Not started | - |
 | 7. Histórico Comparativo | 0/? | Not started | - |
