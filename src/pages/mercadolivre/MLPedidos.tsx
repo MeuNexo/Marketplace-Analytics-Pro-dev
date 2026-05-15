@@ -315,14 +315,14 @@ function SubTabUF({ orders }: { orders: ProcessedOrder[] }) {
   const states = useMemo(() => {
     const map = new Map<string, {
       uf: string; orderIds: Set<string>;
-      gross: number; net: number; cancelledIds: Set<string>;
+      gross: number; net: number; cost: number; tax: number; cancelledIds: Set<string>;
     }>();
 
     for (const o of orders) {
       const uf = o.estado?.trim() || null;
       if (!uf) continue; // ignora pedidos sem estado identificado
       if (!map.has(uf)) {
-        map.set(uf, { uf, orderIds: new Set(), gross: 0, net: 0, cancelledIds: new Set() });
+        map.set(uf, { uf, orderIds: new Set(), gross: 0, net: 0, cost: 0, tax: 0, cancelledIds: new Set() });
       }
       const s = map.get(uf)!;
       s.orderIds.add(o.id);
@@ -331,6 +331,8 @@ function SubTabUF({ orders }: { orders: ProcessedOrder[] }) {
       } else {
         s.gross += o.gross_revenue;
         s.net   += o.net_revenue;
+        s.cost  += o.cost_total ?? 0;
+        s.tax   += o.tax_total  ?? 0;
       }
     }
 
@@ -340,10 +342,12 @@ function SubTabUF({ orders }: { orders: ProcessedOrder[] }) {
         orders:            s.orderIds.size,
         gross:             s.gross,
         net:               s.net,
+        cost:              s.cost,
+        tax:               s.tax,
         cancelled:         s.cancelledIds.size,
         avg_ticket:        (s.orderIds.size - s.cancelledIds.size) > 0 ? s.gross / (s.orderIds.size - s.cancelledIds.size) : 0,
         cancellation_rate: s.orderIds.size > 0 ? (s.cancelledIds.size / s.orderIds.size) * 100 : 0,
-        margin_pct:        s.gross > 0 ? (s.net / s.gross) * 100 : 0,
+        margin_pct:        s.gross > 0 ? ((s.net - s.cost - s.tax) / s.gross) * 100 : 0,
       }))
       .sort((a, b) => b.gross - a.gross);
   }, [orders]);
@@ -459,10 +463,14 @@ function SubTabTipoAnuncio({ orders }: { orders: ProcessedOrder[] }) {
       t.net        += o.net_revenue;
       t.commission += o.ml_commission;
       t.frete      += o.shipping_cost;
+      (t as any).cost = ((t as any).cost ?? 0) + (o.cost_total ?? 0);
+      (t as any).tax  = ((t as any).tax  ?? 0) + (o.tax_total  ?? 0);
     }
 
     return (["classic", "premium", "free"] as ListingType[]).map(type => {
       const d = map[type];
+      const cost = (d as any).cost ?? 0;
+      const tax  = (d as any).tax  ?? 0;
       return {
         type,
         label:           LISTING_LABELS[type],
@@ -472,7 +480,9 @@ function SubTabTipoAnuncio({ orders }: { orders: ProcessedOrder[] }) {
         net:             d.net,
         commission:      d.commission,
         frete:           d.frete,
-        margin_pct:      d.gross > 0 ? (d.net        / d.gross) * 100 : 0,
+        cost,
+        tax,
+        margin_pct:      d.gross > 0 ? ((d.net - cost - tax) / d.gross) * 100 : 0,
         commission_rate: d.gross > 0 ? (d.commission / d.gross) * 100 : 0,
         frete_rate:      d.gross > 0 ? (d.frete      / d.gross) * 100 : 0,
         avg_ticket:      d.orderIds.size > 0 ? d.gross / d.orderIds.size : 0,
