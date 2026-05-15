@@ -775,6 +775,17 @@ export default function MLPedidos() {
       gross_margin_pct: (r.custo_unit != null && Number(r.receita_bruta) > 0)
         ? ((Number(r.receita_bruta) - Number(r.custo_unit) * r.quantidade) / Number(r.receita_bruta)) * 100
         : null,
+      full_net_revenue: (r.custo_unit != null || r.tax_amount != null)
+        ? Number(r.receita_liquida ?? 0)
+          - (r.custo_unit != null ? Number(r.custo_unit) * r.quantidade : 0)
+          - (r.tax_amount != null ? Number(r.tax_amount) : 0)
+        : null,
+      full_net_margin_pct: (Number(r.receita_bruta) > 0 && (r.custo_unit != null || r.tax_amount != null))
+        ? ((Number(r.receita_liquida ?? 0)
+            - (r.custo_unit != null ? Number(r.custo_unit) * r.quantidade : 0)
+            - (r.tax_amount != null ? Number(r.tax_amount) : 0))
+           / Number(r.receita_bruta)) * 100
+        : null,
     })),
   [rows]);
 
