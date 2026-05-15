@@ -841,6 +841,8 @@ export default function MLPedidos() {
     const costs      = confirmed.reduce((s, o) => s + (o.cost_total ?? 0), 0);
     const taxes      = confirmed.reduce((s, o) => s + (o.tax_total  ?? 0), 0);
     const fullNet    = net - costs - taxes;
+    const missingCost = confirmed.filter(o => o.cost_total == null).length;
+    const missingTax  = confirmed.filter(o => o.tax_total  == null).length;
 
     return {
       total_orders:     confirmedOrderIds.length + pendingOrderIds.length,
@@ -857,6 +859,9 @@ export default function MLPedidos() {
       full_net_margin_pct: gross > 0 ? (fullNet / gross) * 100 : 0,
       net_margin_pct:   gross > 0 ? (net / gross) * 100 : 0,
       avg_ticket:       confirmedOrderIds.length > 0 ? gross / confirmedOrderIds.length : 0,
+      missing_cost:     missingCost,
+      missing_tax:      missingTax,
+      confirmed_total:  confirmed.length,
     };
   }, [orders]);
 
