@@ -266,15 +266,15 @@ export function SimuladorPrecificacao() {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-4">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-4 items-start">
       {/* ── LEFT: Inputs ─────────────────────────────────────────────────── */}
       <div className="space-y-4 min-w-0">
         {/* Search / selected product */}
         <Card>
-          <CardHeader className="pb-3">
+          <CardHeader className="pb-3 space-y-1">
             <CardTitle className="text-sm font-medium text-foreground">Produto</CardTitle>
-            <CardDescription className="text-xs">
-              Busque por MLB ou SKU para preencher dados automaticamente, ou edite manualmente.
+            <CardDescription className="text-xs leading-tight">
+              Busque por MLB ou SKU para preencher dados.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -376,7 +376,7 @@ export function SimuladorPrecificacao() {
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-xs">Modalidade</Label>
+                <Label className="text-xs h-4 flex items-center">Modalidade</Label>
                 <Select
                   value={state.logisticType}
                   onValueChange={(v) => dispatch({ type: "set", key: "logisticType", value: v })}
@@ -390,7 +390,7 @@ export function SimuladorPrecificacao() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs flex items-center gap-1">
+                <Label className="text-xs h-4 flex items-center gap-1">
                   Custo de envio (R$)
                   <Tooltip>
                     <TooltipTrigger asChild><Info className="w-3 h-3 text-muted-foreground cursor-help" /></TooltipTrigger>
@@ -519,39 +519,40 @@ export function SimuladorPrecificacao() {
 
         {/* Objetivo */}
         <Card>
-          <CardHeader className="pb-3">
+          <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-foreground">Objetivo</CardTitle>
-            <CardDescription className="text-xs">Calcule o preço necessário para atingir uma margem ou markup.</CardDescription>
+            <CardDescription className="text-xs leading-tight">Calcule o preço para atingir uma margem ou markup.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
-              <div className="space-y-1.5">
-                <Label className="text-xs">Modo</Label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-end">
+              <div className="space-y-1">
+                <Label className="text-xs h-4 flex items-center">Modo</Label>
                 <Select value={state.objectiveMode} onValueChange={(v) => dispatch({ type: "set", key: "objectiveMode", value: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="margin">Margem (% sobre preço)</SelectItem>
                     <SelectItem value="markup">Markup (% sobre custo)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Alvo (%)</Label>
+              <div className="space-y-1">
+                <Label className="text-xs h-4 flex items-center">Alvo (%)</Label>
                 <Input
                   placeholder="Ex: 20"
                   value={state.objectiveTarget}
                   onChange={(e) => dispatch({ type: "set", key: "objectiveTarget", value: e.target.value })}
+                  className="h-9 text-xs"
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Preço sugerido</Label>
-                <div className="h-10 px-3 rounded-md border bg-muted/30 flex items-center justify-between">
-                  <span className="text-sm font-semibold tabular-nums">
+              <div className="space-y-1">
+                <Label className="text-xs h-4 flex items-center text-muted-foreground">Preço sugerido</Label>
+                <div className="h-9 px-2 rounded-md border bg-muted/30 flex items-center justify-between gap-1">
+                  <span className="text-xs font-semibold tabular-nums">
                     {reversedPrice != null ? formatBRL(reversedPrice) : "—"}
                   </span>
                   {reversedPrice != null && reversedPrice > 0 && (
                     <Button
-                      variant="ghost" size="sm" className="h-7 text-xs gap-1"
+                      variant="ghost" size="sm" className="h-6 px-1.5 text-[11px] gap-1"
                       onClick={() => dispatch({ type: "set", key: "salePrice", value: reversedPrice.toFixed(2).replace(".", ",") })}
                     >
                       Aplicar <ArrowRight className="w-3 h-3" />
@@ -570,10 +571,10 @@ export function SimuladorPrecificacao() {
       {/* ── RIGHT: Live result ──────────────────────────────────────────── */}
       <div className="lg:sticky lg:top-20 lg:self-start space-y-3">
         <Card>
-          <CardHeader className="pb-3">
+          <CardHeader className="pb-3 space-y-1">
             <CardTitle className="text-sm font-medium text-foreground">Preço de venda</CardTitle>
-            <CardDescription className="text-xs">
-              Recalcula automaticamente. {fetchingFee && <span className="text-amber-600">Atualizando comissão…</span>}
+            <CardDescription className="text-xs leading-tight">
+              Recalcula a cada digitação. {fetchingFee && <span className="text-amber-600">Atualizando comissão…</span>}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
