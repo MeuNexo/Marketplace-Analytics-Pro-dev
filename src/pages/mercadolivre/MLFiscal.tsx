@@ -496,13 +496,13 @@ export default function MLFiscal() {
   function RegimeBadge({ config }: { config: TaxConfig | undefined }) {
     if (!config) {
       return (
-        <Badge variant="secondary" className="text-xs">
+        <Badge variant="secondary" className="text-xs hover:bg-secondary">
           Não configurado
         </Badge>
       );
     }
     return (
-      <Badge className="bg-emerald-500/15 text-emerald-700 border-emerald-500/30 text-xs">
+      <Badge className="bg-emerald-500/15 text-emerald-700 border-emerald-500/30 text-xs hover:bg-emerald-500/15">
         {REGIME_LABELS[config.regime]}
       </Badge>
     );
