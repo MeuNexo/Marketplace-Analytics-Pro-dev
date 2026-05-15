@@ -130,6 +130,12 @@ serve(async (req) => {
     const allItemIds = [...new Set([...activeIds, ...pausedIds])];
     console.log(`Found ${activeIds.length} active, ${pausedIds.length} paused = ${allItemIds.length} total items`);
 
+    // Helper: resolve SKU from seller_custom_field OR attributes[SELLER_SKU]
+    const resolveSku = (obj: any): string | null =>
+      obj.seller_custom_field
+        ?? (obj.attributes as any[] | undefined)?.find((a: any) => a.id === "SELLER_SKU")?.value_name
+        ?? null;
+
     // Multi-get items in batches of 20
     const items: any[] = [];
     for (let i = 0; i < allItemIds.length; i += 20) {
@@ -143,11 +149,6 @@ serve(async (req) => {
         if (entry.code === 200 && entry.body) {
           const b = entry.body;
           const rawVariations: any[] = b.variations || [];
-          // Helper: resolve SKU from seller_custom_field OR attributes[SELLER_SKU]
-          const resolveSku = (obj: any): string | null =>
-            obj.seller_custom_field
-              ?? (obj.attributes as any[] | undefined)?.find((a: any) => a.id === "SELLER_SKU")?.value_name
-              ?? null;
 
           const variations = rawVariations.map((v: any) => ({
             variation_id: String(v.id),
@@ -186,6 +187,40 @@ serve(async (req) => {
             catalog_product_id: b.catalog_product_id ?? null,
             deal_ids: Array.isArray(b.deal_ids) ? b.deal_ids : [],
           });
+        }
+      }
+    }
+
+    // Second pass: enrich variation-level SKUs.
+    // The multi-get with attributes=... does not return variation.attributes, so
+    // resolveSku(v) only finds seller_custom_field. A full item GET returns the
+    // complete variation object (including its attributes array with SELLER_SKU).
+    const itemsWithVariations = items.filter((item: any) => item.has_variations && item.variations.length > 0);
+    if (itemsWithVariations.length > 0) {
+      for (let i = 0; i < itemsWithVariations.length; i += 20) {
+        const batch = itemsWithVariations.slice(i, i + 20);
+        const idsParam = batch.map((x: any) => x.id).join(",");
+        try {
+          // No attributes= filter → full item data including variation.attributes
+          const fullData = await mlFetch(`/items?ids=${idsParam}`, access_token);
+          for (const entry of fullData) {
+            if (entry.code === 200 && entry.body) {
+              const b = entry.body;
+              const item = items.find((x: any) => x.id === b.id);
+              if (!item) continue;
+              for (const variation of item.variations) {
+                const fullVar = (b.variations || []).find(
+                  (v: any) => String(v.id) === variation.variation_id,
+                );
+                if (fullVar) {
+                  variation.seller_custom_field =
+                    resolveSku(fullVar) ?? variation.seller_custom_field;
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn(`Variation SKU enrichment failed (non-critical):`, e);
         }
       }
     }
