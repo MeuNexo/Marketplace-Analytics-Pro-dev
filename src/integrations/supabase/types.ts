@@ -608,6 +608,77 @@ export type Database = {
           },
         ]
       }
+      ml_tax_config: {
+        Row: {
+          created_at: string
+          effective_rate: number
+          id: string
+          lp_cofins: number | null
+          lp_csll: number | null
+          lp_irpj: number | null
+          lp_pis: number | null
+          lr_cofins_credito: number | null
+          lr_cofins_debito: number | null
+          lr_icms_credito: number | null
+          lr_icms_debito: number | null
+          lr_pis_credito: number | null
+          lr_pis_debito: number | null
+          ml_user_id: string
+          organization_id: string
+          regime: Database["public"]["Enums"]["tax_regime"]
+          sn_aliquota_efetiva: number | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          effective_rate?: number
+          id?: string
+          lp_cofins?: number | null
+          lp_csll?: number | null
+          lp_irpj?: number | null
+          lp_pis?: number | null
+          lr_cofins_credito?: number | null
+          lr_cofins_debito?: number | null
+          lr_icms_credito?: number | null
+          lr_icms_debito?: number | null
+          lr_pis_credito?: number | null
+          lr_pis_debito?: number | null
+          ml_user_id: string
+          organization_id: string
+          regime: Database["public"]["Enums"]["tax_regime"]
+          sn_aliquota_efetiva?: number | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          effective_rate?: number
+          id?: string
+          lp_cofins?: number | null
+          lp_csll?: number | null
+          lp_irpj?: number | null
+          lp_pis?: number | null
+          lr_cofins_credito?: number | null
+          lr_cofins_debito?: number | null
+          lr_icms_credito?: number | null
+          lr_icms_debito?: number | null
+          lr_pis_credito?: number | null
+          lr_pis_debito?: number | null
+          ml_user_id?: string
+          organization_id?: string
+          regime?: Database["public"]["Enums"]["tax_regime"]
+          sn_aliquota_efetiva?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_tax_config_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ml_tokens: {
         Row: {
           access_token: string | null
@@ -1120,6 +1191,7 @@ export type Database = {
     Enums: {
       app_role: "admin" | "editor" | "viewer"
       org_role: "owner" | "admin" | "member" | "viewer"
+      tax_regime: "simples_nacional" | "lucro_presumido" | "lucro_real"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1249,6 +1321,7 @@ export const Constants = {
     Enums: {
       app_role: ["admin", "editor", "viewer"],
       org_role: ["owner", "admin", "member", "viewer"],
+      tax_regime: ["simples_nacional", "lucro_presumido", "lucro_real"],
     },
   },
 } as const
