@@ -534,6 +534,18 @@ function SubTabTipoAnuncio({ orders }: { orders: ProcessedOrder[] }) {
                     {t.frete > 0 ? `−${currFmt(t.frete)} (${pctFmt(t.frete_rate)})` : <span className="text-muted-foreground">—</span>}
                   </span>
                 </div>
+                <div className="flex justify-between text-red-600">
+                  <span>Custo (CMV)</span>
+                  <span className="font-mono">
+                    {t.cost > 0 ? `−${currFmt(t.cost)}` : <span className="text-muted-foreground/60">—</span>}
+                  </span>
+                </div>
+                <div className="flex justify-between text-violet-600">
+                  <span>Impostos</span>
+                  <span className="font-mono">
+                    {t.tax > 0 ? `−${currFmt(t.tax)}` : <span className="text-muted-foreground/60">—</span>}
+                  </span>
+                </div>
                 <div className="flex justify-between pt-2 border-t border-border/60">
                   <span className="font-medium">Receita líquida</span>
                   <span className="font-mono font-semibold">{currFmt(t.net)}</span>
