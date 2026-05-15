@@ -76,44 +76,51 @@ async function fetchItemsBatched(itemIds: string[], attrs: string, mlToken: stri
 }
 
 async function handleItemsList(mlUserId: string, mlToken: string) {
-  const searchData = await mlGet(
-    `/users/${mlUserId}/items/search?status=active&limit=50`,
-    mlToken,
-  );
-  if (!searchData?.results?.length) return jsonResponse({ items: [], total: 0 });
+  // Paginar via search_type=scan para trazer todos os anúncios ativos
+  // (ML limita /search regular a 1000 resultados; scan pagina via scroll_id).
+  const MAX_ITEMS = 5000;
+  const allIds: string[] = [];
+  let scrollId: string | null = null;
+  let total = 0;
 
-  const itemIds: string[] = searchData.results.slice(0, 50);
+  do {
+    const url = scrollId
+      ? `/users/${mlUserId}/items/search?search_type=scan&scroll_id=${encodeURIComponent(scrollId)}`
+      : `/users/${mlUserId}/items/search?search_type=scan&status=active&limit=100`;
+    const data = await mlGet(url, mlToken);
+    if (!data?.results?.length) break;
+    total = data.paging?.total ?? total;
+    for (const id of data.results) {
+      allIds.push(id);
+      if (allIds.length >= MAX_ITEMS) break;
+    }
+    scrollId = data.scroll_id ?? null;
+  } while (scrollId && allIds.length < MAX_ITEMS);
+
+  if (!allIds.length) return jsonResponse({ items: [], total: 0 });
+
   const attrs = "id,title,thumbnail,price,listing_type_id,category_id";
-  const rawItems = await fetchItemsBatched(itemIds, attrs, mlToken);
-  if (!rawItems.length) return jsonResponse({ items: [], total: searchData.paging?.total ?? 0 });
+  const rawItems = await fetchItemsBatched(allIds, attrs, mlToken);
+  if (!rawItems.length) return jsonResponse({ items: [], total });
 
-  // Busca preço efetivo via suggestions API — mesma fonte de "Seu Preço Atual" na Análise
-  const suggestionResults = await Promise.allSettled(
-    rawItems.map((item: any) =>
-      mlGet(`/suggestions/items/${item.id}/details`, mlToken),
-    ),
-  );
-
-  const items = rawItems.map((item: any, i: number) => {
-    const detail = suggestionResults[i].status === "fulfilled" ? suggestionResults[i].value : null;
+  const items = rawItems.map((item: any) => {
     const priceStandard: number = item.price ?? 0;
-    const priceSale: number = detail?.current_price?.amount ?? priceStandard;
     return {
       item_id: item.id,
       title: item.title,
       thumbnail: item.thumbnail ?? "",
       price_standard: priceStandard,
       price_promo: null,
-      price_sale: priceSale,
+      price_sale: priceStandard,
       category_id: item.category_id ?? "",
       listing_type_id: item.listing_type_id ?? "",
       currency_id: "BRL",
       last_updated: null,
-      has_promotion: priceSale < priceStandard,
+      has_promotion: false,
     };
   });
 
-  return jsonResponse({ items, total: searchData.paging?.total ?? items.length });
+  return jsonResponse({ items, total: total || items.length });
 }
 
 // ── type=prices: preços dos anúncios ativos do vendedor ─────────────────────
