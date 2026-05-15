@@ -445,12 +445,16 @@ export default function MLFiscal() {
   // Saving state
   const [saving, setSaving] = useState(false);
 
+  // UF origem state (shared across all regimes)
+  const [ufOrigem, setUfOrigem] = useState<string>("");
+
   const currentConfig = configs.find((c) => c.ml_user_id === selectedStoreId);
 
   function openDialog(mlUserId: string) {
     setSelectedStoreId(mlUserId);
     const existing = configs.find((c) => c.ml_user_id === mlUserId);
     setSelectedTab(existing?.regime ?? "simples_nacional");
+    setUfOrigem(existing?.uf_origem ?? "");
     setPendingFields(null);
     setConfirmOpen(false);
     setDialogOpen(true);
@@ -463,7 +467,7 @@ export default function MLFiscal() {
       setConfirmOpen(true);
       return;
     }
-    void executeUpsert(fields);
+    void executeUpsert({ ...fields, uf_origem: ufOrigem || null });
   }
 
   async function executeUpsert(fields: Partial<TaxConfig>) {
@@ -491,7 +495,7 @@ export default function MLFiscal() {
   }
 
   function handleConfirmedSave() {
-    if (pendingFields) void executeUpsert(pendingFields);
+    if (pendingFields) void executeUpsert({ ...pendingFields, uf_origem: ufOrigem || null });
   }
 
   const selectedStore = stores.find((s) => s.ml_user_id === selectedStoreId);
@@ -593,6 +597,31 @@ export default function MLFiscal() {
                 Lucro Real
               </TabsTrigger>
             </TabsList>
+
+            <div className="space-y-1.5 pt-3">
+              <Label className="text-xs flex items-center gap-1">
+                UF de origem (loja)
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="w-3 h-3 cursor-help text-muted-foreground" />
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-[260px] text-xs">
+                    Estado em que sua mercadoria sai. Usado para calcular ICMS interestadual quando o comprador for de outra UF (Lucro Real).
+                  </TooltipContent>
+                </Tooltip>
+              </Label>
+              <Select value={ufOrigem || "__none__"} onValueChange={(v) => setUfOrigem(v === "__none__" ? "" : v)}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="Selecione a UF…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— não definida —</SelectItem>
+                  {UF_LIST.map((uf) => (
+                    <SelectItem key={uf} value={uf}>{uf}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
             <TabsContent value="simples_nacional">
               <SimplesForm
