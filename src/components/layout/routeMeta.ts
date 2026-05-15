@@ -14,6 +14,10 @@ export const routeTitles: Record<string, { title: string; subtitle: string }> = 
     title: "Integrações",
     subtitle: "Conecte suas contas de marketplaces para sincronizar dados automaticamente",
   },
+  "/fiscal": {
+    title: "Configuração Fiscal",
+    subtitle: "Configure o regime tributário de cada conta Mercado Livre",
+  },
   "/metas": { title: "Metas", subtitle: "Defina metas mensais por loja e acompanhe no card de Vendas" },
   "/precos-custos": { title: "Preços e Custos", subtitle: "Preços de produtos, comissões, custos por venda e calculadora de precificação" },
   "/usuarios": { title: "Usuários", subtitle: "Gerencie usuários e permissões do sistema" },

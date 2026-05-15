@@ -1,6 +1,7 @@
 import {
   Target,
   ClipboardList,
+  FileText,
   Layers,
   LayoutDashboard,
   Megaphone,
@@ -65,6 +66,7 @@ const apiSections: SidebarNavSection[] = [
           { icon: Target,   label: "Metas",          path: "/metas"          },
           { icon: Users,    label: "Sellers",        path: "/sellers"        },
           { icon: Plug,     label: "Integrações",    path: "/integracoes"    },
+          { icon: FileText, label: "Fiscal",          path: "/fiscal"         },
         ],
       },
     ],

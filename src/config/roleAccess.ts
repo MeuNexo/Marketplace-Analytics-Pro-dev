@@ -23,6 +23,7 @@ export const roleAccess: Record<string, OrgRole[]> = {
   "/organizacao": ORG_ADMIN,
   "/sellers": OWNER_ONLY,
   "/integracoes": OWNER_ONLY,
+  "/fiscal": OWNER_ONLY,
   "/monitoramento": OWNER_ONLY,
 };
 
