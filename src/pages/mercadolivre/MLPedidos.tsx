@@ -33,6 +33,7 @@ import { supabase } from "@/integrations/supabase/client";
 type OrderStatus = "paid" | "shipped" | "delivered" | "cancelled" | "returned" | "pending";
 type ListingType = "classic" | "premium" | "free";
 type SortKey     = "date" | "gross" | "net" | "margin" | "commission";
+// extended sort columns include cost / taxes / full net
 type SortDir     = "asc" | "desc";
 type StatusFilter = "all" | OrderStatus;
 
