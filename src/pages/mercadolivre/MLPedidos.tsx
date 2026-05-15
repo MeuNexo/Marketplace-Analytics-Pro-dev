@@ -968,7 +968,7 @@ export default function MLPedidos() {
               <Card>
                 <CardContent className="pt-4 pb-4">
                   <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
-                    <Truck className="w-3.5 h-3.5" /> Frete grátis (custo)
+                    <Truck className="w-3.5 h-3.5" /> Frete (custo)
                   </p>
                   <p className="text-2xl font-bold mt-1 text-orange-600">{currFmt(summary.shipping_cost)}</p>
                   <p className="text-xs text-muted-foreground mt-1">
