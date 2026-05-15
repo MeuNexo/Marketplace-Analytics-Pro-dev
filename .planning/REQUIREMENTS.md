@@ -52,18 +52,18 @@
 
 ## Traceability
 
-| REQ-ID | Fase |
-|---|---|
-| INFRA-01 | Fase 1 |
-| INFRA-02 | Fase 1 |
-| FISCAL-01 | Fase 2 |
-| FISCAL-02 | Fase 2 |
-| FISCAL-03 | Fase 2 |
-| FISCAL-04 | Fase 2 |
-| FISCAL-05 | Fase 2 |
-| FISCAL-06 | Fase 2 |
-| FISCAL-07 | Fase 2 |
-| CATALOG-01 | Fase 3 |
-| CATALOG-02 | Fase 3 |
-| CATALOG-03 | Fase 3 |
-| QA-01 | Fase 3 |
+| REQ-ID | Fase | Nome da Fase | Status |
+|--------|------|--------------|--------|
+| INFRA-01 | Fase 1 | Infraestrutura | Pending |
+| INFRA-02 | Fase 1 | Infraestrutura | Pending |
+| FISCAL-01 | Fase 2 | Configuração Fiscal | Pending |
+| FISCAL-02 | Fase 2 | Configuração Fiscal | Pending |
+| FISCAL-03 | Fase 2 | Configuração Fiscal | Pending |
+| FISCAL-04 | Fase 2 | Configuração Fiscal | Pending |
+| FISCAL-05 | Fase 2 | Configuração Fiscal | Pending |
+| FISCAL-06 | Fase 2 | Configuração Fiscal | Pending |
+| FISCAL-07 | Fase 2 | Configuração Fiscal | Pending |
+| CATALOG-01 | Fase 3 | Catálogo + Qualidade | Pending |
+| CATALOG-02 | Fase 3 | Catálogo + Qualidade | Pending |
+| CATALOG-03 | Fase 3 | Catálogo + Qualidade | Pending |
+| QA-01 | Fase 3 | Catálogo + Qualidade | Pending |
