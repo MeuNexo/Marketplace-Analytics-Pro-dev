@@ -198,12 +198,12 @@ export function EnvironmentSidebar({ sections, items, footerItem }: EnvironmentS
             </Link>
           </TooltipTrigger>
           <TooltipContent side="right" className="p-0 overflow-hidden">
-            <div className="flex flex-col py-1 min-w-[160px]">
+            <div className="flex flex-col p-1 min-w-[160px]">
               {!item.noSelfLink && (<>
               <Link
                 to={item.path}
                 className={cn(
-                  "flex items-center gap-2 px-3 py-1.5 text-sm font-medium transition-colors",
+                  "flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
                   location.pathname === item.path
                     ? "bg-sidebar-primary text-sidebar-primary-foreground"
                     : "hover:bg-accent hover:text-accent-foreground"
@@ -212,14 +212,14 @@ export function EnvironmentSidebar({ sections, items, footerItem }: EnvironmentS
                 <Icon className="w-4 h-4" />
                 {item.label}
               </Link>
-              <div className="h-px bg-border mx-2 my-1" />
+              <div className="h-px bg-border mx-1 my-1" />
               </>)}
               {item.children.map((child) => (
                 <Link
                   key={child.path}
                   to={child.path}
                   className={cn(
-                    "flex items-center gap-2 px-3 py-1.5 text-sm transition-colors",
+                    "flex items-center gap-2 px-3 py-1.5 text-sm rounded-md transition-colors",
                     location.pathname === child.path
                       ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium"
                       : "hover:bg-accent hover:text-accent-foreground"
