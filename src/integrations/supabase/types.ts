@@ -52,6 +52,71 @@ export type Database = {
           },
         ]
       }
+      commercial_analysis_snapshots: {
+        Row: {
+          brand: string | null
+          created_at: string
+          elasticity_class: string
+          elasticity_pct: number
+          id: string
+          item_id: string
+          ml_user_id: string
+          organization_id: string
+          period_end: string
+          period_start: string
+          price_curve: Json
+          price_gmv: number
+          price_margin: number
+          price_neutral: number
+          product_title: string
+          strategy: string | null
+        }
+        Insert: {
+          brand?: string | null
+          created_at?: string
+          elasticity_class: string
+          elasticity_pct: number
+          id?: string
+          item_id: string
+          ml_user_id: string
+          organization_id: string
+          period_end: string
+          period_start: string
+          price_curve: Json
+          price_gmv: number
+          price_margin: number
+          price_neutral: number
+          product_title: string
+          strategy?: string | null
+        }
+        Update: {
+          brand?: string | null
+          created_at?: string
+          elasticity_class?: string
+          elasticity_pct?: number
+          id?: string
+          item_id?: string
+          ml_user_id?: string
+          organization_id?: string
+          period_end?: string
+          period_start?: string
+          price_curve?: Json
+          price_gmv?: number
+          price_margin?: number
+          price_neutral?: number
+          product_title?: string
+          strategy?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commercial_analysis_snapshots_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       member_route_permissions: {
         Row: {
           created_at: string
