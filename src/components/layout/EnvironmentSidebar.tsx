@@ -206,7 +206,7 @@ export function EnvironmentSidebar({ sections, items, footerItem }: EnvironmentS
                   "flex items-center gap-2 px-3 py-1.5 text-sm font-medium transition-colors",
                   location.pathname === item.path
                     ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                    : "hover:bg-sidebar-primary hover:text-sidebar-primary-foreground"
+                    : "hover:bg-accent hover:text-accent-foreground"
                 )}
               >
                 <Icon className="w-4 h-4" />
@@ -222,7 +222,7 @@ export function EnvironmentSidebar({ sections, items, footerItem }: EnvironmentS
                     "flex items-center gap-2 px-3 py-1.5 text-sm transition-colors",
                     location.pathname === child.path
                       ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium"
-                      : "hover:bg-sidebar-primary hover:text-sidebar-primary-foreground"
+                      : "hover:bg-accent hover:text-accent-foreground"
                   )}
                 >
                   <child.icon className="w-4 h-4" />
