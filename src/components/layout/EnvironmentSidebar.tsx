@@ -56,8 +56,8 @@ export function EnvironmentSidebar({ sections, items, footerItem }: EnvironmentS
         <span
           key={item.path}
           className={cn(
-          "flex items-center gap-3 rounded-xl px-3 py-2.5 opacity-50 cursor-not-allowed select-none overflow-hidden",
-            collapsed && "justify-center w-12 h-12 px-0 rounded-full",
+            "flex items-center gap-3 rounded-xl px-3 py-2.5 opacity-50 cursor-not-allowed select-none overflow-hidden",
+            collapsed && "justify-center w-12 px-0",
             "text-sidebar-foreground/50"
           )}
         >
@@ -95,7 +95,7 @@ export function EnvironmentSidebar({ sections, items, footerItem }: EnvironmentS
         to={item.path}
         className={cn(
           "flex items-center gap-3 rounded-xl px-3 py-2.5 transition-all duration-200 overflow-hidden",
-          collapsed && "justify-center w-12 h-12 px-0 rounded-full",
+          collapsed && "justify-center w-12 px-0",
           isActive
             ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-glow"
             : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -137,7 +137,7 @@ export function EnvironmentSidebar({ sections, items, footerItem }: EnvironmentS
         to={item.path}
         className={cn(
           "flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-all duration-200 overflow-hidden",
-          collapsed && "justify-center w-9 h-9 px-0 rounded-full",
+          collapsed && "justify-center w-9 px-0",
           isActive
             ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-glow"
             : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -188,7 +188,7 @@ export function EnvironmentSidebar({ sections, items, footerItem }: EnvironmentS
             <Link
               to={item.path}
               className={cn(
-                "flex items-center justify-center w-12 h-12 py-2.5 rounded-full transition-all duration-200",
+                "flex items-center justify-center w-12 py-2.5 rounded-xl transition-all duration-200",
                 isParentActive
                   ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-glow"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
