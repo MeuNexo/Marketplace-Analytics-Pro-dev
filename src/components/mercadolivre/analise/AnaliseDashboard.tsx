@@ -74,7 +74,7 @@ export function AnaliseDashboard() {
     if (!q) return items.slice(0, 50);
     return items.filter((it) =>
       it.item_id.toLowerCase().includes(q) || it.title.toLowerCase().includes(q),
-    ).slice(0, 50);
+    ).slice(0, 200);
   }, [items, searchQuery]);
 
   function selectProduct(it: MLItemPrice) {
