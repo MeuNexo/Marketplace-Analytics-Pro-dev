@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { formatBRL } from "@/lib/pricing/calculator";
 import { AnalysisProductCard } from "./AnalysisProductCard";
 import { AnalisePrecosTable } from "./AnalisePrecosTable";
+import CompraRecomendadaPanel from "./CompraRecomendadaPanel";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -293,6 +294,9 @@ export function AnaliseDashboard() {
               />
             </CardContent>
           </Card>
+
+          {/* Purchase recommendations panel */}
+          <CompraRecomendadaPanel snapshots={snapshots} />
         </div>
       ) : (
         <p className="text-center text-muted-foreground py-8">
