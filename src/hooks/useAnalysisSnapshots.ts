@@ -99,7 +99,7 @@ export function useAnalysisSnapshots(): UseAnalysisSnapshotsResult {
 
         const { data, error } = await supabase
           .from('commercial_analysis_snapshots')
-          .insert(row)
+          .insert([row])
           .select()
           .single();
 
