@@ -34,7 +34,7 @@ por R$1,00 e sugestões de compra e envio FULL, com histórico comparativo por p
 ### HIST — Histórico & Comparação
 
 - [ ] **HIST-01**: Sistema salva snapshot de cada análise executada (produto, período, curva de preços, Preços GMV/Neutro/Margem, elasticidade, data de execução)
-- [ ] **HIST-02**: Usuário pode comparar análises anteriores do mesmo produto lado a lado para identificar variações de elasticidade e recomendações ao longo do tempo
+- [x] **HIST-02**: Usuário pode comparar análises anteriores do mesmo produto lado a lado para identificar variações de elasticidade e recomendações ao longo do tempo
 
 ---
 
