@@ -1,44 +1,58 @@
-## Problema
+## Refinamentos no card de Análise (AnalysisProductCard)
 
-Quando várias variações são selecionadas, os chips se acumulam ao lado do seletor de período e do botão Analisar, embaralhando os controles e quebrando o cabeçalho do card em várias linhas.
+Apenas frontend. Arquivos afetados: `AnalysisProductCard.tsx` e `AnaliseDashboard.tsx`.
 
-## Solução
+### 1. Remover linha "Sem marca"
+- Apagar o `<p>` que renderiza `snapshot.brand ?? "Sem marca"`. O título do produto basta.
 
-Separar **controles** (busca, período, analisar) dos **itens selecionados** (chips), em duas linhas independentes e enxutas.
+### 2. Card ocupa a linha toda
+- No `AnaliseDashboard.tsx`, trocar o wrapper `grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3` por um simples `div` (sem grid) para que o card use 100% da largura disponível.
+- Skeleton também passa a um único bloco `w-full h-40`.
 
-### Layout proposto
+### 3. Quantidade vendida (totais)
+- Derivar do `snapshot.priceCurve` (já existe no snapshot):
+  - **Total geral:** soma de `units` em todos os buckets.
+  - **Por tipo (GMV / Neutro / Margem):** localizar o bucket cujo `price` casa com `priceGmv` / `priceNeutral` / `priceMargin` (comparação em centavos via helper já existente em `compraUtils`/inline) e exibir o `units` desse bucket. Quando não houver bucket exato (caso raro), exibir `—`.
+- Cada tile dos 3 preços ganha uma segunda linha discreta: `Vendidos: <units> un` (`text-[11px] text-muted-foreground tabular-nums`).
+- Acima do bloco de elasticidade, uma linha-resumo com:
+  `Total vendido no período: <total> un` (`text-xs text-muted-foreground`).
+
+### 4. Simulador de elasticidade interativo
+Bloco novo abaixo do badge de elasticidade, ocupando linha inteira:
+
+- Dois inputs numéricos pequenos (`Input` shadcn, `h-8 w-24`):
+  - **Preço inicial** — default = `snapshot.priceGmv`.
+  - **Acréscimo (R$)** — default = `1,00`, step `0,50`.
+- Texto dinâmico ao lado, atualizado em tempo real:
+  > A cada **R$ X,XX** de subida a partir de **R$ Y,YY**, perde aproximadamente **Z,Z%** em volume (≈ **N un** a menos no período).
+
+Cálculo (puro frontend, sem hook novo):
+- `perdaPct = elasticityPct * acrescimo` (linear, mesma premissa do texto atual).
+- `unidadesPerdidas = round(totalUnits * perdaPct / 100)`.
+- Clamp `perdaPct` em 100%.
+
+A frase descritiva atual ("A cada R$1,00…") é substituída por essa versão interativa.
+
+### Layout final do card (largura total)
 
 ```text
-┌─ Card ──────────────────────────────────────────────────────────────┐
-│  Análise de Elasticidade     [+ Adicionar produto] [Período] [Analisar] │
-│  ──────────────────────────────────────────────────────────────────  │
-│  3 variações  •  [chip 1 ×] [chip 2 ×] [chip 3 ×]          Limpar    │
+┌──────────────────────────────────────────────────────────────────────┐
+│ Título do produto                                                    │
+├──────────────────────────────────────────────────────────────────────┤
+│ [ Preço GMV ]    [ Preço Neutro ]    [ Preço Margem ]                │
+│  R$ X,XX          R$ X,XX             R$ X,XX                        │
+│  Vendidos: N un   Vendidos: N un      Vendidos: N un                 │
+│                                                                      │
+│ Total vendido no período: N un                                       │
+│                                                                      │
+│ [Elasticidade Média]                                                 │
+│ Simular:  a partir de [R$ 49,90]  subida de [R$ 1,00]                │
+│ → perde ~3,2% em volume (≈ 12 un a menos no período)                 │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Linha 1 (header)**: título à esquerda; controles à direita — botão "Adicionar produto" (largura fixa pequena quando há seleção, larga `w-[320px]` quando vazio), seletor de período, botão Analisar. Sem chips aqui.
-- **Linha 2 (faixa de seleção)**: aparece só quando há produtos selecionados. Contador discreto à esquerda (`text-xs text-muted-foreground` — ex.: "3 variações selecionadas"), chips em `flex-wrap` com `gap-1.5`, botão "Limpar" alinhado à direita.
-- Separador sutil (`border-t border-border/60`) entre as duas linhas.
-
-### Refinamento dos chips
-
-- Tamanho menor: `h-7` (em vez de `h-8`), `text-[11px]`, thumb `w-4 h-4`, título truncado em `max-w-[140px]`.
-- Hover discreto no botão `×` (`hover:bg-muted`).
-- Entrada animada com `animate-fade-in` (utilitário já disponível em `tailwind.config.ts`); saída instantânea para evitar reflow brusco.
-
-### Estado vazio
-
-- Mantém o `CardContent` atual com a frase de ajuda; sem faixa de chips.
-
-## Mudanças no código
-
-Apenas em `src/components/mercadolivre/analise/AnaliseDashboard.tsx`:
-
-1. Remover os chips de dentro da `div` de controles (linha 1).
-2. Substituir o botão `Limpar` da linha 1 — ele migra para a linha 2.
-3. Logo após `</CardHeader>`, antes do bloco `!hasSelection`, inserir um novo bloco condicional `hasSelection && (...)`:
-   - `<div className="px-6 py-2.5 border-t border-border/60 flex items-center gap-3 flex-wrap">`
-   - contador + chips (`flex-wrap gap-1.5`) + botão `Limpar` à direita.
-4. Aplicar `animate-fade-in` aos chips.
-
-Sem mudanças em hooks, dados, schema ou outros componentes.
+### Detalhes técnicos
+- Sem mudanças no schema, hooks ou edge functions.
+- Helper local `findUnitsAtPrice(curve, target)` usando comparação em centavos (`Math.round(p*100) === Math.round(t*100)`) — mesma técnica já usada em `compraUtils.ts`.
+- Estado local com `useState` para os dois inputs do simulador, inicializados a partir do snapshot via `useEffect` quando `snapshot.id` mudar.
+- Mantém tokens semânticos (`text-muted-foreground`, `text-foreground`, `bg-muted`) e Plus Jakarta Sans herdado.
