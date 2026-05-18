@@ -5,6 +5,7 @@ import { SimuladorPrecificacao } from "@/components/mercadolivre/precificacao/Si
 
 const TABS = [
   { id: "simulador", label: "Simulador" },
+  { id: "analise",   label: "Análise" },
 ] as const;
 
 type TabId = typeof TABS[number]["id"];
@@ -41,6 +42,11 @@ export default function MLPrecificacao() {
           transition={{ duration: 0.18 }}
         >
           {tab === "simulador" && <SimuladorPrecificacao />}
+          {tab === "analise" && (
+            <div className="py-8 text-center text-muted-foreground">
+              Carregando módulo de análise…
+            </div>
+          )}
         </motion.div>
       </AnimatePresence>
     </div>
