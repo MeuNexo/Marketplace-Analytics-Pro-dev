@@ -60,6 +60,8 @@ export function useMLOrdersByItem(): UseMLOrdersByItemResult {
             .gte("data_pedido", dateFrom)
             .lte("data_pedido", dateTo)
             .in("status", ["paid", "shipped", "delivered"])
+            .not("preco_unit", "is", null)
+            .gt("preco_unit", 0)
             .order("data_pedido", { ascending: true })
             .range(from, from + PAGE - 1);
 

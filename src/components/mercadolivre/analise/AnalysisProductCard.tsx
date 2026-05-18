@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useEffect, useMemo, useState } from "react";
+import { format } from "date-fns";
 import { formatBRL } from "@/lib/pricing/calculator";
 import type { AnalysisSnapshot } from "@/hooks/useAnalysisSnapshots";
 import type { PriceBucket } from "@/lib/analysis/types";
@@ -27,6 +28,24 @@ export function AnalysisProductCard({ snapshot }: { snapshot: AnalysisSnapshot }
     [snapshot.priceCurve],
   );
 
+  const periodLabel = useMemo(() => {
+    try {
+      const from = format(new Date(snapshot.periodStart + "T12:00:00"), "dd/MM/yyyy");
+      const to   = format(new Date(snapshot.periodEnd   + "T12:00:00"), "dd/MM/yyyy");
+      return from === to ? from : `${from} – ${to}`;
+    } catch {
+      return `${snapshot.periodStart} – ${snapshot.periodEnd}`;
+    }
+  }, [snapshot.periodStart, snapshot.periodEnd]);
+
+  const analysisDate = useMemo(() => {
+    try {
+      return format(new Date(snapshot.createdAt), "dd/MM/yyyy 'às' HH:mm");
+    } catch {
+      return snapshot.createdAt;
+    }
+  }, [snapshot.createdAt]);
+
   const [basePrice, setBasePrice] = useState<number>(snapshot.priceGmv);
   const [increment, setIncrement] = useState<number>(1);
 
@@ -42,9 +61,19 @@ export function AnalysisProductCard({ snapshot }: { snapshot: AnalysisSnapshot }
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-medium text-foreground leading-5 truncate">
-          {snapshot.productTitle}
-        </CardTitle>
+        <div className="flex flex-wrap items-start justify-between gap-1.5">
+          <CardTitle className="text-sm font-medium text-foreground leading-5 truncate max-w-[75%]">
+            {snapshot.productTitle}
+          </CardTitle>
+          <div className="flex flex-col items-end gap-0.5 shrink-0">
+            <span className="text-[11px] font-medium tabular-nums text-muted-foreground">
+              {periodLabel}
+            </span>
+            <span className="text-[10px] text-muted-foreground/70">
+              Analisado em {analysisDate}
+            </span>
+          </div>
+        </div>
       </CardHeader>
 
       <CardContent className="space-y-4">
@@ -68,7 +97,8 @@ export function AnalysisProductCard({ snapshot }: { snapshot: AnalysisSnapshot }
         </div>
 
         <p className="text-xs text-muted-foreground tabular-nums">
-          Total vendido no período: <span className="text-foreground font-medium">{totalUnits} un</span>
+          Total vendido em <span className="font-medium text-foreground">{periodLabel}</span>:{" "}
+          <span className="text-foreground font-medium">{totalUnits} un</span>
         </p>
 
         <div className="space-y-2">

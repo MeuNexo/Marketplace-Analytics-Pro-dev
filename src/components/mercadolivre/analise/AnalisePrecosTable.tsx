@@ -6,9 +6,15 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { format } from "date-fns";
 import { formatBRL } from "@/lib/pricing/calculator";
 import type { AnalysisSnapshot } from "@/hooks/useAnalysisSnapshots";
 import { ELASTICITY_BADGE } from "@/lib/analysis/elasticityConfig";
+
+function fmtDate(d: string) {
+  try { return format(new Date(d + "T12:00:00"), "dd/MM/yy"); }
+  catch { return d; }
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -35,7 +41,7 @@ export function AnalisePrecosTable({ snapshots, onStrategyChange }: AnalisePreco
       <TableHeader className="bg-muted/40">
         <TableRow className="hover:bg-transparent">
           <TableHead>Produto</TableHead>
-          <TableHead>Marca</TableHead>
+          <TableHead>Período</TableHead>
           <TableHead className="text-right">Preço GMV</TableHead>
           <TableHead className="text-right">Preço Neutro</TableHead>
           <TableHead className="text-right">Preço Margem</TableHead>
@@ -60,9 +66,9 @@ export function AnalisePrecosTable({ snapshots, onStrategyChange }: AnalisePreco
                   {snapshot.productTitle}
                 </TableCell>
 
-                {/* Marca */}
-                <TableCell className="text-muted-foreground">
-                  {snapshot.brand ?? "—"}
+                {/* Período */}
+                <TableCell className="text-xs tabular-nums whitespace-nowrap text-muted-foreground">
+                  {fmtDate(snapshot.periodStart)} – {fmtDate(snapshot.periodEnd)}
                 </TableCell>
 
                 {/* Preço GMV */}
