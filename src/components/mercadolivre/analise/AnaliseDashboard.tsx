@@ -225,13 +225,13 @@ export function AnaliseDashboard() {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-8 gap-1.5 text-xs font-normal text-muted-foreground"
+                      className="h-8 w-[320px] justify-start gap-1.5 text-xs font-normal text-muted-foreground"
                     >
                       <Search className="w-3.5 h-3.5" />
                       Buscar produto…
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-[360px] p-0" align="end">
+                  <PopoverContent className="w-[420px] p-0" align="end">
                     <Command shouldFilter={false}>
                       <CommandInput
                         placeholder="Buscar..."
