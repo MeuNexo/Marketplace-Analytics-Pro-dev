@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { differenceInCalendarDays } from "date-fns";
 import { Search, Package } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -11,6 +10,8 @@ import {
 import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
 } from "@/components/ui/command";
+import { MLPeriodPicker } from "@/components/mercadolivre/MLPeriodPicker";
+import { useMLFilters } from "@/hooks/useMLFilters";
 import { useMLOrdersByItem } from "@/hooks/useMLOrdersByItem";
 import { useAnalysisSnapshots, type AnalysisSnapshot, type SnapshotInput } from "@/hooks/useAnalysisSnapshots";
 import { useMLPrecosCustos, type MLItemPrice } from "@/hooks/useMLPrecosCustos";
@@ -21,23 +22,10 @@ import { formatBRL } from "@/lib/pricing/calculator";
 import { AnalysisProductCard } from "./AnalysisProductCard";
 import { AnalisePrecosTable } from "./AnalisePrecosTable";
 import CompraRecomendadaPanel from "./CompraRecomendadaPanel";
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function daysAgoStr(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
-}
-
-// ── Component ─────────────────────────────────────────────────────────────────
+import { HistoricoSnapshotTable } from "./HistoricoSnapshotTable";
+import { HistoricoComparacaoPanel } from "./HistoricoComparacaoPanel";
 
 export function AnaliseDashboard() {
-  // ── Context ────────────────────────────────────────────────────────────────
   const { stores, selectedStore } = useMLStore();
   const { currentOrg } = useOrganization();
   const { toast } = useToast();
@@ -49,24 +37,38 @@ export function AnaliseDashboard() {
 
   const orgId = currentOrg?.id ?? "";
 
-  // ── Hooks ──────────────────────────────────────────────────────────────────
   const { fetchOrders, loading: loadingOrders } = useMLOrdersByItem();
   const { saveSnapshot, fetchSnapshots, updateStrategy, saving, loading } = useAnalysisSnapshots();
   const { items, loading: itemsLoading } = useMLPrecosCustos();
 
-  // ── State ──────────────────────────────────────────────────────────────────
+  // Period filter — default 30 days, same component used across ML pages
+  const filters = useMLFilters(30);
+  const { period, customRange, periodLabel, currentFrom, currentTo, setCustomRange, setPeriod } = filters;
+
+  const handleConfirm = useCallback(() => {
+    if (filters.pendingRange?.from) {
+      const resolvedTo = filters.pendingRange.to ?? filters.pendingRange.from;
+      setCustomRange({ from: filters.pendingRange.from, to: resolvedTo });
+      setPeriod(0);
+    } else if (filters.pendingPeriod !== null) {
+      setPeriod(filters.pendingPeriod);
+      setCustomRange(null);
+    }
+    filters.setPopoverOpen(false);
+  }, [filters, setCustomRange, setPeriod]);
+
+  // State
   const [snapshots, setSnapshots] = useState<AnalysisSnapshot[]>([]);
   const [itemId, setItemId] = useState("");
   const [productTitle, setProductTitle] = useState("");
+  const [productThumb, setProductThumb] = useState<string>("");
   const [brand, setBrand] = useState<string | null>(null);
-  const [dateFrom, setDateFrom] = useState<string>(daysAgoStr(30));
-  const [dateTo, setDateTo] = useState<string>(todayStr());
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedSnapshots, setSelectedSnapshots] = useState<string[]>([]);
 
   const running = saving || loadingOrders;
 
-  // ── Product search ─────────────────────────────────────────────────────────
   const filteredItems = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return items.slice(0, 50);
@@ -78,19 +80,22 @@ export function AnaliseDashboard() {
   function selectProduct(it: MLItemPrice) {
     setItemId(it.item_id);
     setProductTitle(it.title);
-    setBrand(null); // MLItemPrice has no brand field
+    setProductThumb(it.thumbnail ?? "");
+    setBrand(null);
     setSearchOpen(false);
     setSearchQuery("");
+    setSelectedSnapshots([]);
   }
 
   function clearProduct() {
     setItemId("");
     setProductTitle("");
+    setProductThumb("");
     setBrand(null);
     setSnapshots([]);
+    setSelectedSnapshots([]);
   }
 
-  // ── Auto-fetch snapshots when itemId + orgId are ready ────────────────────
   useEffect(() => {
     if (!itemId || !orgId) return;
     fetchSnapshots(itemId, orgId).then((results) => {
@@ -100,21 +105,20 @@ export function AnaliseDashboard() {
     });
   }, [itemId, orgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── handleAnalyze ──────────────────────────────────────────────────────────
   const handleAnalyze = useCallback(async () => {
-    if (!itemId || !dateFrom || !dateTo) return;
+    if (!itemId) return;
 
     let periodDays: number;
     try {
-      periodDays = differenceInCalendarDays(new Date(dateTo), new Date(dateFrom)) + 1;
+      periodDays = differenceInCalendarDays(new Date(currentTo), new Date(currentFrom)) + 1;
       if (periodDays <= 0) throw new Error("Período inválido");
     } catch {
-      toast({ variant: "destructive", title: "Período inválido", description: "Verifique as datas selecionadas." });
+      toast({ variant: "destructive", title: "Período inválido", description: "Verifique o período selecionado." });
       return;
     }
 
     try {
-      const orders = await fetchOrders(itemId, orgId, mlUserId, dateFrom, dateTo);
+      const orders = await fetchOrders(itemId, orgId, mlUserId, currentFrom, currentTo);
 
       if (orders.length === 0) {
         toast({
@@ -127,8 +131,8 @@ export function AnaliseDashboard() {
       const input: SnapshotInput = {
         orders,
         periodDays,
-        periodStart: dateFrom,
-        periodEnd: dateTo,
+        periodStart: currentFrom,
+        periodEnd: currentTo,
         mlUserId,
         organizationId: orgId,
         itemId,
@@ -142,47 +146,61 @@ export function AnaliseDashboard() {
       const message = err instanceof Error ? err.message : "Erro desconhecido";
       toast({ variant: "destructive", title: "Erro na análise", description: message });
     }
-  }, [itemId, orgId, mlUserId, dateFrom, dateTo, productTitle, brand, fetchOrders, saveSnapshot, toast]);
+  }, [itemId, orgId, mlUserId, currentFrom, currentTo, productTitle, brand, fetchOrders, saveSnapshot, toast]);
 
-  // ── handleStrategyChange ──────────────────────────────────────────────────
   const handleStrategyChange = useCallback(async (id: string, strategy: 'gmv' | 'neutral' | 'margin') => {
-    // Optimistic update
     const previous = snapshots;
     setSnapshots((prev) => prev.map((s) => s.id === id ? { ...s, strategy } : s));
-
     try {
       await updateStrategy(id, strategy);
     } catch (err) {
-      // Revert on error
       setSnapshots(previous);
       const message = err instanceof Error ? err.message : "Erro ao salvar estratégia";
       toast({ variant: "destructive", title: "Erro ao salvar estratégia", description: message });
     }
   }, [snapshots, updateStrategy, toast]);
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  function handleToggleSnapshot(id: string) {
+    setSelectedSnapshots((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= 2) return prev;
+      return [...prev, id];
+    });
+  }
+
+  const comparisonPair = useMemo((): [AnalysisSnapshot, AnalysisSnapshot] | null => {
+    if (selectedSnapshots.length !== 2) return null;
+    const pair = selectedSnapshots
+      .map((id) => snapshots.find((s) => s.id === id))
+      .filter((s): s is AnalysisSnapshot => s !== undefined);
+    if (pair.length !== 2) return null;
+    pair.sort((x, y) => x.createdAt.localeCompare(y.createdAt));
+    return [pair[0], pair[1]];
+  }, [selectedSnapshots, snapshots]);
+
   return (
     <div className="space-y-4">
       {/* Controls card */}
       <Card>
-        <CardHeader className="px-4 pt-3 pb-2">
-          <CardTitle className="text-sm font-medium">Análise de Elasticidade</CardTitle>
-        </CardHeader>
-        <CardContent className="px-4 pb-4 space-y-3">
-          {/* Product selector */}
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex-1 min-w-[200px] space-y-1">
-              <label className="text-xs text-muted-foreground">Produto</label>
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <CardTitle className="text-sm font-medium text-foreground">
+              Análise de Elasticidade
+            </CardTitle>
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Product chip / search */}
               {itemId ? (
-                <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 h-10">
-                  <Package className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium truncate">{productTitle}</p>
-                    <p className="text-[10px] text-muted-foreground font-mono">{itemId}</p>
-                  </div>
+                <div className="flex items-center gap-2 rounded-md border bg-muted/40 pl-2 pr-1 h-8">
+                  {productThumb ? (
+                    <img src={productThumb} alt="" className="w-5 h-5 rounded object-cover" />
+                  ) : (
+                    <Package className="w-3.5 h-3.5 text-muted-foreground" />
+                  )}
+                  <span className="text-xs font-medium truncate max-w-[220px]">{productTitle}</span>
                   <button
                     onClick={clearProduct}
-                    className="text-xs text-muted-foreground hover:text-foreground ml-1"
+                    className="text-muted-foreground hover:text-foreground px-1 text-sm leading-none"
+                    aria-label="Remover produto"
                   >
                     ×
                   </button>
@@ -192,16 +210,17 @@ export function AnaliseDashboard() {
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
-                      className="w-full h-10 justify-start gap-2 font-normal text-xs text-muted-foreground"
+                      size="sm"
+                      className="h-8 gap-1.5 text-xs font-normal text-muted-foreground"
                     >
                       <Search className="w-3.5 h-3.5" />
                       Buscar produto…
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <PopoverContent className="w-[360px] p-0" align="end">
                     <Command shouldFilter={false}>
                       <CommandInput
-                        placeholder="Digite MLB ou título…"
+                        placeholder="Buscar..."
                         value={searchQuery}
                         onValueChange={setSearchQuery}
                       />
@@ -237,38 +256,41 @@ export function AnaliseDashboard() {
                   </PopoverContent>
                 </Popover>
               )}
-            </div>
 
-            {/* Date inputs */}
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">De</label>
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="h-10 text-xs w-[140px]"
+              {/* Period picker */}
+              <MLPeriodPicker
+                periodLabel={periodLabel}
+                popoverOpen={filters.popoverOpen}
+                setPopoverOpen={filters.setPopoverOpen}
+                pendingRange={filters.pendingRange}
+                setPendingRange={filters.setPendingRange}
+                pendingPeriod={filters.pendingPeriod}
+                setPendingPeriod={filters.setPendingPeriod}
+                pendingLabel={filters.pendingLabel}
+                canConfirm={filters.canConfirm}
+                customRange={customRange}
+                period={period}
+                onConfirm={handleConfirm}
               />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Até</label>
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="h-10 text-xs w-[140px]"
-              />
+
+              <Button
+                onClick={handleAnalyze}
+                disabled={running || !itemId}
+                size="sm"
+                className="h-8 text-xs"
+              >
+                {running ? "Analisando…" : "Analisar"}
+              </Button>
             </div>
           </div>
-
-          {/* Analyze button */}
-          <Button
-            onClick={handleAnalyze}
-            disabled={running || !itemId}
-            size="sm"
-          >
-            {running ? "Analisando…" : "Analisar"}
-          </Button>
-        </CardContent>
+        </CardHeader>
+        {!itemId && (
+          <CardContent className="pt-0">
+            <p className="text-xs text-muted-foreground">
+              Selecione um produto e período acima e clique em "Analisar" para começar.
+            </p>
+          </CardContent>
+        )}
       </Card>
 
       {/* Results */}
@@ -280,12 +302,10 @@ export function AnaliseDashboard() {
         </div>
       ) : snapshots.length > 0 ? (
         <div className="space-y-4">
-          {/* Most recent snapshot card */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <AnalysisProductCard snapshot={snapshots[0]} />
           </div>
 
-          {/* Full table */}
           <Card>
             <CardContent className="p-0">
               <AnalisePrecosTable
@@ -295,17 +315,33 @@ export function AnaliseDashboard() {
             </CardContent>
           </Card>
 
-          {/* Purchase recommendations panel */}
           <CompraRecomendadaPanel snapshots={snapshots} />
-        </div>
-      ) : (
-        <p className="text-center text-muted-foreground py-8">
-          Configure produto e período acima e clique em "Analisar" para começar.
-        </p>
-      )}
 
-      {/* Loading existing snapshots indicator */}
-      {loading && snapshots.length === 0 && (
+          {/* Embedded history */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-foreground">
+                Histórico de análises
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <HistoricoSnapshotTable
+                snapshots={snapshots}
+                selected={selectedSnapshots}
+                onToggle={handleToggleSnapshot}
+              />
+            </CardContent>
+          </Card>
+
+          {comparisonPair && <HistoricoComparacaoPanel snapshots={comparisonPair} />}
+        </div>
+      ) : itemId ? (
+        <p className="text-center text-sm text-muted-foreground py-8">
+          Sem análises para este produto. Clique em "Analisar" para criar a primeira.
+        </p>
+      ) : null}
+
+      {loading && snapshots.length === 0 && itemId && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <Skeleton className="h-32 w-full" />
         </div>
