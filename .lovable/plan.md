@@ -1,37 +1,44 @@
-## Objetivo
+## Problema
 
-Quando o usuário seleciona vários produtos na busca, eles devem ser tratados como **variações de um mesmo produto**. O resultado é **uma única análise** e **um único card**, agregando os pedidos de todas as variações no período selecionado.
+Quando várias variações são selecionadas, os chips se acumulam ao lado do seletor de período e do botão Analisar, embaralhando os controles e quebrando o cabeçalho do card em várias linhas.
 
-## Comportamento
+## Solução
 
-- A busca continua permitindo seleção múltipla com checkmarks e chips (como já está).
-- Ao clicar em **Analisar**:
-  - Buscar pedidos de cada `item_id` selecionado no período.
-  - Concatenar todos os pedidos em uma única lista.
-  - Rodar `computeAnalysis` uma única vez sobre essa lista combinada.
-  - Salvar **um único snapshot** representando o conjunto.
-- Renderizar **um único `AnalysisProductCard`**, a tabela de preços e o painel de compra recomendada com base nesse snapshot único.
-- Histórico mostra a análise combinada como uma única linha.
+Separar **controles** (busca, período, analisar) dos **itens selecionados** (chips), em duas linhas independentes e enxutas.
 
-## Decisões técnicas
+### Layout proposto
 
-- **`item_id` do snapshot (chave de histórico)**: usar uma chave composta determinística — os `item_id`s das variações ordenados e unidos por `+` (ex.: `MLB123+MLB456`). Assim, o histórico do mesmo conjunto de variações é recuperado consistentemente; combinações diferentes geram históricos separados.
-- **`product_title`**: usar o título da primeira variação + sufixo `(+N variações)` quando houver mais de uma. Variação única mantém o título original.
-- **`brand`**: `null` (já é o padrão atual).
-- **`ml_user_id`**: o mesmo já usado hoje (loja selecionada / primeira loja).
-- **Sem mudanças no schema** — o registro continua sendo uma linha em `commercial_analysis_snapshots`.
+```text
+┌─ Card ──────────────────────────────────────────────────────────────┐
+│  Análise de Elasticidade     [+ Adicionar produto] [Período] [Analisar] │
+│  ──────────────────────────────────────────────────────────────────  │
+│  3 variações  •  [chip 1 ×] [chip 2 ×] [chip 3 ×]          Limpar    │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+- **Linha 1 (header)**: título à esquerda; controles à direita — botão "Adicionar produto" (largura fixa pequena quando há seleção, larga `w-[320px]` quando vazio), seletor de período, botão Analisar. Sem chips aqui.
+- **Linha 2 (faixa de seleção)**: aparece só quando há produtos selecionados. Contador discreto à esquerda (`text-xs text-muted-foreground` — ex.: "3 variações selecionadas"), chips em `flex-wrap` com `gap-1.5`, botão "Limpar" alinhado à direita.
+- Separador sutil (`border-t border-border/60`) entre as duas linhas.
+
+### Refinamento dos chips
+
+- Tamanho menor: `h-7` (em vez de `h-8`), `text-[11px]`, thumb `w-4 h-4`, título truncado em `max-w-[140px]`.
+- Hover discreto no botão `×` (`hover:bg-muted`).
+- Entrada animada com `animate-fade-in` (utilitário já disponível em `tailwind.config.ts`); saída instantânea para evitar reflow brusco.
+
+### Estado vazio
+
+- Mantém o `CardContent` atual com a frase de ajuda; sem faixa de chips.
 
 ## Mudanças no código
 
-`src/components/mercadolivre/analise/AnaliseDashboard.tsx`:
+Apenas em `src/components/mercadolivre/analise/AnaliseDashboard.tsx`:
 
-1. `handleAnalyze`: substituir o loop por-produto por uma única chamada agregada:
-   - `Promise.all(selectedProducts.map(p => fetchOrders(p.item_id, ...)))` → flatten.
-   - Se total de pedidos = 0 → toast "Sem pedidos" e retorna.
-   - Montar `SnapshotInput` único com `itemId` composto e `productTitle` agregado.
-   - `saveSnapshot(input)` uma única vez; atualizar `snapshots` com o novo registro no topo.
-2. `useEffect` que carrega histórico: usar a chave composta atual (derivada de `selectedProducts`) em vez de buscar por cada produto individualmente.
-3. Render do grid de cards: voltar a exibir apenas `snapshots[0]` (um único card), removendo o `Map`/`flat` introduzido anteriormente.
-4. `removeProduct`: continua removendo do array de seleção; limpa snapshots locais (porque a chave composta mudou e o histórico recarrega).
+1. Remover os chips de dentro da `div` de controles (linha 1).
+2. Substituir o botão `Limpar` da linha 1 — ele migra para a linha 2.
+3. Logo após `</CardHeader>`, antes do bloco `!hasSelection`, inserir um novo bloco condicional `hasSelection && (...)`:
+   - `<div className="px-6 py-2.5 border-t border-border/60 flex items-center gap-3 flex-wrap">`
+   - contador + chips (`flex-wrap gap-1.5`) + botão `Limpar` à direita.
+4. Aplicar `animate-fade-in` aos chips.
 
-Nenhuma mudança em `useAnalysisSnapshots`, `AnalysisProductCard`, `AnalisePrecosTable`, `CompraRecomendadaPanel`, `HistoricoSnapshotTable` ou no banco.
+Sem mudanças em hooks, dados, schema ou outros componentes.
