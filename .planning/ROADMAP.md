@@ -67,7 +67,7 @@ Quatro fases entregam a ferramenta de análise comercial completa: o motor de c�
 ## Phases — v2.0
 
 - [ ] **Phase 4: Motor de Análise + Snapshots** - Engine TypeScript de cálculos (curva preço×volume, GMV/Neutro/Margem, elasticidade) e tabela Supabase para snapshots
-- [ ] **Phase 5: Dashboard de Análise** - Cards de produto com preços estratégicos e elasticidade, tabela com dropdown de estratégia e destaque visual
+- [x] **Phase 5: Dashboard de Análise** - Cards de produto com preços estratégicos e elasticidade, tabela com dropdown de estratégia e destaque visual (completed 2026-05-18)
 - [ ] **Phase 6: Recomendações de Compra & FULL** - Inputs de estoque/cobertura, multiplicador de demanda, cálculo de compra recomendada e sugestão de envio FULL
 - [ ] **Phase 7: Histórico Comparativo** - Listagem de snapshots salvos e comparação lado a lado de análises do mesmo produto
 
@@ -98,8 +98,8 @@ Plans:
   3. O usuário seleciona uma Estratégia (GMV / Neutro / Margem) via dropdown por linha; o preço correspondente é destacado visualmente na linha
 **Plans**: 2 plans
 Plans:
-- [ ] 05-01-PLAN.md — Hook useMLOrdersByItem + stub da aba Análise em MLPrecificacao
-- [ ] 05-02-PLAN.md — AnalysisProductCard, AnalisePrecosTable, AnaliseDashboard + wire final
+- [x] 05-01-PLAN.md — Hook useMLOrdersByItem + stub da aba Análise em MLPrecificacao
+- [x] 05-02-PLAN.md — AnalysisProductCard, AnalisePrecosTable, AnaliseDashboard + wire final
 
 ### Phase 6: Recomendações de Compra & FULL
 **Goal**: O usuário consegue informar estoque atual e cobertura desejada para obter recomendação de compra e sugestão de envio FULL calibrada pela estratégia escolhida
@@ -128,6 +128,6 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 4. Motor de Análise + Snapshots | 3/3 | Complete ✅ | 2026-05-15 |
-| 5. Dashboard de Análise | 0/2 | Planned | - |
+| 5. Dashboard de Análise | 2/2 | Complete   | 2026-05-18 |
 | 6. Recomendações de Compra & FULL | 0/? | Not started | - |
 | 7. Histórico Comparativo | 0/? | Not started | - |

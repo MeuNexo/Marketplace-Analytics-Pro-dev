@@ -20,9 +20,9 @@ por R$1,00 e sugestões de compra e envio FULL, com histórico comparativo por p
 
 ### DASH — Dashboard & Visualização
 
-- [ ] **DASH-01**: Usuário vê cards de produto com Preço GMV, Preço Neutro, Preço Margem e frase de elasticidade: "A cada R$1,00 de subida a partir de R$XX,XX, perde aproximadamente X,XX% em volume"
-- [ ] **DASH-02**: Usuário vê tabela de análise com colunas Produto, Marca, Preço GMV, Preço Neutro, Preço Margem e Impacto Comercial (classificação da elasticidade)
-- [ ] **DASH-03**: Usuário seleciona Estratégia (GMV / Neutro / Margem) via dropdown por linha na tabela; o preço correspondente é destacado visualmente
+- [x] **DASH-01**: Usuário vê cards de produto com Preço GMV, Preço Neutro, Preço Margem e frase de elasticidade: "A cada R$1,00 de subida a partir de R$XX,XX, perde aproximadamente X,XX% em volume"
+- [x] **DASH-02**: Usuário vê tabela de análise com colunas Produto, Marca, Preço GMV, Preço Neutro, Preço Margem e Impacto Comercial (classificação da elasticidade)
+- [x] **DASH-03**: Usuário seleciona Estratégia (GMV / Neutro / Margem) via dropdown por linha na tabela; o preço correspondente é destacado visualmente
 
 ### COMP — Recomendações de Compra & FULL
 
