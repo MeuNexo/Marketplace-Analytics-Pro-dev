@@ -88,7 +88,7 @@ export function useAnalysisSnapshots(): UseAnalysisSnapshotsResult {
           brand: input.brand ?? null,
           period_start: input.periodStart,
           period_end: input.periodEnd,
-          price_curve: result.priceCurve,
+          price_curve: result.priceCurve as unknown as Record<string, unknown>[],
           price_gmv: result.priceGmv,
           price_neutral: result.priceNeutral,
           price_margin: result.priceMargin,
