@@ -243,23 +243,8 @@ export default function MLAnuncios() {
       : <ArrowUp   className="w-3 h-3 text-foreground" />;
   };
 
-  if (!loading && !connected) return <NotConnected />;
-
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <Skeleton className="h-10 w-72" />
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-          {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
-        </div>
-        <Skeleton className="h-72 rounded-xl" />
-        <Skeleton className="h-64 rounded-xl" />
-      </div>
-    );
-  }
-
   return (
-    <Tabs defaultValue="publicidade" className="space-y-5">
+    <Tabs defaultValue={!loading && !connected ? "custos" : "publicidade"} className="space-y-5">
 
       {/* ── Sticky header ── */}
       <div className="sticky -top-4 md:-top-6 lg:-top-8 z-20 -mx-4 md:-mx-6 lg:-mx-8 -mt-4 md:-mt-6 lg:-mt-8 px-4 md:px-6 lg:px-8 pb-4 pt-4 bg-background/95 backdrop-blur-sm border-b border-border/40">
@@ -267,21 +252,23 @@ export default function MLAnuncios() {
           <MLPageHeader title="Publicidade" lastUpdated={null} />
           <div className="flex items-center gap-2 flex-wrap min-w-0">
 
-            {/* Date picker — same component as Vendas page */}
-            <MLPeriodPicker
-              periodLabel={periodLabel}
-              popoverOpen={filters.popoverOpen}
-              setPopoverOpen={filters.setPopoverOpen}
-              pendingRange={filters.pendingRange}
-              setPendingRange={filters.setPendingRange}
-              pendingPeriod={filters.pendingPeriod}
-              setPendingPeriod={filters.setPendingPeriod}
-              pendingLabel={filters.pendingLabel}
-              canConfirm={filters.canConfirm}
-              customRange={customRange}
-              period={period}
-              onConfirm={handleConfirm}
-            />
+            {/* Date picker — only relevant for publicidade/relatorios */}
+            {(loading || connected) && (
+              <MLPeriodPicker
+                periodLabel={periodLabel}
+                popoverOpen={filters.popoverOpen}
+                setPopoverOpen={filters.setPopoverOpen}
+                pendingRange={filters.pendingRange}
+                setPendingRange={filters.setPendingRange}
+                pendingPeriod={filters.pendingPeriod}
+                setPendingPeriod={filters.setPendingPeriod}
+                pendingLabel={filters.pendingLabel}
+                canConfirm={filters.canConfirm}
+                customRange={customRange}
+                period={period}
+                onConfirm={handleConfirm}
+              />
+            )}
 
             {/* Tabs */}
             <TabsList className="h-8 overflow-x-auto no-scrollbar max-w-full">
@@ -291,23 +278,37 @@ export default function MLAnuncios() {
             </TabsList>
 
             {/* Atualizar */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={sync}
-              disabled={syncing || !connected}
-              className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted hover:text-muted-foreground"
-              aria-label="Atualizar"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
-              <span className="hidden sm:inline">{syncing ? "Atualizando..." : "Atualizar"}</span>
-            </Button>
+            {(loading || connected) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={sync}
+                disabled={syncing || !connected}
+                className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted hover:text-muted-foreground"
+                aria-label="Atualizar"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
+                <span className="hidden sm:inline">{syncing ? "Atualizando..." : "Atualizar"}</span>
+              </Button>
+            )}
           </div>
         </div>
       </div>
 
       {/* ═══════════════════ ABA PUBLICIDADE ═══════════════════ */}
       <TabsContent value="publicidade" className="space-y-6 mt-0 animate-fade-in">
+        {loading && (
+          <div className="space-y-6">
+            <Skeleton className="h-10 w-72" />
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
+            </div>
+            <Skeleton className="h-72 rounded-xl" />
+            <Skeleton className="h-64 rounded-xl" />
+          </div>
+        )}
+        {!loading && !connected && <NotConnected />}
+        {!loading && connected && <>
 
         {/* ── KPI Cards ── */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -702,6 +703,7 @@ export default function MLAnuncios() {
             </Card>
           );
         })()}
+        </>}
       </TabsContent>
 
       {/* ═══════════════════ ABA RELATÓRIOS ═══════════════════ */}
