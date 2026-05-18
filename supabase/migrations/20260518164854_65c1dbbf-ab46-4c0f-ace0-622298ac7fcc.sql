@@ -1,0 +1,1 @@
+CREATE POLICY "Members can delete own org snapshots" ON public.commercial_analysis_snapshots FOR DELETE TO authenticated USING (is_org_member(auth.uid(), organization_id));
