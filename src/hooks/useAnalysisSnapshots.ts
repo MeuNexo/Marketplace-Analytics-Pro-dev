@@ -40,6 +40,7 @@ export type UseAnalysisSnapshotsResult = {
   saveSnapshot: (input: SnapshotInput) => Promise<AnalysisSnapshot>;
   fetchSnapshots: (itemId: string, orgId: string) => Promise<AnalysisSnapshot[]>;
   updateStrategy: (snapshotId: string, strategy: 'gmv' | 'neutral' | 'margin') => Promise<void>;
+  deleteSnapshot: (snapshotId: string) => Promise<void>;
   saving: boolean;
   loading: boolean;
 };
@@ -147,5 +148,17 @@ export function useAnalysisSnapshots(): UseAnalysisSnapshotsResult {
     [],
   );
 
-  return { saveSnapshot, fetchSnapshots, updateStrategy, saving, loading };
+  const deleteSnapshot = useCallback(
+    async (snapshotId: string): Promise<void> => {
+      const { error } = await supabase
+        .from('commercial_analysis_snapshots')
+        .delete()
+        .eq('id', snapshotId);
+
+      if (error) throw new Error(error.message);
+    },
+    [],
+  );
+
+  return { saveSnapshot, fetchSnapshots, updateStrategy, deleteSnapshot, saving, loading };
 }

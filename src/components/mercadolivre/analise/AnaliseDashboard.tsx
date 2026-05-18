@@ -38,7 +38,7 @@ export function AnaliseDashboard() {
   const orgId = currentOrg?.id ?? "";
 
   const { fetchOrders, loading: loadingOrders } = useMLOrdersByItem();
-  const { saveSnapshot, fetchSnapshots, updateStrategy, saving, loading } = useAnalysisSnapshots();
+  const { saveSnapshot, fetchSnapshots, updateStrategy, deleteSnapshot, saving, loading } = useAnalysisSnapshots();
   const { items, loading: itemsLoading } = useMLPrecosCustos();
 
   // Period filter — default 30 days, same component used across ML pages
@@ -159,6 +159,20 @@ export function AnaliseDashboard() {
       toast({ variant: "destructive", title: "Erro ao salvar estratégia", description: message });
     }
   }, [snapshots, updateStrategy, toast]);
+
+  const handleDeleteSnapshot = useCallback(async (id: string) => {
+    const previous = snapshots;
+    setSnapshots((prev) => prev.filter((s) => s.id !== id));
+    setSelectedSnapshots((prev) => prev.filter((x) => x !== id));
+    try {
+      await deleteSnapshot(id);
+      toast({ title: "Análise excluída" });
+    } catch (err) {
+      setSnapshots(previous);
+      const message = err instanceof Error ? err.message : "Erro ao excluir análise";
+      toast({ variant: "destructive", title: "Erro ao excluir", description: message });
+    }
+  }, [snapshots, deleteSnapshot, toast]);
 
   function handleToggleSnapshot(id: string) {
     setSelectedSnapshots((prev) => {
@@ -329,6 +343,7 @@ export function AnaliseDashboard() {
                 snapshots={snapshots}
                 selected={selectedSnapshots}
                 onToggle={handleToggleSnapshot}
+                onDelete={handleDeleteSnapshot}
               />
             </CardContent>
           </Card>
