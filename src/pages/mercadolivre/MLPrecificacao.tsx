@@ -1,12 +1,19 @@
-import { useState } from "react";
+import { useState, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { SimuladorPrecificacao } from "@/components/mercadolivre/precificacao/SimuladorPrecificacao";
 import { AnaliseDashboard } from "@/components/mercadolivre/analise/AnaliseDashboard";
 
+const HistoricoComparativo = lazy(() =>
+  import("@/components/mercadolivre/analise/HistoricoComparativo").then((m) => ({
+    default: m.HistoricoComparativo,
+  })),
+);
+
 const TABS = [
   { id: "simulador", label: "Simulador" },
   { id: "analise",   label: "Análise" },
+  { id: "historico", label: "Histórico" },
 ] as const;
 
 type TabId = typeof TABS[number]["id"];
@@ -42,8 +49,11 @@ export default function MLPrecificacao() {
           exit={{ opacity: 0, y: -6 }}
           transition={{ duration: 0.18 }}
         >
-          {tab === "simulador" && <SimuladorPrecificacao />}
-          {tab === "analise" && <AnaliseDashboard />}
+          <Suspense fallback={<p className="text-sm text-muted-foreground">Carregando…</p>}>
+            {tab === "simulador" && <SimuladorPrecificacao />}
+            {tab === "analise" && <AnaliseDashboard />}
+            {tab === "historico" && <HistoricoComparativo />}
+          </Suspense>
         </motion.div>
       </AnimatePresence>
     </div>
