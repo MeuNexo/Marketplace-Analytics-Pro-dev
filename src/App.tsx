@@ -24,9 +24,9 @@ import React, { Suspense } from "react";
 
 const MercadoLivre       = React.lazy(() => import("./pages/MercadoLivre"));
 const MLEstoque          = React.lazy(() => import("./pages/mercadolivre/MLEstoque"));
-const MLProdutos         = React.lazy(() => import("./pages/mercadolivre/MLProdutos"));
-const MLPedidos          = React.lazy(() => import("./pages/mercadolivre/MLPedidos"));
 const MLAnuncios         = React.lazy(() => import("./pages/mercadolivre/MLAnuncios"));
+const MLPedidos          = React.lazy(() => import("./pages/mercadolivre/MLPedidos"));
+const MLPublicidade      = React.lazy(() => import("./pages/mercadolivre/MLPublicidade"));
 const MLFinanceiro       = React.lazy(() => import("./pages/mercadolivre/MLFinanceiro"));
 const MLReputacao        = React.lazy(() => import("./pages/mercadolivre/MLReputacao"));
 const MLDevolucoes       = React.lazy(() => import("./pages/mercadolivre/MLDevolucoes"));
@@ -121,9 +121,9 @@ const App = () => (
                             <Route path="/perfil" element={<Profile />} />
                             <Route path="/" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na página de Vendas"><MercadoLivre /></ErrorBoundary></RoleRoute>} />
                             <Route path="/estoque" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na página de Estoque"><MLEstoque /></ErrorBoundary></RoleRoute>} />
-                            <Route path="/anuncios" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na página de Anúncios"><MLProdutos /></ErrorBoundary></RoleRoute>} />
+                            <Route path="/anuncios" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na página de Anúncios"><MLAnuncios /></ErrorBoundary></RoleRoute>} />
                             <Route path="/pedidos" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na página de Pedidos"><MLPedidos /></ErrorBoundary></RoleRoute>} />
-                            <Route path="/publicidade" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na página de Publicidade"><MLAnuncios /></ErrorBoundary></RoleRoute>} />
+                            <Route path="/publicidade" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na página de Publicidade"><MLPublicidade /></ErrorBoundary></RoleRoute>} />
                             <Route path="/financeiro" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na página Financeiro"><MLFinanceiro /></ErrorBoundary></RoleRoute>} />
                             <Route path="/reputacao" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na página de Reputação"><MLReputacao /></ErrorBoundary></RoleRoute>} />
                             <Route path="/devolucoes" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na página de Devoluções"><MLDevolucoes /></ErrorBoundary></RoleRoute>} />
