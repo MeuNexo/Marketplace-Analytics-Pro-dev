@@ -139,6 +139,26 @@ serve(async (req) => {
       from += PAGE;
     }
 
+    // ── Global dedup ────────────────────────────────────────────────────────────
+    // The per-chunk seen-Set inside the while loop only deduplicates within a
+    // single iteration.  When the dual-scope query (user + org) returns
+    // overlapping rows across different pagination offsets, or when null-org
+    // rows (from pre-org syncs) coexist with org-scoped rows for the same
+    // product/day, duplicate (ml_user_id, date, item_id) entries can slip
+    // through into `data` and inflate qty_sold / revenue in aggMap.
+    //
+    // Fix: one final pass that keeps only the most-recently-synced row per
+    // (ml_user_id, date, item_id) before aggregating.
+    const globalDedup = new Map<string, typeof data[0]>();
+    for (const row of data) {
+      const key = `${row.ml_user_id || ""}:${row.date}:${row.item_id}`;
+      const existing = globalDedup.get(key);
+      if (!existing || String(row.synced_at || "") > String(existing.synced_at || "")) {
+        globalDedup.set(key, row);
+      }
+    }
+    const dedupedData = Array.from(globalDedup.values());
+
     // Aggregate in-memory (server-side, not client-side)
     const aggMap: Record<string, {
       item_id: string;
@@ -149,7 +169,7 @@ serve(async (req) => {
       ml_user_id: string;
     }> = {};
 
-    for (const row of data || []) {
+    for (const row of dedupedData) {
       const key = row.item_id;
       if (!aggMap[key]) {
         aggMap[key] = {
@@ -172,7 +192,8 @@ serve(async (req) => {
     return jsonResponse({
       success: true,
       products: aggregated,
-      total_raw_rows: (data || []).length,
+      total_raw_rows: data.length,
+      deduped_rows: dedupedData.length,
       aggregated_count: aggregated.length,
     });
   } catch (err: any) {
