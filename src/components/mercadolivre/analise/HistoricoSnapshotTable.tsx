@@ -30,8 +30,8 @@ export function HistoricoSnapshotTable({
 }: HistoricoSnapshotTableProps) {
   return (
     <Table>
-      <TableHeader>
-        <TableRow>
+      <TableHeader className="bg-muted/40">
+        <TableRow className="hover:bg-transparent">
           <TableHead className="w-10 px-3" />
           <TableHead>Data</TableHead>
           <TableHead>Período</TableHead>
@@ -43,7 +43,7 @@ export function HistoricoSnapshotTable({
       </TableHeader>
       <TableBody>
         {snapshots.length === 0 ? (
-          <TableRow>
+          <TableRow className="hover:bg-transparent">
             <TableCell colSpan={7} className="text-center text-muted-foreground py-6">
               Nenhuma análise salva para este produto.
             </TableCell>
@@ -55,7 +55,7 @@ export function HistoricoSnapshotTable({
             const badge = ELASTICITY_BADGE[snapshot.elasticityClass];
 
             return (
-              <TableRow key={snapshot.id}>
+              <TableRow key={snapshot.id} className="hover:bg-muted/50">
                 <TableCell className="px-3">
                   <Checkbox
                     checked={isChecked}

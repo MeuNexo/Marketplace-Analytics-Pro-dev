@@ -45,10 +45,10 @@ export function HistoricoComparacaoPanel({
 
   return (
     <Card>
-      <CardHeader className="px-4 pt-3 pb-2">
-        <CardTitle className="text-sm font-medium">Comparação</CardTitle>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-medium text-foreground">Comparação</CardTitle>
       </CardHeader>
-      <CardContent className="px-4 pb-4">
+      <CardContent>
         <div className="grid grid-cols-[auto_1fr_auto_1fr] gap-x-4 gap-y-3 items-center text-sm">
           {/* Header row */}
           <div className="text-xs text-muted-foreground font-medium" />
