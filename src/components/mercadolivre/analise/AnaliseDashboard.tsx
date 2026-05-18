@@ -355,16 +355,10 @@ export function AnaliseDashboard() {
 
       {/* Results */}
       {running ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <Skeleton className="h-32 w-full" />
-          <Skeleton className="h-32 w-full" />
-          <Skeleton className="h-32 w-full" />
-        </div>
+        <Skeleton className="h-40 w-full" />
       ) : snapshots.length > 0 ? (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <AnalysisProductCard snapshot={snapshots[0]} />
-          </div>
+          <AnalysisProductCard snapshot={snapshots[0]} />
 
           <Card>
             <CardContent className="p-0">
