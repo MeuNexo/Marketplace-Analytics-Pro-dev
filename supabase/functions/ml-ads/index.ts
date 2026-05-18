@@ -369,7 +369,9 @@ serve(async (req) => {
 
     if (force || cacheAgeMs > CACHE_TTL_MS) {
       try {
-        const maxFrom       = subDaysStr(29);
+        // Allow up to 90 days of history; reject requests beyond that to avoid
+        // runaway API calls while still supporting all UI filter options.
+        const maxFrom       = subDaysStr(90);
         const effectiveFrom = dateFrom < maxFrom ? maxFrom : dateFrom;
         await syncAds(admin, user.id, mlUserId, seller_id, orgId, effectiveFrom, dateTo);
       } catch (e: any) {
