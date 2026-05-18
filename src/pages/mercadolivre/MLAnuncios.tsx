@@ -21,6 +21,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { MLPeriodPicker } from "@/components/mercadolivre/MLPeriodPicker";
 import { PublicidadeRelatorios } from "@/components/mercadolivre/PublicidadeRelatorios";
+import { ImportacaoCustos } from "@/components/mercadolivre/anuncios/ImportacaoCustos";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { useMLAds, type AdsCampaign } from "@/hooks/useMLAds";
 import { useMLFilters } from "@/hooks/useMLFilters";
@@ -286,6 +287,7 @@ export default function MLAnuncios() {
             <TabsList className="h-8 overflow-x-auto no-scrollbar max-w-full">
               <TabsTrigger value="publicidade" className="text-xs px-3 h-7">Publicidade</TabsTrigger>
               <TabsTrigger value="relatorios"  className="text-xs px-3 h-7">Relatórios</TabsTrigger>
+              <TabsTrigger value="custos"      className="text-xs px-3 h-7">Custos</TabsTrigger>
             </TabsList>
 
             {/* Atualizar */}
@@ -714,6 +716,11 @@ export default function MLAnuncios() {
           prevFrom={prevFrom}
           prevTo={prevTo}
         />
+      </TabsContent>
+
+      {/* ═══════════════════ ABA CUSTOS ═══════════════════ */}
+      <TabsContent value="custos" className="mt-0 animate-fade-in">
+        <ImportacaoCustos />
       </TabsContent>
 
     </Tabs>
