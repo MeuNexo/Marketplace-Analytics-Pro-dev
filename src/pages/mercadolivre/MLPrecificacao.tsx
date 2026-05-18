@@ -2,6 +2,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { SimuladorPrecificacao } from "@/components/mercadolivre/precificacao/SimuladorPrecificacao";
+import { AnaliseDashboard } from "@/components/mercadolivre/analise/AnaliseDashboard";
 
 const TABS = [
   { id: "simulador", label: "Simulador" },
@@ -42,11 +43,7 @@ export default function MLPrecificacao() {
           transition={{ duration: 0.18 }}
         >
           {tab === "simulador" && <SimuladorPrecificacao />}
-          {tab === "analise" && (
-            <div className="py-8 text-center text-muted-foreground">
-              Carregando módulo de análise…
-            </div>
-          )}
+          {tab === "analise" && <AnaliseDashboard />}
         </motion.div>
       </AnimatePresence>
     </div>
