@@ -97,21 +97,22 @@ export function AnaliseDashboard() {
     setSelectedSnapshots([]);
   }
 
-  const selectedKey = selectedProducts.map((p) => p.item_id).join(",");
+  const compositeItemId = useMemo(
+    () => [...selectedProducts.map((p) => p.item_id)].sort().join("+"),
+    [selectedProducts],
+  );
+
   useEffect(() => {
     if (!hasSelection || !orgId) {
       setSnapshots([]);
       return;
     }
-    Promise.all(selectedProducts.map((p) => fetchSnapshots(p.item_id, orgId)))
-      .then((results) => {
-        const merged = results.flat().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-        setSnapshots(merged);
-      })
+    fetchSnapshots(compositeItemId, orgId)
+      .then((results) => setSnapshots(results))
       .catch((err: Error) => {
         toast({ variant: "destructive", title: "Erro ao carregar análises", description: err.message });
       });
-  }, [selectedKey, orgId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [compositeItemId, orgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAnalyze = useCallback(async () => {
     if (!hasSelection) return;
@@ -125,47 +126,44 @@ export function AnaliseDashboard() {
       return;
     }
 
-    let skipped = 0;
-    const newSnapshots: AnalysisSnapshot[] = [];
-    for (const product of selectedProducts) {
-      try {
-        const orders = await fetchOrders(product.item_id, orgId, mlUserId, currentFrom, currentTo);
-        if (orders.length === 0) {
-          skipped += 1;
-          continue;
-        }
-        const input: SnapshotInput = {
-          orders,
-          periodDays,
-          periodStart: currentFrom,
-          periodEnd: currentTo,
-          mlUserId,
-          organizationId: orgId,
-          itemId: product.item_id,
-          productTitle: product.title || (orders[0]?.title ?? product.item_id),
-          brand: undefined,
-        };
-        const snapshot = await saveSnapshot(input);
-        newSnapshots.push(snapshot);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Erro desconhecido";
-        toast({ variant: "destructive", title: `Erro: ${product.title}`, description: message });
+    try {
+      const orderLists = await Promise.all(
+        selectedProducts.map((p) => fetchOrders(p.item_id, orgId, mlUserId, currentFrom, currentTo)),
+      );
+      const allOrders = orderLists.flat();
+
+      if (allOrders.length === 0) {
+        toast({
+          title: "Sem pedidos",
+          description: "Nenhum pedido confirmado encontrado para as variações no período.",
+        });
+        return;
       }
+
+      const baseTitle = selectedProducts[0].title || allOrders[0]?.title || selectedProducts[0].item_id;
+      const aggregatedTitle = selectedProducts.length > 1
+        ? `${baseTitle} (+${selectedProducts.length - 1} variações)`
+        : baseTitle;
+
+      const input: SnapshotInput = {
+        orders: allOrders,
+        periodDays,
+        periodStart: currentFrom,
+        periodEnd: currentTo,
+        mlUserId,
+        organizationId: orgId,
+        itemId: compositeItemId,
+        productTitle: aggregatedTitle,
+        brand: undefined,
+      };
+
+      const snapshot = await saveSnapshot(input);
+      setSnapshots((prev) => [snapshot, ...prev.filter((s) => s.id !== snapshot.id)]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erro desconhecido";
+      toast({ variant: "destructive", title: "Erro na análise", description: message });
     }
-    if (newSnapshots.length > 0) {
-      setSnapshots((prev) => {
-        const ids = new Set(newSnapshots.map((s) => s.id));
-        return [...newSnapshots, ...prev.filter((s) => !ids.has(s.id))]
-          .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      });
-    }
-    if (skipped > 0) {
-      toast({
-        title: skipped === selectedProducts.length ? "Sem pedidos" : "Alguns sem pedidos",
-        description: `${skipped} produto(s) sem pedidos confirmados no período.`,
-      });
-    }
-  }, [hasSelection, selectedProducts, orgId, mlUserId, currentFrom, currentTo, fetchOrders, saveSnapshot, toast]);
+  }, [hasSelection, selectedProducts, compositeItemId, orgId, mlUserId, currentFrom, currentTo, fetchOrders, saveSnapshot, toast]);
 
   const handleStrategyChange = useCallback(async (id: string, strategy: 'gmv' | 'neutral' | 'margin') => {
     const previous = snapshots;
@@ -358,9 +356,7 @@ export function AnaliseDashboard() {
       ) : snapshots.length > 0 ? (
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {Array.from(new Map(snapshots.map((s) => [s.itemId, s])).values()).map((s) => (
-              <AnalysisProductCard key={s.itemId} snapshot={s} />
-            ))}
+            <AnalysisProductCard snapshot={snapshots[0]} />
           </div>
 
           <Card>
