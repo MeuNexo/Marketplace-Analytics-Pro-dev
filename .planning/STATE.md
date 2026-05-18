@@ -1,3 +1,19 @@
+---
+gsd_state_version: 1.0
+milestone: v2.0
+milestone_name: "- [ ] **Phase 4: Motor de Análise + Snapshots** - Engine TypeScript de cálculos"
+status: completed
+stopped_at: Phase 4 COMPLETE — todos os 3 planos executados e VERIFICATION PASSED
+last_updated: "2026-05-18T09:50:00.000Z"
+last_activity: "2026-05-18 — Phase 5 Plan 01: useMLOrdersByItem hook + Análise tab stub (46 testes GREEN)"
+progress:
+  total_phases: 7
+  completed_phases: 1
+  total_plans: 9
+  completed_plans: 4
+  percent: 44
+---
+
 # Project State
 
 ## Project Reference
@@ -10,16 +26,17 @@ See: .planning/PROJECT.md (updated 2026-05-15)
 
 ## Current Position
 
-Phase: Phase 5 (next)
-Plan: 05-01 (a planejar)
-Status: Phase 4 COMPLETE ✅ — iniciando Phase 5
-Last activity: 2026-05-15 — Phase 4 completa: motor + migration + hook (46 testes GREEN, VERIFICATION PASSED)
+Phase: Phase 5
+Plan: 05-01 COMPLETE — 05-02 next
+Status: Phase 5 in progress — Plan 01 done
+Last activity: 2026-05-18 — Phase 5 Plan 01 complete: useMLOrdersByItem hook + Análise tab stub (46 testes GREEN)
 
-Progress: [██░░░░░░░░] 25% (Phase 4/7 complete)
+Progress: [███░░░░░░░] 30% (Phase 5/7 in progress — 1/3 plans done)
 
 ## Performance Metrics
 
 **Velocity:**
+
 - Total plans completed: 0
 - Average duration: —
 - Total execution time: —
@@ -29,11 +46,12 @@ Progress: [██░░░░░░░░] 25% (Phase 4/7 complete)
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 4. Motor de Análise + Snapshots | 3 plans ✅ | ~40 min | ~13 min |
-| 5. Dashboard de Análise | - | - | - |
+| 5. Dashboard de Análise | 1 plan ✅ | ~8 min | ~8 min |
 | 6. Recomendações de Compra & FULL | - | - | - |
 | 7. Histórico Comparativo | - | - | - |
 
 **Recent Trend:**
+
 - Last 5 plans: —
 - Trend: —
 
@@ -77,6 +95,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-15
-Stopped at: Phase 4 COMPLETE — todos os 3 planos executados e VERIFICATION PASSED
+Last session: 2026-05-18
+Stopped at: Phase 5 Plan 01 COMPLETE — useMLOrdersByItem hook and Análise tab stub committed (fc0ba56)
 Resume file: None
