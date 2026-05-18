@@ -32,8 +32,8 @@ const STRATEGY_CELL_CLASSES: Record<Strategy, string> = {
 export function AnalisePrecosTable({ snapshots, onStrategyChange }: AnalisePrecosTableProps) {
   return (
     <Table>
-      <TableHeader>
-        <TableRow>
+      <TableHeader className="bg-muted/40">
+        <TableRow className="hover:bg-transparent">
           <TableHead>Produto</TableHead>
           <TableHead>Marca</TableHead>
           <TableHead className="text-right">Preço GMV</TableHead>
@@ -45,7 +45,7 @@ export function AnalisePrecosTable({ snapshots, onStrategyChange }: AnalisePreco
       </TableHeader>
       <TableBody>
         {snapshots.length === 0 ? (
-          <TableRow>
+          <TableRow className="hover:bg-transparent">
             <TableCell colSpan={7} className="text-center text-muted-foreground py-6">
               Nenhum snapshot disponível. Execute uma análise.
             </TableCell>
@@ -54,7 +54,7 @@ export function AnalisePrecosTable({ snapshots, onStrategyChange }: AnalisePreco
           snapshots.map((snapshot) => {
             const badge = ELASTICITY_BADGE[snapshot.elasticityClass];
             return (
-              <TableRow key={snapshot.id}>
+              <TableRow key={snapshot.id} className="hover:bg-muted/50">
                 {/* Produto */}
                 <TableCell className="font-medium max-w-[200px] truncate">
                   {snapshot.productTitle}
@@ -108,7 +108,7 @@ export function AnalisePrecosTable({ snapshots, onStrategyChange }: AnalisePreco
                     value={snapshot.strategy ?? ""}
                     onValueChange={(v) => onStrategyChange(snapshot.id, v as Strategy)}
                   >
-                    <SelectTrigger className="h-8 w-[110px] text-xs">
+                    <SelectTrigger className="h-8 w-[120px] text-xs">
                       <SelectValue placeholder="Estratégia" />
                     </SelectTrigger>
                     <SelectContent>

@@ -71,9 +71,9 @@ export function CompraRecomendadaPanel({ snapshots }: CompraRecomendadaPanelProp
 
   return (
     <Card>
-      <CardHeader className="px-4 pt-3 pb-2">
+      <CardHeader className="pb-3">
         <div className="flex items-center justify-between gap-4">
-          <CardTitle className="text-sm font-medium whitespace-nowrap">
+          <CardTitle className="text-sm font-medium text-foreground whitespace-nowrap">
             Recomendações de Compra
           </CardTitle>
           <Select
@@ -93,7 +93,7 @@ export function CompraRecomendadaPanel({ snapshots }: CompraRecomendadaPanelProp
         </div>
       </CardHeader>
 
-      <CardContent className="px-4 pb-4">
+      <CardContent>
         {snapshots.length === 0 ? (
           <div className="text-sm text-muted-foreground py-4">Sem produtos analisados.</div>
         ) : (

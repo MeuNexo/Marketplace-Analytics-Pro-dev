@@ -1,158 +1,73 @@
 ## Objetivo
 
-Transformar `/precos-custos` em `/precificacao` — uma área de ferramentas de pricing com layout padrão do app e arquitetura preparada para múltiplas ferramentas via tabs. Primeira (e única hoje) ferramenta: **Simulador de Precificação**, refeito do zero com cálculo reativo, busca de produto por MLB/SKU e fórmula fiscal completa (impostos da config Fiscal, DIFAL, rebate, cupom, afiliado).
+Unificar a aba **Histórico** dentro de **Análise** e alinhar todo o módulo de Precificação (Simulador / Análise) ao padrão visual usado nas outras páginas ML (Anúncios, Fiscal, Estoque): seletor de abas igual ao restante, cards com `CardHeader` padrão (`text-sm font-medium text-foreground`, sem ícones), filtros de período com `MLPeriodPicker`, busca de produto compacta, badges e tabela seguindo `bg-muted` hovers + cores semânticas.
 
----
+## Mudanças
 
-## 1. Renomeação e rota
+### 1. Tabs do Simulador/Análise/Histórico → Simulador/Análise
+- `src/pages/mercadolivre/MLPrecificacao.tsx`: remover a tab `historico` (e a `lazy` de `HistoricoComparativo`). Ficam apenas `Simulador` e `Análise`.
+- Manter o seletor de tabs em pill (já é o padrão usado em Vendas/Relatórios), só revisando classes para casar exatamente com o de `MLAnuncios` (mesma altura `h-8`, mesmo `rounded-md bg-muted p-1`).
 
-- Adicionar nova rota `/precificacao` em `App.tsx` (mantém `/precos-custos` como redirect 301-like via `<Navigate>` para não quebrar links).
-- `ApiSidebar.tsx` (linha 46): trocar label `"Preços e Custos"` → `"Precificação"`, ícone `DollarSign` → `Calculator`, path → `/precificacao`.
-- `roleAccess.ts`: replicar permissão de `/precos-custos` para `/precificacao`.
-- Renomear arquivo: `src/pages/mercadolivre/MLPrecosCustos.tsx` → `MLPrecificacao.tsx`. Conteúdo é totalmente reescrito.
-- Memória: atualizar `mem://features/mercado-livre/...` se houver referência ao nome antigo.
+### 2. AnaliseDashboard absorve Histórico
+- `AnaliseDashboard.tsx` passa a renderizar, abaixo dos resultados, um bloco "Histórico do produto" usando o conteúdo que vinha de `HistoricoComparativo`:
+  - Reusa a tabela `HistoricoSnapshotTable` com seleção de até 2 snapshots.
+  - Mostra `HistoricoComparacaoPanel` quando 2 estão marcados.
+  - Como o produto já está selecionado no topo da página, o seletor duplicado de produto do antigo `HistoricoComparativo` é removido — a tabela usa o mesmo `itemId` da Análise.
+- Arquivo `HistoricoComparativo.tsx` é removido (seu seletor de produto duplicado some). Os componentes filhos (`HistoricoSnapshotTable`, `HistoricoComparacaoPanel`) continuam.
 
-## 2. Layout da página (padrão do app)
+### 3. Datas → `MLPeriodPicker`
+Substituir os dois `<Input type="date">` por um único `MLPeriodPicker` integrado com `useMLFilters`, igual ao padrão de `MLAnuncios` / `MLEstoque`:
+- Default 30 dias.
+- `periodLabel` mostra "Últimos 30 dias", "Hoje", custom range etc.
+- Botão "Analisar" passa a usar `currentFrom` / `currentTo` do hook.
 
-```text
-┌─ MLPageHeader (sticky, padrão dos outros módulos ML) ─┐
-│  Título: Precificação                                  │
-│  Subtítulo: Ferramentas para definir preço de venda    │
-│  Slot direito: SellerMarketplaceBar                    │
-├─ Tabs (framer-motion, padrão do app) ──────────────────┤
-│  [Simulador]  (futuro: Tabela de preços, Reprecificação│
-│                automática, Análise competitiva, etc.)  │
-├─ Conteúdo da tab ──────────────────────────────────────┤
-│  <SimuladorPrecificacao />                             │
-└────────────────────────────────────────────────────────┘
+### 4. Busca de produto compacta
+Padrão atual (Popover + Command full-width altura `h-10`, label "Produto" em cima) substituído por trigger compacto `h-8` no mesmo nível dos demais controles do header do card, igual aos selectores em `MLAnuncios`:
+- Trigger: `<Button variant="outline" size="sm" className="h-8 ...">` com ícone `Search` 3.5×3.5 e placeholder "Buscar produto…".
+- Quando há produto, mostra chip compacto com thumb + título truncado + `×`, altura `h-8`.
+
+### 5. Card header padrão
+Todos os cards de Análise (`Análise de Elasticidade`, `Recomendações de Compra`, `Comparação`, tabela `AnalisePrecosTable`) recebem:
+```tsx
+<CardHeader className="pb-3">
+  <CardTitle className="text-sm font-medium text-foreground">Título</CardTitle>
+</CardHeader>
 ```
+- Remove `px-4 pt-3 pb-2` ad-hoc; usa o default do design system (memória `card-headers-standardization`).
+- Sem ícones em títulos de cards (memória core).
+- Os controles que hoje vivem no `CardContent` (datas, multiplicador) movem para o lado direito do `CardHeader` com `flex items-center justify-between`.
 
-- Usa `MLPageHeader` (mesmo componente de `MLFiscal`, `MLAnuncios` etc.) para coerência visual.
-- Tabs em estilo idêntico ao consolidado de Vendas/Relatórios (memória `dashboard-consolidation`).
-- Um único arquivo `MLPrecificacao.tsx` (page) + `src/components/mercadolivre/precificacao/SimuladorPrecificacao.tsx` (componente da ferramenta). Estrutura preparada pra adicionar mais ferramentas como irmãs.
+### 6. AnalysisProductCard — alinhar com KPI/info-card pattern
+- Substitui as faixas `border-l-4 border-l-emerald-500` por tokens semânticos (`bg-emerald-500/10 border-emerald-500/20`) e tipografia consistente: rótulo `text-[11px] uppercase tracking-wide text-muted-foreground`, valor `text-base font-semibold tabular-nums text-foreground` (a cor segue o badge, não o texto inteiro — fica mais sóbrio).
+- Badge de elasticidade já usa `ELASTICITY_BADGE` (ok), mantém.
 
-## 3. Simulador — UX
+### 7. AnalisePrecosTable
+- Header da tabela com `bg-muted/40` (padrão das outras tabelas).
+- `TableRow` com hover `bg-muted/50`.
+- Select de estratégia: `h-8 w-[120px] text-xs` (igual aos selects de outras tabelas).
+- Mantém destaque colorido da célula da estratégia escolhida.
 
-Layout em duas colunas no desktop (lg:grid-cols-[1fr_420px]), uma coluna no mobile:
+### 8. CompraRecomendadaPanel
+- Header padronizado (item 5), com o `Select` de multiplicador no canto direito do header.
+- Linha de produto: trocar grid 12-col arbitrário por `flex flex-wrap items-end gap-3` para casar com o estilo dos filtros do app.
+- Labels `text-xs text-muted-foreground`, inputs `h-8 text-xs w-[110px]`.
+- Outputs com badge colorido em vez de texto colorido solto.
 
-**Coluna esquerda — inputs (cálculo reativo, sem botão "Calcular"):**
+### 9. HistoricoComparacaoPanel
+- Header padronizado.
+- Grid de comparação mantém estrutura, apenas substitui `text-emerald-600`/`text-red-600` por tokens (`text-success` / `text-destructive` se existirem; senão mantém — já são padrão do app conforme memória).
 
-1. **Buscar produto** (Card no topo)
-   - Input `Combobox` (cmdk) com placeholder "Buscar por MLB ou SKU…"
-   - Lista os anúncios ativos da loja selecionada (já vem de `useMLPrecosCustos.items`).
-   - Ao selecionar, pré-preenche: título, thumb, `item_id`, `category_id`, `listing_type_id`, `price_sale` (sugestão de preço inicial), `cost` e `tax_rate` (de `ml_product_costs` via novo hook), e `regime` + UF de origem (de `ml_tax_config` via `useMLTaxConfig`).
-   - Botão "Limpar" remove o produto selecionado e libera todos os campos para edição livre.
+## Fora de escopo
+- Lógica de cálculo (`engine.ts`, `calculator.ts`) intocada.
+- Schema / hooks de dados intocados.
+- Simulador (`SimuladorPrecificacao.tsx`) intocado — já segue o padrão.
 
-2. **Produto** (depois de selecionado, ou modo manual)
-   - Custo do produto (R$) — editável
-   - Tipo de anúncio: `gold_pro` / `gold_special` (Select) — pré-preenchido se buscado
-
-3. **Logística**
-   - Modal/Select: Full, Drop Off, Flex, Envio próprio
-   - Custo de frete (R$) — auto-estimado, editável
-
-4. **Tributação**
-   - Badge mostrando regime herdado de Fiscal ("Simples Nacional 8,5%" etc.) com link "Editar em /fiscal".
-   - UF de origem (read-only, vinda de `ml_tax_config.uf_origem` quando regime = `lucro_real`)
-   - **UF de destino** (Select obrigatório no Lucro Real) — usado pra DIFAL/ICMS interestadual via `regions.ts`
-   - Toggle "Override manual" → libera campo "Alíquota efetiva (%)" que sobrescreve o cálculo automático.
-   - Para Lucro Real: mostra breakdown automático (ICMS débito por UF destino via `lr_icms_aliquota_intra/inter_sul_sudeste/inter_norte_nordeste`, PIS/COFINS débito − créditos), e calcula DIFAL quando UF destino ≠ origem e for consumidor final (toggle "Venda a consumidor final / DIFAL").
-
-5. **Descontos extras** (Card colapsável "Descontos extras", default fechado)
-   Cada subitem tem: toggle on/off + select (% ou R$) + input numérico. Ordem:
-   - Rebate Mercado Livre
-   - Cupom do vendedor
-   - Comissão de afiliado
-   - Desconto promocional (livre)
-
-6. **Margem desejada / Markup** (Card "Objetivo")
-   - Toggle entre "Margem (%)" e "Markup (%)"
-   - Input do alvo
-   - Mostra abaixo: "Preço sugerido para atingir alvo: R$ X,XX" (calculadora reversa embutida, recalcula ao vivo)
-   - Botão "Aplicar este preço" copia pro campo "Preço de venda".
-
-**Coluna direita — resultado em tempo real (sticky no desktop):**
-
-- **Card "Preço de venda"** com input grande, formato monetário pt-BR. Editar aqui dispara recálculo instantâneo de toda a coluna.
-- **Breakdown vertical** com cores semânticas:
-  ```text
-  Receita bruta              R$ 100,00
-  − Comissão ML (16%)        R$  16,00
-  − Taxa fixa                R$   6,00
-  − Frete                    R$   8,50
-  − Imposto efetivo (12%)    R$  12,00
-  − Rebate                   R$   2,00
-  − Cupom                    R$   0,00
-  − Afiliado                 R$   0,00
-  − DIFAL                    R$   1,80
-  ─────────────────────────
-  Receita líquida            R$  53,70
-  − Custo do produto         R$  40,00
-  ─────────────────────────
-  Lucro                      R$  13,70  ← destacado
-  Margem                       13,7%    ← cor por faixa
-  Markup                       34,3%
-  ROI                          34,3%
-  Ponto de equilíbrio        R$  73,42
-  ```
-- Badge no topo: "Lucro" verde / amarelo / vermelho conforme faixa (≥20 / 10–20 / <10).
-- Mini-gráfico opcional (recharts) "Margem x Preço" com 5 pontos ao redor do preço atual, pra visualizar sensibilidade.
-
-## 4. Lógica de cálculo (resumo)
-
-Tudo vive em `src/lib/pricing/calculator.ts` (novo, puro, testável):
-
-```text
-input  = { cost, listingType, salePrice, shippingCost, commissionPct,
-           fixedFee, taxPct, difalPct, rebate{type,value},
-           cupom{...}, afiliado{...}, promo{...} }
-
-receita_bruta     = salePrice
-comissao          = salePrice * commissionPct / 100
-imposto           = salePrice * taxPct / 100
-difal             = (modo consumidor final && UF dest ≠ orig) ? salePrice * difalPct / 100 : 0
-deducoes_extras   = soma de rebate/cupom/afiliado/promo (resolvendo % vs R$)
-receita_liquida   = receita_bruta − comissao − fixedFee − shippingCost
-                    − imposto − difal − deducoes_extras
-lucro             = receita_liquida − cost
-margem_pct        = lucro / receita_bruta × 100
-markup_pct        = lucro / cost × 100
-roi_pct           = lucro / cost × 100
-break_even        = (cost + fixedFee + shippingCost) /
-                    (1 − (commissionPct + taxPct + difalPct + extras_pct) / 100)
-
-reverse(targetMargin):
-  denom = 1 − (commissionPct + taxPct + difalPct + extras_pct + targetMargin) / 100
-  preço = (cost + fixedFee + shippingCost) / denom
-```
-
-Comissão e taxa fixa: API ML via `useMLPrecosCustos.fetchCosts` (já existente). Chamada **debounced** (300ms) só quando `salePrice` ou `logisticType` mudam — o resto é puro front, instantâneo.
-
-DIFAL simplificado MVP: `difalPct = aliquota_intra_destino − aliquota_inter_origem→destino`. Como não temos tabela das alíquotas internas de cada UF destino, usamos um campo "Alíquota interna UF destino (%)" editável (default 18%) ao ativar o toggle DIFAL. Avisar via tooltip que é estimativa.
-
-## 5. Dados / hooks
-
-- **Reusar** `useMLPrecosCustos` (busca `items`, `fetchCosts`).
-- **Reusar** `useMLTaxConfig` para regime + UF origem + alíquotas Lucro Real.
-- **Reusar** `useMLProductCosts` para `cost` e `tax_rate` por `item_id` (já tem upsert; aqui só leitura).
-- **Reusar** `src/lib/tax/index.ts` (`calculateEffectiveRate`) e `src/lib/tax/regions.ts` (`isReducedInterstateDest`).
-- Novo: `src/lib/pricing/calculator.ts` + `calculator.test.ts` (vitest, casos: SN, LP, LR com crédito, DIFAL on/off, descontos %/R$, reversa).
-
-## 6. Sem mudanças de schema
-
-Nenhuma migration necessária — todos os dados vêm de tabelas existentes (`ml_tax_config`, `ml_product_costs`, `ml_user_cache`, API ML). DIFAL e descontos extras são puramente locais ao simulador (não persistem por enquanto).
-
-## 7. Detalhes técnicos
-
-- Estado do simulador num único `useReducer` para evitar dezenas de `useState` e simplificar o reset ao trocar produto.
-- Formatação monetária: util compartilhado pt-BR (`formatBRL`).
-- Inputs aceitam vírgula ou ponto; parseamento centralizado.
-- Mobile: coluna direita vira card colapsável fixo no rodapé com lucro/margem resumidos; expande pra ver breakdown completo.
-- Tema: tokens semânticos (`text-emerald-600` etc. ok pelas memórias atuais; sem hex hardcoded).
-
-## 8. Fora de escopo (futuras tabs)
-
-- Reprecificação automática em massa
-- Tabela comparativa de preços ABC
-- Histórico de simulações salvas
-- Análise competitiva (já existe parcialmente em referências de preço — pode virar tab futura)
+## Arquivos tocados
+- `src/pages/mercadolivre/MLPrecificacao.tsx` (remove tab histórico)
+- `src/components/mercadolivre/analise/AnaliseDashboard.tsx` (período, busca, header, embute histórico)
+- `src/components/mercadolivre/analise/AnalysisProductCard.tsx` (padrão visual)
+- `src/components/mercadolivre/analise/AnalisePrecosTable.tsx` (header/hover)
+- `src/components/mercadolivre/analise/CompraRecomendadaPanel.tsx` (header + filtros)
+- `src/components/mercadolivre/analise/HistoricoComparacaoPanel.tsx` (header)
+- `src/components/mercadolivre/analise/HistoricoSnapshotTable.tsx` (hover/header)
+- **Deletado**: `src/components/mercadolivre/analise/HistoricoComparativo.tsx`
