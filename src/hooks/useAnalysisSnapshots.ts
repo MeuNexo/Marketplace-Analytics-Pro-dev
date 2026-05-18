@@ -99,7 +99,8 @@ export function useAnalysisSnapshots(): UseAnalysisSnapshotsResult {
 
         const { data, error } = await supabase
           .from('commercial_analysis_snapshots')
-          .insert([row])
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .insert(row as any)
           .select()
           .single();
 
