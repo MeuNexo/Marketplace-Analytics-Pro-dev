@@ -68,7 +68,7 @@ Quatro fases entregam a ferramenta de análise comercial completa: o motor de c�
 
 - [ ] **Phase 4: Motor de Análise + Snapshots** - Engine TypeScript de cálculos (curva preço×volume, GMV/Neutro/Margem, elasticidade) e tabela Supabase para snapshots
 - [x] **Phase 5: Dashboard de Análise** - Cards de produto com preços estratégicos e elasticidade, tabela com dropdown de estratégia e destaque visual (completed 2026-05-18)
-- [ ] **Phase 6: Recomendações de Compra & FULL** - Inputs de estoque/cobertura, multiplicador de demanda, cálculo de compra recomendada e sugestão de envio FULL
+- [x] **Phase 6: Recomendações de Compra & FULL** - Inputs de estoque/cobertura, multiplicador de demanda, cálculo de compra recomendada e sugestão de envio FULL (completed 2026-05-18)
 - [ ] **Phase 7: Histórico Comparativo** - Listagem de snapshots salvos e comparação lado a lado de análises do mesmo produto
 
 ## Phase Details — v2.0
@@ -129,5 +129,5 @@ Plans:
 |-------|----------------|--------|-----------|
 | 4. Motor de Análise + Snapshots | 3/3 | Complete ✅ | 2026-05-15 |
 | 5. Dashboard de Análise | 2/2 | Complete   | 2026-05-18 |
-| 6. Recomendações de Compra & FULL | 1/2 | In Progress|  |
+| 6. Recomendações de Compra & FULL | 2/2 | Complete   | 2026-05-18 |
 | 7. Histórico Comparativo | 0/? | Not started | - |
