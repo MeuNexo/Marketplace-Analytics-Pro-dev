@@ -510,6 +510,7 @@ export type Database = {
           id: string
           item_id: string
           organization_id: string | null
+          seller_sku: string | null
           tax_rate: number | null
           updated_at: string
           user_id: string
@@ -520,6 +521,7 @@ export type Database = {
           id?: string
           item_id: string
           organization_id?: string | null
+          seller_sku?: string | null
           tax_rate?: number | null
           updated_at?: string
           user_id: string
@@ -530,6 +532,7 @@ export type Database = {
           id?: string
           item_id?: string
           organization_id?: string | null
+          seller_sku?: string | null
           tax_rate?: number | null
           updated_at?: string
           user_id?: string

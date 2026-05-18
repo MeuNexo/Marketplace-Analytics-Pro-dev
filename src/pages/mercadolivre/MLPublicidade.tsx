@@ -698,7 +698,6 @@ export default function MLAnuncios() {
             </Card>
           );
         })()}
-        </>}
       </TabsContent>
 
       {/* ═══════════════════ ABA RELATÓRIOS ═══════════════════ */}
