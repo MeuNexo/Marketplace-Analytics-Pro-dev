@@ -220,55 +220,66 @@ export function AnaliseDashboard() {
             <CardTitle className="text-sm font-medium text-foreground">
               Análise de Elasticidade
             </CardTitle>
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Product chip / search */}
-              {itemId ? (
-                <div className="flex items-center gap-2 rounded-md border bg-muted/40 pl-2 pr-1 h-8">
-                  {productThumb ? (
-                    <img src={productThumb} alt="" className="w-5 h-5 rounded object-cover" />
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              {/* Selected product chips */}
+              {selectedProducts.map((p) => (
+                <div key={p.item_id} className="flex items-center gap-2 rounded-md border bg-muted/40 pl-2 pr-1 h-8">
+                  {p.thumbnail ? (
+                    <img src={p.thumbnail} alt="" className="w-5 h-5 rounded object-cover" />
                   ) : (
                     <Package className="w-3.5 h-3.5 text-muted-foreground" />
                   )}
-                  <span className="text-xs font-medium truncate max-w-[220px]">{productTitle}</span>
+                  <span className="text-xs font-medium truncate max-w-[160px]">{p.title}</span>
                   <button
-                    onClick={clearProduct}
+                    onClick={() => removeProduct(p.item_id)}
                     className="text-muted-foreground hover:text-foreground px-1 text-sm leading-none"
                     aria-label="Remover produto"
                   >
                     ×
                   </button>
                 </div>
-              ) : (
-                <Popover open={searchOpen} onOpenChange={setSearchOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 w-[320px] justify-start gap-1.5 text-xs font-normal text-muted-foreground"
-                    >
-                      <Search className="w-3.5 h-3.5" />
-                      Buscar produto…
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[420px] p-0" align="end">
-                    <Command shouldFilter={false}>
-                      <CommandInput
-                        placeholder="Buscar..."
-                        value={searchQuery}
-                        onValueChange={setSearchQuery}
-                      />
-                      <CommandList>
-                        <CommandEmpty>
-                          {itemsLoading ? "Carregando anúncios…" : "Nenhum anúncio encontrado."}
-                        </CommandEmpty>
-                        <CommandGroup>
-                          {filteredItems.map((it) => (
+              ))}
+
+              {/* Search popover (always available, multi-select) */}
+              <Popover open={searchOpen} onOpenChange={setSearchOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={
+                      hasSelection
+                        ? "h-8 gap-1.5 text-xs"
+                        : "h-8 w-[320px] justify-start gap-1.5 text-xs font-normal text-muted-foreground"
+                    }
+                  >
+                    {hasSelection ? <Plus className="w-3.5 h-3.5" /> : <Search className="w-3.5 h-3.5" />}
+                    {hasSelection ? "Adicionar produto" : "Buscar produto…"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[420px] p-0" align="end">
+                  <Command shouldFilter={false}>
+                    <CommandInput
+                      placeholder="Buscar..."
+                      value={searchQuery}
+                      onValueChange={setSearchQuery}
+                    />
+                    <CommandList>
+                      <CommandEmpty>
+                        {itemsLoading ? "Carregando anúncios…" : "Nenhum anúncio encontrado."}
+                      </CommandEmpty>
+                      <CommandGroup>
+                        {filteredItems.map((it) => {
+                          const checked = selectedIds.has(it.item_id);
+                          return (
                             <CommandItem
                               key={it.item_id}
                               value={`${it.item_id} ${it.title}`}
-                              onSelect={() => selectProduct(it)}
+                              onSelect={() => toggleProduct(it)}
                               className="gap-2 data-[selected=true]:bg-muted data-[selected=true]:text-foreground"
                             >
+                              <div className="w-4 h-4 flex items-center justify-center flex-shrink-0">
+                                {checked && <Check className="w-3.5 h-3.5 text-primary" />}
+                              </div>
                               {it.thumbnail ? (
                                 <img src={it.thumbnail} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />
                               ) : (
@@ -282,12 +293,23 @@ export function AnaliseDashboard() {
                                 {formatBRL(it.price_sale)}
                               </span>
                             </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
+                          );
+                        })}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+
+              {hasSelection && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearAll}
+                  className="h-8 text-xs text-muted-foreground"
+                >
+                  Limpar
+                </Button>
               )}
 
               {/* Period picker */}
@@ -308,19 +330,19 @@ export function AnaliseDashboard() {
 
               <Button
                 onClick={handleAnalyze}
-                disabled={running || !itemId}
+                disabled={running || !hasSelection}
                 size="sm"
                 className="h-8 text-xs"
               >
-                {running ? "Analisando…" : "Analisar"}
+                {running ? "Analisando…" : selectedProducts.length > 1 ? `Analisar (${selectedProducts.length})` : "Analisar"}
               </Button>
             </div>
           </div>
         </CardHeader>
-        {!itemId && (
+        {!hasSelection && (
           <CardContent className="pt-0">
             <p className="text-xs text-muted-foreground">
-              Selecione um produto e período acima e clique em "Analisar" para começar.
+              Selecione um ou mais produtos e período acima e clique em "Analisar" para começar.
             </p>
           </CardContent>
         )}
@@ -336,7 +358,9 @@ export function AnaliseDashboard() {
       ) : snapshots.length > 0 ? (
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <AnalysisProductCard snapshot={snapshots[0]} />
+            {Array.from(new Map(snapshots.map((s) => [s.itemId, s])).values()).map((s) => (
+              <AnalysisProductCard key={s.itemId} snapshot={s} />
+            ))}
           </div>
 
           <Card>
@@ -369,13 +393,13 @@ export function AnaliseDashboard() {
 
           {comparisonPair && <HistoricoComparacaoPanel snapshots={comparisonPair} />}
         </div>
-      ) : itemId ? (
+      ) : hasSelection ? (
         <p className="text-center text-sm text-muted-foreground py-8">
-          Sem análises para este produto. Clique em "Analisar" para criar a primeira.
+          Sem análises para os produtos selecionados. Clique em "Analisar" para criar a primeira.
         </p>
       ) : null}
 
-      {loading && snapshots.length === 0 && itemId && (
+      {loading && snapshots.length === 0 && hasSelection && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <Skeleton className="h-32 w-full" />
         </div>
