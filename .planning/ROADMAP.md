@@ -85,8 +85,8 @@ Quatro fases entregam a ferramenta de análise comercial completa: o motor de c�
 **Plans**: 3 plans
 Plans:
 - [x] 04-01-PLAN.md — Motor de análise puro: tipos, engine.ts e testes TDD (MOTOR-01 a MOTOR-05)
-- [ ] 04-02-PLAN.md — Migration SQL da tabela commercial_analysis_snapshots + supabase db push
-- [ ] 04-03-PLAN.md — Hook useAnalysisSnapshots: saveSnapshot, fetchSnapshots, updateStrategy
+- [x] 04-02-PLAN.md — Migration SQL da tabela commercial_analysis_snapshots + supabase db push
+- [x] 04-03-PLAN.md — Hook useAnalysisSnapshots: saveSnapshot, fetchSnapshots, updateStrategy
 
 ### Phase 5: Dashboard de Análise
 **Goal**: O usuário consegue visualizar os resultados da análise em cards de produto e numa tabela interativa com seleção de estratégia
@@ -96,8 +96,10 @@ Plans:
   1. O usuário vê cards por produto exibindo Preço GMV, Preço Neutro, Preço Margem e a frase de elasticidade ("A cada R$1,00 de subida a partir de R$XX,XX, perde aproximadamente X,XX% em volume")
   2. O usuário vê a tabela de análise com colunas Produto, Marca, Preço GMV, Preço Neutro, Preço Margem e Impacto Comercial (classificação da elasticidade)
   3. O usuário seleciona uma Estratégia (GMV / Neutro / Margem) via dropdown por linha; o preço correspondente é destacado visualmente na linha
-**Plans**: TBD
-**UI hint**: yes
+**Plans**: 2 plans
+Plans:
+- [ ] 05-01-PLAN.md — Hook useMLOrdersByItem + stub da aba Análise em MLPrecificacao
+- [ ] 05-02-PLAN.md — AnalysisProductCard, AnalisePrecosTable, AnaliseDashboard + wire final
 
 ### Phase 6: Recomendações de Compra & FULL
 **Goal**: O usuário consegue informar estoque atual e cobertura desejada para obter recomendação de compra e sugestão de envio FULL calibrada pela estratégia escolhida
@@ -125,7 +127,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 4. Motor de Análise + Snapshots | 1/3 | In progress | - |
-| 5. Dashboard de Análise | 0/? | Not started | - |
+| 4. Motor de Análise + Snapshots | 3/3 | Complete ✅ | 2026-05-15 |
+| 5. Dashboard de Análise | 0/2 | Planned | - |
 | 6. Recomendações de Compra & FULL | 0/? | Not started | - |
 | 7. Histórico Comparativo | 0/? | Not started | - |
