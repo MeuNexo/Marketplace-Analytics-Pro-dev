@@ -338,7 +338,7 @@ export function AnaliseDashboard() {
               variant="ghost"
               size="sm"
               onClick={clearAll}
-              className="h-7 text-xs text-muted-foreground"
+              className="h-7 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               Limpar
             </Button>
