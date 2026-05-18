@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { differenceInCalendarDays } from "date-fns";
-import { Search, Package } from "lucide-react";
+import { Search, Package, Check, Plus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -59,13 +59,13 @@ export function AnaliseDashboard() {
 
   // State
   const [snapshots, setSnapshots] = useState<AnalysisSnapshot[]>([]);
-  const [itemId, setItemId] = useState("");
-  const [productTitle, setProductTitle] = useState("");
-  const [productThumb, setProductThumb] = useState<string>("");
-  const [brand, setBrand] = useState<string | null>(null);
+  const [selectedProducts, setSelectedProducts] = useState<MLItemPrice[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSnapshots, setSelectedSnapshots] = useState<string[]>([]);
+
+  const hasSelection = selectedProducts.length > 0;
+  const selectedIds = useMemo(() => new Set(selectedProducts.map((p) => p.item_id)), [selectedProducts]);
 
   const running = saving || loadingOrders;
 
@@ -77,36 +77,44 @@ export function AnaliseDashboard() {
     ).slice(0, 200);
   }, [items, searchQuery]);
 
-  function selectProduct(it: MLItemPrice) {
-    setItemId(it.item_id);
-    setProductTitle(it.title);
-    setProductThumb(it.thumbnail ?? "");
-    setBrand(null);
-    setSearchOpen(false);
-    setSearchQuery("");
+  function toggleProduct(it: MLItemPrice) {
+    setSelectedProducts((prev) => {
+      const exists = prev.some((p) => p.item_id === it.item_id);
+      return exists ? prev.filter((p) => p.item_id !== it.item_id) : [...prev, it];
+    });
     setSelectedSnapshots([]);
   }
 
-  function clearProduct() {
-    setItemId("");
-    setProductTitle("");
-    setProductThumb("");
-    setBrand(null);
+  function removeProduct(itemId: string) {
+    setSelectedProducts((prev) => prev.filter((p) => p.item_id !== itemId));
+    setSnapshots((prev) => prev.filter((s) => s.itemId !== itemId));
+    setSelectedSnapshots([]);
+  }
+
+  function clearAll() {
+    setSelectedProducts([]);
     setSnapshots([]);
     setSelectedSnapshots([]);
   }
 
+  const selectedKey = selectedProducts.map((p) => p.item_id).join(",");
   useEffect(() => {
-    if (!itemId || !orgId) return;
-    fetchSnapshots(itemId, orgId).then((results) => {
-      setSnapshots(results);
-    }).catch((err: Error) => {
-      toast({ variant: "destructive", title: "Erro ao carregar análises", description: err.message });
-    });
-  }, [itemId, orgId]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!hasSelection || !orgId) {
+      setSnapshots([]);
+      return;
+    }
+    Promise.all(selectedProducts.map((p) => fetchSnapshots(p.item_id, orgId)))
+      .then((results) => {
+        const merged = results.flat().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        setSnapshots(merged);
+      })
+      .catch((err: Error) => {
+        toast({ variant: "destructive", title: "Erro ao carregar análises", description: err.message });
+      });
+  }, [selectedKey, orgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAnalyze = useCallback(async () => {
-    if (!itemId) return;
+    if (!hasSelection) return;
 
     let periodDays: number;
     try {
@@ -117,36 +125,47 @@ export function AnaliseDashboard() {
       return;
     }
 
-    try {
-      const orders = await fetchOrders(itemId, orgId, mlUserId, currentFrom, currentTo);
-
-      if (orders.length === 0) {
-        toast({
-          title: "Sem pedidos",
-          description: "Nenhum pedido confirmado encontrado para este produto no período.",
-        });
-        return;
+    let skipped = 0;
+    const newSnapshots: AnalysisSnapshot[] = [];
+    for (const product of selectedProducts) {
+      try {
+        const orders = await fetchOrders(product.item_id, orgId, mlUserId, currentFrom, currentTo);
+        if (orders.length === 0) {
+          skipped += 1;
+          continue;
+        }
+        const input: SnapshotInput = {
+          orders,
+          periodDays,
+          periodStart: currentFrom,
+          periodEnd: currentTo,
+          mlUserId,
+          organizationId: orgId,
+          itemId: product.item_id,
+          productTitle: product.title || (orders[0]?.title ?? product.item_id),
+          brand: undefined,
+        };
+        const snapshot = await saveSnapshot(input);
+        newSnapshots.push(snapshot);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Erro desconhecido";
+        toast({ variant: "destructive", title: `Erro: ${product.title}`, description: message });
       }
-
-      const input: SnapshotInput = {
-        orders,
-        periodDays,
-        periodStart: currentFrom,
-        periodEnd: currentTo,
-        mlUserId,
-        organizationId: orgId,
-        itemId,
-        productTitle: productTitle || (orders[0]?.title ?? itemId),
-        brand: brand ?? undefined,
-      };
-
-      const snapshot = await saveSnapshot(input);
-      setSnapshots((prev) => [snapshot, ...prev.filter((s) => s.id !== snapshot.id)]);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Erro desconhecido";
-      toast({ variant: "destructive", title: "Erro na análise", description: message });
     }
-  }, [itemId, orgId, mlUserId, currentFrom, currentTo, productTitle, brand, fetchOrders, saveSnapshot, toast]);
+    if (newSnapshots.length > 0) {
+      setSnapshots((prev) => {
+        const ids = new Set(newSnapshots.map((s) => s.id));
+        return [...newSnapshots, ...prev.filter((s) => !ids.has(s.id))]
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      });
+    }
+    if (skipped > 0) {
+      toast({
+        title: skipped === selectedProducts.length ? "Sem pedidos" : "Alguns sem pedidos",
+        description: `${skipped} produto(s) sem pedidos confirmados no período.`,
+      });
+    }
+  }, [hasSelection, selectedProducts, orgId, mlUserId, currentFrom, currentTo, fetchOrders, saveSnapshot, toast]);
 
   const handleStrategyChange = useCallback(async (id: string, strategy: 'gmv' | 'neutral' | 'margin') => {
     const previous = snapshots;
@@ -201,55 +220,66 @@ export function AnaliseDashboard() {
             <CardTitle className="text-sm font-medium text-foreground">
               Análise de Elasticidade
             </CardTitle>
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Product chip / search */}
-              {itemId ? (
-                <div className="flex items-center gap-2 rounded-md border bg-muted/40 pl-2 pr-1 h-8">
-                  {productThumb ? (
-                    <img src={productThumb} alt="" className="w-5 h-5 rounded object-cover" />
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              {/* Selected product chips */}
+              {selectedProducts.map((p) => (
+                <div key={p.item_id} className="flex items-center gap-2 rounded-md border bg-muted/40 pl-2 pr-1 h-8">
+                  {p.thumbnail ? (
+                    <img src={p.thumbnail} alt="" className="w-5 h-5 rounded object-cover" />
                   ) : (
                     <Package className="w-3.5 h-3.5 text-muted-foreground" />
                   )}
-                  <span className="text-xs font-medium truncate max-w-[220px]">{productTitle}</span>
+                  <span className="text-xs font-medium truncate max-w-[160px]">{p.title}</span>
                   <button
-                    onClick={clearProduct}
+                    onClick={() => removeProduct(p.item_id)}
                     className="text-muted-foreground hover:text-foreground px-1 text-sm leading-none"
                     aria-label="Remover produto"
                   >
                     ×
                   </button>
                 </div>
-              ) : (
-                <Popover open={searchOpen} onOpenChange={setSearchOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 w-[320px] justify-start gap-1.5 text-xs font-normal text-muted-foreground"
-                    >
-                      <Search className="w-3.5 h-3.5" />
-                      Buscar produto…
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[420px] p-0" align="end">
-                    <Command shouldFilter={false}>
-                      <CommandInput
-                        placeholder="Buscar..."
-                        value={searchQuery}
-                        onValueChange={setSearchQuery}
-                      />
-                      <CommandList>
-                        <CommandEmpty>
-                          {itemsLoading ? "Carregando anúncios…" : "Nenhum anúncio encontrado."}
-                        </CommandEmpty>
-                        <CommandGroup>
-                          {filteredItems.map((it) => (
+              ))}
+
+              {/* Search popover (always available, multi-select) */}
+              <Popover open={searchOpen} onOpenChange={setSearchOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={
+                      hasSelection
+                        ? "h-8 gap-1.5 text-xs"
+                        : "h-8 w-[320px] justify-start gap-1.5 text-xs font-normal text-muted-foreground"
+                    }
+                  >
+                    {hasSelection ? <Plus className="w-3.5 h-3.5" /> : <Search className="w-3.5 h-3.5" />}
+                    {hasSelection ? "Adicionar produto" : "Buscar produto…"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[420px] p-0" align="end">
+                  <Command shouldFilter={false}>
+                    <CommandInput
+                      placeholder="Buscar..."
+                      value={searchQuery}
+                      onValueChange={setSearchQuery}
+                    />
+                    <CommandList>
+                      <CommandEmpty>
+                        {itemsLoading ? "Carregando anúncios…" : "Nenhum anúncio encontrado."}
+                      </CommandEmpty>
+                      <CommandGroup>
+                        {filteredItems.map((it) => {
+                          const checked = selectedIds.has(it.item_id);
+                          return (
                             <CommandItem
                               key={it.item_id}
                               value={`${it.item_id} ${it.title}`}
-                              onSelect={() => selectProduct(it)}
+                              onSelect={() => toggleProduct(it)}
                               className="gap-2 data-[selected=true]:bg-muted data-[selected=true]:text-foreground"
                             >
+                              <div className="w-4 h-4 flex items-center justify-center flex-shrink-0">
+                                {checked && <Check className="w-3.5 h-3.5 text-primary" />}
+                              </div>
                               {it.thumbnail ? (
                                 <img src={it.thumbnail} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />
                               ) : (
@@ -263,12 +293,23 @@ export function AnaliseDashboard() {
                                 {formatBRL(it.price_sale)}
                               </span>
                             </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
+                          );
+                        })}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+
+              {hasSelection && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearAll}
+                  className="h-8 text-xs text-muted-foreground"
+                >
+                  Limpar
+                </Button>
               )}
 
               {/* Period picker */}
@@ -289,19 +330,19 @@ export function AnaliseDashboard() {
 
               <Button
                 onClick={handleAnalyze}
-                disabled={running || !itemId}
+                disabled={running || !hasSelection}
                 size="sm"
                 className="h-8 text-xs"
               >
-                {running ? "Analisando…" : "Analisar"}
+                {running ? "Analisando…" : selectedProducts.length > 1 ? `Analisar (${selectedProducts.length})` : "Analisar"}
               </Button>
             </div>
           </div>
         </CardHeader>
-        {!itemId && (
+        {!hasSelection && (
           <CardContent className="pt-0">
             <p className="text-xs text-muted-foreground">
-              Selecione um produto e período acima e clique em "Analisar" para começar.
+              Selecione um ou mais produtos e período acima e clique em "Analisar" para começar.
             </p>
           </CardContent>
         )}
@@ -317,7 +358,9 @@ export function AnaliseDashboard() {
       ) : snapshots.length > 0 ? (
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <AnalysisProductCard snapshot={snapshots[0]} />
+            {Array.from(new Map(snapshots.map((s) => [s.itemId, s])).values()).map((s) => (
+              <AnalysisProductCard key={s.itemId} snapshot={s} />
+            ))}
           </div>
 
           <Card>
@@ -350,13 +393,13 @@ export function AnaliseDashboard() {
 
           {comparisonPair && <HistoricoComparacaoPanel snapshots={comparisonPair} />}
         </div>
-      ) : itemId ? (
+      ) : hasSelection ? (
         <p className="text-center text-sm text-muted-foreground py-8">
-          Sem análises para este produto. Clique em "Analisar" para criar a primeira.
+          Sem análises para os produtos selecionados. Clique em "Analisar" para criar a primeira.
         </p>
       ) : null}
 
-      {loading && snapshots.length === 0 && itemId && (
+      {loading && snapshots.length === 0 && hasSelection && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <Skeleton className="h-32 w-full" />
         </div>
