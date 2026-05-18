@@ -129,5 +129,5 @@ Plans:
 |-------|----------------|--------|-----------|
 | 4. Motor de Análise + Snapshots | 3/3 | Complete ✅ | 2026-05-15 |
 | 5. Dashboard de Análise | 2/2 | Complete   | 2026-05-18 |
-| 6. Recomendações de Compra & FULL | 0/? | Not started | - |
+| 6. Recomendações de Compra & FULL | 1/2 | In Progress|  |
 | 7. Histórico Comparativo | 0/? | Not started | - |

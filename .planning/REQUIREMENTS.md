@@ -26,10 +26,10 @@ por R$1,00 e sugestões de compra e envio FULL, com histórico comparativo por p
 
 ### COMP — Recomendações de Compra & FULL
 
-- [ ] **COMP-01**: Usuário informa, por produto, dias de cobertura desejada, estoque atual total, estoque FULL atual e estoque casa/CD
-- [ ] **COMP-02**: Usuário seleciona multiplicador de demanda (Normal ×1,0 / Campanha leve ×1,2 / Data forte ×1,5 / Live–oferta ×2,0)
-- [ ] **COMP-03**: Sistema calcula compra recomendada = (venda_diária_estratégia × multiplicador × dias_cobertura) − estoque_total_atual
-- [ ] **COMP-04**: Sistema sugere volume a enviar para FULL segundo a estratégia escolhida: GMV → 70–90%, Neutro → 50–70%, Margem → 40–60% da cobertura
+- [x] **COMP-01**: Usuário informa, por produto, dias de cobertura desejada, estoque atual total, estoque FULL atual e estoque casa/CD
+- [x] **COMP-02**: Usuário seleciona multiplicador de demanda (Normal ×1,0 / Campanha leve ×1,2 / Data forte ×1,5 / Live–oferta ×2,0)
+- [x] **COMP-03**: Sistema calcula compra recomendada = (venda_diária_estratégia × multiplicador × dias_cobertura) − estoque_total_atual
+- [x] **COMP-04**: Sistema sugere volume a enviar para FULL segundo a estratégia escolhida: GMV → 70–90%, Neutro → 50–70%, Margem → 40–60% da cobertura
 
 ### HIST — Histórico & Comparação
 
