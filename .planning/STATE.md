@@ -5,9 +5,9 @@ milestone_name: "Sync Engine & Arquitetura DB-First"
 status: planning
 stopped_at: ""
 last_updated: "2026-05-19T00:00:00.000Z"
-last_activity: "2026-05-19 — Milestone v3.0 iniciado"
+last_activity: "2026-05-19 — Roadmap v3.0 criado (Fases 8-11)"
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -22,16 +22,16 @@ See: .planning/PROJECT.md (updated 2026-05-19)
 
 **Milestone:** v3.0 — Sync Engine & Arquitetura DB-First
 **Core value:** Eliminar live API calls durante navegação; sync automático abastece o banco, front lê só do DB.
-**Current focus:** Definindo requirements
+**Current focus:** Roadmap criado — pronto para planejamento da Fase 8
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 8 — Infraestrutura de Planos (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-05-19 — Milestone v3.0 started
+Status: Ready to plan
+Last activity: 2026-05-19 — Roadmap v3.0 criado com 4 fases (8–11), 16 requirements mapeados
 
-Progress: [██████████] 100%
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -49,6 +49,10 @@ Progress: [██████████] 100%
 | 5. Dashboard de Análise | 1 plan ✅ | ~8 min | ~8 min |
 | 6. Recomendações de Compra & FULL | - | - | - |
 | 7. Histórico Comparativo | - | - | - |
+| 8. Infraestrutura de Planos | - | - | - |
+| 9. Job Queue & Dispatcher | - | - | - |
+| 10. Inventory Cache | - | - | - |
+| 11. Frontend DB-First | - | - | - |
 
 **Recent Trend:**
 
@@ -75,6 +79,10 @@ Recent decisions affecting current work:
 - HIST-01 (snapshot save) alocado na Phase 4 junto ao motor — a tabela Supabase e a lógica de save são infraestrutura consumida por todas as fases seguintes
 - Fonte de dados: MLPedidos já sincronizados no Supabase; sem upload de CSV no v2.0
 - UI do módulo vive na seção "Precificação" existente do app
+- v3.0: Postgres como fila de jobs (sem Redis/BullMQ) — volume < 100 orgs não justifica infra adicional
+- v3.0: pg_cron como scheduler — ML não oferece webhooks confiáveis para BR
+- v3.0: dispatch_sync_jobs() previne duplicatas com guard em pending/running — idempotência por design
+- v3.0: PLANS-04 seed usa INSERT ... ON CONFLICT DO NOTHING para ser idempotente
 
 ### Pending Todos
 
@@ -92,9 +100,14 @@ None yet.
 | v2.0 | Análise automática agendada (snapshot semanal) | Deferred | Roadmap v2.0 |
 | v2.0 | Exportação da tabela para XLSX | Deferred | Roadmap v2.0 |
 | v2.0 | Pré-preencher campo de preço de venda na Precificação | Deferred | Roadmap v2.0 |
+| v3.0 | Painel de status de sync no app | Deferred | Roadmap v3.0 |
+| v3.0 | Sync de Publicidade (ML Ads) automático | Deferred | Roadmap v3.0 |
+| v3.0 | Sync de Reputação e Perguntas | Deferred | Roadmap v3.0 |
+| v3.0 | UI de gerenciamento de planos e limites | Deferred | Roadmap v3.0 |
+| v3.0 | Notificação quando sync falha 3x consecutivas | Deferred | Roadmap v3.0 |
 
 ## Session Continuity
 
-Last session: 2026-05-18T14:01:31.834Z
-Stopped at: Phase 7 Plan 01 COMPLETE — ELASTICITY_BADGE extracted to elasticityConfig.ts (ed43e86)
+Last session: 2026-05-19T00:00:00.000Z
+Stopped at: Roadmap v3.0 created — Phase 8 ready to plan
 Resume file: None

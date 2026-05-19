@@ -16,7 +16,7 @@ por assinatura no próximo milestone.
 - [ ] **SYNC-01**: Sistema possui tabela `sync_jobs` com campos: `id`, `organization_id`, `ml_user_id`, `job_type` (daily_cache | orders | inventory), `date_from`, `date_to`, `status` (pending | running | completed | failed), `retries`, `error_msg`, `started_at`, `finished_at`, `created_at`
 - [ ] **SYNC-02**: Edge function `process-sync-job` pega o próximo job `pending` da fila (ORDER BY created_at), executa o sync correspondente ao `job_type`, atualiza status para `completed` ou `failed` com `finished_at`; não executa diretamente — só consome jobs criados pelo dispatcher
 - [ ] **SYNC-03**: Jobs com status `failed` e `retries < 3` são reinseridos como `pending` pelo pg_cron watchdog com backoff de 5/15/30 minutos entre tentativas
-- [ ] **SYNC-04**: Função SQL `dispatch_sync_jobs()` — para cada `(organization_id, ml_user_id, job_type)` ativo, verifica se o último job `completed` tem `finished_at + sync_interval_minutes <= NOW()`; se vencido e sem job `pending`/`running` em aberto para o par, insere um novo job `pending` na fila
+- [ ] **SYNC-04**: Função SQL `dispatch_sync_jobs()` — para cada `(organization_id, ml_user_id, job_type)` ativo, verifica se o último job `completed` tem `finished_at + sync_interval_minutes <= Now()`; se vencido e sem job `pending`/`running` em aberto para o par, insere um novo job `pending` na fila
 - [ ] **SYNC-05**: pg_cron executa `SELECT dispatch_sync_jobs()` a cada 30 minutos (cobre qualquer intervalo ≥ 30 min; near-realtime futuro reduz para 5 min)
 - [ ] **SYNC-06**: pg_cron invoca a edge function `process-sync-job` via `pg_net.http_post` a cada 5 minutos para drenar a fila de jobs pendentes
 - [ ] **SYNC-07**: `dispatch_sync_jobs()` nunca cria job duplicado para um par `(organization_id, ml_user_id, job_type)` que já tenha job com status `pending` ou `running`
@@ -63,19 +63,19 @@ por assinatura no próximo milestone.
 
 | Requirement | Phase | Plan |
 |---|---|---|
-| SYNC-01 | TBD | TBD |
-| SYNC-02 | TBD | TBD |
-| SYNC-03 | TBD | TBD |
-| SYNC-04 | TBD | TBD |
-| SYNC-05 | TBD | TBD |
-| SYNC-06 | TBD | TBD |
-| SYNC-07 | TBD | TBD |
-| INV-01 | TBD | TBD |
-| INV-02 | TBD | TBD |
-| INV-03 | TBD | TBD |
-| INV-04 | TBD | TBD |
-| INV-05 | TBD | TBD |
-| PLANS-01 | TBD | TBD |
-| PLANS-02 | TBD | TBD |
-| PLANS-03 | TBD | TBD |
-| PLANS-04 | TBD | TBD |
+| SYNC-01 | Phase 9 | TBD |
+| SYNC-02 | Phase 9 | TBD |
+| SYNC-03 | Phase 9 | TBD |
+| SYNC-04 | Phase 9 | TBD |
+| SYNC-05 | Phase 9 | TBD |
+| SYNC-06 | Phase 9 | TBD |
+| SYNC-07 | Phase 9 | TBD |
+| INV-01 | Phase 10 | TBD |
+| INV-02 | Phase 10 | TBD |
+| INV-03 | Phase 10 | TBD |
+| INV-04 | Phase 11 | TBD |
+| INV-05 | Phase 11 | TBD |
+| PLANS-01 | Phase 8 | TBD |
+| PLANS-02 | Phase 8 | TBD |
+| PLANS-03 | Phase 11 | TBD |
+| PLANS-04 | Phase 8 | TBD |

@@ -131,3 +131,71 @@ Plans:
 | 5. Dashboard de Análise | 2/2 | Complete   | 2026-05-18 |
 | 6. Recomendações de Compra & FULL | 2/2 | Complete   | 2026-05-18 |
 | 7. Histórico Comparativo | 2/2 | Complete   | 2026-05-18 |
+
+---
+
+# Roadmap — v3.0 Sync Engine & Arquitetura DB-First
+
+## Overview
+
+Quatro fases entregam o motor de sync completo: infraestrutura de planos e quotas (Fase 8), fila de jobs e dispatcher automático (Fase 9), cache de inventário com edge function de sync (Fase 10) e refatoração do front-end para leitura exclusiva do banco (Fase 11).
+
+## Phases — v3.0
+
+- [ ] **Phase 8: Infraestrutura de Planos** - Tabelas `organization_plans` e `sync_quota_daily` + seed de plano enterprise para organizações existentes
+- [ ] **Phase 9: Job Queue & Dispatcher** - Tabela `sync_jobs`, função SQL `dispatch_sync_jobs()`, edge function `process-sync-job` e agendamentos pg_cron de dispatch + drain
+- [ ] **Phase 10: Inventory Cache** - Tabela `ml_inventory_cache`, edge function `sync-ml-inventory` com upsert atômico e pg_cron diário às 04:00 BRT
+- [ ] **Phase 11: Frontend DB-First** - `MLInventoryContext` lê de `ml_inventory_cache`; quota check nas edge functions de sync; zero live calls à ML API durante navegação
+
+## Phase Details — v3.0
+
+### Phase 8: Infraestrutura de Planos
+**Goal**: As tabelas de controle de planos e quotas existem no banco e todas as organizações já possuem um plano configurado
+**Depends on**: Phase 7
+**Requirements**: PLANS-01, PLANS-02, PLANS-04
+**Success Criteria** (what must be TRUE):
+  1. A tabela `organization_plans` existe com a coluna `plan_tier` (enum free/starter/pro/enterprise), `sync_interval_minutes` e `history_days`; a tabela `sync_quota_daily` existe com chave primária composta `(organization_id, date)` e `sync_count` inicializado em zero
+  2. Toda organização existente no banco possui exatamente um registro em `organization_plans` com `plan_tier = 'enterprise'` e limites `-1` (unlimited) após a execução do seed
+  3. Inserir uma nova organização sem plano e executar o seed novamente não duplica registros (operação idempotente)
+**Plans**: TBD
+
+### Phase 9: Job Queue & Dispatcher
+**Goal**: O sistema enfileira, despacha e reprocessa jobs de sync de forma totalmente automática sem intervenção manual
+**Depends on**: Phase 8
+**Requirements**: SYNC-01, SYNC-02, SYNC-03, SYNC-04, SYNC-05, SYNC-06, SYNC-07
+**Success Criteria** (what must be TRUE):
+  1. A tabela `sync_jobs` existe com todos os campos especificados; inserir um job `pending` e invocar `process-sync-job` resulta em status `completed` ou `failed` com `finished_at` preenchido
+  2. Executar `dispatch_sync_jobs()` duas vezes consecutivas para o mesmo par `(organization_id, ml_user_id, job_type)` cria apenas um job `pending` — sem duplicatas
+  3. Um job com status `failed` e `retries < 3` é reinserido como `pending` pelo watchdog; um job com `retries >= 3` permanece `failed` e não é reinserido
+  4. O pg_cron tem dois agendamentos ativos: dispatch a cada 30 minutos e drain (invocação de `process-sync-job`) a cada 5 minutos
+**Plans**: TBD
+
+### Phase 10: Inventory Cache
+**Goal**: O inventário de todas as organizações é sincronizado automaticamente do ML para o banco todo dia de madrugada
+**Depends on**: Phase 9
+**Requirements**: INV-01, INV-02, INV-03
+**Success Criteria** (what must be TRUE):
+  1. A tabela `ml_inventory_cache` existe com constraint UNIQUE em `(organization_id, ml_user_id, item_id)`; invocar `sync-ml-inventory` para uma organização percorre todas as páginas da ML API e salva/atualiza os registros via upsert sem erros de conflito
+  2. Executar `sync-ml-inventory` duas vezes seguidas para a mesma organização produz o mesmo conjunto de registros — sem duplicatas, sem registros fantasma
+  3. O pg_cron possui agendamento ativo para executar o sync de inventário às 04:00 BRT para todas as organizações com `ml_tokens` ativos
+**Plans**: TBD
+
+### Phase 11: Frontend DB-First
+**Goal**: As telas de Estoque e Anúncios leem exclusivamente do banco de dados — nenhuma chamada live à ML API ocorre durante a navegação do usuário
+**Depends on**: Phase 10
+**Requirements**: INV-04, INV-05, PLANS-03
+**Success Criteria** (what must be TRUE):
+  1. Abrir as telas MLEstoque ou MLAnuncios não dispara nenhuma invocação à edge function `ml-inventory` nem qualquer chamada direta à API do ML; os dados exibidos vêm de `ml_inventory_cache` via query Supabase
+  2. Quando `sync_count >= sync_limit_daily` (e o limite não é `-1`), a edge function de sync retorna HTTP 429 com o corpo `{ error: "sync_limit_reached", resets_at: "tomorrow" }`; organizações com plano enterprise (limite `-1`) nunca recebem esse erro
+  3. O `MLInventoryContext` refatorado compila sem erros de TypeScript e os tipos derivam dos campos de `ml_inventory_cache`
+**Plans**: TBD
+**UI hint**: yes
+
+## Progress — v3.0
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 8. Infraestrutura de Planos | 0/? | Not started | - |
+| 9. Job Queue & Dispatcher | 0/? | Not started | - |
+| 10. Inventory Cache | 0/? | Not started | - |
+| 11. Frontend DB-First | 0/? | Not started | - |
