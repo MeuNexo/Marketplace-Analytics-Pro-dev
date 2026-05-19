@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { differenceInCalendarDays } from "date-fns";
-import { Search, Package, Check, Plus } from "lucide-react";
+import { Search, Package, Check, Plus, AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -63,6 +64,11 @@ export function AnaliseDashboard() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSnapshots, setSelectedSnapshots] = useState<string[]>([]);
+  const [coverageWarning, setCoverageWarning] = useState<{
+    orderDays: number;
+    periodDays: number;
+    coveragePct: number;
+  } | null>(null);
 
   const hasSelection = selectedProducts.length > 0;
   const selectedIds = useMemo(() => new Set(selectedProducts.map((p) => p.item_id)), [selectedProducts]);
@@ -95,6 +101,7 @@ export function AnaliseDashboard() {
     setSelectedProducts([]);
     setSnapshots([]);
     setSelectedSnapshots([]);
+    setCoverageWarning(null);
   }
 
   const compositeItemId = useMemo(
@@ -137,7 +144,20 @@ export function AnaliseDashboard() {
           title: "Sem pedidos",
           description: "Nenhum pedido confirmado encontrado para as variações no período.",
         });
+        setCoverageWarning(null);
         return;
+      }
+
+      // ── Cobertura de pedidos ────────────────────────────────────────────────
+      // Compara quantos dias distintos têm pedidos vs. o total de dias do período.
+      // Se < 80%, a tabela de orders está incompleta para esse intervalo e o
+      // "Total vendido" mostrado no card será subestimado.
+      const distinctOrderDays = new Set(allOrders.map((o) => o.order_date)).size;
+      const coveragePct = Math.round((distinctOrderDays / periodDays) * 100);
+      if (coveragePct < 80) {
+        setCoverageWarning({ orderDays: distinctOrderDays, periodDays, coveragePct });
+      } else {
+        setCoverageWarning(null);
       }
 
       const baseTitle = selectedProducts[0].title || allOrders[0]?.title || selectedProducts[0].item_id;
@@ -358,6 +378,22 @@ export function AnaliseDashboard() {
         <Skeleton className="h-40 w-full" />
       ) : snapshots.length > 0 ? (
         <div className="space-y-4">
+          {coverageWarning && (
+            <Alert className="border-amber-500/50 bg-amber-500/10">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+              <AlertTitle className="text-amber-800 dark:text-amber-400 text-sm font-medium">
+                Cobertura de pedidos incompleta ({coverageWarning.coveragePct}%)
+              </AlertTitle>
+              <AlertDescription className="text-amber-700 dark:text-amber-500 text-xs leading-relaxed">
+                A tabela de pedidos tem dados de apenas{" "}
+                <strong>{coverageWarning.orderDays} de {coverageWarning.periodDays} dias</strong>{" "}
+                do período selecionado. O <strong>Total vendido</strong> exibido está subestimado —
+                os preços GMV/Neutro/Margem e a elasticidade foram calculados somente com os pedidos disponíveis.
+                Para resultados mais precisos, sincronize os pedidos de todo o período.
+              </AlertDescription>
+            </Alert>
+          )}
+
           <AnalysisProductCard snapshot={snapshots[0]} />
 
           <Card>
