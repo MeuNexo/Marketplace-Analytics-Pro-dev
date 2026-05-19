@@ -655,6 +655,8 @@ export default function MLPedidos() {
 
   const [rows, setRows]                 = useState<OrderRow[]>([]);
   const [loading, setLoading]           = useState(false);
+  const [loadProgress, setLoadProgress] = useState<number>(0);
+  const [cappedAt, setCappedAt]         = useState<number | null>(null);
   const [syncing, setSyncing]           = useState(false);
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
   const [recalcing, setRecalcing]       = useState(false);
@@ -686,13 +688,18 @@ export default function MLPedidos() {
   const loadOrders = useCallback(async () => {
     if (!resolvedMLUserIds.length) return;
     setLoading(true);
+    setLoadProgress(0);
+    setCappedAt(null);
     try {
-      const PAGE = 1000;
+      const PAGE     = 1000;
+      const MAX_ROWS = 50_000; // ~38 dias a 1 300 pedidos/dia; avisa se exceder
       let allRows: OrderRow[] = [];
       let from = 0;
 
       while (true) {
-        const { data, error, count } = await (supabase as any)
+        // Sem count:"exact" — evita um COUNT(*) extra em cada página e reduz
+        // latência de forma significativa em períodos longos.
+        const { data, error } = await supabase
           .from("orders")
           .select(
             [
@@ -702,7 +709,6 @@ export default function MLPedidos() {
               "status", "data_pedido", "comprador", "estado",
               "custo_unit", "tax_rate", "tax_amount",
             ].join(", "),
-            { count: "exact" },
           )
           .in("ml_user_id", resolvedMLUserIds)
           .gte("data_pedido", dateFrom)
@@ -713,7 +719,13 @@ export default function MLPedidos() {
         if (error) throw error;
         const page = (data as OrderRow[]) ?? [];
         allRows = allRows.concat(page);
-        if (page.length < PAGE || allRows.length >= (count ?? 0)) break;
+        setLoadProgress(allRows.length);
+
+        if (page.length < PAGE) break; // última página
+        if (allRows.length >= MAX_ROWS) {
+          setCappedAt(MAX_ROWS);
+          break;
+        }
         from += PAGE;
       }
 
@@ -722,6 +734,7 @@ export default function MLPedidos() {
       toast({ title: "Erro ao carregar pedidos", description: err.message, variant: "destructive" });
     } finally {
       setLoading(false);
+      setLoadProgress(0);
     }
   }, [resolvedMLUserIds, dateFrom, dateTo, toast]);
 
@@ -997,11 +1010,14 @@ export default function MLPedidos() {
               className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted hover:text-muted-foreground"
               aria-label="Atualizar"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${syncing || loading ? "animate-spin" : ""}`} />
               <span className="hidden sm:inline">
                 {syncProgress
                   ? `${syncProgress.current}/${syncProgress.total} dias`
-                  : syncing ? "Sincronizando..." : "Atualizar"}
+                  : syncing ? "Sincronizando..."
+                  : loading && loadProgress > 0 ? `${loadProgress.toLocaleString("pt-BR")} pedidos…`
+                  : loading ? "Carregando…"
+                  : "Atualizar"}
               </span>
             </Button>
           </div>
@@ -1053,6 +1069,17 @@ export default function MLPedidos() {
                     <Calculator className={`w-3 h-3 ${recalcing ? "animate-pulse" : ""}`} />
                     {recalcing ? "Recalculando..." : "Recalcular"}
                   </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* Banner — período truncado no limite de 50 000 pedidos */}
+            {cappedAt && (
+              <Alert className="border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                <AlertDescription className="text-xs leading-relaxed">
+                  Período muito longo — exibindo apenas os <strong>{cappedAt.toLocaleString("pt-BR")} pedidos mais recentes</strong>.
+                  Reduza o filtro de período para ver todos os pedidos do intervalo.
                 </AlertDescription>
               </Alert>
             )}
