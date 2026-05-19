@@ -171,7 +171,11 @@ Plans:
   2. Executar `dispatch_sync_jobs()` duas vezes consecutivas para o mesmo par `(organization_id, ml_user_id, job_type)` cria apenas um job `pending` — sem duplicatas
   3. Um job com status `failed` e `retries < 3` é reinserido como `pending` pelo watchdog; um job com `retries >= 3` permanece `failed` e não é reinserido
   4. O pg_cron tem dois agendamentos ativos: dispatch a cada 30 minutos e drain (invocação de `process-sync-job`) a cada 5 minutos
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 09-01-PLAN.md — Migration sync_jobs + edge function process-sync-job + config.toml (Wave 1, autonomous)
+- [ ] 09-02-PLAN.md — supabase db push + functions deploy + verificacao schema e pg_cron (Wave 2, checkpoint)
+- [ ] 09-03-PLAN.md — Validacao end-to-end: ciclo pending→completed/failed e watchdog SYNC-03 (Wave 3, checkpoint)
 
 ### Phase 10: Inventory Cache
 **Goal**: O inventário de todas as organizações é sincronizado automaticamente do ML para o banco todo dia de madrugada
@@ -199,6 +203,6 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 8. Infraestrutura de Planos | 0/2 | Not started | - |
-| 9. Job Queue & Dispatcher | 0/? | Not started | - |
+| 9. Job Queue & Dispatcher | 0/3 | Not started | - |
 | 10. Inventory Cache | 0/? | Not started | - |
 | 11. Frontend DB-First | 0/? | Not started | - |

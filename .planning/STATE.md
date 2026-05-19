@@ -5,11 +5,11 @@ milestone_name: "Sync Engine & Arquitetura DB-First"
 status: executing
 stopped_at: ""
 last_updated: "2026-05-19T00:00:00.000Z"
-last_activity: "2026-05-19 — Fase 8 planejada (2 planos, 2 waves)"
+last_activity: "2026-05-19 — Fase 9 planejada (3 planos, 3 waves)"
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 2
+  total_plans: 5
   completed_plans: 0
   percent: 0
 ---
@@ -22,14 +22,14 @@ See: .planning/PROJECT.md (updated 2026-05-19)
 
 **Milestone:** v3.0 — Sync Engine & Arquitetura DB-First
 **Core value:** Eliminar live API calls durante navegação; sync automático abastece o banco, front lê só do DB.
-**Current focus:** Roadmap criado — pronto para planejamento da Fase 8
+**Current focus:** Fase 9 planejada — pronto para execução (09-01 → 09-02 → 09-03)
 
 ## Current Position
 
-Phase: 8 — Infraestrutura de Planos
-Plan: 08-01 (Wave 1 — pending execution)
+Phase: 9 — Job Queue & Dispatcher
+Plan: 09-01 (Wave 1 — pending execution)
 Status: Ready to execute
-Last activity: 2026-05-19 — Fase 8 planejada: 2 planos (08-01 schema+seed, 08-02 push+verify)
+Last activity: 2026-05-19 — Fase 9 planejada: 3 planos (09-01 migration+function+config, 09-02 push+deploy+verify, 09-03 e2e validation)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -83,6 +83,8 @@ Recent decisions affecting current work:
 - v3.0: pg_cron como scheduler — ML não oferece webhooks confiáveis para BR
 - v3.0: dispatch_sync_jobs() previne duplicatas com guard em pending/running — idempotência por design
 - v3.0: PLANS-04 seed usa INSERT ... ON CONFLICT DO NOTHING para ser idempotente
+- v3.0 Phase 9: claim atômico two-step em process-sync-job (SELECT id + UPDATE WHERE status='pending') — FOR UPDATE SKIP LOCKED não disponível via supabase-js v2 direto; tradeoff documentado no código
+- v3.0 Phase 9: daily_cache e inventory job_types marcados como failed (not yet supported) na Phase 9 — apenas orders fully wired; Phase 10 implementa inventory
 
 ### Pending Todos
 
@@ -105,9 +107,11 @@ None yet.
 | v3.0 | Sync de Reputação e Perguntas | Deferred | Roadmap v3.0 |
 | v3.0 | UI de gerenciamento de planos e limites | Deferred | Roadmap v3.0 |
 | v3.0 | Notificação quando sync falha 3x consecutivas | Deferred | Roadmap v3.0 |
+| v3.0 Phase 9 | daily_cache job_type fully wired | Deferred to Phase 10+ | Phase 9 planning |
+| v3.0 Phase 9 | FOR UPDATE SKIP LOCKED via supabase-js | Deferred | Phase 9 planning (two-step used instead) |
 
 ## Session Continuity
 
 Last session: 2026-05-19T00:00:00.000Z
-Stopped at: Roadmap v3.0 created — Phase 8 ready to plan
+Stopped at: Phase 9 planned — 3 plans ready to execute
 Resume file: None
