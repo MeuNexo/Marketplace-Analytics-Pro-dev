@@ -1,150 +1,81 @@
-# Requirements — v2.0 Análise Comercial de Marketplace
+# Requirements — v3.0 Sync Engine & Arquitetura DB-First
 
 ## Milestone Goal
 
-Ferramenta de análise de preço × volume que transforma os pedidos já sincronizados do ML
-em recomendações comerciais acionáveis: Preço GMV, Preço Neutro, Preço Margem, elasticidade
-por R$1,00 e sugestões de compra e envio FULL, com histórico comparativo por produto.
+Eliminar todas as consultas diretas à API do ML durante a navegação do usuário.
+Sync automático agendado (pg_cron) abastece o banco de madrugada; o front-end lê
+apenas o banco. Base de infraestrutura preparada para controle de planos e quotas
+por assinatura no próximo milestone.
 
 ---
 
-## Active Requirements — v2.0
+## Active Requirements — v3.0
 
-### MOTOR — Motor de Análise (cálculos puros)
+### SYNC — Job Queue & Dispatcher por Intervalo
 
-- [ ] **MOTOR-01**: Sistema agrupa os pedidos por preço unitário praticado e calcula unidades vendidas, GMV total, dias ativos no período, venda média diária e participações em volume e GMV para cada faixa de preço
-- [ ] **MOTOR-02**: Sistema determina o Preço GMV como o preço com maior venda média diária; em empate escolhe o maior GMV total
-- [ ] **MOTOR-03**: Sistema determina o Preço Margem como o maior preço que possui volume ≥ 15% do volume do Preço GMV; quando nenhum preço acima do GMV atinge o mínimo, usa preço_gmv × 1,10 arredondado para final .99
-- [ ] **MOTOR-04**: Sistema determina o Preço Neutro como o preço real mais próximo da média ponderada entre Preço GMV e Preço Margem; quando não existe preço real nessa faixa, calcula a média e arredonda para final .99 ou .90
-- [ ] **MOTOR-05**: Sistema calcula a Elasticidade por R$1,00 (% de queda na venda diária para cada R$1,00 acima do Preço GMV usando Preço Margem como referência) e classifica em: Baixa (≤ 0,70%/R$), Média (0,71–1,30%/R$), Alta (1,31–2,00%/R$), Extrema (> 2,00%/R$)
+- [ ] **SYNC-01**: Sistema possui tabela `sync_jobs` com campos: `id`, `organization_id`, `ml_user_id`, `job_type` (daily_cache | orders | inventory), `date_from`, `date_to`, `status` (pending | running | completed | failed), `retries`, `error_msg`, `started_at`, `finished_at`, `created_at`
+- [ ] **SYNC-02**: Edge function `process-sync-job` pega o próximo job `pending` da fila (ORDER BY created_at), executa o sync correspondente ao `job_type`, atualiza status para `completed` ou `failed` com `finished_at`; não executa diretamente — só consome jobs criados pelo dispatcher
+- [ ] **SYNC-03**: Jobs com status `failed` e `retries < 3` são reinseridos como `pending` pelo pg_cron watchdog com backoff de 5/15/30 minutos entre tentativas
+- [ ] **SYNC-04**: Função SQL `dispatch_sync_jobs()` — para cada `(organization_id, ml_user_id, job_type)` ativo, verifica se o último job `completed` tem `finished_at + sync_interval_minutes <= NOW()`; se vencido e sem job `pending`/`running` em aberto para o par, insere um novo job `pending` na fila
+- [ ] **SYNC-05**: pg_cron executa `SELECT dispatch_sync_jobs()` a cada 30 minutos (cobre qualquer intervalo ≥ 30 min; near-realtime futuro reduz para 5 min)
+- [ ] **SYNC-06**: pg_cron invoca a edge function `process-sync-job` via `pg_net.http_post` a cada 5 minutos para drenar a fila de jobs pendentes
+- [ ] **SYNC-07**: `dispatch_sync_jobs()` nunca cria job duplicado para um par `(organization_id, ml_user_id, job_type)` que já tenha job com status `pending` ou `running`
 
-### DASH — Dashboard & Visualização
+### INV — Inventory Cache (DB-First)
 
-- [x] **DASH-01**: Usuário vê cards de produto com Preço GMV, Preço Neutro, Preço Margem e frase de elasticidade: "A cada R$1,00 de subida a partir de R$XX,XX, perde aproximadamente X,XX% em volume"
-- [x] **DASH-02**: Usuário vê tabela de análise com colunas Produto, Marca, Preço GMV, Preço Neutro, Preço Margem e Impacto Comercial (classificação da elasticidade)
-- [x] **DASH-03**: Usuário seleciona Estratégia (GMV / Neutro / Margem) via dropdown por linha na tabela; o preço correspondente é destacado visualmente
+- [ ] **INV-01**: Sistema possui tabela `ml_inventory_cache` com campos: `id`, `organization_id`, `ml_user_id`, `item_id`, `title`, `price`, `available_quantity`, `thumbnail`, `listing_type`, `status`, `sold_quantity`, `synced_at`; constraint UNIQUE em `(organization_id, ml_user_id, item_id)`
+- [ ] **INV-02**: Edge function `sync-ml-inventory` busca o inventário completo da ML API (paginada) e salva/atualiza `ml_inventory_cache` via upsert atômico
+- [ ] **INV-03**: pg_cron executa sync de inventário diariamente às 04:00 BRT para todas as organizações com `ml_tokens` ativos
+- [ ] **INV-04**: `MLInventoryContext` lê de `ml_inventory_cache` via query Supabase em vez de invocar a edge function `ml-inventory` a cada carregamento de página
+- [ ] **INV-05**: Tela Estoque (`MLEstoque`) e tela Anúncios (`MLAnuncios`) consomem dados de `ml_inventory_cache` sem nenhuma chamada live à ML API durante a navegação
 
-### COMP — Recomendações de Compra & FULL
+### PLANS — Infraestrutura de Planos (tabelas + quota check)
 
-- [x] **COMP-01**: Usuário informa, por produto, dias de cobertura desejada, estoque atual total, estoque FULL atual e estoque casa/CD
-- [x] **COMP-02**: Usuário seleciona multiplicador de demanda (Normal ×1,0 / Campanha leve ×1,2 / Data forte ×1,5 / Live–oferta ×2,0)
-- [x] **COMP-03**: Sistema calcula compra recomendada = (venda_diária_estratégia × multiplicador × dias_cobertura) − estoque_total_atual
-- [x] **COMP-04**: Sistema sugere volume a enviar para FULL segundo a estratégia escolhida: GMV → 70–90%, Neutro → 50–70%, Margem → 40–60% da cobertura
-
-### HIST — Histórico & Comparação
-
-- [ ] **HIST-01**: Sistema salva snapshot de cada análise executada (produto, período, curva de preços, Preços GMV/Neutro/Margem, elasticidade, data de execução)
-- [x] **HIST-02**: Usuário pode comparar análises anteriores do mesmo produto lado a lado para identificar variações de elasticidade e recomendações ao longo do tempo
-
----
-
-## Future Requirements — v2.0 (deferred)
-
-- Upload de CSV/Excel do painel do ML como fonte alternativa de pedidos
-- Análise automática agendada (snapshot semanal)
-- Exportação da tabela de análise para XLSX
-- Integração do Preço recomendado direto na tela de Precificação (pré-preencher campo de preço de venda)
+- [ ] **PLANS-01**: Sistema possui tabela `organization_plans` com campos: `organization_id` (PK), `plan_tier` (free | starter | pro | enterprise), `sync_interval_minutes` (int: 1440=free, 720=starter, 180=pro, 60=enterprise; -1=unlimited/custom), `history_days` (int, -1 = unlimited), `created_at`, `updated_at`
+- [ ] **PLANS-02**: Sistema possui tabela `sync_quota_daily` com campos: `organization_id`, `date` (date), `sync_count` (int default 0); PRIMARY KEY em `(organization_id, date)`
+- [ ] **PLANS-03**: Edge functions de sync verificam quota antes de executar: se `sync_count >= sync_limit_daily` (e `sync_limit_daily != -1`), retornam erro 429 com `{ error: "sync_limit_reached", resets_at: "tomorrow" }`; em caso de sucesso, incrementam `sync_count` atomicamente
+- [ ] **PLANS-04**: Migration seed insere registro `organization_plans` com `plan_tier = 'enterprise'` e limites `-1` (unlimited) para todas as organizações existentes que ainda não possuem plano configurado
 
 ---
 
-## Out of Scope — v2.0
+## Future Requirements — v3.0 (deferred)
 
-- **Previsão de demanda com ML/IA** — complexidade fora do escopo de v2.0
-- **Análise de concorrentes externos** — fora do ecossistema de dados disponíveis
-- **Cálculo de rentabilidade por preço** — foco é em volume; margem financeira fica em Precificação
-- **Multi-produto no módulo de compras** — usuário analisa um produto por vez nesta versão
-
----
-
-## Traceability — v2.0
-
-| REQ-ID | Phase | Notes |
-|--------|-------|-------|
-| MOTOR-01 | Phase 4 | Motor de Análise + Snapshots |
-| MOTOR-02 | Phase 4 | Motor de Análise + Snapshots |
-| MOTOR-03 | Phase 4 | Motor de Análise + Snapshots |
-| MOTOR-04 | Phase 4 | Motor de Análise + Snapshots |
-| MOTOR-05 | Phase 4 | Motor de Análise + Snapshots |
-| HIST-01 | Phase 4 | Motor de Análise + Snapshots — infra de persistência junto ao motor |
-| DASH-01 | Phase 5 | Dashboard de Análise |
-| DASH-02 | Phase 5 | Dashboard de Análise |
-| DASH-03 | Phase 5 | Dashboard de Análise |
-| COMP-01 | Phase 6 | Recomendações de Compra & FULL |
-| COMP-02 | Phase 6 | Recomendações de Compra & FULL |
-| COMP-03 | Phase 6 | Recomendações de Compra & FULL |
-| COMP-04 | Phase 6 | Recomendações de Compra & FULL |
-| HIST-02 | Phase 7 | Histórico Comparativo |
+- Painel de status de sync no app (último sync, próximo sync, status OK/falha)
+- Sync de Publicidade (anúncios ML Ads) automático
+- Sync de Reputação e Perguntas (atualmente mock)
+- Sync a cada 4h para inventário (freqüência maior)
+- UI de gerenciamento de planos e limites para owners
+- Notificação quando sync falha 3x consecutivas
 
 ---
 
----
+## Out of Scope — v3.0
 
-# Requirements — v1.0 Módulo Fiscal
-
-## v1 Requirements
-
-### Infraestrutura (INFRA)
-
-- [ ] **INFRA-01**: Migration cria tabela `ml_tax_config` com enum `tax_regime` ('simples_nacional', 'lucro_presumido', 'lucro_real'), colunas normalizadas por regime, `effective_rate` NUMERIC(6,4) calculado por trigger PostgreSQL, UNIQUE (ml_user_id, organization_id), RLS (SELECT = todos org members via is_org_member; INSERT/UPDATE/DELETE = owner via get_org_role)
-- [ ] **INFRA-02**: Hook `useMLTaxConfig(mlUserIds: string[], orgId: string)` em `src/hooks/useMLTaxConfig.ts` — query Supabase direta, retorna `Map<ml_user_id, { regime, effective_rate }>`, segue padrão TanStack Query existente
-
-### Configuração Fiscal (FISCAL)
-
-- [ ] **FISCAL-01**: Nova rota `/fiscal` em `src/App.tsx` com `RoleRoute` restrita a `owner`; item no sidebar (owner only) agrupado com `/integracoes`; page lazy-loaded
-- [ ] **FISCAL-02**: Página `MLFiscal.tsx` — lista todas as lojas ML da org com card por loja mostrando nome, badge de regime ativo ou "Não configurado", botão Configurar/Editar
-- [ ] **FISCAL-03**: Formulário Simples Nacional — campo alíquota efetiva (%) com label "Alíquota efetiva do DAS", tooltip explicando que o valor vem do PGDAS-D/contador, validação `0.5 ≤ x ≤ 19.5`
-- [ ] **FISCAL-04**: Formulário Lucro Presumido — seletor de tipo de atividade (Comércio, Indústria, Serviços); campos PIS (default 0.65%), COFINS (default 3.00%), IRPJ efetivo, CSLL efetivo com defaults por atividade; total calculado em tempo real; validação de range por campo
-- [ ] **FISCAL-05**: Formulário Lucro Real — campos PIS débito (default 1.65%), PIS crédito (default 0%), COFINS débito (default 7.60%), COFINS crédito (default 0%), ICMS débito e crédito (opcionais); taxa efetiva líquida = débitos − créditos calculada em tempo real; exibir badge "Crédito" se resultado < 0%, limitar display a 0%
-- [ ] **FISCAL-06**: Troca de regime (tab diferente do regime salvo) exige dialog de confirmação antes de salvar, informando o regime atual e o novo
-- [ ] **FISCAL-07**: Disclaimer legal em destaque na aba Fiscal: "Os valores de impostos exibidos são estimativas para análise de margem e não constituem apuração fiscal oficial. Consulte seu contador."
-
-### Integração Catálogo (CATALOG)
-
-- [ ] **CATALOG-01**: Coluna Impostos em `MLProdutos.tsx` exibe `R$ X,XX (Y,Y%)` derivado de `effective_rate` do regime da loja (base = preço de venda); fallback para `ml_product_costs.tax_rate` manual; exibe `—` quando nenhum dos dois está configurado
-- [ ] **CATALOG-02**: Banner informativo em `MLProdutos.tsx` quando alguma loja ativa não tem `ml_tax_config` configurado, com link direto para `/fiscal`
-- [ ] **CATALOG-03**: Tooltip na coluna Impostos: "Estimativa baseada no regime tributário configurado em Fiscal. Não considere créditos de entrada. Consulte seu contador."
-
-### Qualidade (QA)
-
-- [ ] **QA-01**: Testes unitários em `src/lib/tax/index.test.ts` cobrindo as fórmulas de cálculo dos 3 regimes, edge cases (crédito > débito, taxa zero, taxa negativa) e validação de inputs
+- **UI de planos** — tabelas e quota check são infraestrutura; tela de upgrade/downgrade fica no v3.1
+- **Webhooks da ML API** — a ML não oferece webhooks confiáveis para BR; pg_cron cobre o caso
+- **Redis/BullMQ para filas** — volume atual (< 100 orgs) não justifica infra adicional; Postgres é suficiente
+- **Sync em tempo real** — requisito futuro; modelo scheduled cobre o SLA adequado para analytics
+- **Migração de dados históricos antigos** — orders e daily_cache já existentes não são retroativamente normalizados
 
 ---
 
-## v2 Requirements (deferred)
+## Traceability — v3.0
 
-- Tabela de referência Simples Nacional inline (Anexos I–V + faixas de faturamento) para o vendedor confirmar seu enquadramento
-- Histórico de alterações de regime com log de usuário, timestamp e valor anterior
-- Alerta quando faturamento acumulado se aproxima da próxima faixa do Simples Nacional
-- ICMS detalhado por par de estados de origem/destino (Lucro Real)
-- Simulação comparativa entre regimes tributários
-
----
-
-## Out of Scope
-
-- **DIFAL** — requer estado de destino por pedido + fórmulas específicas por regime; 6–10 semanas de complexidade
-- **Substituição Tributária (ST)** — requer NCM + par de estados simultaneamente; pauta muda frequentemente; 12–20 semanas
-- **ISS** — 5.570 municípios com alíquotas próprias (2–5%); Simples já inclui ISS no DAS; 4–20 semanas
-- **Geração de guias / SPED / NF-e** — plataforma é analytics, não emissor fiscal
-- **Cálculo de regime por produto individual** — config é sempre por loja ML
-- **Regime por organização inteira** — cada loja ML pode ter regime diferente
-
----
-
-## Traceability
-
-| REQ-ID | Fase | Nome da Fase | Status |
-|--------|------|--------------|--------|
-| INFRA-01 | Fase 1 | Infraestrutura | Pending |
-| INFRA-02 | Fase 1 | Infraestrutura | Pending |
-| FISCAL-01 | Fase 2 | Configuração Fiscal | Pending |
-| FISCAL-02 | Fase 2 | Configuração Fiscal | Pending |
-| FISCAL-03 | Fase 2 | Configuração Fiscal | Pending |
-| FISCAL-04 | Fase 2 | Configuração Fiscal | Pending |
-| FISCAL-05 | Fase 2 | Configuração Fiscal | Pending |
-| FISCAL-06 | Fase 2 | Configuração Fiscal | Pending |
-| FISCAL-07 | Fase 2 | Configuração Fiscal | Pending |
-| CATALOG-01 | Fase 3 | Catálogo + Qualidade | Pending |
-| CATALOG-02 | Fase 3 | Catálogo + Qualidade | Pending |
-| CATALOG-03 | Fase 3 | Catálogo + Qualidade | Pending |
-| QA-01 | Fase 3 | Catálogo + Qualidade | Pending |
+| Requirement | Phase | Plan |
+|---|---|---|
+| SYNC-01 | TBD | TBD |
+| SYNC-02 | TBD | TBD |
+| SYNC-03 | TBD | TBD |
+| SYNC-04 | TBD | TBD |
+| SYNC-05 | TBD | TBD |
+| SYNC-06 | TBD | TBD |
+| SYNC-07 | TBD | TBD |
+| INV-01 | TBD | TBD |
+| INV-02 | TBD | TBD |
+| INV-03 | TBD | TBD |
+| INV-04 | TBD | TBD |
+| INV-05 | TBD | TBD |
+| PLANS-01 | TBD | TBD |
+| PLANS-02 | TBD | TBD |
+| PLANS-03 | TBD | TBD |
+| PLANS-04 | TBD | TBD |
