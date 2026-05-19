@@ -618,18 +618,33 @@ export default function MLProdutos() {
       fromDate = format(subDays(new Date(), rankingPeriod), "yyyy-MM-dd");
       toDate   = today;
     }
-    let query = supabase
-      .from("ml_product_daily_cache")
-      .select("item_id, qty_sold, revenue, ml_user_id, date")
-      .gte("date", fromDate)
-      .lte("date", toDate);
-    if (selectedStore !== "all") {
-      query = query.eq("ml_user_id", selectedStore);
-    } else if (sellerId) {
-      query = query.eq("seller_id", sellerId);
+
+    // Paginate through all rows to bypass Supabase's 1 000-row default limit.
+    // Without this, sellers with many products × days get truncated results and
+    // individual items appear with artificially low sold counts.
+    const PAGE = 1000;
+    const MAX_ROWS = 50000;
+    const allRows: { item_id: string; qty_sold: number; revenue: number; ml_user_id: string | null; date: string | null }[] = [];
+    let pageFrom = 0;
+    while (pageFrom < MAX_ROWS) {
+      let query = supabase
+        .from("ml_product_daily_cache")
+        .select("item_id, qty_sold, revenue, ml_user_id, date")
+        .gte("date", fromDate)
+        .lte("date", toDate)
+        .range(pageFrom, pageFrom + PAGE - 1);
+      if (selectedStore !== "all") {
+        query = query.eq("ml_user_id", selectedStore);
+      } else if (sellerId) {
+        query = query.eq("seller_id", sellerId);
+      }
+      const { data } = await query;
+      if (!data || data.length === 0) break;
+      allRows.push(...data);
+      if (data.length < PAGE) break;
+      pageFrom += PAGE;
     }
-    const { data } = await query;
-    setRankingRawData(data ?? []);
+    setRankingRawData(allRows);
   }, [user, rankingPeriod, rankingRange, selectedStore, sellerId]);
 
   useEffect(() => { fetchRankingSales(); }, [fetchRankingSales]);
