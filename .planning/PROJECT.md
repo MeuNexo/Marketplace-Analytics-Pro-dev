@@ -1,17 +1,15 @@
 # Garment Glow — Plataforma de Gestão ML
 
-## Current Milestone: v2.0 Análise Comercial de Marketplace
+## Current Milestone: v3.0 Sync Engine & Arquitetura DB-First
 
-**Goal:** Ferramenta de análise de preço × volume que transforma relatórios de pedidos em recomendações comerciais acionáveis (Preço GMV, Neutro, Margem), elasticidade por R$1,00 e sugestões de compra e envio FULL.
+**Goal:** Eliminar todas as consultas diretas à API do ML durante a navegação — sync automático agendado via pg_cron abastece o banco, front-end lê apenas do DB, preparando a base para controle de planos e quotas por assinatura.
 
 **Target features:**
-- Curva Preço × Volume — agrupa pedidos por preço unitário, calcula unidades, GMV, venda diária, participações
-- Preço GMV, Preço Margem e Preço Neutro com regras de elegibilidade e arredondamento comercial
-- Elasticidade por R$1,00 com 4 classificações (Baixa/Média/Alta/Extrema)
-- Dashboard de cards por produto com frase descritiva da elasticidade
-- Tabela de análise com dropdown de Estratégia (GMV/Neutro/Margem) e destaque visual
-- Recomendações de compra e envio FULL com multiplicadores de demanda e cobertura
-- Histórico comparativo de análises do mesmo produto
+- Tabela `sync_jobs` com fila de jobs, controle de status e retry automático
+- pg_cron: sync automático diário de vendas (daily cache) e pedidos (orders)
+- `ml_inventory_cache`: tabela + edge function de sync; Estoque e Anúncios leem do banco
+- Remoção de live API calls do `MLInventoryContext` — sem invoke em cada navegação
+- Infraestrutura de planos (tabelas sem UI): `organization_plans` + `sync_quota_daily`
 
 ---
 

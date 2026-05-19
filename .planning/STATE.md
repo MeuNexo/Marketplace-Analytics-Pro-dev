@@ -1,35 +1,35 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.0
-milestone_name: "- [ ] **Phase 4: Motor de Análise + Snapshots** - Engine TypeScript de cálculos"
-status: executing
-stopped_at: Phase 7 Plan 01 COMPLETE — ELASTICITY_BADGE extracted to elasticityConfig.ts (ed43e86)
-last_updated: "2026-05-18T14:01:31.853Z"
-last_activity: "2026-05-18 — Phase 7 Plan 01 complete: ELASTICITY_BADGE extracted to elasticityConfig.ts (63 testes GREEN)"
+milestone: v3.0
+milestone_name: "Sync Engine & Arquitetura DB-First"
+status: planning
+stopped_at: ""
+last_updated: "2026-05-19T00:00:00.000Z"
+last_activity: "2026-05-19 — Milestone v3.0 iniciado"
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 9
-  completed_plans: 9
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-15)
+See: .planning/PROJECT.md (updated 2026-05-19)
 
-**Milestone:** v2.0 — Análise Comercial de Marketplace
-**Core value:** Ferramenta que transforma relatórios de pedidos em recomendações de preço GMV/Neutro/Margem, elasticidade e sugestões de compra/FULL.
-**Current focus:** Phase 5 — Dashboard de Análise (DASH-01..03)
+**Milestone:** v3.0 — Sync Engine & Arquitetura DB-First
+**Core value:** Eliminar live API calls durante navegação; sync automático abastece o banco, front lê só do DB.
+**Current focus:** Definindo requirements
 
 ## Current Position
 
-Phase: Phase 7
-Plan: 07-01 COMPLETE — 07-02 next
-Status: Phase 7 in progress — Plan 01 done
-Last activity: 2026-05-18 — Phase 7 Plan 01 complete: ELASTICITY_BADGE extracted to elasticityConfig.ts (63 testes GREEN)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-05-19 — Milestone v3.0 started
 
 Progress: [██████████] 100%
 
