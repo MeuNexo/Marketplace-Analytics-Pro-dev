@@ -157,7 +157,10 @@ Quatro fases entregam o motor de sync completo: infraestrutura de planos e quota
   1. A tabela `organization_plans` existe com a coluna `plan_tier` (enum free/starter/pro/enterprise), `sync_interval_minutes` e `history_days`; a tabela `sync_quota_daily` existe com chave primária composta `(organization_id, date)` e `sync_count` inicializado em zero
   2. Toda organização existente no banco possui exatamente um registro em `organization_plans` com `plan_tier = 'enterprise'` e limites `-1` (unlimited) após a execução do seed
   3. Inserir uma nova organização sem plano e executar o seed novamente não duplica registros (operação idempotente)
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 08-01-PLAN.md — Migration de schema: ENUM plan_tier + tabelas organization_plans e sync_quota_daily + RLS
+- [ ] 08-02-PLAN.md — supabase db push + verificacao das tabelas e seed no banco
 
 ### Phase 9: Job Queue & Dispatcher
 **Goal**: O sistema enfileira, despacha e reprocessa jobs de sync de forma totalmente automática sem intervenção manual
@@ -195,7 +198,7 @@ Quatro fases entregam o motor de sync completo: infraestrutura de planos e quota
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 8. Infraestrutura de Planos | 0/? | Not started | - |
+| 8. Infraestrutura de Planos | 0/2 | Not started | - |
 | 9. Job Queue & Dispatcher | 0/? | Not started | - |
 | 10. Inventory Cache | 0/? | Not started | - |
 | 11. Frontend DB-First | 0/? | Not started | - |
