@@ -743,36 +743,62 @@ export default function MLPedidos() {
     if (connected) loadOrders();
   }, [connected, loadOrders]);
 
-  // ── Sync — bulk dispatch para job queue (processa em background a cada 5 min) ──
+  // ── Sync — direto para períodos curtos, job queue para períodos longos ───────
   const handleSync = useCallback(async () => {
     if (!resolvedMLUserIds.length || syncing) return;
     setSyncing(true);
     setSyncProgress(null);
+
     try {
-      const { data, error } = await supabase.functions.invoke("bulk-dispatch-sync-jobs", {
-        body: { ml_user_ids: resolvedMLUserIds, date_from: dateFrom, date_to: dateTo, job_type: "orders" },
-      });
-      if (error) throw error;
+      // Contar dias no range
+      const msPerDay = 86_400_000;
+      const days = Math.round((new Date(dateTo).getTime() - new Date(dateFrom).getTime()) / msPerDay) + 1;
+      const totalJobs = days * resolvedMLUserIds.length;
 
-      const dispatched: number = data?.dispatched ?? 0;
-      const skipped: number    = data?.skipped    ?? 0;
-
-      if (dispatched === 0 && skipped > 0) {
-        toast({ title: "Já sincronizado", description: "Todos os syncs para este período já estão em andamento ou concluídos." });
+      if (totalJobs <= 5) {
+        // ── Fluxo direto: chama sync-ml-orders imediatamente para cada (store, dia) ──
+        let done = 0;
+        for (const mlUserId of resolvedMLUserIds) {
+          for (let d = 0; d < days; d++) {
+            const day = new Date(new Date(dateFrom).getTime() + d * msPerDay)
+              .toISOString().slice(0, 10);
+            await supabase.functions.invoke("sync-ml-orders", {
+              body: { ml_user_id: mlUserId, date_from: day, date_to: day },
+            });
+            done++;
+            setSyncProgress(Math.round((done / totalJobs) * 100));
+          }
+        }
+        await loadOrders();
+        setLastSyncedAt(new Date());
+        toast({ title: "Pedidos atualizados", description: `Sincronização concluída: ${dateFrom} → ${dateTo}.` });
       } else {
-        toast({
-          title: "Sincronização iniciada",
-          description: `${dispatched} sync${dispatched !== 1 ? "s" : ""} criado${dispatched !== 1 ? "s" : ""}. Os pedidos serão atualizados em breve.`,
+        // ── Fluxo assíncrono: bulk dispatch → pg_cron processa em background ────
+        const { data, error } = await supabase.functions.invoke("bulk-dispatch-sync-jobs", {
+          body: { ml_user_ids: resolvedMLUserIds, date_from: dateFrom, date_to: dateTo, job_type: "orders" },
         });
-        setQueuePending(dispatched);
+        if (error) throw error;
+
+        const dispatched: number = data?.dispatched ?? 0;
+        const skipped: number    = data?.skipped    ?? 0;
+
+        if (dispatched === 0 && skipped > 0) {
+          toast({ title: "Já sincronizado", description: "Todos os syncs para este período já estão em andamento ou concluídos." });
+        } else {
+          toast({
+            title: "Sincronização iniciada",
+            description: `${dispatched} sync${dispatched !== 1 ? "s" : ""} criado${dispatched !== 1 ? "s" : ""}. Os pedidos serão atualizados em breve.`,
+          });
+          setQueuePending(dispatched);
+        }
       }
     } catch (err: any) {
-      toast({ title: "Erro ao iniciar sincronização", description: err.message, variant: "destructive" });
+      toast({ title: "Erro ao sincronizar pedidos", description: err.message, variant: "destructive" });
     } finally {
       setSyncing(false);
       setSyncProgress(null);
     }
-  }, [resolvedMLUserIds, syncing, dateFrom, dateTo, toast]);
+  }, [resolvedMLUserIds, syncing, dateFrom, dateTo, loadOrders, toast]);
 
   // ── Poll queue until jobs finish, then reload orders ──────────────────────
   useEffect(() => {
