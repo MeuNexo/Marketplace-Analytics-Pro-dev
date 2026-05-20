@@ -65,3 +65,6 @@ verify_jwt = false
 
 [functions.sync-ml-inventory]
 verify_jwt = false
+
+[functions.bulk-dispatch-sync-jobs]
+verify_jwt = false

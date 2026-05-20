@@ -132,14 +132,39 @@ serve(async (req) => {
 
       return json({ ok: true, job_id: job.id, job_type: job.job_type, status: "completed" });
 
+    } else if (job.job_type === "daily_cache") {
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/mercado-libre-integration`, {
+        method:  "POST",
+        headers: {
+          "Content-Type":  "application/json",
+          "Authorization": "Bearer " + SERVICE_KEY,
+        },
+        body: JSON.stringify({
+          ml_user_id: job.ml_user_id,
+          date_from:  job.date_from,
+          date_to:    job.date_to,
+        }),
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => String(resp.status));
+        throw new Error(`mercado-libre-integration responded ${resp.status}: ${errText}`);
+      }
+
+      await sb
+        .from("sync_jobs")
+        .update({ status: "completed", finished_at: new Date().toISOString() })
+        .eq("id", job.id);
+
+      return json({ ok: true, job_id: job.id, job_type: job.job_type, status: "completed" });
+
     } else {
-      // daily_cache not yet supported
-      const errMsg = `job_type not yet supported: ${job.job_type}`;
+      const errMsg = `job_type not supported: ${job.job_type}`;
       await sb
         .from("sync_jobs")
         .update({
-          status:     "failed",
-          error_msg:  errMsg,
+          status:      "failed",
+          error_msg:   errMsg,
           finished_at: new Date().toISOString(),
         })
         .eq("id", job.id);

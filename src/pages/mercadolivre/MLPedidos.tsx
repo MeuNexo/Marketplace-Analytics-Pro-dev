@@ -659,6 +659,7 @@ export default function MLPedidos() {
   const [cappedAt, setCappedAt]         = useState<number | null>(null);
   const [syncing, setSyncing]           = useState(false);
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
+  const [queuePending, setQueuePending] = useState<number>(0);
   const [recalcing, setRecalcing]       = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [search, setSearch]             = useState("");
@@ -742,51 +743,58 @@ export default function MLPedidos() {
     if (connected) loadOrders();
   }, [connected, loadOrders]);
 
-  // ── Sync — fatiado por dia para evitar timeout da edge function ──────────────
+  // ── Sync — bulk dispatch para job queue (processa em background a cada 5 min) ──
   const handleSync = useCallback(async () => {
     if (!resolvedMLUserIds.length || syncing) return;
     setSyncing(true);
     setSyncProgress(null);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Sessão expirada");
+      const { data, error } = await supabase.functions.invoke("bulk-dispatch-sync-jobs", {
+        body: { ml_user_ids: resolvedMLUserIds, date_from: dateFrom, date_to: dateTo, job_type: "orders" },
+      });
+      if (error) throw error;
 
-      // Gera lista de datas individuais no range
-      const days = eachDayOfInterval({ start: parseISO(dateFrom), end: parseISO(dateTo) });
-      const total = days.length * resolvedMLUserIds.length;
-      let current = 0;
+      const dispatched: number = data?.dispatched ?? 0;
+      const skipped: number    = data?.skipped    ?? 0;
 
-      for (const ml_user_id of resolvedMLUserIds) {
-        const store = stores.find(s => s.ml_user_id === ml_user_id);
-        for (const day of days) {
-          const dateStr = format(day, "yyyy-MM-dd");
-          current++;
-          setSyncProgress({ current, total });
-
-          const { data, error } = await supabase.functions.invoke("sync-ml-orders", {
-            body: {
-              ml_user_id,
-              date_from: dateStr,
-              date_to:   dateStr,
-              seller_id: store?.seller_id ?? null,
-            },
-          });
-          if (error) throw error;
-          if (!data?.success) throw new Error(data?.error || "Sync failed");
-        }
+      if (dispatched === 0 && skipped > 0) {
+        toast({ title: "Já sincronizado", description: "Todos os jobs para este período já estão na fila ou concluídos." });
+      } else {
+        toast({
+          title: "Sincronização iniciada",
+          description: `${dispatched} job${dispatched !== 1 ? "s" : ""} criado${dispatched !== 1 ? "s" : ""}. Os pedidos serão atualizados em breve.`,
+        });
+        setQueuePending(dispatched);
       }
-
-      const now = new Date();
-      setLastSyncedAt(now);
-      await loadOrders();
-      toast({ title: "Sincronizado", description: `Pedidos atualizados: ${dateFrom} → ${dateTo}.` });
     } catch (err: any) {
-      toast({ title: "Erro na sincronização", description: err.message, variant: "destructive" });
+      toast({ title: "Erro ao criar jobs de sync", description: err.message, variant: "destructive" });
     } finally {
       setSyncing(false);
       setSyncProgress(null);
     }
-  }, [resolvedMLUserIds, stores, syncing, dateFrom, dateTo, loadOrders, toast]);
+  }, [resolvedMLUserIds, syncing, dateFrom, dateTo, toast]);
+
+  // ── Poll queue until jobs finish, then reload orders ──────────────────────
+  useEffect(() => {
+    if (queuePending === 0) return;
+    const interval = setInterval(async () => {
+      const { count } = await supabase
+        .from("sync_jobs")
+        .select("id", { count: "exact", head: true })
+        .in("ml_user_id", resolvedMLUserIds)
+        .eq("job_type", "orders")
+        .in("status", ["pending", "running"]);
+      const remaining = count ?? 0;
+      setQueuePending(remaining);
+      if (remaining === 0) {
+        clearInterval(interval);
+        await loadOrders();
+        setLastSyncedAt(new Date());
+        toast({ title: "Pedidos atualizados", description: `Sincronização concluída: ${dateFrom} → ${dateTo}.` });
+      }
+    }, 15_000);
+    return () => clearInterval(interval);
+  }, [queuePending, resolvedMLUserIds, dateFrom, dateTo, loadOrders, toast]);
 
   const handleConfirmPeriod = useCallback(() => {
     if (pendingRange !== null) { setCustomRange(pendingRange); setPeriod(30); }
@@ -1010,11 +1018,10 @@ export default function MLPedidos() {
               className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted hover:text-muted-foreground"
               aria-label="Atualizar"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${syncing || loading ? "animate-spin" : ""}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${syncing || loading || queuePending > 0 ? "animate-spin" : ""}`} />
               <span className="hidden sm:inline">
-                {syncProgress
-                  ? `${syncProgress.current}/${syncProgress.total} dias`
-                  : syncing ? "Sincronizando..."
+                {syncing ? "Criando jobs…"
+                  : queuePending > 0 ? `${queuePending} job${queuePending !== 1 ? "s" : ""} na fila…`
                   : loading && loadProgress > 0 ? `${loadProgress.toLocaleString("pt-BR")} pedidos…`
                   : loading ? "Carregando…"
                   : "Atualizar"}
@@ -1035,9 +1042,9 @@ export default function MLPedidos() {
             <p className="text-sm text-muted-foreground max-w-xs">
               Clique em <strong>Atualizar</strong> para buscar os pedidos do período selecionado.
             </p>
-            <Button onClick={handleSync} disabled={syncing}>
-              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${syncing ? "animate-spin" : ""}`} />
-              {syncing ? "Sincronizando…" : "Buscar pedidos"}
+            <Button onClick={handleSync} disabled={syncing || queuePending > 0}>
+              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${syncing || queuePending > 0 ? "animate-spin" : ""}`} />
+              {syncing ? "Criando jobs…" : queuePending > 0 ? `${queuePending} jobs na fila…` : "Buscar pedidos"}
             </Button>
           </div>
         )}
