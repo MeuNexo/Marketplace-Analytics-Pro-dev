@@ -112,32 +112,28 @@ serve(async (req) => {
     const { organization_id } = tokenRow;
 
     for (const day of days) {
-      // Skip if pending/running job already exists for this (ml_user_id, job_type, date_from)
-      const { data: existing } = await sb
+      // idx_sync_jobs_pending_unique prevents duplicates for (ml_user_id, job_type, date_from)
+      // where status IN ('pending','running') — ON CONFLICT DO NOTHING is the atomic guard.
+      const { error: insertErr, data: inserted } = await sb
         .from("sync_jobs")
+        .insert({
+          organization_id,
+          ml_user_id,
+          job_type,
+          status:    "pending",
+          date_from: day,
+          date_to:   day,
+        })
         .select("id")
-        .eq("ml_user_id", ml_user_id)
-        .eq("job_type", job_type)
-        .eq("date_from", day)
-        .in("status", ["pending", "running"])
         .maybeSingle();
 
-      if (existing) { skipped++; continue; }
-
-      const { error: insertErr } = await sb.from("sync_jobs").insert({
-        organization_id,
-        ml_user_id,
-        job_type,
-        status:    "pending",
-        date_from: day,
-        date_to:   day,
-      });
-
       if (insertErr) {
-        console.error("bulk-dispatch insert error:", insertErr.message);
+        // conflict = already pending/running → skip silently
         skipped++;
-      } else {
+      } else if (inserted) {
         dispatched++;
+      } else {
+        skipped++;
       }
     }
   }
