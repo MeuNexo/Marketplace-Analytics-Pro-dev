@@ -59,3 +59,9 @@ verify_jwt = false
 
 [functions.recalc-order-costs]
 verify_jwt = true
+
+[functions.process-sync-job]
+verify_jwt = false
+
+[functions.sync-ml-inventory]
+verify_jwt = false

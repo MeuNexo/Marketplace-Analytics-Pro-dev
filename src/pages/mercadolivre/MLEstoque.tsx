@@ -825,7 +825,7 @@ function SortableHead({ label, sortAsc, sortDesc, current, onSort, className = "
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export default function MLEstoque() {
-  const { items, loading: isLoading, hasToken, lastUpdated, refresh } = useMLInventory();
+  const { items, loading: isLoading, syncing, hasToken, lastUpdated, refresh, syncNow } = useMLInventory();
   // hasToken: null = ainda carregando, false = sem token, true = conectado
   const isConnected = hasToken !== false;
   const [coveragePeriod, setCoveragePeriod] = useState<CoveragePeriod>(30);
@@ -1019,12 +1019,25 @@ export default function MLEstoque() {
               variant="ghost"
               size="sm"
               onClick={refresh}
-              disabled={isLoading}
+              disabled={isLoading || syncing}
               className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted hover:text-muted-foreground"
-              aria-label="Atualizar"
+              aria-label="Recarregar cache"
+              title="Recarregar dados do banco"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
               <span className="hidden sm:inline">Atualizar</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={syncNow}
+              disabled={isLoading || syncing}
+              className="h-8 gap-1.5 px-2.5 text-xs"
+              aria-label="Sincronizar inventário com Mercado Livre"
+              title="Busca dados atualizados no Mercado Livre (pode levar alguns segundos)"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline">{syncing ? "Sincronizando…" : "Sincronizar ML"}</span>
             </Button>
           </div>
         </div>

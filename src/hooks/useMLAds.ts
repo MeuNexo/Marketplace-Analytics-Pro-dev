@@ -3,6 +3,7 @@ import { format, subDays } from "date-fns";
 import { useMLStore } from "@/contexts/MLStoreContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -77,18 +78,6 @@ export function computeAdsSummary(daily: AdsDailyStat[]): AdsSummary {
   return { total_impressions, total_clicks, total_spend, total_attributed_revenue, total_attributed_orders, avg_cpc, avg_ctr, avg_roas };
 }
 
-// ─── Cache ────────────────────────────────────────────────────────────────────
-
-interface AdsCache {
-  daily: AdsDailyStat[];
-  campaigns: AdsCampaign[];
-  products: AdsProductStat[];
-  summary: AdsSummary;
-  fetchedAt: number;
-}
-const adsCache = new Map<string, AdsCache>();
-const CACHE_TTL_MS = 5 * 60 * 1000;
-
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export interface UseMLAdsOptions {
@@ -106,7 +95,9 @@ export interface UseMLAdsResult {
   connected: boolean;
   isRealData: boolean;
   adsAvailable: boolean | null;
+  lastUpdated: Date | null;
   sync: () => Promise<void>;
+  syncNow: () => Promise<void>;
   syncing: boolean;
 }
 
@@ -116,18 +107,20 @@ export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
   const { daysBack = 30, dateFrom, dateTo } = opts;
   const { stores, selectedStore, loading: storeLoading, scopeKey, hasMLConnection } = useMLStore();
   const { user } = useAuth();
-  const [syncing, setSyncing] = useState(false);
-  const [realData, setRealData] = useState<{
+  const { toast } = useToast();
+
+  const [loading, setLoading]   = useState(false);
+  const [syncing, setSyncing]   = useState(false);
+  const [adsAvailable, setAdsAvailable] = useState<boolean | null>(null);
+  const [lastUpdated, setLastUpdated]   = useState<Date | null>(null);
+  const [data, setData] = useState<{
     daily: AdsDailyStat[];
     campaigns: AdsCampaign[];
     products: AdsProductStat[];
     summary: AdsSummary;
   } | null>(null);
-  const [isRealData, setIsRealData] = useState(false);
-  const [adsAvailable, setAdsAvailable] = useState<boolean | null>(null);
-  const [loading, setLoading] = useState(false);
 
-  const targetStoreIds = useMemo(() => {
+  const mlUserIds = useMemo(() => {
     if (selectedStore !== "all" && selectedStore) return [selectedStore];
     return stores.map((s) => s.ml_user_id);
   }, [selectedStore, stores]);
@@ -144,128 +137,157 @@ export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
     return format(new Date(), "yyyy-MM-dd");
   }, [dateTo]);
 
-  const cacheKey = `${scopeKey}:${effectiveDateFrom}:${effectiveDateTo}`;
-
-  const fetchOneStore = useCallback(async (
-    targetStoreId: string,
-    accessToken: string,
-    force: boolean,
-  ) => {
-    const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-    const params = new URLSearchParams({
-      ml_user_id: targetStoreId,
-      date_from: effectiveDateFrom,
-      date_to: effectiveDateTo,
-    });
-    if (force) params.set("force", "true");
-
-    const res = await fetch(
-      `https://${projectId}.supabase.co/functions/v1/ml-ads?${params}`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "",
-        },
-      },
-    );
-    if (!res.ok) return null;
-    return res.json();
-  }, [effectiveDateFrom, effectiveDateTo]);
-
-  const fetchRealData = useCallback(async (force = false) => {
-    if (!connected || !user || targetStoreIds.length === 0) return;
-
-    const hasCachedData = !!(adsCache.get(cacheKey) && Date.now() - (adsCache.get(cacheKey)?.fetchedAt ?? 0) < CACHE_TTL_MS);
-    if (!hasCachedData) setLoading(true);
-
+  // Read from cache tables (DB-first — no live ML API calls)
+  const refresh = useCallback(async () => {
+    if (!user || mlUserIds.length === 0) return;
+    setLoading(true);
     try {
-      const session = await supabase.auth.getSession();
-      const accessToken = session.data.session?.access_token;
-      if (!accessToken) return;
+      const [dailyRes, campaignsRes, productsRes] = await Promise.all([
+        supabase
+          .from("ml_ads_daily_cache")
+          .select("*")
+          .in("ml_user_id", mlUserIds)
+          .gte("date", effectiveDateFrom)
+          .lte("date", effectiveDateTo),
+        supabase
+          .from("ml_ads_campaigns_cache")
+          .select("*")
+          .in("ml_user_id", mlUserIds),
+        supabase
+          .from("ml_ads_products_cache")
+          .select("*")
+          .in("ml_user_id", mlUserIds),
+      ]);
 
-      const results = await Promise.all(
-        targetStoreIds.map((id) => fetchOneStore(id, accessToken, force)),
-      );
+      if (dailyRes.error) throw dailyRes.error;
+      if (campaignsRes.error) throw campaignsRes.error;
+      if (productsRes.error) throw productsRes.error;
 
-      const aggregated: { daily: AdsDailyStat[]; campaigns: AdsCampaign[]; products: AdsProductStat[] } = {
-        daily: [], campaigns: [], products: [],
-      };
-      let anyAvailable = false;
+      const dailyRows = dailyRes.data ?? [];
+      const campaignRows = campaignsRes.data ?? [];
+      const productRows = productsRes.data ?? [];
 
-      for (const result of results) {
-        if (!result) continue;
-        if (result.adsAvailable === true) anyAvailable = true;
-        if (result.daily?.length) {
-          for (const row of result.daily as AdsDailyStat[]) {
-            const existing = aggregated.daily.find((d) => d.date === row.date);
-            if (existing) {
-              existing.impressions        = (existing.impressions        ?? 0) + (row.impressions        ?? 0);
-              existing.clicks             = (existing.clicks             ?? 0) + (row.clicks             ?? 0);
-              existing.spend              = (existing.spend              ?? 0) + (row.spend              ?? 0);
-              existing.attributed_revenue = (existing.attributed_revenue ?? 0) + (row.attributed_revenue ?? 0);
-              existing.attributed_orders  = (existing.attributed_orders  ?? 0) + (row.attributed_orders  ?? 0);
-            } else {
-              aggregated.daily.push({ ...row });
-            }
-          }
+      // Aggregate daily rows by date (multiple stores)
+      const dailyMap = new Map<string, AdsDailyStat>();
+      for (const row of dailyRows) {
+        const existing = dailyMap.get(row.date);
+        if (existing) {
+          existing.impressions        += row.impressions        ?? 0;
+          existing.clicks             += row.clicks             ?? 0;
+          existing.spend              += row.spend              ?? 0;
+          existing.attributed_revenue += row.attributed_revenue ?? 0;
+          existing.attributed_orders  += row.attributed_orders  ?? 0;
+        } else {
+          dailyMap.set(row.date, {
+            date:                row.date,
+            impressions:         row.impressions        ?? 0,
+            clicks:              row.clicks             ?? 0,
+            spend:               row.spend              ?? 0,
+            attributed_revenue:  row.attributed_revenue ?? 0,
+            attributed_orders:   row.attributed_orders  ?? 0,
+            cpc:                 row.cpc                ?? 0,
+            ctr:                 row.ctr                ?? 0,
+            roas:                row.roas               ?? 0,
+          });
         }
-        if (result.campaigns?.length) aggregated.campaigns.push(...result.campaigns);
-        if (result.products?.length)  aggregated.products.push(...result.products);
       }
+      const daily = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 
-      setAdsAvailable(anyAvailable);
+      const campaigns: AdsCampaign[] = campaignRows.map((r) => ({
+        id:                  r.campaign_id,
+        name:                r.name ?? "",
+        status:              (r.status as AdsCampaign["status"]) ?? "ended",
+        daily_budget:        r.daily_budget     ?? 0,
+        impressions:         r.impressions      ?? 0,
+        clicks:              r.clicks           ?? 0,
+        spend:               r.spend            ?? 0,
+        attributed_revenue:  r.attributed_revenue ?? 0,
+        attributed_orders:   r.attributed_orders  ?? 0,
+        cpc:                 r.cpc  ?? 0,
+        ctr:                 r.ctr  ?? 0,
+        roas:                r.roas ?? 0,
+      }));
 
-      const summary = computeAdsSummary(aggregated.daily);
-      const cached: AdsCache = { ...aggregated, summary, fetchedAt: Date.now() };
-      setRealData({ ...aggregated, summary });
-      adsCache.set(cacheKey, cached);
-      setIsRealData(true);
-    } catch (err) {
-      console.warn("ml-ads: Error fetching data", err);
+      const products: AdsProductStat[] = productRows.map((r) => ({
+        item_id:             r.item_id,
+        title:               r.title     ?? "",
+        thumbnail:           r.thumbnail ?? null,
+        impressions:         r.impressions      ?? 0,
+        clicks:              r.clicks           ?? 0,
+        spend:               r.spend            ?? 0,
+        attributed_revenue:  r.attributed_revenue ?? 0,
+        attributed_orders:   r.attributed_orders  ?? 0,
+        cpc:                 r.cpc  ?? 0,
+        ctr:                 r.ctr  ?? 0,
+        roas:                r.roas ?? 0,
+      }));
+
+      const summary = computeAdsSummary(daily);
+      setData({ daily, campaigns, products, summary });
+      setAdsAvailable(daily.length > 0 || campaigns.length > 0);
+
+      // lastUpdated = most recent synced_at across all rows
+      const allSyncedAt = [
+        ...dailyRows.map((r) => r.synced_at),
+        ...campaignRows.map((r) => r.synced_at),
+      ].filter(Boolean) as string[];
+      const latest = allSyncedAt.reduce<string | null>((max, v) => (!max || v > max ? v : max), null);
+      setLastUpdated(latest ? new Date(latest) : null);
+    } catch (err: any) {
+      console.error("useMLAds cache read error:", err);
     } finally {
       setLoading(false);
     }
-  }, [connected, user, targetStoreIds, cacheKey, fetchOneStore]);
+  }, [user, mlUserIds, effectiveDateFrom, effectiveDateTo]);
 
-  // Reset ao trocar seller/store
+  // Trigger a fresh sync from ML API, then re-read cache
+  const syncNow = useCallback(async () => {
+    if (!user || syncing || mlUserIds.length === 0) return;
+    setSyncing(true);
+    try {
+      await Promise.all(
+        mlUserIds.map((ml_user_id) =>
+          supabase.functions.invoke("ml-ads", { body: { ml_user_id, force: true } })
+        )
+      );
+      await refresh();
+      toast({ title: "Publicidade sincronizada", description: "Dados atualizados com sucesso." });
+    } catch (err: any) {
+      console.error("useMLAds syncNow error:", err);
+      toast({ title: "Erro ao sincronizar", description: err.message, variant: "destructive" });
+    } finally {
+      setSyncing(false);
+    }
+  }, [user, syncing, mlUserIds, refresh, toast]);
+
+  // Reset on scope/date change
   useEffect(() => {
-    setRealData(null);
-    setIsRealData(false);
+    setData(null);
     setAdsAvailable(null);
+    setLastUpdated(null);
   }, [scopeKey]);
 
-  // Auto-fetch
+  // Load from cache on mount / scope change
   useEffect(() => {
-    if (!hasMLConnection) return;
-    const cached = adsCache.get(cacheKey);
-    const cacheValid = !!(cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS);
-    if (cacheValid) {
-      setRealData(cached);
-      setIsRealData(true);
-      return;
-    }
-    setRealData(null);
-    setIsRealData(false);
-    fetchRealData();
-  }, [fetchRealData, cacheKey, hasMLConnection]);
+    if (!hasMLConnection || stores.length === 0) return;
+    refresh();
+  }, [stores.length, scopeKey, effectiveDateFrom, effectiveDateTo]);
 
-  const sync = useCallback(async () => {
-    if (!connected) return;
-    setSyncing(true);
-    await fetchRealData(true);
-    setSyncing(false);
-  }, [connected, fetchRealData]);
+  // Keep sync() as alias for syncNow (backward compat for existing callers)
+  const sync = syncNow;
 
   return {
-    daily:     realData?.daily     ?? [],
-    campaigns: realData?.campaigns ?? [],
-    products:  realData?.products  ?? [],
-    summary:   realData?.summary   ?? EMPTY_SUMMARY,
+    daily:     data?.daily     ?? [],
+    campaigns: data?.campaigns ?? [],
+    products:  data?.products  ?? [],
+    summary:   data?.summary   ?? EMPTY_SUMMARY,
     loading: storeLoading || loading,
     connected,
-    isRealData,
+    isRealData: data !== null,
     adsAvailable,
+    lastUpdated,
     sync,
+    syncNow,
     syncing,
   };
 }

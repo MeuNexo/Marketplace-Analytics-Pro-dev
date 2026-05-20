@@ -142,10 +142,10 @@ Quatro fases entregam o motor de sync completo: infraestrutura de planos e quota
 
 ## Phases — v3.0
 
-- [ ] **Phase 8: Infraestrutura de Planos** - Tabelas `organization_plans` e `sync_quota_daily` + seed de plano enterprise para organizações existentes
-- [ ] **Phase 9: Job Queue & Dispatcher** - Tabela `sync_jobs`, função SQL `dispatch_sync_jobs()`, edge function `process-sync-job` e agendamentos pg_cron de dispatch + drain
-- [ ] **Phase 10: Inventory Cache** - Tabela `ml_inventory_cache`, edge function `sync-ml-inventory` com upsert atômico e pg_cron diário às 04:00 BRT
-- [ ] **Phase 11: Frontend DB-First** - `MLInventoryContext` lê de `ml_inventory_cache`; quota check nas edge functions de sync; zero live calls à ML API durante navegação
+- [x] **Phase 8: Infraestrutura de Planos** - Tabelas `organization_plans` e `sync_quota_daily` + seed de plano enterprise para organizações existentes (completed 2026-05-20)
+- [x] **Phase 9: Job Queue & Dispatcher** - Tabela `sync_jobs`, função SQL `dispatch_sync_jobs()`, edge function `process-sync-job` e agendamentos pg_cron de dispatch + drain (completed 2026-05-20)
+- [x] **Phase 10: Inventory Cache** - Tabela `ml_inventory_cache`, edge function `sync-ml-inventory` com upsert atômico e pg_cron diário às 04:00 BRT (completed 2026-05-20)
+- [x] **Phase 11: Frontend DB-First** - `MLInventoryContext` lê de `ml_inventory_cache`; botão "Sincronizar ML" dispara sync manual; quota check nas edge functions de sync; zero live calls à ML API durante navegação (completed 2026-05-20)
 
 ## Phase Details — v3.0
 
@@ -159,8 +159,8 @@ Quatro fases entregam o motor de sync completo: infraestrutura de planos e quota
   3. Inserir uma nova organização sem plano e executar o seed novamente não duplica registros (operação idempotente)
 **Plans**: 2 plans
 Plans:
-- [ ] 08-01-PLAN.md — Migration de schema: ENUM plan_tier + tabelas organization_plans e sync_quota_daily + RLS
-- [ ] 08-02-PLAN.md — supabase db push + verificacao das tabelas e seed no banco
+- [x] 08-01-PLAN.md — Migration de schema: ENUM plan_tier + tabelas organization_plans e sync_quota_daily + RLS
+- [x] 08-02-PLAN.md — supabase db push + verificacao das tabelas e seed no banco
 
 ### Phase 9: Job Queue & Dispatcher
 **Goal**: O sistema enfileira, despacha e reprocessa jobs de sync de forma totalmente automática sem intervenção manual
@@ -173,9 +173,9 @@ Plans:
   4. O pg_cron tem dois agendamentos ativos: dispatch a cada 30 minutos e drain (invocação de `process-sync-job`) a cada 5 minutos
 **Plans**: 3 plans
 Plans:
-- [ ] 09-01-PLAN.md — Migration sync_jobs + edge function process-sync-job + config.toml (Wave 1, autonomous)
-- [ ] 09-02-PLAN.md — supabase db push + functions deploy + verificacao schema e pg_cron (Wave 2, checkpoint)
-- [ ] 09-03-PLAN.md — Validacao end-to-end: ciclo pending→completed/failed e watchdog SYNC-03 (Wave 3, checkpoint)
+- [x] 09-01-PLAN.md — Migration sync_jobs + edge function process-sync-job + config.toml (Wave 1, autonomous)
+- [x] 09-02-PLAN.md — supabase db push + functions deploy + verificacao schema e pg_cron (Wave 2, checkpoint)
+- [x] 09-03-PLAN.md — Validacao end-to-end: ciclo pending→completed/failed e watchdog SYNC-03 (Wave 3, checkpoint)
 
 ### Phase 10: Inventory Cache
 **Goal**: O inventário de todas as organizações é sincronizado automaticamente do ML para o banco todo dia de madrugada
@@ -202,7 +202,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 8. Infraestrutura de Planos | 0/2 | Not started | - |
-| 9. Job Queue & Dispatcher | 0/3 | Not started | - |
-| 10. Inventory Cache | 0/? | Not started | - |
-| 11. Frontend DB-First | 0/? | Not started | - |
+| 8. Infraestrutura de Planos | 2/2 | Complete   | 2026-05-20 |
+| 9. Job Queue & Dispatcher | 3/3 | Complete   | 2026-05-20 |
+| 10. Inventory Cache | 3/3 | Complete   | 2026-05-20 |
+| 11. Frontend DB-First | 1/1 | Complete   | 2026-05-20 |

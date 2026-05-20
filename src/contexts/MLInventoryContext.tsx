@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMLStore } from "@/contexts/MLStoreContext";
@@ -49,90 +49,138 @@ interface MLInventoryState {
   items: ProductItem[];
   summary: InventorySummary | null;
   loading: boolean;
+  syncing: boolean;
   hasToken: boolean | null;
   lastUpdated: Date | null;
   refresh: () => Promise<void>;
+  syncNow: () => Promise<void>;
 }
 
 const MLInventoryContext = createContext<MLInventoryState | null>(null);
 
-const REFRESH_INTERVAL = 5 * 60 * 1000;
+function rowToItem(row: any): ProductItem {
+  const rawVars: any[] = Array.isArray(row.variations) ? row.variations : [];
+  return {
+    id:                  row.item_id,
+    title:               row.title ?? "",
+    available_quantity:  row.available_quantity ?? 0,
+    sold_quantity:       row.sold_quantity ?? 0,
+    price:               row.price ?? 0,
+    currency_id:         row.currency_id ?? "BRL",
+    thumbnail:           row.thumbnail ?? null,
+    status:              row.status ?? "unknown",
+    category_id:         row.category_id ?? null,
+    listing_type_id:     row.listing_type_id ?? null,
+    health:              row.health ?? null,
+    visits:              row.visits ?? 0,
+    brand:               row.brand ?? null,
+    seller_custom_field: row.seller_custom_field ?? null,
+    has_variations:      row.has_variations ?? false,
+    variations:          rawVars.map((v: any) => ({
+      variation_id:          String(v.variation_id ?? ""),
+      attribute_combinations: Array.isArray(v.attribute_combinations) ? v.attribute_combinations : [],
+      available_quantity:    v.available_quantity ?? 0,
+      sold_quantity:         v.sold_quantity ?? 0,
+      price:                 v.price ?? 0,
+      picture_id:            v.picture_id ?? null,
+      seller_custom_field:   v.seller_custom_field ?? null,
+    })),
+    logistic_type:       row.logistic_type ?? null,
+    free_shipping:       row.free_shipping ?? false,
+    catalog_product_id:  row.catalog_product_id ?? null,
+    deal_ids:            Array.isArray(row.deal_ids) ? row.deal_ids : [],
+    _ml_user_id:         row.ml_user_id,
+  };
+}
 
 export function MLInventoryProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const { stores, selectedStore, scopeKey, hasMLConnection } = useMLStore();
   const { toast } = useToast();
 
-  const [items, setItems] = useState<ProductItem[]>([]);
-  const [summary, setSummary] = useState<InventorySummary | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [hasToken, setHasToken] = useState<boolean | null>(null);
+  const [items, setItems]           = useState<ProductItem[]>([]);
+  const [summary, setSummary]       = useState<InventorySummary | null>(null);
+  const [loading, setLoading]       = useState(false);
+  const [syncing, setSyncing]       = useState(false);
+  const [hasToken, setHasToken]     = useState<boolean | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Determine which ml_user_ids to fetch based on store selection
-  const getMLUserIdsToFetch = useCallback(() => {
-    if (selectedStore === "all") {
-      return stores.map((s) => s.ml_user_id);
-    }
+  const getMLUserIds = useCallback(() => {
+    if (selectedStore === "all") return stores.map((s) => s.ml_user_id);
     const store = stores.find((s) => s.ml_user_id === selectedStore);
     return store ? [store.ml_user_id] : [];
   }, [stores, selectedStore]);
 
-  const fetchData = useCallback(async () => {
+  // Read from ml_inventory_cache (DB-first — no live API calls)
+  const refresh = useCallback(async () => {
     if (!user) return;
-    const mlUserIds = getMLUserIdsToFetch();
-    if (mlUserIds.length === 0) {
-      setHasToken(false);
-      return;
-    }
+    const mlUserIds = getMLUserIds();
+    if (mlUserIds.length === 0) { setHasToken(false); return; }
 
     setHasToken(true);
     setLoading(true);
     try {
-      let allItems: ProductItem[] = [];
-      let mergedSummary: InventorySummary = { totalItems: 0, totalStock: 0, outOfStock: 0, lowStock: 0 };
+      const { data, error } = await supabase
+        .from("ml_inventory_cache")
+        .select("*")
+        .in("ml_user_id", mlUserIds);
 
-      for (const mlUserId of mlUserIds) {
-        const { data, error } = await supabase.functions.invoke("ml-inventory", {
-          body: { ml_user_id: mlUserId },
-        });
-        if (error) throw error;
-        if (data?.error) throw new Error(data.error);
+      if (error) throw error;
 
-        const rawItems: ProductItem[] = (data.items || []).map((item: any) => ({
-          ...item,
-          has_variations: item.has_variations ?? false,
-          variations: item.variations ?? [],
-          logistic_type: item.logistic_type ?? null,
-          free_shipping: item.free_shipping ?? false,
-          catalog_product_id: item.catalog_product_id ?? null,
-          deal_ids: Array.isArray(item.deal_ids) ? item.deal_ids : [],
-          _ml_user_id: mlUserId,
-        }));
+      const rows = data ?? [];
+      const allItems = rows.map(rowToItem);
 
-        allItems = [...allItems, ...rawItems];
+      const mergedSummary: InventorySummary = {
+        totalItems:  allItems.length,
+        totalStock:  allItems.reduce((s, i) => s + i.available_quantity, 0),
+        outOfStock:  allItems.filter((i) => i.available_quantity === 0).length,
+        lowStock:    allItems.filter((i) => i.available_quantity > 0 && i.available_quantity <= 5).length,
+      };
 
-        if (data.summary) {
-          mergedSummary.totalItems += data.summary.totalItems || 0;
-          mergedSummary.totalStock += data.summary.totalStock || 0;
-          mergedSummary.outOfStock += data.summary.outOfStock || 0;
-          mergedSummary.lowStock += data.summary.lowStock || 0;
-        }
-      }
+      allItems.sort((a, b) => a.available_quantity - b.available_quantity || b.sold_quantity - a.sold_quantity);
 
       setItems(allItems);
       setSummary(mergedSummary);
-      setLastUpdated(new Date());
+
+      // lastUpdated = most recent synced_at across all rows
+      const latestSyncedAt = rows.reduce<string | null>((latest, r) => {
+        if (!r.synced_at) return latest;
+        if (!latest) return r.synced_at;
+        return r.synced_at > latest ? r.synced_at : latest;
+      }, null);
+      setLastUpdated(latestSyncedAt ? new Date(latestSyncedAt) : null);
     } catch (err: any) {
-      console.error("ML inventory fetch error:", err);
-      toast({ title: "Erro ao carregar dados", description: err.message, variant: "destructive" });
+      console.error("ML inventory cache read error:", err);
+      toast({ title: "Erro ao carregar estoque", description: err.message, variant: "destructive" });
     } finally {
       setLoading(false);
     }
-  }, [user, getMLUserIdsToFetch, toast]);
+  }, [user, getMLUserIds, toast]);
 
-  // Reset all state when scope changes (seller or store switch)
+  // Trigger a fresh sync from ML API for each store, then re-read cache
+  const syncNow = useCallback(async () => {
+    if (!user || syncing) return;
+    const mlUserIds = getMLUserIds();
+    if (mlUserIds.length === 0) return;
+
+    setSyncing(true);
+    try {
+      await Promise.all(
+        mlUserIds.map((mlUserId) =>
+          supabase.functions.invoke("sync-ml-inventory", { body: { ml_user_id: mlUserId } })
+        )
+      );
+      await refresh();
+      toast({ title: "Estoque sincronizado", description: "Dados atualizados com sucesso." });
+    } catch (err: any) {
+      console.error("ML inventory sync error:", err);
+      toast({ title: "Erro ao sincronizar", description: err.message, variant: "destructive" });
+    } finally {
+      setSyncing(false);
+    }
+  }, [user, syncing, getMLUserIds, refresh, toast]);
+
+  // Reset on scope change
   useEffect(() => {
     setItems([]);
     setSummary(null);
@@ -140,18 +188,14 @@ export function MLInventoryProvider({ children }: { children: ReactNode }) {
     setHasToken(hasMLConnection ? true : null);
   }, [scopeKey, hasMLConnection]);
 
-  // Fetch once when stores are available after scope change, then auto-refresh
+  // Load from cache on mount / scope change
   useEffect(() => {
     if (stores.length === 0) return;
-    fetchData();
-    intervalRef.current = setInterval(fetchData, REFRESH_INTERVAL);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [stores.length, fetchData, scopeKey]);
+    refresh();
+  }, [stores.length, scopeKey]);
 
   return (
-    <MLInventoryContext.Provider value={{ items, summary, loading, hasToken, lastUpdated, refresh: fetchData }}>
+    <MLInventoryContext.Provider value={{ items, summary, loading, syncing, hasToken, lastUpdated, refresh, syncNow }}>
       {children}
     </MLInventoryContext.Provider>
   );

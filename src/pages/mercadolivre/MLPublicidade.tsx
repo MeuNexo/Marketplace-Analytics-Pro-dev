@@ -76,7 +76,7 @@ export default function MLAnuncios() {
 
   // Fetch enough data to cover both current and previous period for delta comparison.
   // fetchFrom already includes the previous window (e.g. 61 days back for a 30d period).
-  const { daily, campaigns, products, summary, loading, connected, sync, syncing } =
+  const { daily, campaigns, products, summary, loading, connected, sync, syncNow, syncing, lastUpdated } =
     useMLAds({ dateFrom: fetchFrom, dateTo: currentTo });
 
   // Inventory for "Estoque" column on sponsored products
@@ -263,7 +263,7 @@ export default function MLAnuncios() {
       {/* ── Sticky header ── */}
       <div className="sticky -top-4 md:-top-6 lg:-top-8 z-20 -mx-4 md:-mx-6 lg:-mx-8 -mt-4 md:-mt-6 lg:-mt-8 px-4 md:px-6 lg:px-8 pb-4 pt-4 bg-background/95 backdrop-blur-sm border-b border-border/40">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4 min-w-0">
-          <MLPageHeader title="Publicidade" lastUpdated={null} />
+          <MLPageHeader title="Publicidade" lastUpdated={lastUpdated} />
           <div className="flex items-center gap-2 flex-wrap min-w-0">
 
             <MLPeriodPicker
@@ -288,15 +288,25 @@ export default function MLAnuncios() {
             </TabsList>
 
             <Button
+              variant="outline"
+              size="sm"
+              onClick={syncNow}
+              disabled={syncing || !connected}
+              className="h-8 gap-1.5 px-2.5 text-xs"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline">{syncing ? "Sincronizando…" : "Sincronizar ML"}</span>
+            </Button>
+            <Button
               variant="ghost"
               size="sm"
               onClick={sync}
-              disabled={syncing || !connected}
+              disabled={loading || !connected}
               className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted hover:text-muted-foreground"
               aria-label="Atualizar"
             >
-              <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
-              <span className="hidden sm:inline">{syncing ? "Atualizando..." : "Atualizar"}</span>
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline">Atualizar</span>
             </Button>
           </div>
         </div>
