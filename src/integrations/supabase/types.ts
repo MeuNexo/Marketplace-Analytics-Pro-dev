@@ -503,6 +503,92 @@ export type Database = {
           },
         ]
       }
+      ml_inventory_cache: {
+        Row: {
+          available_quantity: number
+          brand: string | null
+          catalog_product_id: string | null
+          category_id: string | null
+          currency_id: string
+          deal_ids: Json
+          free_shipping: boolean
+          has_variations: boolean
+          health: number | null
+          item_id: string
+          listing_type_id: string | null
+          logistic_type: string | null
+          ml_user_id: string
+          organization_id: string
+          price: number | null
+          seller_custom_field: string | null
+          sold_quantity: number
+          status: string | null
+          synced_at: string
+          thumbnail: string | null
+          title: string | null
+          variations: Json
+          visits: number
+        }
+        Insert: {
+          available_quantity?: number
+          brand?: string | null
+          catalog_product_id?: string | null
+          category_id?: string | null
+          currency_id?: string
+          deal_ids?: Json
+          free_shipping?: boolean
+          has_variations?: boolean
+          health?: number | null
+          item_id: string
+          listing_type_id?: string | null
+          logistic_type?: string | null
+          ml_user_id: string
+          organization_id: string
+          price?: number | null
+          seller_custom_field?: string | null
+          sold_quantity?: number
+          status?: string | null
+          synced_at?: string
+          thumbnail?: string | null
+          title?: string | null
+          variations?: Json
+          visits?: number
+        }
+        Update: {
+          available_quantity?: number
+          brand?: string | null
+          catalog_product_id?: string | null
+          category_id?: string | null
+          currency_id?: string
+          deal_ids?: Json
+          free_shipping?: boolean
+          has_variations?: boolean
+          health?: number | null
+          item_id?: string
+          listing_type_id?: string | null
+          logistic_type?: string | null
+          ml_user_id?: string
+          organization_id?: string
+          price?: number | null
+          seller_custom_field?: string | null
+          sold_quantity?: number
+          status?: string | null
+          synced_at?: string
+          thumbnail?: string | null
+          title?: string | null
+          variations?: Json
+          visits?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_inventory_cache_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ml_product_costs: {
         Row: {
           cost: number | null
@@ -934,7 +1020,7 @@ export type Database = {
           tax_rate: number | null
           titulo: string | null
           uf_origem: string | null
-          user_id: string
+          user_id: string | null
           variation_id: string
         }
         Insert: {
@@ -964,7 +1050,7 @@ export type Database = {
           tax_rate?: number | null
           titulo?: string | null
           uf_origem?: string | null
-          user_id: string
+          user_id?: string | null
           variation_id?: string
         }
         Update: {
@@ -994,7 +1080,7 @@ export type Database = {
           tax_rate?: number | null
           titulo?: string | null
           uf_origem?: string | null
-          user_id?: string
+          user_id?: string | null
           variation_id?: string
         }
         Relationships: [
@@ -1091,6 +1177,41 @@ export type Database = {
             foreignKeyName: "organization_members_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_plans: {
+        Row: {
+          created_at: string
+          history_days: number
+          organization_id: string
+          plan_tier: Database["public"]["Enums"]["plan_tier"]
+          sync_interval_minutes: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          history_days?: number
+          organization_id: string
+          plan_tier?: Database["public"]["Enums"]["plan_tier"]
+          sync_interval_minutes?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          history_days?: number
+          organization_id?: string
+          plan_tier?: Database["public"]["Enums"]["plan_tier"]
+          sync_interval_minutes?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_plans_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
@@ -1239,6 +1360,85 @@ export type Database = {
           },
         ]
       }
+      sync_jobs: {
+        Row: {
+          created_at: string
+          date_from: string | null
+          date_to: string | null
+          error_msg: string | null
+          finished_at: string | null
+          id: string
+          job_type: Database["public"]["Enums"]["sync_job_type"]
+          ml_user_id: string
+          organization_id: string
+          retries: number
+          started_at: string | null
+          status: Database["public"]["Enums"]["sync_job_status"]
+        }
+        Insert: {
+          created_at?: string
+          date_from?: string | null
+          date_to?: string | null
+          error_msg?: string | null
+          finished_at?: string | null
+          id?: string
+          job_type: Database["public"]["Enums"]["sync_job_type"]
+          ml_user_id: string
+          organization_id: string
+          retries?: number
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["sync_job_status"]
+        }
+        Update: {
+          created_at?: string
+          date_from?: string | null
+          date_to?: string | null
+          error_msg?: string | null
+          finished_at?: string | null
+          id?: string
+          job_type?: Database["public"]["Enums"]["sync_job_type"]
+          ml_user_id?: string
+          organization_id?: string
+          retries?: number
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["sync_job_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sync_jobs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sync_quota_daily: {
+        Row: {
+          date: string
+          organization_id: string
+          sync_count: number
+        }
+        Insert: {
+          date: string
+          organization_id: string
+          sync_count?: number
+        }
+        Update: {
+          date?: string
+          organization_id?: string
+          sync_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sync_quota_daily_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string
@@ -1266,6 +1466,33 @@ export type Database = {
         Args: { _org_id: string; _route: string; _user_id: string }
         Returns: boolean
       }
+      claim_next_sync_job: {
+        Args: never
+        Returns: {
+          created_at: string
+          date_from: string | null
+          date_to: string | null
+          error_msg: string | null
+          finished_at: string | null
+          id: string
+          job_type: Database["public"]["Enums"]["sync_job_type"]
+          ml_user_id: string
+          organization_id: string
+          retries: number
+          started_at: string | null
+          status: Database["public"]["Enums"]["sync_job_status"]
+        }
+        SetofOptions: {
+          from: "*"
+          to: "sync_jobs"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      dispatch_inventory_jobs: { Args: never; Returns: number }
+      dispatch_orders_jobs: { Args: never; Returns: undefined }
+      dispatch_sales_jobs: { Args: never; Returns: undefined }
+      dispatch_sync_jobs: { Args: never; Returns: number }
       get_cache_table_stats: {
         Args: never
         Returns: {
@@ -1316,6 +1543,9 @@ export type Database = {
     Enums: {
       app_role: "admin" | "editor" | "viewer"
       org_role: "owner" | "admin" | "member" | "viewer"
+      plan_tier: "free" | "starter" | "pro" | "enterprise"
+      sync_job_status: "pending" | "running" | "completed" | "failed"
+      sync_job_type: "daily_cache" | "orders" | "inventory"
       tax_regime: "simples_nacional" | "lucro_presumido" | "lucro_real"
     }
     CompositeTypes: {
@@ -1446,6 +1676,9 @@ export const Constants = {
     Enums: {
       app_role: ["admin", "editor", "viewer"],
       org_role: ["owner", "admin", "member", "viewer"],
+      plan_tier: ["free", "starter", "pro", "enterprise"],
+      sync_job_status: ["pending", "running", "completed", "failed"],
+      sync_job_type: ["daily_cache", "orders", "inventory"],
       tax_regime: ["simples_nacional", "lucro_presumido", "lucro_real"],
     },
   },
