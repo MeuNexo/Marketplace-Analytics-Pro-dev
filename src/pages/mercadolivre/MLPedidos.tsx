@@ -758,16 +758,16 @@ export default function MLPedidos() {
       const skipped: number    = data?.skipped    ?? 0;
 
       if (dispatched === 0 && skipped > 0) {
-        toast({ title: "Já sincronizado", description: "Todos os jobs para este período já estão na fila ou concluídos." });
+        toast({ title: "Já sincronizado", description: "Todos os syncs para este período já estão em andamento ou concluídos." });
       } else {
         toast({
           title: "Sincronização iniciada",
-          description: `${dispatched} job${dispatched !== 1 ? "s" : ""} criado${dispatched !== 1 ? "s" : ""}. Os pedidos serão atualizados em breve.`,
+          description: `${dispatched} sync${dispatched !== 1 ? "s" : ""} criado${dispatched !== 1 ? "s" : ""}. Os pedidos serão atualizados em breve.`,
         });
         setQueuePending(dispatched);
       }
     } catch (err: any) {
-      toast({ title: "Erro ao criar jobs de sync", description: err.message, variant: "destructive" });
+      toast({ title: "Erro ao iniciar sincronização", description: err.message, variant: "destructive" });
     } finally {
       setSyncing(false);
       setSyncProgress(null);
@@ -1020,8 +1020,8 @@ export default function MLPedidos() {
             >
               <RefreshCw className={`w-3.5 h-3.5 ${syncing || loading || queuePending > 0 ? "animate-spin" : ""}`} />
               <span className="hidden sm:inline">
-                {syncing ? "Criando jobs…"
-                  : queuePending > 0 ? `${queuePending} job${queuePending !== 1 ? "s" : ""} na fila…`
+                {syncing ? "Sincronizando…"
+                  : queuePending > 0 ? `${queuePending} sync${queuePending !== 1 ? "s" : ""} na fila…`
                   : loading && loadProgress > 0 ? `${loadProgress.toLocaleString("pt-BR")} pedidos…`
                   : loading ? "Carregando…"
                   : "Atualizar"}
@@ -1044,7 +1044,7 @@ export default function MLPedidos() {
             </p>
             <Button onClick={handleSync} disabled={syncing || queuePending > 0}>
               <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${syncing || queuePending > 0 ? "animate-spin" : ""}`} />
-              {syncing ? "Criando jobs…" : queuePending > 0 ? `${queuePending} jobs na fila…` : "Buscar pedidos"}
+              {syncing ? "Sincronizando…" : queuePending > 0 ? `${queuePending} syncs na fila…` : "Buscar pedidos"}
             </Button>
           </div>
         )}
