@@ -332,21 +332,26 @@ serve(async (req) => {
       });
     }
 
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      serviceKey,
     );
 
-    const { data: authData, error: authErr } = await supabaseAdmin.auth.getUser(
-      authHeader.replace("Bearer ", ""),
-    );
-    if (authErr || !authData?.user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const token = authHeader.replace("Bearer ", "");
+    const isServiceRole = token === serviceKey;
+
+    let userId: string | null = null;
+    if (!isServiceRole) {
+      const { data: authData, error: authErr } = await supabaseAdmin.auth.getUser(token);
+      if (authErr || !authData?.user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      userId = authData.user.id;
     }
-    const userId = authData.user.id;
 
     // ── Body validation ───────────────────────────────────────────────────────
     const BodySchema = z.object({
@@ -382,8 +387,8 @@ serve(async (req) => {
       });
     }
 
-    // ── Org membership check ──────────────────────────────────────────────────
-    if (tokenRow.organization_id) {
+    // ── Org membership check (skip for service role — called from process-sync-job) ──
+    if (!isServiceRole && tokenRow.organization_id) {
       const { data: isMember } = await supabaseAdmin.rpc("is_org_member", {
         _user_id: userId,
         _org_id:  tokenRow.organization_id,
