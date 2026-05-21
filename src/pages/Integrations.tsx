@@ -37,6 +37,7 @@ import {
   Building2,
   Loader2,
   ExternalLink,
+  Package,
 } from "lucide-react";
 
 interface MarketplaceIntegration {
@@ -83,6 +84,160 @@ const statusConfig = {
     color: "text-destructive",
   },
 };
+
+// ── Tiny ERP Integration Section ─────────────────────────────────────────────
+
+interface MLStore {
+  ml_user_id: string;
+  displayName: string;
+  nickname?: string;
+  custom_name?: string | null;
+}
+
+interface TinySyncResult {
+  ok?: boolean;
+  synced?: number;
+  errors?: number;
+  total_products?: number;
+  msg?: string;
+  error?: string;
+}
+
+interface TinyIntegrationSectionProps {
+  mlStores: MLStore[];
+  toast: ReturnType<typeof useToast>["toast"];
+}
+
+function TinyIntegrationSection({ mlStores, toast }: TinyIntegrationSectionProps) {
+  const [selectedMlUserId, setSelectedMlUserId] = useState<string>("");
+  const [syncing, setSyncing] = useState(false);
+  const [result, setResult] = useState<TinySyncResult | null>(null);
+
+  // Auto-select first store if only one
+  const activeStores = mlStores.filter((s) => s.ml_user_id);
+  const effectiveMlUserId = selectedMlUserId || activeStores[0]?.ml_user_id || "";
+
+  const handleSync = async () => {
+    if (!effectiveMlUserId) {
+      toast({ title: "Selecione uma loja ML", description: "É necessário ter uma loja ML conectada.", variant: "destructive" });
+      return;
+    }
+    setSyncing(true);
+    setResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-tiny-costs", {
+        body: { ml_user_id: effectiveMlUserId },
+      });
+      if (error) throw error;
+      setResult(data as TinySyncResult);
+      if ((data as TinySyncResult)?.ok) {
+        toast({ title: "Sincronização concluída", description: (data as TinySyncResult).msg ?? "Custos atualizados." });
+      } else {
+        toast({ title: "Erro na sincronização", description: (data as TinySyncResult)?.error ?? "Falha ao sincronizar.", variant: "destructive" });
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setResult({ error: message });
+      toast({ title: "Erro", description: message, variant: "destructive" });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <h2 className="text-sm font-semibold text-foreground">ERPs e Ferramentas</h2>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+      <Card className="rounded-xl border shadow-sm">
+        <CardHeader className="pb-2">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-700">
+                <Package className="h-5 w-5 text-white" />
+              </div>
+              <div className="min-w-0">
+                <CardTitle className="text-sm font-medium text-foreground truncate">Tiny ERP</CardTitle>
+                <span className="text-[11px] text-muted-foreground">Sincronização de custos via API</span>
+              </div>
+            </div>
+            <Badge variant="secondary" className="text-[10px] h-5 font-normal shrink-0">
+              API Key
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <CardDescription className="text-xs leading-relaxed">
+            Sincroniza o custo médio dos produtos do Tiny ERP para calcular o CMV automaticamente nos relatórios de vendas.
+          </CardDescription>
+
+          <div className="flex flex-wrap gap-1.5">
+            {["CMV Automático", "Custo Médio", "SKU Matching"].map((f) => (
+              <Badge key={f} variant="secondary" className="text-[10px] font-normal h-5">{f}</Badge>
+            ))}
+          </div>
+
+          {/* Store selector */}
+          {activeStores.length > 1 && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Loja ML para sincronizar</label>
+              <select
+                className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                value={effectiveMlUserId}
+                onChange={(e) => setSelectedMlUserId(e.target.value)}
+              >
+                {activeStores.map((s) => (
+                  <option key={s.ml_user_id} value={s.ml_user_id}>
+                    {s.displayName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Sync result */}
+          {result && (
+            <div className={`rounded-lg px-3 py-2 text-xs ${result.error ? "bg-destructive/10 text-destructive" : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"}`}>
+              {result.error
+                ? `Erro: ${result.error}`
+                : `${result.synced ?? 0} produtos sincronizados${result.errors ? ` · ${result.errors} erros` : ""}`}
+            </div>
+          )}
+
+          {/* Config note */}
+          <div className="flex items-start gap-2 rounded-lg bg-muted/50 border border-border p-2.5">
+            <ShieldCheck className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              Configure <code className="font-mono">TINY_CLIENT_ID</code> e <code className="font-mono">TINY_CLIENT_SECRET</code> como secrets da edge function no painel do Supabase.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 pt-1 border-t border-border">
+            <Button
+              size="sm"
+              className="flex-1"
+              onClick={handleSync}
+              disabled={syncing || !effectiveMlUserId}
+            >
+              {syncing ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                  Sincronizando...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-1.5" />
+                  Sincronizar Custos
+                </>
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 export default function Integrations() {
   const { selectedSeller, refreshSellers } = useSeller();
@@ -867,6 +1022,9 @@ export default function Integrations() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Tiny ERP Section */}
+      <TinyIntegrationSection mlStores={mlStores} toast={toast} />
 
       {/* ML OAuth connecting overlay */}
       {mlOAuthConnecting && (
