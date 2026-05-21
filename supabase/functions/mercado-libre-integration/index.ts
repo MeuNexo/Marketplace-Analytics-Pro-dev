@@ -46,8 +46,8 @@ async function mlFetch(path: string, accessToken: string, timeoutMs = 15_000) {
 async function fetchShipmentStates(
   shipmentIds: string[],
   accessToken: string,
-): Promise<Map<string, { uf: string; state_name: string }>> {
-  const map = new Map<string, { uf: string; state_name: string }>();
+): Promise<Map<string, { uf: string; state_name: string; base_cost: number | null; cidade: string | null }>> {
+  const map = new Map<string, { uf: string; state_name: string; base_cost: number | null; cidade: string | null }>();
   if (shipmentIds.length === 0) return map;
 
   // Hard cap: only process the first 150 shipments to avoid excessive API calls
@@ -86,8 +86,15 @@ async function fetchShipmentStates(
           uf = rawId.includes("-") ? rawId.split("-")[1] : rawId;
           if (uf) uf = uf.trim().toUpperCase().slice(0, 2);
         }
+        const baseCostRaw = data?.base_cost ?? data?.cost?.gross ?? null;
+        const base_cost = baseCostRaw != null ? Number(baseCostRaw) : null;
+        const addrCity = data?.receiver_address?.city ?? null;
+        const cidade = addrCity
+          ? (typeof addrCity === "object" ? (addrCity as any)?.name ?? null : String(addrCity))
+          : null;
+
         if (uf && uf.length === 2) {
-          map.set(sid, { uf, state_name: stateName });
+          map.set(sid, { uf, state_name: stateName, base_cost, cidade });
         }
       } catch (_e) {
         // tolerate per-shipment failures (timeout, PII permissions, deleted, etc.)
@@ -775,6 +782,88 @@ serve(async (req) => {
             )
             .then(({ error }) => { if (error) console.error("User cache upsert error:", error); }),
         );
+
+        // Orders upsert — fire-and-forget, não bloqueia o response
+        const orderRows: Record<string, unknown>[] = [];
+        for (const order of orders) {
+          const dateCreated = order.date_created ?? null;
+          const brtPedido = dateCreated ? toBRT(dateCreated) : null;
+          const dataPedido = brtPedido?.date ?? null;
+
+          // data_pagamento: primeiro pagamento aprovado
+          const payment = order.payments?.[0];
+          const dateApproved = payment?.date_approved ?? null;
+          const dataPagamento = dateApproved ? toBRT(dateApproved).date : null;
+
+          // comprador
+          const comprador = order.buyer?.nickname ?? order.buyer?.full_name ?? null;
+
+          // frete: buyer-paid first, fallback shipment base_cost
+          const shipId = order.shipping?.id ? String(order.shipping.id) : null;
+          const shipInfo = shipId ? shipmentStates.get(shipId) : undefined;
+          const buyerCost = order.shipping?.cost != null ? Number(order.shipping.cost) : null;
+          const frete = (buyerCost != null && buyerCost > 0)
+            ? buyerCost
+            : (shipInfo?.base_cost ?? null);
+
+          const estado = shipInfo?.uf ?? null;
+          const cidade = shipInfo?.cidade ?? null;
+
+          // expand order_items
+          for (const item of (order.order_items ?? [])) {
+            const prod = item.item ?? {};
+            const itemId = String(prod.id ?? "");
+            if (!itemId) continue;
+
+            orderRows.push({
+              ml_order_id:     String(order.id),
+              ml_user_id:      mlUserIdStr,
+              organization_id: organization_id ?? null,
+              seller_id:       effectiveSellerId ?? null,
+              user_id,
+              item_id:         itemId,
+              variation_id:    prod.variation_id ? String(prod.variation_id) : "",
+              sku:             prod.seller_custom_field ?? prod.seller_sku ?? null,
+              titulo:          prod.title ?? null,
+              listing_type:    item.listing_type_id ?? null,
+              quantidade:      Number(item.quantity ?? 0),
+              preco_unit:      item.unit_price != null ? Number(item.unit_price) : null,
+              comissao:        item.sale_fee   != null ? Number(item.sale_fee)   : null,
+              frete,
+              status:          order.status ?? null,
+              data_pedido:     dataPedido,
+              data_pagamento:  dataPagamento,
+              estado,
+              cidade,
+              comprador,
+              synced_at:       syncedAt,
+            });
+          }
+        }
+
+        if (orderRows.length > 0) {
+          (async () => {
+            try {
+              const orderBatches: typeof orderRows[] = [];
+              for (let i = 0; i < orderRows.length; i += 200) {
+                orderBatches.push(orderRows.slice(i, i + 200));
+              }
+              await Promise.all(
+                orderBatches.map((batch) =>
+                  supabaseAdmin
+                    .from("orders")
+                    .upsert(batch, { onConflict: "ml_order_id,ml_user_id,item_id,variation_id" })
+                    .then(({ error }) => {
+                      if (error) console.error("Orders upsert error (non-fatal):", error);
+                    }),
+                ),
+              );
+              console.log(`Orders: ${orderRows.length} rows saved`);
+            } catch (e) {
+              console.error("Orders async error (non-fatal):", e);
+            }
+          })();
+        }
 
         await Promise.all(upsertPromises);
 
