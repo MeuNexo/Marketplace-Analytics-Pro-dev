@@ -12,6 +12,7 @@ const DEFAULT_WIDGETS: WidgetConfig[] = [
   { id: "revenue_chart",  label: "Gráfico de Receita",    description: "Evolução diária ou horária da receita + metas",       visible: true },
   { id: "cost_waterfall", label: "Custos & Top Produtos", description: "Waterfall financeiro e produtos mais vendidos",        visible: true },
   { id: "brand_charts",   label: "Gráficos de Marca",     description: "Faturamento, markup e share por marca",              visible: true },
+  { id: "analytics",      label: "Análises Detalhadas",   description: "Venda por hora, ticket médio, estados e funil",      visible: true },
 ];
 
 const STORAGE_KEY = "ml_dashboard_layout_v1";

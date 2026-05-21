@@ -569,11 +569,11 @@ export default function MercadoLivre() {
                 />
               </div>
             );
+            if (widget.id === "analytics") return (
+              <MLSalesAnalytics key="analytics" from={currentFrom} to={currentTo} />
+            );
             return null;
           })}
-
-          {/* ── Análises Detalhadas — Phase 17 ── */}
-          <MLSalesAnalytics from={currentFrom} to={currentTo} />
         </TabsContent>
       </Tabs>
 
