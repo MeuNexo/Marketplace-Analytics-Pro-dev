@@ -74,3 +74,6 @@ verify_jwt = false
 
 [functions.sync-tiny-costs]
 verify_jwt = false
+
+[functions.tiny-oauth]
+verify_jwt = false
