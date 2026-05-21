@@ -284,7 +284,7 @@ export default function Integrations() {
       setMlOAuthConnecting(true);
       setMlOAuthStep("verifying");
 
-      const redirectUri = "https://analytics.alcavie.com/integracoes";
+      const redirectUri = "https://marketplace-analytics-pro-dev.vercel.app/integracoes";
       const codeVerifier = localStorage.getItem("ml_pkce_code_verifier") || undefined;
       // Recupera seller/org salvos antes do redirect (currentOrg/selectedSeller podem ainda ser null)
       const sellerId = selectedSeller?.id || localStorage.getItem("ml_oauth_seller_id") || undefined;
@@ -338,7 +338,7 @@ export default function Integrations() {
 
   const handleConnect = async (integration: MarketplaceIntegration) => {
     if (integration.id === "ml") {
-      const redirectUri = "https://analytics.alcavie.com/integracoes";
+      const redirectUri = "https://marketplace-analytics-pro-dev.vercel.app/integracoes";
       const { data, error } = await supabase.functions.invoke("ml-oauth", {
         body: { action: "get_auth_url", redirect_uri: redirectUri },
       });
