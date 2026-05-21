@@ -563,7 +563,7 @@ export default function MercadoLivre() {
           </div>
 
           {/* ── Análises Detalhadas — Phase 17 ── */}
-          <MLSalesAnalytics />
+          <MLSalesAnalytics from={currentFrom} to={currentTo} />
         </TabsContent>
       </Tabs>
     </div>
