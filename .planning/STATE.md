@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v5.0
 milestone_name: Dashboard de Vendas — KPIs Reais
-status: in_progress
-stopped_at: Phase 14 concluída e validada — aguardando Phase 15
-last_updated: "2026-05-21T19:30:00.000Z"
-last_activity: 2026-05-21 -- Phase 14 validada (comissão/frete batem com nexo-mcp)
+status: complete
+stopped_at: Milestone v5.0 encerrado — Phase 15 adiada (financeiro, outro menu)
+last_updated: "2026-05-21T19:45:00.000Z"
+last_activity: 2026-05-21 -- Milestone v5.0 concluído. Phase 15 (billing/CFFE) adiada por decisão de produto
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 3
   completed_plans: 3
-  percent: 50
+  percent: 100
 ---
 
 # Project State
@@ -22,14 +22,13 @@ See: .planning/PROJECT.md
 
 **Milestone:** v5.0 — Dashboard de Vendas — KPIs Reais
 **Core value:** O dashboard de Vendas exibe valores reais de comissão, frete (CFFE) e CFONPN — não estimativas hardcoded. R$38k/mês de custos hoje invisíveis passam a ser mostrados.
-**Current focus:** Phase 15 — ml_billing_monthly (CFFE real + CFONPN)
+**Current focus:** Próximo milestone a definir
 
 ## Current Position
 
-Phase: 15 (ml_billing_monthly) — READY TO PLAN
-Plan: —
-Status: Phase 14 ✅ COMPLETA — aguardando planejamento da Phase 15
-Last activity: 2026-05-21 -- Phase 14 validada (comissão/frete batem com nexo-mcp após fix list_cost)
+Phase: — (milestone completo)
+Status: Milestone v5.0 ✅ ENCERRADO
+Last activity: 2026-05-21 -- Phase 14 validada. Phase 15 adiada por decisão de produto (CFFE/billing pertence a menu financeiro futuro, não ao painel de vendas)
 
 Progress: [█████░░░░░] 50%
 
