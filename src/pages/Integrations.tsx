@@ -549,15 +549,14 @@ export default function Integrations() {
     checkTokens();
   }, [currentOrg?.id]);
 
-  // Check Tiny connection status on mount
+  // Check Tiny connection status on mount — usa ml_user_ids das lojas ativas
   useEffect(() => {
     const checkTinyConnection = async () => {
-      if (!currentOrg?.id) return;
       try {
+        // Busca pelo menos uma loja com tiny_access_token preenchido
         const { data } = await supabase
           .from("ml_tokens")
           .select("tiny_access_token")
-          .eq("organization_id", currentOrg.id)
           .not("tiny_access_token", "is", null)
           .limit(1)
           .maybeSingle();
@@ -565,7 +564,7 @@ export default function Integrations() {
       } catch (_e) { /* ignore */ }
     };
     checkTinyConnection();
-  }, [currentOrg?.id]);
+  }, []);
 
   // Handle OAuth callbacks — ML and Tiny
   useEffect(() => {

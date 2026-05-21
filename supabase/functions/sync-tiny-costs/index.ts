@@ -126,18 +126,18 @@ serve(async (req: Request) => {
   try {
     // Auth: aceitar user JWT ou service_role
     const authHeader = req.headers.get("Authorization") ?? "";
-    const userClient = createClient(SUPABASE_URL, authHeader.replace("Bearer ", ""));
+    const jwt = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
 
     let userId: string | null = null;
     let mlUserId: string | null = null;
 
-    // Tentar auth via JWT do usuário
-    const { data: { user } } = await userClient.auth.getUser();
-    if (user) {
-      userId = user.id;
-    } else if (authHeader.includes(SERVICE_KEY)) {
-      // service_role: ml_user_id obrigatório no body
-    } else {
+    // Tentar validar JWT via service role client (padrão correto para edge functions)
+    if (jwt && jwt !== SERVICE_KEY) {
+      const { data: { user } } = await sb.auth.getUser(jwt);
+      if (user) userId = user.id;
+    }
+
+    if (!userId && !jwt.includes(SERVICE_KEY) && jwt !== SERVICE_KEY) {
       return json({ error: "Unauthorized" }, 401);
     }
 
