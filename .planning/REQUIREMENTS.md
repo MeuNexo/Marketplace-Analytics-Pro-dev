@@ -1,81 +1,72 @@
-# Requirements — v3.0 Sync Engine & Arquitetura DB-First
+# Requirements — v5.0 Dashboard de Vendas — KPIs Reais
 
-## Milestone Goal
+## Contexto
 
-Eliminar todas as consultas diretas à API do ML durante a navegação do usuário.
-Sync automático agendado (pg_cron) abastece o banco de madrugada; o front-end lê
-apenas o banco. Base de infraestrutura preparada para controle de planos e quotas
-por assinatura no próximo milestone.
+O dashboard de Vendas (`/`) exibe KPIs financeiros calculados de dados agregados em `ml_daily_cache`.
+Problemas identificados via análise do Nexo MCP Supabase (Abril/2026, Pé Vermeio):
+- **Comissão hardcoded 11%** — real: ~11.15% (varia por categoria)
+- **Frete hardcoded 5%** (R$17k/mês) — real CFFE: R$40k/mês (2.3x a mais)
+- **CFONPN (parcelamento)** R$15,9k/mês — completamente invisível no dashboard
+- **Ticket médio** usa total_revenue incluindo cancelados — subestima valor real
+- Sem granularidade: impossível filtrar por SKU, estado, cidade, comprador
 
----
-
-## Active Requirements — v3.0
-
-### SYNC — Job Queue & Dispatcher por Intervalo
-
-- [ ] **SYNC-01**: Sistema possui tabela `sync_jobs` com campos: `id`, `organization_id`, `ml_user_id`, `job_type` (daily_cache | orders | inventory), `date_from`, `date_to`, `status` (pending | running | completed | failed), `retries`, `error_msg`, `started_at`, `finished_at`, `created_at`
-- [ ] **SYNC-02**: Edge function `process-sync-job` pega o próximo job `pending` da fila (ORDER BY created_at), executa o sync correspondente ao `job_type`, atualiza status para `completed` ou `failed` com `finished_at`; não executa diretamente — só consome jobs criados pelo dispatcher
-- [ ] **SYNC-03**: Jobs com status `failed` e `retries < 3` são reinseridos como `pending` pelo pg_cron watchdog com backoff de 5/15/30 minutos entre tentativas
-- [ ] **SYNC-04**: Função SQL `dispatch_sync_jobs()` — para cada `(organization_id, ml_user_id, job_type)` ativo, verifica se o último job `completed` tem `finished_at + sync_interval_minutes <= Now()`; se vencido e sem job `pending`/`running` em aberto para o par, insere um novo job `pending` na fila
-- [ ] **SYNC-05**: pg_cron executa `SELECT dispatch_sync_jobs()` a cada 30 minutos (cobre qualquer intervalo ≥ 30 min; near-realtime futuro reduz para 5 min)
-- [ ] **SYNC-06**: pg_cron invoca a edge function `process-sync-job` via `pg_net.http_post` a cada 5 minutos para drenar a fila de jobs pendentes
-- [ ] **SYNC-07**: `dispatch_sync_jobs()` nunca cria job duplicado para um par `(organization_id, ml_user_id, job_type)` que já tenha job com status `pending` ou `running`
-
-### INV — Inventory Cache (DB-First)
-
-- [ ] **INV-01**: Sistema possui tabela `ml_inventory_cache` com campos: `id`, `organization_id`, `ml_user_id`, `item_id`, `title`, `price`, `available_quantity`, `thumbnail`, `listing_type`, `status`, `sold_quantity`, `synced_at`; constraint UNIQUE em `(organization_id, ml_user_id, item_id)`
-- [ ] **INV-02**: Edge function `sync-ml-inventory` busca o inventário completo da ML API (paginada) e salva/atualiza `ml_inventory_cache` via upsert atômico
-- [ ] **INV-03**: pg_cron executa sync de inventário diariamente às 04:00 BRT para todas as organizações com `ml_tokens` ativos
-- [ ] **INV-04**: `MLInventoryContext` lê de `ml_inventory_cache` via query Supabase em vez de invocar a edge function `ml-inventory` a cada carregamento de página
-- [ ] **INV-05**: Tela Estoque (`MLEstoque`) e tela Anúncios (`MLAnuncios`) consomem dados de `ml_inventory_cache` sem nenhuma chamada live à ML API durante a navegação
-
-### PLANS — Infraestrutura de Planos (tabelas + quota check)
-
-- [ ] **PLANS-01**: Sistema possui tabela `organization_plans` com campos: `organization_id` (PK), `plan_tier` (free | starter | pro | enterprise), `sync_interval_minutes` (int: 1440=free, 720=starter, 180=pro, 60=enterprise; -1=unlimited/custom), `history_days` (int, -1 = unlimited), `created_at`, `updated_at`
-- [ ] **PLANS-02**: Sistema possui tabela `sync_quota_daily` com campos: `organization_id`, `date` (date), `sync_count` (int default 0); PRIMARY KEY em `(organization_id, date)`
-- [ ] **PLANS-03**: Edge functions de sync verificam quota antes de executar: se `sync_count >= sync_limit_daily` (e `sync_limit_daily != -1`), retornam erro 429 com `{ error: "sync_limit_reached", resets_at: "tomorrow" }`; em caso de sucesso, incrementam `sync_count` atomicamente
-- [ ] **PLANS-04**: Migration seed insere registro `organization_plans` com `plan_tier = 'enterprise'` e limites `-1` (unlimited) para todas as organizações existentes que ainda não possuem plano configurado
+Solução: dois novos pilares de dados — `ml_orders` (individual) + `ml_billing_monthly`.
 
 ---
 
-## Future Requirements — v3.0 (deferred)
+## Requisitos
 
-- Painel de status de sync no app (último sync, próximo sync, status OK/falha)
-- Sync de Publicidade (anúncios ML Ads) automático
-- Sync de Reputação e Perguntas (atualmente mock)
-- Sync a cada 4h para inventário (freqüência maior)
-- UI de gerenciamento de planos e limites para owners
-- Notificação quando sync falha 3x consecutivas
+### Bloco ORDERS — Orders Individuais
+
+**ORDERS-01** — Tabela `ml_orders` existe no banco com colunas: `id`, `organization_id`, `ml_user_id`, `ml_order_id` (unique por org+user), `item_id`, `sku`, `titulo`, `quantidade`, `preco_unit`, `comissao`, `frete`, `status`, `data_pedido`, `estado`, `cidade`, `comprador`, `synced_at`
+
+**ORDERS-02** — A edge function `mercado-libre-integration` faz upsert em `ml_orders` durante o sync, salvando cada order individual com os campos acima (além de continuar salvando em `ml_daily_cache`)
+
+**ORDERS-03** — RLS em `ml_orders`: usuário autenticado vê apenas rows de sua `organization_id`
+
+**ORDERS-04** — O hook `useMLOrders(from, to)` lê `ml_orders` filtrado por período e `ml_user_id` do contexto de loja
+
+### Bloco KPIS — KPIs Corretos no Dashboard
+
+**KPIS-01** — `costSummary.comissao` em `MercadoLivre.tsx` usa `SUM(comissao)` de `ml_orders` no período selecionado (não hardcoded 11%)
+
+**KPIS-02** — `costSummary.frete` em `MercadoLivre.tsx` usa `SUM(frete)` de `ml_orders` no período selecionado quando disponível (fallback para CFFE do billing quando orders não cobrem o período)
+
+**KPIS-03** — Ticket médio usa `approved_revenue / COUNT(pedidos com status=paid)` de `ml_orders` (não total_revenue / total_orders)
+
+**KPIS-04** — Taxa de conversão mantém cálculo atual (`unique_buyers / unique_visits`) — sem regressão
+
+### Bloco BILLING — Billing Mensal Integrado
+
+**BILLING-01** — Tabela `ml_billing_monthly` existe com colunas: `id`, `organization_id`, `ml_user_id`, `period_month` (YYYY-MM), `charges` (JSONB array com tipo+valor), `resumo` (JSONB com totais), `synced_at`
+
+**BILLING-02** — Nova edge function `sync-ml-billing` busca ML Billing API (`/billing/periods`) para um `ml_user_id` e `period_month`, faz upsert em `ml_billing_monthly`
+
+**BILLING-03** — Botão de sync no dashboard dispara `sync-ml-billing` para o mês atual junto com o sync normal
+
+**BILLING-04** — O dashboard de Vendas exibe CFFE real (linha "Frete ML") vindo de `ml_billing_monthly` quando disponível para o período, com indicador visual de fonte ("billing" vs "estimado")
+
+**BILLING-05** — Nova linha "Parcelamento (CFONPN)" visível no breakdown de custos — valor de `ml_billing_monthly.charges` onde tipo=CFONPN
+
+**BILLING-06** — Waterfall financeiro visível: Receita Bruta → (−) Comissão → (−) Frete → (−) CFONPN → (−) Publicidade → = Receita Líquida
 
 ---
 
-## Out of Scope — v3.0
+## Out of Scope (v5.0)
 
-- **UI de planos** — tabelas e quota check são infraestrutura; tela de upgrade/downgrade fica no v3.1
-- **Webhooks da ML API** — a ML não oferece webhooks confiáveis para BR; pg_cron cobre o caso
-- **Redis/BullMQ para filas** — volume atual (< 100 orgs) não justifica infra adicional; Postgres é suficiente
-- **Sync em tempo real** — requisito futuro; modelo scheduled cobre o SLA adequado para analytics
-- **Migração de dados históricos antigos** — orders e daily_cache já existentes não são retroativamente normalizados
+- Melhorias em outros menus (Publicidade, Estoque, Financeiro) — próximos milestones
+- Filtros por estado/cidade/SKU no dashboard — infra criada neste milestone, UI fica para v5.1
+- Backfill de orders históricos para períodos antes da data de deploy — migração incremental
+- Billing de contas além da Pé Vermeio — mesmo mecanismo, expandir em v5.1
+- DIFAL, CSHIA e outras cobranças menores do billing — mostrar apenas CFFE + CFONPN neste milestone
 
 ---
 
-## Traceability — v3.0
+## Dados de Referência (Nexo MCP, Abril 2026 — Pé Vermeio)
 
-| Requirement | Phase | Plan |
-|---|---|---|
-| SYNC-01 | Phase 9 | TBD |
-| SYNC-02 | Phase 9 | TBD |
-| SYNC-03 | Phase 9 | TBD |
-| SYNC-04 | Phase 9 | TBD |
-| SYNC-05 | Phase 9 | TBD |
-| SYNC-06 | Phase 9 | TBD |
-| SYNC-07 | Phase 9 | TBD |
-| INV-01 | Phase 10 | TBD |
-| INV-02 | Phase 10 | TBD |
-| INV-03 | Phase 10 | TBD |
-| INV-04 | Phase 11 | TBD |
-| INV-05 | Phase 11 | TBD |
-| PLANS-01 | Phase 8 | TBD |
-| PLANS-02 | Phase 8 | TBD |
-| PLANS-03 | Phase 11 | TBD |
-| PLANS-04 | Phase 8 | TBD |
+| KPI | Valor Atual (garment-glow) | Valor Real (Nexo) | Delta |
+|-----|---------------------------|-------------------|-------|
+| Comissão | ~R$38,6k (11% fixo) | R$39,2k (sum orders) | +R$534 |
+| Frete | ~R$17,6k (5% fixo) | R$40,1k (CFFE billing) | −R$22,4k |
+| CFONPN | R$0 | R$15,9k | −R$15,9k |
+| Ticket médio | inclui cancelados | apenas pagos | depende do período |

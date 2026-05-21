@@ -322,12 +322,19 @@ serve(async (req) => {
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return json({ error: "Unauthorized" }, 401);
 
-    const admin    = createClient(SUPABASE_URL, SERVICE_KEY);
-    const url      = new URL(req.url);
-    const mlUserId = url.searchParams.get("ml_user_id");
-    const dateFrom = url.searchParams.get("date_from") ?? subDaysStr(29);
-    const dateTo   = url.searchParams.get("date_to")   ?? todayStr();
-    const force    = url.searchParams.get("force") === "true";
+    const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+    const url   = new URL(req.url);
+
+    // Support both GET (URL params) and POST (JSON body) — frontend uses POST via supabase.functions.invoke
+    let body: Record<string, unknown> = {};
+    if (req.method !== "GET") {
+      try { body = await req.json(); } catch { /* ignore non-JSON bodies */ }
+    }
+    const mlUserIdRaw = url.searchParams.get("ml_user_id") ?? (body.ml_user_id != null ? String(body.ml_user_id) : null);
+    const mlUserId    = mlUserIdRaw || null;
+    const dateFrom    = url.searchParams.get("date_from") ?? (body.date_from != null ? String(body.date_from) : subDaysStr(29));
+    const dateTo      = url.searchParams.get("date_to")   ?? (body.date_to   != null ? String(body.date_to)   : todayStr());
+    const force       = url.searchParams.get("force") === "true" || body.force === true;
 
     if (!mlUserId) return json({ error: "ml_user_id required" }, 400);
 

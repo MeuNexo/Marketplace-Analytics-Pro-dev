@@ -1,6 +1,32 @@
 # Garment Glow — Plataforma de Gestão ML
 
-## Current Milestone: v3.0 Sync Engine & Arquitetura DB-First
+## Current Milestone: v5.0 Dashboard de Vendas — KPIs Reais
+
+**Goal:** O dashboard de Vendas exibe KPIs financeiros corretos — comissão e frete reais calculados de orders individuais, CFONPN visível, ticket médio sem cancelados, e billing mensal integrado com CFFE real.
+
+**Context técnico:**
+- Hoje `ml_daily_cache` armazena apenas dados agregados por dia — impossível calcular comissão real, filtrar por SKU/estado, ou corrigir ticket médio
+- Nexo MCP Supabase (`muesqdxnjlbaoiqylpjn`) tem `orders` (68k rows) com `comissao` e `frete` por pedido + `billing_monthly` com CFFE, CFONPN, bonificações
+- Abordagem: adicionar `ml_orders` (orders individuais) + `ml_billing_monthly` ao garment-glow, alimentados pelo sync existente
+
+**Target features:**
+- Tabela `ml_orders` com orders individuais + `mercado-libre-integration` atualizado para salvar rows individuais
+- costSummary usa comissão real (sum orders.comissao) e frete real (sum orders.frete) em vez de hardcoded 11%/5%
+- Ticket médio correto: approved_revenue / pedidos pagos (sem cancelados)
+- Tabela `ml_billing_monthly` + edge function `sync-ml-billing` + CFFE e CFONPN visíveis no dashboard
+- Waterfall financeiro: receita → comissão → frete (CFFE) → parcelamento (CFONPN) → publicidade → líquido
+
+---
+
+## Previous Milestone: v4.0 ML Pé Vermeio — Integração Completa
+
+**Goal:** Conectar a conta Pé Vermeio do Mercado Livre ao ambiente dev — OAuth funcionando, sync de vendas no dashboard, ads e estoque visíveis. Ambiente utilizável como dashboard real E isolado para desenvolvimento seguro.
+
+**Resultado:** Concluído 2026-05-21. OAuth, sync de vendas, ads e estoque todos funcionando com dados reais da Pé Vermeio.
+
+---
+
+## Previous Milestone: v3.0 Sync Engine & Arquitetura DB-First
 
 **Goal:** Eliminar todas as consultas diretas à API do ML durante a navegação — sync automático agendado via pg_cron abastece o banco, front-end lê apenas do DB, preparando a base para controle de planos e quotas por assinatura.
 
