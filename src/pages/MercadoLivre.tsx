@@ -17,6 +17,9 @@ import { useMLDailyQuery, useMLHourlyQuery, useMLProductsQuery, useMLUserQuery, 
 import { useMLSync } from "@/hooks/useMLSync";
 import { useMLOrders } from "@/hooks/useMLOrders";
 import { useMLKPISummary } from "@/hooks/useMLKPISummary";
+import { useMLCostWaterfall } from "@/hooks/useMLCostWaterfall";
+import { useMLTaxConfig } from "@/hooks/useMLTaxConfig";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { useMLOrdersByBrand } from "@/hooks/useMLOrdersByBrand";
 import { BrandRevenueChart } from "@/components/mercadolivre/BrandRevenueChart";
 import { BrandMarkupChart } from "@/components/mercadolivre/BrandMarkupChart";
@@ -77,6 +80,7 @@ export default function MercadoLivre() {
   const { user } = useAuth();
   const { stores, selectedStore, setSalesCache, scopeKey, sellerId, resolvedMLUserIds, hasMLConnection, loading: storeLoading } = useMLStore();
   const { selectedSeller, selectedStoreIds } = useSeller();
+  const { currentOrg } = useOrganization();
 
   // ── Filters ──
   const filters = useMLFilters();
@@ -122,6 +126,27 @@ export default function MercadoLivre() {
   );
 
   const { data: ordersSummary } = useMLOrders(currentFrom, currentTo);
+
+  const { data: costWaterfall, isLoading: costWaterfallLoading } = useMLCostWaterfall(currentFrom, currentTo);
+
+  // Tax config para calcular impostos por loja
+  const { data: taxMap } = useMLTaxConfig(resolvedMLUserIds, currentOrg?.id ?? "");
+
+  // Impostos: receita por loja × alíquota efetiva
+  const impostosTotal = useMemo(() => {
+    if (!costWaterfall?.revenue_per_store || !taxMap || taxMap.size === 0) return null;
+    let total = 0;
+    let hasConfig = false;
+    for (const [mlUserId, rev] of costWaterfall.revenue_per_store) {
+      const taxEntry = taxMap.get(mlUserId);
+      if (taxEntry?.effective_rate != null && taxEntry.effective_rate > 0) {
+        hasConfig = true;
+        total += (rev * taxEntry.effective_rate) / 100;
+      }
+    }
+    return hasConfig ? Math.round(total * 100) / 100 : null;
+  }, [costWaterfall, taxMap]);
+
   const {
     data: brandData,
     isLoading: brandLoading,
@@ -310,22 +335,6 @@ export default function MercadoLivre() {
     if (m.unique_visits > 0) m.conversion_rate = (m.unique_buyers / m.unique_visits) * 100;
     return m;
   }, [effectivePreviousDaily]);
-
-  // ── Cost summary ──
-  const costSummary = useMemo(() => {
-    const grossRevenue = effectiveMetrics?.total_revenue ?? 0;
-    // Use real values from orders table; fall back to hardcoded percentages when
-    // orders data is unavailable (historical period before sync, or still loading).
-    const comissao = ordersSummary?.total_comissao ?? grossRevenue * 0.11;
-    const frete    = ordersSummary?.total_frete    ?? grossRevenue * 0.05;
-    const ads = adsSummary.total_spend;
-    const totalKnown = comissao + frete + ads;
-    return {
-      comissao, frete, publicidade: ads, custo_produto: 0, impostos: 0,
-      total_known: totalKnown, gross_revenue: grossRevenue,
-      pct_receita: grossRevenue > 0 ? Math.round((totalKnown / grossRevenue) * 10000) / 100 : 0,
-    };
-  }, [effectiveMetrics, adsSummary, ordersSummary]);
 
   // ── Monthly metrics for GoalsCard ──
   // Uses allMonthlyDaily — always month-to-date, independent of the period filter.
@@ -516,7 +525,16 @@ export default function MercadoLivre() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-6 gap-3">
-            <MLCostCard costSummary={costSummary} />
+            <MLCostCard
+              gross_revenue={effectiveMetrics?.total_revenue ?? 0}
+              cancelled_revenue={costWaterfall?.cancelled_revenue ?? 0}
+              comissao={costWaterfall?.total_comissao ?? ordersSummary?.total_comissao ?? (effectiveMetrics?.total_revenue ?? 0) * 0.11}
+              frete={costWaterfall?.total_frete ?? ordersSummary?.total_frete ?? (effectiveMetrics?.total_revenue ?? 0) * 0.05}
+              publicidade={adsSummary.total_spend}
+              cmv={costWaterfall?.has_cmv ? costWaterfall.cmv : null}
+              impostos={impostosTotal}
+              loading={costWaterfallLoading}
+            />
             <MLTopProducts products={effectiveProducts} />
           </div>
 
