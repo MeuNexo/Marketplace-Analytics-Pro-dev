@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v5.0
 milestone_name: Dashboard de Vendas — KPIs Reais
 status: complete
-stopped_at: Milestone v5.0 encerrado — Phase 15 adiada (financeiro, outro menu)
-last_updated: "2026-05-21T19:45:00.000Z"
-last_activity: 2026-05-21 -- Milestone v5.0 concluído. Phase 15 (billing/CFFE) adiada por decisão de produto
+stopped_at: "Completed 17-02-PLAN.md — sync-tiny-costs deployed, UI added to /integracoes"
+last_updated: "2026-05-21T19:32:41Z"
+last_activity: 2026-05-21 -- Phase 17 Plan 02 complete. Tiny ERP CMV pipeline: migration applied, edge function deployed (79.7kB), UI button in /integracoes
 progress:
   total_phases: 2
   completed_phases: 1
@@ -51,6 +51,8 @@ Progress: [█████░░░░░] 50%
 
 ### Decisions
 
+- Phase 17-02: item_id placeholder "TINY_{sku}" used in ml_product_costs because sync-ml-orders keys costMap by item_id (not seller_sku) — follow-up needed to wire SKU-based cost lookup in sync-ml-orders
+- Phase 17-02: client_credentials grant (not authorization_code) for Tiny OAuth — sufficient for single-account access, no refresh_token needed
 - Fonte primária de comissão/frete: `ml_orders` (orders individuais via ML API)
 - Fonte primária de CFFE/CFONPN: `ml_billing_monthly` (ML Billing API `/billing/periods`)
 - Phase 14 e Phase 15 são independentes entre si (podem ser executadas em paralelo)
