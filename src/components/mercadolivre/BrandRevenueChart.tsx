@@ -1,6 +1,6 @@
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChartContainer, ChartTooltipContent } from "@/components/ui/chart";
+import { ChartContainer } from "@/components/ui/chart";
 import type { BrandTimeSeries } from "@/hooks/useMLOrdersByBrand";
 import { BRAND_COLORS } from "@/hooks/useMLOrdersByBrand";
 
@@ -72,11 +72,23 @@ export function BrandRevenueChart({ data, topBrands, loading }: BrandRevenueChar
               width={48}
             />
             <Tooltip
-              content={
-                <ChartTooltipContent
-                  formatter={(value, name) => [currencyFmt(Number(value)), name]}
-                />
-              }
+              content={({ active, payload, label }) => {
+                if (!active || !payload?.length) return null;
+                return (
+                  <div className="rounded-lg border bg-background p-2 shadow-md min-w-[180px]">
+                    <p className="text-xs font-medium text-foreground mb-1.5">{label}</p>
+                    {payload.map((entry: any, i: number) => (
+                      <div key={i} className="flex items-center justify-between gap-4 text-xs py-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <div className="h-2 w-2 rounded-full shrink-0" style={{ background: entry.color }} />
+                          <span className="text-muted-foreground">{entry.name}</span>
+                        </div>
+                        <span className="font-mono font-medium text-foreground">{currencyFmt(Number(entry.value))}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              }}
             />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             {topBrands.map((brand, i) => (

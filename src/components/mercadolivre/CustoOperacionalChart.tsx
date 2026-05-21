@@ -1,6 +1,6 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChartContainer, ChartTooltipContent } from "@/components/ui/chart";
+import { ChartContainer } from "@/components/ui/chart";
 import type { CustoOperacionalSeries } from "@/hooks/useMLOrdersByBrand";
 
 interface CustoOperacionalChartProps {
@@ -74,11 +74,18 @@ export function CustoOperacionalChart({
               width={48}
             />
             <Tooltip
-              content={
-                <ChartTooltipContent
-                  formatter={(value) => [currencyFmt(Number(value)), "Custo Operacional"]}
-                />
-              }
+              content={({ active, payload, label }) => {
+                if (!active || !payload?.length) return null;
+                return (
+                  <div className="rounded-lg border bg-background p-2 shadow-md min-w-[180px]">
+                    <p className="text-xs font-medium text-foreground mb-1.5">{label}</p>
+                    <div className="flex items-center justify-between gap-4 text-xs">
+                      <span className="text-muted-foreground">Custo Operacional</span>
+                      <span className="font-mono font-medium text-foreground">{currencyFmt(Number(payload[0]?.value))}</span>
+                    </div>
+                  </div>
+                );
+              }}
             />
             <Line
               type="monotone"
