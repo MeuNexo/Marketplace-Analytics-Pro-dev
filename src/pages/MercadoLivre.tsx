@@ -15,6 +15,7 @@ import { useMLReputation } from "@/hooks/useMLReputation";
 import { useMLFilters, getFilterDates, todayUTC, getComparisonRanges } from "@/hooks/useMLFilters";
 import { useMLDailyQuery, useMLHourlyQuery, useMLProductsQuery, useMLUserQuery, useMLMonthlyDailyQuery, type DailyBreakdown, type HourlyBreakdown } from "@/hooks/useMLQueries";
 import { useMLSync } from "@/hooks/useMLSync";
+import { useMLOrders } from "@/hooks/useMLOrders";
 import { MLKPIGrid } from "@/components/mercadolivre/MLKPIGrid";
 import { MLPeriodPicker } from "@/components/mercadolivre/MLPeriodPicker";
 import { MLRevenueChart } from "@/components/mercadolivre/MLRevenueChart";
@@ -113,6 +114,8 @@ export default function MercadoLivre() {
     () => computeAdsSummary(adsDaily.filter((d) => d.date >= currentFrom && d.date <= currentTo)),
     [adsDaily, currentFrom, currentTo],
   );
+
+  const { data: ordersSummary } = useMLOrders(currentFrom, currentTo);
 
   // ── Sync state to context (debounced) ──
   const syncTimerRef = useRef<ReturnType<typeof setTimeout>>();
@@ -261,10 +264,16 @@ export default function MercadoLivre() {
       avg_ticket: 0,
       conversion_rate: 0,
     };
-    if (m.total_orders > 0) m.avg_ticket = m.total_revenue / m.total_orders;
+    const paidCount = ordersSummary?.paid_orders_count ?? m.total_orders;
+    const paidRev   = ordersSummary?.paid_revenue     ?? m.approved_revenue;
+    if (paidCount > 0) {
+      m.avg_ticket = paidRev / paidCount;
+    } else if (m.total_orders > 0) {
+      m.avg_ticket = m.total_revenue / m.total_orders; // fallback completo
+    }
     if (m.unique_visits > 0) m.conversion_rate = (m.unique_buyers / m.unique_visits) * 100;
     return m;
-  }, [effectiveDaily]);
+  }, [effectiveDaily, ordersSummary]);
 
   const effectivePreviousDaily = useMemo(
     () => aggregateDailyRows(previousDaily),
@@ -290,8 +299,10 @@ export default function MercadoLivre() {
   // ── Cost summary ──
   const costSummary = useMemo(() => {
     const grossRevenue = effectiveMetrics?.total_revenue ?? 0;
-    const comissao = grossRevenue * 0.11;
-    const frete = grossRevenue * 0.05;
+    // Use real values from orders table; fall back to hardcoded percentages when
+    // orders data is unavailable (historical period before sync, or still loading).
+    const comissao = ordersSummary?.total_comissao ?? grossRevenue * 0.11;
+    const frete    = ordersSummary?.total_frete    ?? grossRevenue * 0.05;
     const ads = adsSummary.total_spend;
     const totalKnown = comissao + frete + ads;
     return {
@@ -299,7 +310,7 @@ export default function MercadoLivre() {
       total_known: totalKnown, gross_revenue: grossRevenue,
       pct_receita: grossRevenue > 0 ? Math.round((totalKnown / grossRevenue) * 10000) / 100 : 0,
     };
-  }, [effectiveMetrics, adsSummary]);
+  }, [effectiveMetrics, adsSummary, ordersSummary]);
 
   // ── Monthly metrics for GoalsCard ──
   // Uses allMonthlyDaily — always month-to-date, independent of the period filter.
