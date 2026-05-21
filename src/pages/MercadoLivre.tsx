@@ -36,7 +36,7 @@ import type { ProductSalesRow } from "@/components/mercadolivre/TopSellingProduc
 import { Plug, Info, Loader2, Monitor, RefreshCw } from "lucide-react";
 import { format, parseISO, startOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import MLRelatorios from "./mercadolivre/MLRelatorios";
+import { MLSalesAnalytics } from "@/components/mercadolivre/MLSalesAnalytics";
 
 const currencyFmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -464,7 +464,6 @@ export default function MercadoLivre() {
               />
               <TabsList className="h-8 overflow-x-auto no-scrollbar max-w-full">
                 <TabsTrigger value="vendas" className="text-xs px-3 h-7">Vendas</TabsTrigger>
-                <TabsTrigger value="relatorios" className="text-xs px-3 h-7">Relatórios</TabsTrigger>
               </TabsList>
               <Button
                 variant="ghost"
@@ -562,10 +561,9 @@ export default function MercadoLivre() {
               loading={brandLoading}
             />
           </div>
-        </TabsContent>
 
-        <TabsContent value="relatorios" className="mt-0 animate-fade-in">
-          <MLRelatorios />
+          {/* ── Análises Detalhadas — Phase 17 ── */}
+          <MLSalesAnalytics />
         </TabsContent>
       </Tabs>
     </div>
