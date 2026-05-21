@@ -551,24 +551,24 @@ export default function Integrations() {
     checkTokens();
   }, [currentOrg?.id]);
 
-  // Valida silenciosamente o token Tiny no DB para corrigir estado stale do localStorage
+  // Valida silenciosamente via tiny_expires_at (coluna não-secreta, acessível ao frontend)
   const checkTinyMlUserId = mlStores[0]?.ml_user_id ?? null;
   useEffect(() => {
     if (!checkTinyMlUserId) return;
     let mounted = true;
     supabase
       .from("ml_tokens")
-      .select("tiny_access_token")
+      .select("tiny_expires_at")
       .eq("ml_user_id", checkTinyMlUserId)
       .maybeSingle()
       .then(({ data }) => {
         if (!mounted) return;
-        const hasToken = !!data?.tiny_access_token;
+        const hasToken = data?.tiny_expires_at != null;
         setTinyConnected(hasToken);
         if (hasToken) localStorage.setItem("tiny_erp_connected", "1");
         else localStorage.removeItem("tiny_erp_connected");
       })
-      .catch(() => { /* ignore — localStorage value mantém */ });
+      .catch(() => { /* ignore — localStorage mantém */ });
     return () => { mounted = false; };
   }, [checkTinyMlUserId]);
 
