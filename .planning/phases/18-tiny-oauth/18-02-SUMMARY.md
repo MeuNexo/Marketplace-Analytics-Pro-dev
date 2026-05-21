@@ -19,7 +19,7 @@ key_files:
 decisions:
   - Tiny OAuth state elevated to Integrations parent component (same pattern as ML)
   - tiny_access_token/tiny_refresh_token/tiny_expires_at added to generated types.ts
-  - Deploy token: [REDACTED] (found in 18-01-SUMMARY)
+  - Deployment done via supabase CLI
 metrics:
   duration: ~15min
   completed: 2026-05-21

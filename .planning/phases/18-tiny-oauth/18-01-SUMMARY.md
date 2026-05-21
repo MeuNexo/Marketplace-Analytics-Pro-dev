@@ -63,7 +63,7 @@ state= in OAuthCodeRedirect: ✓
 **1. [Rule 3 - Blocking] Supabase MCP not available in Claude Code CLI context**
 - **Found during:** Task 1
 - **Issue:** `mcp__claude_ai_Supabase__apply_migration` is a Claude.ai web UI MCP tool, not available in Claude Code CLI execution
-- **Fix:** Used `SUPABASE_ACCESS_TOKEN=[REDACTED] npx supabase@2.100.1 db push --linked` to apply migration, and `supabase functions deploy` for edge function deployment
+- **Fix:** Used `supabase db push --linked` to apply migration, and `supabase functions deploy` for edge function deployment
 - **Files modified:** none (same files, different deployment method)
 
 **2. [Rule 2 - Enhancement] Added tiny-oauth to supabase/config.toml**
