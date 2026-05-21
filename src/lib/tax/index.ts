@@ -34,8 +34,13 @@ export function calculateEffectiveRate(input: TaxInput): number {
       return c(input.lp_pis) + c(input.lp_cofins) + c(input.lp_irpj) + c(input.lp_csll);
 
     case "lucro_real": {
+      // Preview usa alíquota intra se configurada, senão inter Sul/SE como referência.
+      // O cálculo real por pedido usa computeOrderTaxRate (com destino real).
       const icmsAliq = Number(
-        input.lr_icms_aliquota_intra ?? input.lr_icms_debito ?? 0
+        input.lr_icms_aliquota_intra
+          ?? input.lr_icms_aliquota_inter_sul_sudeste
+          ?? input.lr_icms_debito
+          ?? 12
       );
       const baseFactor = 1 - icmsAliq / 100;
       return Math.max(0, icmsAliq + baseFactor * (1.65 + 7.60));

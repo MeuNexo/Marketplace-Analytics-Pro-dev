@@ -116,8 +116,10 @@ describe("calculateEffectiveRate", () => {
       ).toBeCloseTo(9.25);
     });
 
-    it("returns PIS+COFINS only (9.25%) when all fields are null (not configured)", () => {
-      expect(calculateEffectiveRate({ regime: "lucro_real" })).toBeCloseTo(9.25);
+    it("returns 20.14% when all fields null — usa ICMS 12% (inter Sul/SE) como fallback", () => {
+      // Sem intra nem inter configurados: fallback para 12% (tabela interestadual Sul/SE)
+      // 12 + 0.88 × 9.25 = 20.14%
+      expect(calculateEffectiveRate({ regime: "lucro_real" })).toBeCloseTo(20.14);
     });
 
     it("handles ICMS 17% (intraestadual SP)", () => {

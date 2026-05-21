@@ -54,13 +54,20 @@ export function computeOrderTaxRate(
       const orig = config.uf_origem?.toUpperCase() ?? null;
       const dest = ufDestino?.toUpperCase() ?? null;
 
-      // Determinar alíquota ICMS pela UF destino
-      let icmsAliq = intra; // padrão: intraestadual
-      if (orig && dest && orig !== dest) {
+      let icmsAliq: number;
+      if (orig === null) {
+        // Sem UF origem configurada: aplica interestadual pela tabela ICMS por destino.
+        // Não é possível determinar intra vs inter sem origem → usa alíquota mais comum.
+        icmsAliq = (dest && isReducedInterstateDest(dest)) ? interNNECO : interSulSE;
+      } else if (dest === null || orig === dest) {
+        // Intraestadual (mesma UF ou destino desconhecido)
+        icmsAliq = intra;
+      } else {
+        // Interestadual: tabela ICMS por destino
         icmsAliq = isReducedInterstateDest(dest) ? interNNECO : interSulSE;
       }
 
-      // Fórmula: ICMS + PIS×(1−ICMS%) + COFINS×(1−ICMS%)
+      // Fórmula Wesley: ICMS + PIS×(1-ICMS%) + COFINS×(1-ICMS%)
       const baseFactor = 1 - icmsAliq / 100;
       return Math.max(0, icmsAliq + baseFactor * (1.65 + 7.60));
     }

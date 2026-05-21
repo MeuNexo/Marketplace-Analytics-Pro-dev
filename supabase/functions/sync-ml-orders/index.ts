@@ -39,13 +39,19 @@ function computeOrderTaxRate(cfg: any, ufDest: string | null): number {
       const intra      = Number(cfg.lr_icms_aliquota_intra ?? cfg.lr_icms_debito ?? 0);
       const interSulSE = Number(cfg.lr_icms_aliquota_inter_sul_sudeste ?? 12);
       const interNNECO = Number(cfg.lr_icms_aliquota_inter_norte_nordeste ?? 7);
-      const orig = (cfg.uf_origem ?? "").toString().toUpperCase() || null;
+      const orig = cfg.uf_origem ? String(cfg.uf_origem).toUpperCase() : null;
       const dest = ufDest ? ufDest.toUpperCase() : null;
-      let icmsAliq = intra;
-      if (orig && dest && orig !== dest) {
+
+      let icmsAliq: number;
+      if (orig === null) {
+        // Sem UF origem: aplica interestadual pela tabela ICMS por destino
+        icmsAliq = (dest && isReducedInterstateDest(dest)) ? interNNECO : interSulSE;
+      } else if (dest === null || orig === dest) {
+        icmsAliq = intra; // intraestadual
+      } else {
         icmsAliq = isReducedInterstateDest(dest) ? interNNECO : interSulSE;
       }
-      // Fórmula Wesley: ICMS + PIS×(1-ICMS%) + COFINS×(1-ICMS%)
+
       const baseFactor = 1 - icmsAliq / 100;
       return Math.max(0, icmsAliq + baseFactor * (1.65 + 7.60));
     }
