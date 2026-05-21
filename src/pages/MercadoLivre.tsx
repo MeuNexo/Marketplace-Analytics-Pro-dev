@@ -8,7 +8,6 @@ import { useMLStore } from "@/contexts/MLStoreContext";
 import { useSeller } from "@/contexts/SellerContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMLAds } from "@/hooks/useMLAds";
 import { computeAdsSummary } from "@/hooks/useMLAds";
 import { useMLReputation } from "@/hooks/useMLReputation";
@@ -406,9 +405,8 @@ export default function MercadoLivre() {
 
   return (
     <div className="space-y-5">
-      <Tabs defaultValue="vendas" className="space-y-4">
-        {/* ── Sticky header ── */}
-        <div className="sticky -top-4 md:-top-6 lg:-top-8 z-20 -mx-4 md:-mx-6 lg:-mx-8 -mt-4 md:-mt-6 lg:-mt-8 px-4 md:px-6 lg:px-8 pb-4 pt-4 bg-background/95 backdrop-blur-sm border-b border-border/40">
+      {/* ── Sticky header ── */}
+      <div className="sticky -top-4 md:-top-6 lg:-top-8 z-20 -mx-4 md:-mx-6 lg:-mx-8 -mt-4 md:-mt-6 lg:-mt-8 px-4 md:px-6 lg:px-8 pb-4 pt-4 bg-background/95 backdrop-blur-sm border-b border-border/40">
           <AnimatePresence>
             {syncProgress && (() => {
               const pct = Math.round((syncProgress.current / syncProgress.total) * 100);
@@ -453,9 +451,6 @@ export default function MercadoLivre() {
                 period={period}
                 onConfirm={handleConfirm}
               />
-              <TabsList className="h-8 overflow-x-auto no-scrollbar max-w-full">
-                <TabsTrigger value="vendas" className="text-xs px-3 h-7">Vendas</TabsTrigger>
-              </TabsList>
               <Button
                 variant="ghost"
                 size="sm"
@@ -479,9 +474,9 @@ export default function MercadoLivre() {
               </Button>
             </div>
           </div>
-        </div>
+      </div>
 
-        <TabsContent value="vendas" className="space-y-5 mt-0 animate-fade-in">
+      <div className="space-y-5 animate-fade-in">
           {isML && !effectiveLoading && connected && !hasData && (
             <Card className="border-dashed">
               <CardContent className="flex items-center gap-3 py-4">
@@ -574,8 +569,7 @@ export default function MercadoLivre() {
             );
             return null;
           })}
-        </TabsContent>
-      </Tabs>
+      </div>
 
       {/* ── Sheet de personalização ── */}
       <Sheet open={layoutOpen} onOpenChange={setLayoutOpen}>
