@@ -71,3 +71,6 @@ verify_jwt = false
 
 [functions.sync-ml-orders]
 verify_jwt = false
+
+[functions.sync-tiny-costs]
+verify_jwt = false
