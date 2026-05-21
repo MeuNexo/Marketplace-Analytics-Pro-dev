@@ -311,7 +311,7 @@ export default function Integrations() {
   const [connecting, setConnecting] = useState(false);
   const [mlOAuthConnecting, setMlOAuthConnecting] = useState(false);
   const [mlOAuthStep, setMlOAuthStep] = useState<"verifying" | "saving" | "done" | "error">("verifying");
-  const [tinyConnected, setTinyConnected] = useState(false);
+  const [tinyConnected, setTinyConnected] = useState(() => localStorage.getItem("tiny_erp_connected") === "1");
   const [tinyConnecting, setTinyConnecting] = useState(false);
   const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);
   const [disconnectPassword, setDisconnectPassword] = useState("");
@@ -481,6 +481,7 @@ export default function Integrations() {
     }
 
     setTinyConnected(true);
+    localStorage.setItem("tiny_erp_connected", "1");
     toast({ title: "Tiny ERP conectado!", description: "Agora você pode sincronizar os custos." });
     window.history.replaceState({}, "", "/integracoes");
   };
@@ -517,6 +518,7 @@ export default function Integrations() {
       body: { action: "disconnect", ml_user_id: mlUserId },
     });
     setTinyConnected(false);
+    localStorage.removeItem("tiny_erp_connected");
     toast({ title: "Tiny ERP desconectado" });
   };
 
@@ -549,26 +551,26 @@ export default function Integrations() {
     checkTokens();
   }, [currentOrg?.id]);
 
-  // Check Tiny connection status — filtra por ml_user_id para não depender só de RLS
+  // Valida silenciosamente o token Tiny no DB para corrigir estado stale do localStorage
   const checkTinyMlUserId = mlStores[0]?.ml_user_id ?? null;
   useEffect(() => {
     if (!checkTinyMlUserId) return;
     let mounted = true;
-
-    const checkTinyConnection = async () => {
-      try {
-        const { data } = await supabase
-          .from("ml_tokens")
-          .select("tiny_access_token")
-          .eq("ml_user_id", checkTinyMlUserId)
-          .maybeSingle();
-        if (mounted) setTinyConnected(!!data?.tiny_access_token);
-      } catch (_e) { /* ignore */ }
-    };
-
-    checkTinyConnection();
+    supabase
+      .from("ml_tokens")
+      .select("tiny_access_token")
+      .eq("ml_user_id", checkTinyMlUserId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!mounted) return;
+        const hasToken = !!data?.tiny_access_token;
+        setTinyConnected(hasToken);
+        if (hasToken) localStorage.setItem("tiny_erp_connected", "1");
+        else localStorage.removeItem("tiny_erp_connected");
+      })
+      .catch(() => { /* ignore — localStorage value mantém */ });
     return () => { mounted = false; };
-  }, [currentOrg?.id, checkTinyMlUserId]);
+  }, [checkTinyMlUserId]);
 
   // Handle OAuth callbacks — ML and Tiny
   useEffect(() => {
