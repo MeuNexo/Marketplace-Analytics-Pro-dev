@@ -16,6 +16,7 @@ import { useMLFilters, getFilterDates, todayUTC, getComparisonRanges } from "@/h
 import { useMLDailyQuery, useMLHourlyQuery, useMLProductsQuery, useMLUserQuery, useMLMonthlyDailyQuery, type DailyBreakdown, type HourlyBreakdown } from "@/hooks/useMLQueries";
 import { useMLSync } from "@/hooks/useMLSync";
 import { useMLOrders } from "@/hooks/useMLOrders";
+import { useMLKPISummary } from "@/hooks/useMLKPISummary";
 import { MLKPIGrid } from "@/components/mercadolivre/MLKPIGrid";
 import { MLPeriodPicker } from "@/components/mercadolivre/MLPeriodPicker";
 import { MLRevenueChart } from "@/components/mercadolivre/MLRevenueChart";
@@ -116,6 +117,11 @@ export default function MercadoLivre() {
   );
 
   const { data: ordersSummary } = useMLOrders(currentFrom, currentTo);
+  const { data: kpiSummary, isLoading: kpiSummaryLoading } = useMLKPISummary(
+    currentFrom,
+    currentTo,
+    adsSummary.total_spend,
+  );
 
   // ── Sync state to context (debounced) ──
   const syncTimerRef = useRef<ReturnType<typeof setTimeout>>();
@@ -475,6 +481,9 @@ export default function MercadoLivre() {
             loading={effectiveLoading}
             syncing={effectiveSyncing}
             hasSyncProgress={!!syncProgress}
+            kpiSummary={kpiSummary}
+            kpiSummaryLoading={kpiSummaryLoading}
+            adsTotalForPeriod={adsSummary.total_spend}
           />
 
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-3">
