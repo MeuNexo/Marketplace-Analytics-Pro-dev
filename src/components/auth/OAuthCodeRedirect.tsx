@@ -11,9 +11,12 @@ export function OAuthCodeRedirect({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const code = searchParams.get("code");
+    const state = searchParams.get("state");
     const path = window.location.pathname;
     if (code && path !== "/integracoes") {
-      navigate(`/integracoes?code=${encodeURIComponent(code)}`, { replace: true });
+      const params = new URLSearchParams({ code });
+      if (state) params.set("state", state);
+      navigate(`/integracoes?${params.toString()}`, { replace: true });
     }
   }, [searchParams, navigate]);
 
