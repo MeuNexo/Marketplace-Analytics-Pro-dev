@@ -309,6 +309,13 @@ function expandOrder(
       tax_rate:        taxRate,
       tax_amount:      taxAmount,
       uf_origem:       ufOrigem,
+      receita_bruta:   precoUnit != null ? precoUnit * quantidade : null,
+      receita_liquida: precoUnit != null
+        ? precoUnit * quantidade
+          - (item.sale_fee != null ? Number(item.sale_fee) : 0)
+          - (frete ?? 0)
+          - (taxAmount ?? 0)
+        : null,
     };
   });
 }
