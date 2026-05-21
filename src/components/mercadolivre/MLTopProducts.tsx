@@ -13,7 +13,7 @@ function MLTopProductsImpl({ products }: MLTopProductsProps) {
       <Card className="h-full">
         <div className="px-4 pt-4 pb-2 flex items-center justify-between">
           <span className="text-sm font-medium text-foreground">Top Anúncios</span>
-          <span className="text-[10px] text-muted-foreground">{products.length} produtos</span>
+          <span className="text-[10px] text-muted-foreground">top {Math.min(products.length, 5)}</span>
         </div>
         <CardContent className="px-4 pb-4">
           {products.length > 0 ? (

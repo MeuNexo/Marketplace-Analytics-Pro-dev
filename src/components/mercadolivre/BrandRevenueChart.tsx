@@ -14,12 +14,16 @@ const currencyFmt = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
 export function BrandRevenueChart({ data, topBrands, loading }: BrandRevenueChartProps) {
-  const chartConfig = Object.fromEntries(
-    topBrands.map((brand, i) => [
-      brand,
-      { label: brand, color: BRAND_COLORS[i % BRAND_COLORS.length] },
-    ]),
-  );
+  const hasOutros = data[0]?.["Outros"] !== undefined;
+  const chartConfig = {
+    ...Object.fromEntries(
+      topBrands.map((brand, i) => [
+        brand,
+        { label: brand, color: BRAND_COLORS[i % BRAND_COLORS.length] },
+      ]),
+    ),
+    ...(hasOutros ? { Outros: { label: "Outros", color: "hsl(220, 10%, 60%)" } } : {}),
+  };
 
   if (loading) {
     return (
@@ -102,7 +106,7 @@ export function BrandRevenueChart({ data, topBrands, loading }: BrandRevenueChar
                 fillOpacity={0.6}
               />
             ))}
-            {data[0]?.["Outros"] !== undefined && (
+            {hasOutros && (
               <Area
                 key="Outros"
                 type="monotone"
