@@ -4,9 +4,6 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const TINY_API     = "https://api.tiny.com.br/public-api/v3";
-const TINY_TOKEN_URL = "https://accounts.tiny.com.br/realms/tiny/protocol/openid-connect/token";
-const TINY_CLIENT_ID     = Deno.env.get("TINY_CLIENT_ID") ?? "";
-const TINY_CLIENT_SECRET = Deno.env.get("TINY_CLIENT_SECRET") ?? "";
 const RATE_MS   = 1100; // 60 req/min → 1 req/s com margem
 const BATCH_SIZE = 50;
 
@@ -24,47 +21,51 @@ function json(body: unknown, status = 200) {
 // ── Token management ──────────────────────────────────────────────────────────
 
 async function getTinyToken(mlUserId: string): Promise<string> {
-  // Tentar usar token em cache primeiro
-  const { data: tok } = await sb
+  const { data: tok, error } = await sb
     .from("ml_tokens")
-    .select("tiny_access_token, tiny_expires_at")
+    .select("tiny_access_token, tiny_refresh_token, tiny_expires_at")
     .eq("ml_user_id", mlUserId)
-    .single();
+    .maybeSingle();
+
+  if (error || !tok) {
+    throw new Error(`Conta ML ${mlUserId} não encontrada em ml_tokens`);
+  }
+
+  if (!tok.tiny_access_token) {
+    throw new Error(`Tiny ERP não conectado para a loja ${mlUserId}. Conecte em /integracoes.`);
+  }
 
   const now = Math.floor(Date.now() / 1000);
-  if (tok?.tiny_access_token && tok.tiny_expires_at && tok.tiny_expires_at - now > 300) {
+  // Token válido por mais de 5 minutos
+  if (tok.tiny_expires_at && tok.tiny_expires_at - now > 300) {
     return tok.tiny_access_token;
   }
 
-  // Gerar novo token via client_credentials
-  if (!TINY_CLIENT_ID || !TINY_CLIENT_SECRET) {
-    throw new Error("TINY_CLIENT_ID ou TINY_CLIENT_SECRET não configurados");
+  // Precisa renovar
+  if (!tok.tiny_refresh_token) {
+    throw new Error(`Token Tiny expirado e sem refresh_token para ${mlUserId}. Reconecte em /integracoes.`);
   }
 
-  const resp = await fetch(TINY_TOKEN_URL, {
+  // Chamar tiny-oauth para renovar o token
+  const refreshResp = await fetch(`${SUPABASE_URL}/functions/v1/tiny-oauth`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type:    "client_credentials",
-      client_id:     TINY_CLIENT_ID,
-      client_secret: TINY_CLIENT_SECRET,
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+    },
+    body: JSON.stringify({
+      action: "refresh_token",
+      refresh_token: tok.tiny_refresh_token,
+      ml_user_id: mlUserId,
     }),
   });
 
-  if (!resp.ok) {
-    throw new Error(`Tiny token error ${resp.status}: ${await resp.text()}`);
+  const refreshData = await refreshResp.json();
+  if (!refreshResp.ok || !refreshData.success) {
+    throw new Error(`Falha ao renovar token Tiny: ${refreshData.error || "desconhecido"}`);
   }
 
-  const data = await resp.json();
-  const accessToken  = data.access_token as string;
-  const expiresAt    = now + (data.expires_in ?? 3600);
-
-  await sb
-    .from("ml_tokens")
-    .update({ tiny_access_token: accessToken, tiny_expires_at: expiresAt })
-    .eq("ml_user_id", mlUserId);
-
-  return accessToken;
+  return refreshData.access_token;
 }
 
 // ── Tiny API helpers ──────────────────────────────────────────────────────────
