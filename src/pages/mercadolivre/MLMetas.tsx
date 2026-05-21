@@ -154,7 +154,7 @@ export default function MLMetas() {
 
   const kpiDefs = [
     { key: "revenue" as const,      label: "Receita Mensal", icon: <TrendingUp className="w-3.5 h-3.5" />,   format: "currency" as const, color: "text-emerald-600" },
-    { key: "gross_profit" as const, label: "Lucro Bruto",    icon: <DollarSign className="w-3.5 h-3.5" />,   format: "currency" as const, color: "text-teal-600"   },
+    { key: "gross_profit" as const, label: "Lucro Bruto",    icon: <DollarSign className="w-3.5 h-3.5" />,   format: "percent"  as const, color: "text-teal-600"   },
     { key: "orders" as const,       label: "Pedidos",        icon: <ShoppingCart className="w-3.5 h-3.5" />,  format: "number"   as const, color: "text-blue-600"   },
     { key: "ticket" as const,       label: "Ticket M\u00e9dio",   icon: <Receipt className="w-3.5 h-3.5" />,       format: "currency" as const, color: "text-orange-600" },
     { key: "conversion" as const,   label: "Convers\u00e3o",      icon: <Percent className="w-3.5 h-3.5" />,       format: "percent"  as const, color: "text-purple-600" },
@@ -250,7 +250,7 @@ export default function MLMetas() {
               <p className="font-medium text-foreground mb-1.5 text-sm">Resumo</p>
               <div className="grid grid-cols-2 gap-x-6 gap-y-1">
                 {kpi.revenue > 0 && <span className="text-muted-foreground">Receita: <strong className="text-foreground">{currencyFmt(kpi.revenue)}</strong></span>}
-                {kpi.gross_profit > 0 && <span className="text-muted-foreground">Lucro Bruto: <strong className="text-foreground">{currencyFmt(kpi.gross_profit)}</strong></span>}
+                {kpi.gross_profit > 0 && <span className="text-muted-foreground">Lucro Bruto: <strong className="text-foreground">{kpi.gross_profit.toFixed(1)}%</strong></span>}
                 {kpi.orders > 0 && <span className="text-muted-foreground">Pedidos: <strong className="text-foreground">{kpi.orders.toLocaleString("pt-BR")}</strong></span>}
                 {kpi.ticket > 0 && <span className="text-muted-foreground">Ticket: <strong className="text-foreground">{currencyFmt(kpi.ticket)}</strong></span>}
                 {kpi.conversion > 0 && <span className="text-muted-foreground">Convers&atilde;o: <strong className="text-foreground">{kpi.conversion.toFixed(1)}%</strong></span>}

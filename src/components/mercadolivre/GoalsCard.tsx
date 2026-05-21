@@ -82,12 +82,14 @@ export function GoalsCard({
   const targetConversion  = kpi?.conversion   ?? 0;
   const targetGrossProfit = kpi?.gross_profit ?? 0;
 
+  const grossProfitPct = currentRevenue > 0 ? (currentGrossProfit / currentRevenue) * 100 : 0;
+
   const allGoals: GoalItem[] = [
-    { label: "Receita Mensal", current: currentRevenue,     target: targetRevenue,     format: "currency" },
-    { label: "Lucro Bruto",    current: currentGrossProfit, target: targetGrossProfit, format: "currency" },
-    { label: "Pedidos",        current: currentOrders,      target: targetOrders,      format: "number"   },
-    { label: "Ticket Médio",   current: currentTicket,      target: targetTicket,      format: "currency" },
-    { label: "Conversão",      current: currentConversion,  target: targetConversion,  format: "percent"  },
+    { label: "Receita Mensal", current: currentRevenue,    target: targetRevenue,     format: "currency" },
+    { label: "Lucro Bruto",    current: grossProfitPct,    target: targetGrossProfit, format: "percent"  },
+    { label: "Pedidos",        current: currentOrders,     target: targetOrders,      format: "number"   },
+    { label: "Ticket Médio",   current: currentTicket,     target: targetTicket,      format: "currency" },
+    { label: "Conversão",      current: currentConversion, target: targetConversion,  format: "percent"  },
   ];
 
   const goals = allGoals.filter((g) => g.target > 0);
