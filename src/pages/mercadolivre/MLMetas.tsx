@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Save, TrendingUp, ShoppingCart, Receipt, Percent, Store, Calendar, CheckCircle2 } from "lucide-react";
+import { Save, TrendingUp, ShoppingCart, Receipt, Percent, Store, Calendar, CheckCircle2, DollarSign } from "lucide-react";
 import { useMLStore } from "@/contexts/MLStoreContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { generateTargetId, generateDefaultPMTDistribution, monthLabels } from "@/types/settings";
@@ -89,7 +89,7 @@ export default function MLMetas() {
 
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
-  const [kpi, setKpi] = useState({ revenue: 0, orders: 0, ticket: 0, conversion: 0 });
+  const [kpi, setKpi] = useState({ revenue: 0, orders: 0, ticket: 0, conversion: 0, gross_profit: 0 });
 
   // Drive store selection from the global header scope.
   // When the header has a single store selected, use it. When "Todas as lojas"
@@ -105,20 +105,21 @@ export default function MLMetas() {
     const existing = getTarget(selectedStoreId, "mercado-livre", selectedYear, selectedMonth);
     if (existing?.kpiTargets) {
       setKpi({
-        revenue:    existing.kpiTargets.revenue    ?? existing.targetValue ?? 0,
-        orders:     existing.kpiTargets.orders     ?? 0,
-        ticket:     existing.kpiTargets.ticket     ?? 0,
-        conversion: existing.kpiTargets.conversion ?? 0,
+        revenue:      existing.kpiTargets.revenue      ?? existing.targetValue ?? 0,
+        orders:       existing.kpiTargets.orders       ?? 0,
+        ticket:       existing.kpiTargets.ticket       ?? 0,
+        conversion:   existing.kpiTargets.conversion   ?? 0,
+        gross_profit: existing.kpiTargets.gross_profit ?? 0,
       });
     } else if (existing?.targetValue) {
-      setKpi({ revenue: existing.targetValue, orders: 0, ticket: 0, conversion: 0 });
+      setKpi({ revenue: existing.targetValue, orders: 0, ticket: 0, conversion: 0, gross_profit: 0 });
     } else {
-      setKpi({ revenue: 0, orders: 0, ticket: 0, conversion: 0 });
+      setKpi({ revenue: 0, orders: 0, ticket: 0, conversion: 0, gross_profit: 0 });
     }
   }, [selectedStoreId, selectedYear, selectedMonth, getTarget]);
 
   const selectedStore = stores.find((s) => s.ml_user_id === selectedStoreId);
-  const hasAnyTarget = kpi.revenue > 0 || kpi.orders > 0 || kpi.ticket > 0 || kpi.conversion > 0;
+  const hasAnyTarget = kpi.revenue > 0 || kpi.orders > 0 || kpi.ticket > 0 || kpi.conversion > 0 || kpi.gross_profit > 0;
 
   const [saving, setSaving] = useState(false);
 
@@ -152,10 +153,11 @@ export default function MLMetas() {
   }, [selectedStoreId, selectedYear, getTarget]);
 
   const kpiDefs = [
-    { key: "revenue" as const,    label: "Receita Mensal", icon: <TrendingUp className="w-3.5 h-3.5" />,  format: "currency" as const, color: "text-emerald-600" },
-    { key: "orders" as const,     label: "Pedidos",        icon: <ShoppingCart className="w-3.5 h-3.5" />, format: "number"   as const, color: "text-blue-600"   },
-    { key: "ticket" as const,     label: "Ticket M\u00e9dio",  icon: <Receipt className="w-3.5 h-3.5" />,  format: "currency" as const, color: "text-orange-600" },
-    { key: "conversion" as const, label: "Convers\u00e3o", icon: <Percent className="w-3.5 h-3.5" />,      format: "percent"  as const, color: "text-purple-600" },
+    { key: "revenue" as const,      label: "Receita Mensal", icon: <TrendingUp className="w-3.5 h-3.5" />,   format: "currency" as const, color: "text-emerald-600" },
+    { key: "gross_profit" as const, label: "Lucro Bruto",    icon: <DollarSign className="w-3.5 h-3.5" />,   format: "currency" as const, color: "text-teal-600"   },
+    { key: "orders" as const,       label: "Pedidos",        icon: <ShoppingCart className="w-3.5 h-3.5" />,  format: "number"   as const, color: "text-blue-600"   },
+    { key: "ticket" as const,       label: "Ticket M\u00e9dio",   icon: <Receipt className="w-3.5 h-3.5" />,       format: "currency" as const, color: "text-orange-600" },
+    { key: "conversion" as const,   label: "Convers\u00e3o",      icon: <Percent className="w-3.5 h-3.5" />,       format: "percent"  as const, color: "text-purple-600" },
   ];
 
   return (
@@ -248,6 +250,7 @@ export default function MLMetas() {
               <p className="font-medium text-foreground mb-1.5 text-sm">Resumo</p>
               <div className="grid grid-cols-2 gap-x-6 gap-y-1">
                 {kpi.revenue > 0 && <span className="text-muted-foreground">Receita: <strong className="text-foreground">{currencyFmt(kpi.revenue)}</strong></span>}
+                {kpi.gross_profit > 0 && <span className="text-muted-foreground">Lucro Bruto: <strong className="text-foreground">{currencyFmt(kpi.gross_profit)}</strong></span>}
                 {kpi.orders > 0 && <span className="text-muted-foreground">Pedidos: <strong className="text-foreground">{kpi.orders.toLocaleString("pt-BR")}</strong></span>}
                 {kpi.ticket > 0 && <span className="text-muted-foreground">Ticket: <strong className="text-foreground">{currencyFmt(kpi.ticket)}</strong></span>}
                 {kpi.conversion > 0 && <span className="text-muted-foreground">Convers&atilde;o: <strong className="text-foreground">{kpi.conversion.toFixed(1)}%</strong></span>}

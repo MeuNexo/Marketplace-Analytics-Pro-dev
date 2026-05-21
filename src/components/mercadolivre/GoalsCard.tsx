@@ -16,6 +16,7 @@ interface GoalsCardProps {
   currentOrders: number;
   currentTicket: number;
   currentConversion: number;
+  currentGrossProfit?: number;
   storeId?: string;
   year?: number;
   month?: number;
@@ -60,6 +61,7 @@ export function GoalsCard({
   currentOrders,
   currentTicket,
   currentConversion,
+  currentGrossProfit = 0,
   storeId,
   year,
   month,
@@ -74,19 +76,22 @@ export function GoalsCard({
     : undefined;
 
   const kpi = saved?.kpiTargets;
-  const targetRevenue    = kpi?.revenue    ?? saved?.targetValue ?? 0;
-  const targetOrders     = kpi?.orders     ?? 0;
-  const targetTicket     = kpi?.ticket     ?? 0;
-  const targetConversion = kpi?.conversion ?? 0;
+  const targetRevenue     = kpi?.revenue      ?? saved?.targetValue ?? 0;
+  const targetOrders      = kpi?.orders       ?? 0;
+  const targetTicket      = kpi?.ticket       ?? 0;
+  const targetConversion  = kpi?.conversion   ?? 0;
+  const targetGrossProfit = kpi?.gross_profit ?? 0;
 
-  const hasTargets = targetRevenue > 0 || targetOrders > 0 || targetTicket > 0 || targetConversion > 0;
-
-  const goals: GoalItem[] = [
-    { label: "Receita Mensal", current: currentRevenue,    target: targetRevenue,    format: "currency" },
-    { label: "Pedidos",        current: currentOrders,     target: targetOrders,     format: "number"   },
-    { label: "Ticket Médio",   current: currentTicket,     target: targetTicket,     format: "currency" },
-    { label: "Conversão",      current: currentConversion, target: targetConversion, format: "percent"  },
+  const allGoals: GoalItem[] = [
+    { label: "Receita Mensal", current: currentRevenue,     target: targetRevenue,     format: "currency" },
+    { label: "Lucro Bruto",    current: currentGrossProfit, target: targetGrossProfit, format: "currency" },
+    { label: "Pedidos",        current: currentOrders,      target: targetOrders,      format: "number"   },
+    { label: "Ticket Médio",   current: currentTicket,      target: targetTicket,      format: "currency" },
+    { label: "Conversão",      current: currentConversion,  target: targetConversion,  format: "percent"  },
   ];
+
+  const goals = allGoals.filter((g) => g.target > 0);
+  const hasTargets = goals.length > 0;
 
   return (
     <Card className="flex flex-col h-full">

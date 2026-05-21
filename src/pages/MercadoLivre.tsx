@@ -144,6 +144,28 @@ export default function MercadoLivre() {
     adsSummary.total_spend,
   );
 
+  // KPISummary mensal separado — sempre mês corrente, independente do filtro de período
+  const monthlyFrom = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+  }, []);
+  const monthlyTo = useMemo(() => format(new Date(), "yyyy-MM-dd"), []);
+  const monthlyAdsTotal = useMemo(
+    () => adsDaily.filter((d) => d.date >= monthlyFrom && d.date <= monthlyTo).reduce((s, d) => s + d.spend, 0),
+    [adsDaily, monthlyFrom, monthlyTo],
+  );
+  const { data: monthlyKpiSummary } = useMLKPISummary(monthlyFrom, monthlyTo, monthlyAdsTotal);
+
+  const currentGrossProfit = useMemo(() => {
+    if (!monthlyKpiSummary) return 0;
+    return Math.max(
+      0,
+      monthlyKpiSummary.gross_revenue
+        - monthlyKpiSummary.custo_operacional
+        - (monthlyKpiSummary.has_tax_data ? monthlyKpiSummary.total_tax : 0),
+    );
+  }, [monthlyKpiSummary]);
+
   // Imposto: usa SUM(orders.tax_amount) do período — dados reais, não effective_rate × receita
   const impostosTotal = kpiSummary?.has_tax_data ? (kpiSummary.total_tax || null) : null;
 
@@ -520,6 +542,7 @@ export default function MercadoLivre() {
                   currentOrders={monthlyMetrics?.units_sold ?? 0}
                   currentTicket={monthlyMetrics?.avg_ticket ?? 0}
                   currentConversion={monthlyMetrics?.conversion_rate ?? 0}
+                  currentGrossProfit={currentGrossProfit}
                   storeId={selectedStore !== "all" ? String(selectedStore) : (stores[0]?.ml_user_id ?? undefined)}
                 />
               </div>
