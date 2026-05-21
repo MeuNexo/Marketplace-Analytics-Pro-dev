@@ -1,7 +1,9 @@
 import { KPICard } from "@/components/dashboard/KPICard";
-import { DollarSign, ShoppingCart, Tag, Eye, Percent } from "lucide-react";
+import { DollarSign, ShoppingCart, Tag, Eye, Percent, TrendingUp, Wallet } from "lucide-react";
+import type { MLKPISummary } from "@/hooks/useMLKPISummary";
 
-const currencyFmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const currencyFmt = (v: number) =>
+  v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 interface Metrics {
   total_revenue: number;
@@ -19,6 +21,9 @@ interface MLKPIGridProps {
   loading: boolean;
   syncing: boolean;
   hasSyncProgress: boolean;
+  kpiSummary?: MLKPISummary | null;
+  kpiSummaryLoading?: boolean;
+  adsTotalForPeriod?: number;
 }
 
 function calcDelta(current: number, previous: number | undefined) {
@@ -26,11 +31,36 @@ function calcDelta(current: number, previous: number | undefined) {
   return ((current - previous) / previous) * 100;
 }
 
-export function MLKPIGrid({ metrics, previousMetrics, loading, syncing, hasSyncProgress }: MLKPIGridProps) {
+export function MLKPIGrid({
+  metrics,
+  previousMetrics,
+  loading,
+  syncing,
+  hasSyncProgress,
+  kpiSummary,
+  kpiSummaryLoading,
+  adsTotalForPeriod = 0,
+}: MLKPIGridProps) {
   const refreshing = syncing && !hasSyncProgress;
+  const summaryLoading = loading || (kpiSummaryLoading ?? false);
+
+  const markupValue = (() => {
+    if (!kpiSummary) return "—";
+    if (!kpiSummary.markup_has_cost) return "s/ custo";
+    if (kpiSummary.markup_ratio == null) return "—";
+    return `${kpiSummary.markup_ratio.toFixed(2)}x`;
+  })();
+
+  const custoTotal = kpiSummary
+    ? (kpiSummary.custo_plataforma ?? 0) + adsTotalForPeriod
+    : null;
+  const custoOpValue = custoTotal != null ? currencyFmt(custoTotal) : "—";
+  const custoOpSubtitle = custoTotal != null && kpiSummary && kpiSummary.gross_revenue > 0
+    ? `${((custoTotal / kpiSummary.gross_revenue) * 100).toFixed(1)}% da receita`
+    : undefined;
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
       <KPICard
         title="Receita Total"
         value={metrics ? currencyFmt(metrics.total_revenue) : "—"}
@@ -94,6 +124,34 @@ export function MLKPIGrid({ metrics, previousMetrics, loading, syncing, hasSyncP
         loading={loading}
         refreshing={refreshing}
         delta={metrics && previousMetrics ? calcDelta(metrics.conversion_rate, previousMetrics.conversion_rate) : undefined}
+      />
+      <KPICard
+        title="Markup das Vendas"
+        value={markupValue}
+        subtitle={
+          kpiSummary?.markup_has_cost && kpiSummary.markup_ratio != null
+            ? "preço / custo produto"
+            : undefined
+        }
+        icon={<TrendingUp className="w-4 h-4" />}
+        variant="minimal"
+        iconClassName="bg-emerald-500/10 text-emerald-500"
+        size="compact"
+        loading={summaryLoading}
+        refreshing={refreshing}
+        tooltip="Receita bruta total dividida pelo custo total dos produtos vendidos (custo_unit × quantidade). Requer custo cadastrado em Anúncios."
+      />
+      <KPICard
+        title="Custo Operacional"
+        value={custoOpValue}
+        subtitle={custoOpSubtitle}
+        icon={<Wallet className="w-4 h-4" />}
+        variant="minimal"
+        iconClassName="bg-orange-500/10 text-orange-500"
+        size="compact"
+        loading={summaryLoading}
+        refreshing={refreshing}
+        tooltip="Frete + Comissão ML + Publicidade (ads) no período selecionado."
       />
     </div>
   );
