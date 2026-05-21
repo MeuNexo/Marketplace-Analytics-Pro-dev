@@ -203,8 +203,8 @@ function SubTabTopProdutos({ orders }: { orders: ProcessedOrder[] }) {
       .map(p => ({
         ...p,
         orders:          p.orderIds.size,
-        full_net:        p.net - p.cost - p.tax,
-        margin_pct:      p.gross > 0 ? ((p.net - p.cost - p.tax) / p.gross) * 100 : 0,
+        full_net:        p.net - p.cost,
+        margin_pct:      p.gross > 0 ? ((p.net - p.cost) / p.gross) * 100 : 0,
         commission_rate: p.gross > 0 ? (p.commission  / p.gross) * 100 : 0,
       }))
       .sort((a, b) =>
@@ -347,7 +347,7 @@ function SubTabUF({ orders }: { orders: ProcessedOrder[] }) {
         cancelled:         s.cancelledIds.size,
         avg_ticket:        (s.orderIds.size - s.cancelledIds.size) > 0 ? s.gross / (s.orderIds.size - s.cancelledIds.size) : 0,
         cancellation_rate: s.orderIds.size > 0 ? (s.cancelledIds.size / s.orderIds.size) * 100 : 0,
-        margin_pct:        s.gross > 0 ? ((s.net - s.cost - s.tax) / s.gross) * 100 : 0,
+        margin_pct:        s.gross > 0 ? ((s.net - s.cost) / s.gross) * 100 : 0,
       }))
       .sort((a, b) => b.gross - a.gross);
   }, [orders]);
@@ -482,7 +482,7 @@ function SubTabTipoAnuncio({ orders }: { orders: ProcessedOrder[] }) {
         frete:           d.frete,
         cost,
         tax,
-        margin_pct:      d.gross > 0 ? ((d.net - cost - tax) / d.gross) * 100 : 0,
+        margin_pct:      d.gross > 0 ? ((d.net - cost) / d.gross) * 100 : 0,
         commission_rate: d.gross > 0 ? (d.commission / d.gross) * 100 : 0,
         frete_rate:      d.gross > 0 ? (d.frete      / d.gross) * 100 : 0,
         avg_ticket:      d.orderIds.size > 0 ? d.gross / d.orderIds.size : 0,
@@ -886,15 +886,11 @@ export default function MLPedidos() {
       gross_margin_pct: (r.custo_unit != null && Number(r.receita_bruta) > 0)
         ? ((Number(r.receita_bruta) - Number(r.custo_unit) * r.quantidade) / Number(r.receita_bruta)) * 100
         : null,
-      full_net_revenue: (r.custo_unit != null || r.tax_amount != null)
-        ? Number(r.receita_liquida ?? 0)
-          - (r.custo_unit != null ? Number(r.custo_unit) * r.quantidade : 0)
-          - (r.tax_amount != null ? Number(r.tax_amount) : 0)
+      full_net_revenue: r.custo_unit != null
+        ? Number(r.receita_liquida ?? 0) - Number(r.custo_unit) * r.quantidade
         : null,
-      full_net_margin_pct: (Number(r.receita_bruta) > 0 && (r.custo_unit != null || r.tax_amount != null))
-        ? ((Number(r.receita_liquida ?? 0)
-            - (r.custo_unit != null ? Number(r.custo_unit) * r.quantidade : 0)
-            - (r.tax_amount != null ? Number(r.tax_amount) : 0))
+      full_net_margin_pct: (Number(r.receita_bruta) > 0 && r.custo_unit != null)
+        ? ((Number(r.receita_liquida ?? 0) - Number(r.custo_unit) * r.quantidade)
            / Number(r.receita_bruta)) * 100
         : null,
     })),
@@ -921,7 +917,7 @@ export default function MLPedidos() {
     const shipping   = confirmed.reduce((s, o) => s + o.shipping_cost, 0);
     const costs      = confirmed.reduce((s, o) => s + (o.cost_total ?? 0), 0);
     const taxes      = confirmed.reduce((s, o) => s + (o.tax_total  ?? 0), 0);
-    const fullNet    = net - costs - taxes;
+    const fullNet    = net - costs; // receita_liquida já desconta imposto; custo é o único desconto adicional
     const missingCost = confirmed.filter(o => o.cost_total == null).length;
     const missingTax  = confirmed.filter(o => o.tax_total  == null).length;
 
