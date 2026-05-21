@@ -549,11 +549,12 @@ export default function Integrations() {
     checkTokens();
   }, [currentOrg?.id]);
 
-  // Check Tiny connection status on mount — usa ml_user_ids das lojas ativas
+  // Check Tiny connection status — aguarda sessão e org para garantir que RLS passe
   useEffect(() => {
     const checkTinyConnection = async () => {
       try {
-        // Busca pelo menos uma loja com tiny_access_token preenchido
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
         const { data } = await supabase
           .from("ml_tokens")
           .select("tiny_access_token")
@@ -564,7 +565,7 @@ export default function Integrations() {
       } catch (_e) { /* ignore */ }
     };
     checkTinyConnection();
-  }, []);
+  }, [currentOrg?.id]);
 
   // Handle OAuth callbacks — ML and Tiny
   useEffect(() => {
