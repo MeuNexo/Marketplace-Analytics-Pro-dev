@@ -67,9 +67,21 @@ function EmptyState({ message }: { message: string }) {
 
 // ─── Tab: Venda por Hora ──────────────────────────────────────────────────────
 
-function TabHorario() {
+function TabHorario({ from, to }: { from: string; to: string }) {
   const { salesCache } = useMLStore();
-  const { hourly } = salesCache;
+  const { hourly, daily } = salesCache;
+
+  // Filter hourly rows by the selected date range (MLSalesHourly has a date field)
+  const filteredHourly = useMemo(
+    () => hourly.filter((h) => h.date >= from && h.date <= to),
+    [hourly, from, to]
+  );
+
+  // Filter daily rows for the same range (used for revenue/orders totals when hourly unavailable)
+  const filteredDaily = useMemo(
+    () => daily.filter((d) => d.date >= from && d.date <= to),
+    [daily, from, to]
+  );
 
   const { hourlyAgg, peakHour, totalRevenue } = useMemo(() => {
     const buckets = Array.from({ length: 24 }, (_, h) => ({
@@ -79,7 +91,7 @@ function TabHorario() {
       pedidos: 0,
     }));
 
-    hourly.forEach((r) => {
+    filteredHourly.forEach((r) => {
       const b = buckets[r.hour];
       if (!b) return;
       b.receita += r.total;
@@ -89,9 +101,9 @@ function TabHorario() {
     const totalRevenue = buckets.reduce((s, b) => s + b.receita, 0);
     const peak = buckets.reduce((best, b) => (b.receita > best.receita ? b : best), buckets[0]);
     return { hourlyAgg: buckets, peakHour: peak, totalRevenue };
-  }, [hourly]);
+  }, [filteredHourly]);
 
-  if (hourly.length === 0) {
+  if (filteredHourly.length === 0) {
     return <EmptyState message="Selecione o período 'Hoje' ou um dia específico para ver vendas por hora." />;
   }
 
@@ -208,12 +220,16 @@ function TabHorario() {
 
 // ─── Tab: Ticket Médio ────────────────────────────────────────────────────────
 
-function TabTicket() {
+function TabTicket({ from, to }: { from: string; to: string }) {
   const { salesCache } = useMLStore();
-  const { daily } = salesCache;
+
+  const filteredDaily = useMemo(
+    () => salesCache.daily.filter((d) => d.date >= from && d.date <= to),
+    [salesCache.daily, from, to]
+  );
 
   const chartData = useMemo(() => {
-    return [...daily]
+    return [...filteredDaily]
       .sort((a, b) => a.date.localeCompare(b.date))
       .map((d) => ({
         date: d.date.slice(5),
@@ -222,7 +238,7 @@ function TabTicket() {
         receita: d.approved,
       }))
       .filter((d) => d.pedidos > 0);
-  }, [daily]);
+  }, [filteredDaily]);
 
   const stats = useMemo(() => {
     if (chartData.length === 0) return null;
@@ -241,7 +257,7 @@ function TabTicket() {
     return { avg, max, min, bestDay, worstDay, trend: slope };
   }, [chartData]);
 
-  if (daily.length === 0) {
+  if (filteredDaily.length === 0) {
     return <EmptyState message="Nenhum dado de vendas disponível para o período selecionado." />;
   }
 
@@ -345,22 +361,12 @@ function TabTicket() {
 
 // ─── Tab: Venda por Estado ────────────────────────────────────────────────────
 
-function TabEstado() {
+function TabEstado({ from, to }: { from: string; to: string }) {
   const { salesCache } = useMLStore();
   const { daily } = salesCache;
 
-  // Derive period range from the cached daily rows so this tab follows the
-  // same period filter applied to the rest of the report.
-  const { rangeFrom, rangeTo } = useMemo(() => {
-    if (daily.length === 0) {
-      const today = new Date().toISOString().slice(0, 10);
-      return { rangeFrom: today, rangeTo: today };
-    }
-    const dates = daily.map((d) => d.date).sort();
-    return { rangeFrom: dates[0], rangeTo: dates[dates.length - 1] };
-  }, [daily]);
-
-  const { data: stateRows = [], isLoading } = useMLStateQuery(rangeFrom, rangeTo);
+  // Use from/to props directly — no need to derive from salesCache
+  const { data: stateRows = [], isLoading } = useMLStateQuery(from, to);
 
   const stateData = useMemo(() => {
     const agg: Record<string, { uf: string; name: string; revenue: number; orders: number }> = {};
@@ -390,7 +396,12 @@ function TabEstado() {
       .sort((a, b) => b.revenue - a.revenue);
   }, [stateRows]);
 
-  const dailyHasSales = daily.some((d) => d.approved > 0 || d.qty > 0);
+  // Filter daily to the selected range for the "has sales" check
+  const filteredDaily = useMemo(
+    () => daily.filter((d) => d.date >= from && d.date <= to),
+    [daily, from, to]
+  );
+  const dailyHasSales = filteredDaily.some((d) => d.approved > 0 || d.qty > 0);
 
   if (isLoading && stateData.length === 0) {
     return <EmptyState message="Carregando dados de estado..." />;
@@ -479,15 +490,19 @@ function TabEstado() {
 
 // ─── Tab: Funil de Conversão ──────────────────────────────────────────────────
 
-function TabFunil() {
+function TabFunil({ from, to }: { from: string; to: string }) {
   const { salesCache } = useMLStore();
-  const { daily } = salesCache;
+
+  const filteredDaily = useMemo(
+    () => salesCache.daily.filter((d) => d.date >= from && d.date <= to),
+    [salesCache.daily, from, to]
+  );
 
   const { funnelData, conversionStats } = useMemo(() => {
-    const visits = daily.reduce((s, d) => s + d.unique_visits, 0);
-    const buyers = daily.reduce((s, d) => s + d.unique_buyers, 0);
-    const orders = daily.reduce((s, d) => s + d.qty, 0);
-    const revenue = daily.reduce((s, d) => s + d.approved, 0);
+    const visits = filteredDaily.reduce((s, d) => s + d.unique_visits, 0);
+    const buyers = filteredDaily.reduce((s, d) => s + d.unique_buyers, 0);
+    const orders = filteredDaily.reduce((s, d) => s + d.qty, 0);
+    const revenue = filteredDaily.reduce((s, d) => s + d.approved, 0);
 
     const funnelData = [
       { name: "Visitas únicas",    value: visits,  fill: "hsl(var(--primary))" },
@@ -504,11 +519,11 @@ function TabFunil() {
     };
 
     return { funnelData, conversionStats };
-  }, [daily]);
+  }, [filteredDaily]);
 
   // Daily conversion rate chart
   const dailyConv = useMemo(() =>
-    [...daily]
+    [...filteredDaily]
       .sort((a, b) => a.date.localeCompare(b.date))
       .map((d) => ({
         date: d.date.slice(5),
@@ -516,9 +531,9 @@ function TabFunil() {
         visitas: d.unique_visits,
       }))
       .filter((d) => d.visitas > 0),
-    [daily]);
+    [filteredDaily]);
 
-  const hasAny = daily.some((d) => d.unique_visits > 0 || d.qty > 0);
+  const hasAny = filteredDaily.some((d) => d.unique_visits > 0 || d.qty > 0);
 
   if (!hasAny) {
     return <EmptyState message="Nenhum dado de conversão disponível para o período selecionado." />;
@@ -636,7 +651,12 @@ function TabFunil() {
 
 // ─── MLSalesAnalytics ─────────────────────────────────────────────────────────
 
-export function MLSalesAnalytics() {
+interface MLSalesAnalyticsProps {
+  from: string; // YYYY-MM-DD
+  to: string;   // YYYY-MM-DD
+}
+
+export function MLSalesAnalytics({ from, to }: MLSalesAnalyticsProps) {
   return (
     <div className="space-y-1">
       <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider px-1 pb-1">
@@ -651,7 +671,7 @@ export function MLSalesAnalytics() {
             </span>
           </AccordionTrigger>
           <AccordionContent className="pb-4">
-            <TabHorario />
+            <TabHorario from={from} to={to} />
           </AccordionContent>
         </AccordionItem>
 
@@ -663,7 +683,7 @@ export function MLSalesAnalytics() {
             </span>
           </AccordionTrigger>
           <AccordionContent className="pb-4">
-            <TabTicket />
+            <TabTicket from={from} to={to} />
           </AccordionContent>
         </AccordionItem>
 
@@ -675,7 +695,7 @@ export function MLSalesAnalytics() {
             </span>
           </AccordionTrigger>
           <AccordionContent className="pb-4">
-            <TabEstado />
+            <TabEstado from={from} to={to} />
           </AccordionContent>
         </AccordionItem>
 
@@ -687,7 +707,7 @@ export function MLSalesAnalytics() {
             </span>
           </AccordionTrigger>
           <AccordionContent className="pb-4">
-            <TabFunil />
+            <TabFunil from={from} to={to} />
           </AccordionContent>
         </AccordionItem>
       </Accordion>
