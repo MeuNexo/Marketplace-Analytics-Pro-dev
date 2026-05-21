@@ -35,9 +35,9 @@ metrics:
 | Step | Description | Status |
 |------|-------------|--------|
 | Migration created | `20260521200000_orders_add_marca.sql` | DONE — committed `84b3c123` |
-| Migration applied | `supabase db push` to remote | PENDING — requires Supabase PAT |
+| Migration applied | `supabase db push` to remote | DONE — applied to `ckcdevcxgvueywivefgx` |
 | Edge function updated | sync-ml-orders v6 with brand extraction | DONE — committed `ad879f58` |
-| Edge function deployed | `supabase functions deploy` to remote | PENDING — requires Supabase PAT |
+| Edge function deployed | `supabase functions deploy` to remote | DONE — deployed 143.2kB bundle |
 
 ## Task 1: Migration SQL — DONE
 
@@ -54,26 +54,17 @@ COMMENT ON COLUMN public.orders.marca IS
 
 Safe: `IF NOT EXISTS` + nullable column — zero-risk on existing rows and upsert logic.
 
-## Task 2: Migration Apply — PENDING
+## Task 2: Migration Apply — DONE
 
-The Supabase CLI requires a personal access token (`supabase login`) to push to the remote project. The CLI is not authenticated in this environment.
+Applied via `SUPABASE_ACCESS_TOKEN=... supabase db push --linked`.
 
-**To apply manually:**
-
-Option A — Supabase CLI:
+Note: Migration history had a drift — remote had `20260521171053` (not in local), and `20260521190000` had already been applied via that remote migration. Repaired with:
 ```bash
-supabase login  # provide PAT
-cd /root/garment-glow-test
-supabase db push --linked
+supabase migration repair --status reverted 20260521171053
+supabase migration repair --status applied 20260521190000
 ```
 
-Option B — Supabase SQL Editor (dashboard):
-Navigate to `https://supabase.com/dashboard/project/ckcdevcxgvueywivefgx/sql/new` and run:
-```sql
-ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS marca TEXT;
-COMMENT ON COLUMN public.orders.marca IS
-  'Marca do produto extraída de ML API /items?ids=... (atributo BRAND). Populada a partir de sync-ml-orders v6.';
-```
+Then `20260521200000_orders_add_marca.sql` was applied cleanly: `Finished supabase db push.`
 
 ## Task 3: Edge Function Changes — DONE
 
@@ -105,13 +96,13 @@ const brandMap = await fetchItemBrands(itemIds, accessToken);
 
 Passed `brandMap` as final argument to `expandOrder`.
 
-## Task 4: Edge Function Deploy — PENDING
+## Task 4: Edge Function Deploy — DONE
 
-```bash
-supabase login  # provide PAT
-cd /root/garment-glow-test
-supabase functions deploy sync-ml-orders --project-ref ckcdevcxgvueywivefgx
-```
+Deployed via `SUPABASE_ACCESS_TOKEN=... supabase functions deploy sync-ml-orders --project-ref ckcdevcxgvueywivefgx`.
+
+Output: `Deploying Function: sync-ml-orders (script size: 143.2kB)` — success.
+
+Dashboard: https://supabase.com/dashboard/project/ckcdevcxgvueywivefgx/functions
 
 ## How to Test
 
@@ -156,5 +147,5 @@ None — all 3 edge function changes applied exactly as specified. The `itemId` 
 - [x] Commit `84b3c123` exists in git log
 - [x] Edge function modified: `fetchItemBrands` at line 232, `brandMap` param at line 287, `marca:` at line 361, `fetchItemBrands()` call at line 524
 - [x] Commit `ad879f58` exists in git log
-- [ ] Migration applied to remote (pending auth)
-- [ ] Edge function deployed (pending auth)
+- [x] Migration applied to remote (`supabase db push --linked` — Finished supabase db push)
+- [x] Edge function deployed (143.2kB bundle deployed to `ckcdevcxgvueywivefgx`)
