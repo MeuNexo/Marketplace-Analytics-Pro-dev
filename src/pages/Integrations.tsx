@@ -106,9 +106,21 @@ interface TinySyncResult {
 interface TinyIntegrationSectionProps {
   mlStores: MLStore[];
   toast: ReturnType<typeof useToast>["toast"];
+  tinyConnected: boolean;
+  tinyConnecting: boolean;
+  onTinyConnect: () => Promise<void>;
+  onTinyDisconnect: () => Promise<void>;
+  onTinyConnectionChange: (connected: boolean) => void;
 }
 
-function TinyIntegrationSection({ mlStores, toast }: TinyIntegrationSectionProps) {
+function TinyIntegrationSection({
+  mlStores,
+  toast,
+  tinyConnected,
+  tinyConnecting,
+  onTinyConnect,
+  onTinyDisconnect,
+}: TinyIntegrationSectionProps) {
   const [selectedMlUserId, setSelectedMlUserId] = useState<string>("");
   const [syncing, setSyncing] = useState(false);
   const [result, setResult] = useState<TinySyncResult | null>(null);
@@ -150,7 +162,7 @@ function TinyIntegrationSection({ mlStores, toast }: TinyIntegrationSectionProps
         <h2 className="text-sm font-semibold text-foreground">ERPs e Ferramentas</h2>
         <div className="h-px flex-1 bg-border" />
       </div>
-      <Card className="rounded-xl border shadow-sm">
+      <Card className={`rounded-xl border shadow-sm transition-all duration-300 ${tinyConnected ? "border-primary/40 bg-primary/[0.02]" : "border-border"}`}>
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3 min-w-0">
@@ -159,11 +171,23 @@ function TinyIntegrationSection({ mlStores, toast }: TinyIntegrationSectionProps
               </div>
               <div className="min-w-0">
                 <CardTitle className="text-sm font-medium text-foreground truncate">Tiny ERP</CardTitle>
-                <span className="text-[11px] text-muted-foreground">Sincronização de custos via API</span>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  {tinyConnected ? (
+                    <>
+                      <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                      <span className="text-[11px] text-emerald-500">Conectado</span>
+                    </>
+                  ) : (
+                    <>
+                      <Link2Off className="w-3 h-3 text-muted-foreground" />
+                      <span className="text-[11px] text-muted-foreground">Não conectado</span>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
-            <Badge variant="secondary" className="text-[10px] h-5 font-normal shrink-0">
-              API Key
+            <Badge variant={tinyConnected ? "default" : "secondary"} className="text-[10px] h-5 font-normal shrink-0">
+              {tinyConnected ? "Conectado" : "OAuth 2.0"}
             </Badge>
           </div>
         </CardHeader>
@@ -178,61 +202,86 @@ function TinyIntegrationSection({ mlStores, toast }: TinyIntegrationSectionProps
             ))}
           </div>
 
-          {/* Store selector */}
-          {activeStores.length > 1 && (
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Loja ML para sincronizar</label>
-              <select
-                className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                value={effectiveMlUserId}
-                onChange={(e) => setSelectedMlUserId(e.target.value)}
-              >
-                {activeStores.map((s) => (
-                  <option key={s.ml_user_id} value={s.ml_user_id}>
-                    {s.displayName}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Sync result */}
-          {result && (
-            <div className={`rounded-lg px-3 py-2 text-xs ${result.error ? "bg-destructive/10 text-destructive" : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"}`}>
-              {result.error
-                ? `Erro: ${result.error}`
-                : `${result.synced ?? 0} produtos sincronizados${result.errors ? ` · ${result.errors} erros` : ""}`}
-            </div>
-          )}
-
-          {/* Config note */}
-          <div className="flex items-start gap-2 rounded-lg bg-muted/50 border border-border p-2.5">
-            <ShieldCheck className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
-            <p className="text-[11px] text-muted-foreground leading-relaxed">
-              Configure <code className="font-mono">TINY_CLIENT_ID</code> e <code className="font-mono">TINY_CLIENT_SECRET</code> como secrets da edge function no painel do Supabase.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 pt-1 border-t border-border">
-            <Button
-              size="sm"
-              className="flex-1"
-              onClick={handleSync}
-              disabled={syncing || !effectiveMlUserId}
-            >
-              {syncing ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-                  Sincronizando...
-                </>
-              ) : (
-                <>
-                  <RefreshCw className="w-4 h-4 mr-1.5" />
-                  Sincronizar Custos
-                </>
+          {tinyConnected ? (
+            <>
+              {/* Store selector */}
+              {activeStores.length > 1 && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Loja ML para sincronizar</label>
+                  <select
+                    className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                    value={effectiveMlUserId}
+                    onChange={(e) => setSelectedMlUserId(e.target.value)}
+                  >
+                    {activeStores.map((s) => (
+                      <option key={s.ml_user_id} value={s.ml_user_id}>
+                        {s.displayName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               )}
-            </Button>
-          </div>
+
+              {/* Sync result */}
+              {result && (
+                <div className={`rounded-lg px-3 py-2 text-xs ${result.error ? "bg-destructive/10 text-destructive" : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"}`}>
+                  {result.error
+                    ? `Erro: ${result.error}`
+                    : `${result.synced ?? 0} produtos sincronizados${result.errors ? ` · ${result.errors} erros` : ""}`}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-1 border-t border-border">
+                <Button
+                  size="sm"
+                  className="flex-1"
+                  onClick={handleSync}
+                  disabled={syncing || !effectiveMlUserId}
+                >
+                  {syncing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                      Sincronizando...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-1.5" />
+                      Sincronizar Custos
+                    </>
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onTinyDisconnect}
+                >
+                  <Link2Off className="w-4 h-4 mr-1.5" />
+                  Desconectar
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center gap-2 pt-1 border-t border-border">
+              <Button
+                size="sm"
+                className="flex-1"
+                onClick={onTinyConnect}
+                disabled={tinyConnecting}
+              >
+                {tinyConnecting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                    Redirecionando...
+                  </>
+                ) : (
+                  <>
+                    <Link2 className="w-4 h-4 mr-1.5" />
+                    Conectar Tiny ERP
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -262,6 +311,8 @@ export default function Integrations() {
   const [connecting, setConnecting] = useState(false);
   const [mlOAuthConnecting, setMlOAuthConnecting] = useState(false);
   const [mlOAuthStep, setMlOAuthStep] = useState<"verifying" | "saving" | "done" | "error">("verifying");
+  const [tinyConnected, setTinyConnected] = useState(false);
+  const [tinyConnecting, setTinyConnecting] = useState(false);
   const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);
   const [disconnectPassword, setDisconnectPassword] = useState("");
   const [disconnecting, setDisconnecting] = useState(false);
@@ -401,6 +452,74 @@ export default function Integrations() {
     }
   };
 
+  // ── Tiny ERP OAuth ────────────────────────────────────────────────────────────
+
+  const handleTinyOAuthCallback = async (code: string, state: string) => {
+    const savedState = localStorage.getItem("tiny_oauth_state");
+    localStorage.removeItem("tiny_oauth_state");
+    const mlUserId = localStorage.getItem("tiny_oauth_ml_user_id");
+    localStorage.removeItem("tiny_oauth_ml_user_id");
+
+    if (!savedState || savedState !== state) {
+      toast({ title: "Erro de segurança", description: "State OAuth inválido.", variant: "destructive" });
+      return;
+    }
+    if (!mlUserId) {
+      toast({ title: "Erro", description: "ml_user_id não encontrado no retorno OAuth.", variant: "destructive" });
+      return;
+    }
+
+    const redirectUri = `${window.location.origin}/integracoes`;
+    const { data, error } = await supabase.functions.invoke("tiny-oauth", {
+      body: { action: "exchange_code", code, redirect_uri: redirectUri, ml_user_id: mlUserId },
+    });
+
+    if (error || !data?.success) {
+      toast({ title: "Erro ao conectar Tiny ERP", description: data?.error || error?.message, variant: "destructive" });
+      window.history.replaceState({}, "", "/integracoes");
+      return;
+    }
+
+    setTinyConnected(true);
+    toast({ title: "Tiny ERP conectado!", description: "Agora você pode sincronizar os custos." });
+    window.history.replaceState({}, "", "/integracoes");
+  };
+
+  const handleTinyConnect = async () => {
+    const activeStore = mlStores[0];
+    const mlUserId = activeStore?.ml_user_id;
+    if (!mlUserId) {
+      toast({ title: "Selecione uma loja ML primeiro", variant: "destructive" });
+      return;
+    }
+    setTinyConnecting(true);
+    try {
+      localStorage.setItem("tiny_oauth_ml_user_id", mlUserId);
+      const redirectUri = `${window.location.origin}/integracoes`;
+      const { data, error } = await supabase.functions.invoke("tiny-oauth", {
+        body: { action: "get_auth_url", redirect_uri: redirectUri },
+      });
+      if (error || !data?.auth_url) throw error || new Error("Sem URL de autorização");
+      localStorage.setItem("tiny_oauth_state", data.state);
+      window.location.href = data.auth_url;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast({ title: "Erro ao iniciar conexão Tiny", description: message, variant: "destructive" });
+      setTinyConnecting(false);
+    }
+  };
+
+  const handleTinyDisconnect = async () => {
+    const activeStore = mlStores[0];
+    const mlUserId = activeStore?.ml_user_id;
+    if (!mlUserId) return;
+    await supabase.functions.invoke("tiny-oauth", {
+      body: { action: "disconnect", ml_user_id: mlUserId },
+    });
+    setTinyConnected(false);
+    toast({ title: "Tiny ERP desconectado" });
+  };
+
   // Check for existing ML tokens on mount — scoped to org, not just current user
   useEffect(() => {
     const checkTokens = async () => {
@@ -430,11 +549,38 @@ export default function Integrations() {
     checkTokens();
   }, [currentOrg?.id]);
 
-  // Handle ML OAuth callback — troca o código automaticamente, sem interação do usuário
+  // Check Tiny connection status on mount
+  useEffect(() => {
+    const checkTinyConnection = async () => {
+      if (!currentOrg?.id) return;
+      try {
+        const { data } = await supabase
+          .from("ml_tokens")
+          .select("tiny_access_token")
+          .eq("organization_id", currentOrg.id)
+          .not("tiny_access_token", "is", null)
+          .limit(1)
+          .maybeSingle();
+        setTinyConnected(!!data?.tiny_access_token);
+      } catch (_e) { /* ignore */ }
+    };
+    checkTinyConnection();
+  }, [currentOrg?.id]);
+
+  // Handle OAuth callbacks — ML and Tiny
   useEffect(() => {
     const code = searchParams.get("code");
     if (!code) return;
 
+    const state = searchParams.get("state");
+
+    // Tiny OAuth callback: state starts with "tiny-"
+    if (state?.startsWith("tiny-")) {
+      handleTinyOAuthCallback(code, state);
+      return;
+    }
+
+    // ML OAuth callback (no state or state without "tiny-" prefix)
     const exchangeCode = async () => {
       setMlOAuthConnecting(true);
       setMlOAuthStep("verifying");
@@ -1024,7 +1170,15 @@ export default function Integrations() {
       </Dialog>
 
       {/* Tiny ERP Section */}
-      <TinyIntegrationSection mlStores={mlStores} toast={toast} />
+      <TinyIntegrationSection
+        mlStores={mlStores}
+        toast={toast}
+        tinyConnected={tinyConnected}
+        tinyConnecting={tinyConnecting}
+        onTinyConnect={handleTinyConnect}
+        onTinyDisconnect={handleTinyDisconnect}
+        onTinyConnectionChange={setTinyConnected}
+      />
 
       {/* ML OAuth connecting overlay */}
       {mlOAuthConnecting && (

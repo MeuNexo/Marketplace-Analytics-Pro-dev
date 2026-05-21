@@ -889,6 +889,9 @@ export type Database = {
           refresh_token: string | null
           scope: string | null
           seller_id: string | null
+          tiny_access_token: string | null
+          tiny_expires_at: number | null
+          tiny_refresh_token: string | null
           token_type: string | null
           updated_at: string | null
           user_id: string | null
@@ -903,6 +906,9 @@ export type Database = {
           refresh_token?: string | null
           scope?: string | null
           seller_id?: string | null
+          tiny_access_token?: string | null
+          tiny_expires_at?: number | null
+          tiny_refresh_token?: string | null
           token_type?: string | null
           updated_at?: string | null
           user_id?: string | null
@@ -917,6 +923,9 @@ export type Database = {
           refresh_token?: string | null
           scope?: string | null
           seller_id?: string | null
+          tiny_access_token?: string | null
+          tiny_expires_at?: number | null
+          tiny_refresh_token?: string | null
           token_type?: string | null
           updated_at?: string | null
           user_id?: string | null
