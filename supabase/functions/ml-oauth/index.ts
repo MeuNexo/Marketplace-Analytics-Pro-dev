@@ -34,6 +34,16 @@ serve(async (req) => {
 
     // ── get_auth_url ────────────────────────────────────────────────────────────
     if (action === "get_auth_url") {
+      const verifierBytes = new Uint8Array(32);
+      crypto.getRandomValues(verifierBytes);
+      const generatedCodeVerifier = base64UrlEncode(verifierBytes);
+
+      const challengeBytes = await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(generatedCodeVerifier)
+      );
+      const codeChallenge = base64UrlEncode(new Uint8Array(challengeBytes));
+
       const ML_SCOPES = [
         "offline_access",
         "read_orders",
@@ -43,10 +53,9 @@ serve(async (req) => {
         "read_advertising",
       ].join(" ");
 
-      // App Nexo é confidencial (tem client_secret) — fluxo padrão sem PKCE
-      const authUrl = `https://auth.mercadolivre.com.br/authorization?response_type=code&client_id=${ML_APP_ID}&redirect_uri=${encodeURIComponent(redirect_uri)}&scope=${encodeURIComponent(ML_SCOPES)}`;
+      const authUrl = `https://auth.mercadolivre.com.br/authorization?response_type=code&client_id=${ML_APP_ID}&redirect_uri=${encodeURIComponent(redirect_uri)}&code_challenge=${codeChallenge}&code_challenge_method=S256&scope=${encodeURIComponent(ML_SCOPES)}`;
 
-      return json({ success: true, auth_url: authUrl });
+      return json({ success: true, auth_url: authUrl, code_verifier: generatedCodeVerifier });
     }
 
     // ── exchange_code ───────────────────────────────────────────────────────────
@@ -62,6 +71,7 @@ serve(async (req) => {
         code,
         redirect_uri,
       };
+      if (code_verifier) tokenBody.code_verifier = code_verifier;
 
       const tokenResponse = await fetch("https://api.mercadolibre.com/oauth/token", {
         method: "POST",

@@ -352,6 +352,10 @@ export default function Integrations() {
         return;
       }
 
+      if (data.code_verifier) {
+        localStorage.setItem("ml_pkce_code_verifier", data.code_verifier);
+      }
+
       // Persist seller + org so eles sobrevivem ao redirect OAuth
       if (selectedSeller?.id) {
         localStorage.setItem("ml_oauth_seller_id", selectedSeller.id);
