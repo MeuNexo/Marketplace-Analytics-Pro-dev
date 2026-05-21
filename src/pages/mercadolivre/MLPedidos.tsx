@@ -110,8 +110,9 @@ function normalizeListingType(t: string | null): ListingType {
 }
 
 function marginColor(pct: number) {
-  if (pct >= 60) return "text-emerald-600";
-  if (pct >= 40) return "text-amber-600";
+  if (pct >= 20) return "text-emerald-600";
+  if (pct >= 10) return "text-amber-600";
+  if (pct >= 0)  return "text-orange-500";
   return "text-red-600";
 }
 
