@@ -225,6 +225,47 @@ async function fetchShipmentDetails(
   return detailMap;
 }
 
+// ── Batch-fetch brand names from /items?ids=... ───────────────────────────────
+// ML API allows up to 20 IDs per request.
+// Returns Map<item_id, marca_name | null>
+
+async function fetchItemBrands(
+  itemIds: string[],
+  accessToken: string,
+): Promise<Map<string, string | null>> {
+  const brandMap = new Map<string, string | null>();
+  if (itemIds.length === 0) return brandMap;
+
+  const BATCH_SIZE = 20;
+  for (let i = 0; i < itemIds.length; i += BATCH_SIZE) {
+    const batch = itemIds.slice(i, i + BATCH_SIZE);
+    try {
+      const items = await mlFetch(
+        `/items?ids=${batch.join(",")}`,
+        accessToken,
+        15_000,
+      );
+      const results: any[] = Array.isArray(items) ? items : [];
+      for (const entry of results) {
+        const item = entry.body ?? entry;
+        if (!item?.id) continue;
+        const itemId = String(item.id);
+        const brandAttr = (item.attributes ?? []).find(
+          (a: any) => a.id === "BRAND",
+        );
+        brandMap.set(itemId, brandAttr?.value_name ?? null);
+      }
+    } catch (err) {
+      console.warn(`fetchItemBrands batch ${i}-${i + BATCH_SIZE} failed:`, err);
+      for (const id of batch) {
+        if (!brandMap.has(id)) brandMap.set(id, null);
+      }
+    }
+  }
+
+  return brandMap;
+}
+
 // ── Expand one ML order object into one row per order_item ────────────────────
 
 function safeStr(v: unknown): string | null {
@@ -243,6 +284,7 @@ function expandOrder(
   shipmentMap:    Map<number, ShipmentDetail>,
   costMap:        Map<string, number>,
   taxConfig:      any | null,
+  brandMap:       Map<string, string | null>,
 ): Array<Record<string, unknown>> {
   const datePedido    = (order.date_created || "").substring(0, 10) || null;
   const dataPagamento = (order.date_approved || "").substring(0, 10) || null;
@@ -316,6 +358,7 @@ function expandOrder(
           - (frete ?? 0)
           - (taxAmount ?? 0)
         : null,
+      marca: brandMap.get(itemId) ?? null,
     };
   });
 }
@@ -476,9 +519,14 @@ serve(async (req) => {
       }
     }
 
+    // ── Fetch brand names for all unique item IDs ─────────────────────────────
+    console.log(`Fetching brands for ${itemIds.length} unique items…`);
+    const brandMap = await fetchItemBrands(itemIds, accessToken);
+    console.log(`Brand map populated: ${brandMap.size} entries`);
+
     // ── Expand + upsert ───────────────────────────────────────────────────────
     const records = orders.flatMap((o) =>
-      expandOrder(o, ml_user_id, effectiveSellerId, userId, organizationId, syncAt, shipmentMap, costMap, taxConfig),
+      expandOrder(o, ml_user_id, effectiveSellerId, userId, organizationId, syncAt, shipmentMap, costMap, taxConfig, brandMap),
     );
 
     let upserted = 0;
