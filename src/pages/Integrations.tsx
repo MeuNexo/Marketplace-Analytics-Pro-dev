@@ -556,19 +556,20 @@ export default function Integrations() {
   useEffect(() => {
     if (!checkTinyMlUserId) return;
     let mounted = true;
-    supabase
-      .from("ml_tokens")
-      .select("tiny_expires_at")
-      .eq("ml_user_id", checkTinyMlUserId)
-      .maybeSingle()
-      .then(({ data }) => {
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from("ml_tokens")
+          .select("tiny_expires_at")
+          .eq("ml_user_id", checkTinyMlUserId)
+          .maybeSingle();
         if (!mounted) return;
         const hasToken = data?.tiny_expires_at != null;
         setTinyConnected(hasToken);
         if (hasToken) localStorage.setItem("tiny_erp_connected", "1");
         else localStorage.removeItem("tiny_erp_connected");
-      })
-      .catch(() => { /* ignore — localStorage mantém */ });
+      } catch { /* ignore — localStorage mantém */ }
+    })();
     return () => { mounted = false; };
   }, [checkTinyMlUserId]);
 

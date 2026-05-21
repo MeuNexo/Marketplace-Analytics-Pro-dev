@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v5.0
 milestone_name: Dashboard de Vendas — KPIs Reais
 status: complete
-stopped_at: "Completed 18-02-PLAN.md — Tiny ERP OAuth connect flow + sync-tiny-costs tokens OAuth"
-last_updated: "2026-05-21T21:00:00Z"
-last_activity: 2026-05-21 -- Phase 18 Plan 02 complete. Tiny ERP OAuth connect flow in Integrations.tsx; sync-tiny-costs uses stored tokens + refresh via tiny-oauth
+stopped_at: "Sessao 2026-05-21b — Tiny ERP fixes completos. Aguardando teste de sync pelo usuario."
+last_updated: "2026-05-21T23:59:00Z"
+last_activity: 2026-05-21b -- Todos os fixes Tiny ERP deployados. ml_product_costs vazia aguardando primeiro sync.
 progress:
   total_phases: 2
   completed_phases: 1
@@ -79,7 +79,8 @@ Dashboard atual mostra:
 
 ### Pending Todos
 
-None yet.
+- Testar sync Tiny ERP em /integracoes → clicar "Sincronizar Custos" → verificar `SELECT COUNT(*) FROM ml_product_costs WHERE cost > 0;`
+- Após sync validada: iniciar Phase 16 (KPIs de Marca) com `/gsd:execute-phase 16`
 
 ### Blockers/Concerns
 
@@ -98,6 +99,41 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-21
-Stopped at: Roadmap criado — pronto para executar Phase 14
-Resume file: None
+Last session: 2026-05-21b
+Stopped at: Todos os fixes Tiny ERP concluídos e deployados. Aguardando Wesley testar sync e confirmar ml_product_costs populada.
+
+### Sessão 2026-05-21b — Fixes Tiny ERP (completo)
+
+**Problema 1 — Timeout sync-tiny-costs (HTTP 546)**
+- Root cause: 100+ produtos × 1.1s sleep = >110s → timeout 150s
+- Fix: `sync-tiny-costs` v6 — Phase 1 extrai preços da listagem `/produtos`, Phase 2 apenas para produtos sem preço (cap 80)
+- Deploy: v6 ativo em produção
+
+**Problema 2 — Estado conexão Tiny perdido ao navegar**
+- Root cause real: migration `20260513174419` fez REVOKE SELECT em `ml_tokens`; `tiny_access_token` não estava no grant → query retornava null → useEffect limpava estado
+- Fix: `Integrations.tsx` usa `localStorage` para inicializar `tinyConnected` (leitura imediata), background check usa `tiny_expires_at` (coluna permitida via migration `20260521230000`)
+- Testado por Wesley: "funcionou"
+
+**Problema 3 — Upsert retornava "0 sincronizados · 592 erros"**
+- Root cause: índice parcial `ml_product_costs_user_sku` (`WHERE seller_sku IS NOT NULL`) incompatível com ON CONFLICT do PostgREST
+- Erro: "there is no unique or exclusion constraint matching the ON CONFLICT specification"
+- Fix: migration `20260521240000` — DROP INDEX + ADD CONSTRAINT UNIQUE (user_id, seller_sku)
+
+**Problema 4 — Usuário thales@pevermeio.com**
+- Root cause: INSERT em `auth.users` não cria `auth.identities` automaticamente → login falha
+- Fix: inseriu registro manual em `auth.identities` com `provider='email'`, `provider_id=user_id`
+
+**Problema 5 — Token Tiny não renovava automaticamente**
+- Fix: `refresh_all` action adicionada em `tiny-oauth/index.ts`
+- pg_cron `tiny-token-refresh-every-90min` criado e corrigido (sem dependência de vault — vault vazio)
+- Deploy: `tiny-oauth` deployada via `npx supabase@2.100.1 functions deploy`
+
+**Estado do DB:**
+- `ml_product_costs`: 0 registros — aguardando primeiro sync
+- Constraint `ml_product_costs_user_sku_unique` confirmada em produção
+- Cron `tiny-token-refresh-every-90min` ativo
+
+**Próxima sessão:**
+1. Testar sync: /integracoes → "Sincronizar Custos"
+2. Verificar: `SELECT COUNT(*) FROM ml_product_costs WHERE cost > 0;`
+3. Partir para Phase 16: `/gsd:execute-phase 16`
