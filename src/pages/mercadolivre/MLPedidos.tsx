@@ -718,7 +718,7 @@ export default function MLPedidos() {
           .range(from, from + PAGE - 1);
 
         if (error) throw error;
-        const page = (data as OrderRow[]) ?? [];
+        const page = (data as unknown as OrderRow[]) ?? [];
         allRows = allRows.concat(page);
         setLoadProgress(allRows.length);
 
@@ -766,7 +766,7 @@ export default function MLPedidos() {
               body: { ml_user_id: mlUserId, date_from: day, date_to: day },
             });
             done++;
-            setSyncProgress(Math.round((done / totalJobs) * 100));
+            setSyncProgress({ current: done, total: totalJobs });
           }
         }
         await loadOrders();

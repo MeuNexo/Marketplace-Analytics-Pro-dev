@@ -1005,6 +1005,7 @@ export type Database = {
           id: string
           item_id: string
           listing_type: string | null
+          marca: string | null
           ml_order_id: string
           ml_user_id: string
           organization_id: string | null
@@ -1035,6 +1036,7 @@ export type Database = {
           id?: string
           item_id: string
           listing_type?: string | null
+          marca?: string | null
           ml_order_id: string
           ml_user_id: string
           organization_id?: string | null
@@ -1065,6 +1067,7 @@ export type Database = {
           id?: string
           item_id?: string
           listing_type?: string | null
+          marca?: string | null
           ml_order_id?: string
           ml_user_id?: string
           organization_id?: string | null

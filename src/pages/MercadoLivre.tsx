@@ -17,6 +17,11 @@ import { useMLDailyQuery, useMLHourlyQuery, useMLProductsQuery, useMLUserQuery, 
 import { useMLSync } from "@/hooks/useMLSync";
 import { useMLOrders } from "@/hooks/useMLOrders";
 import { useMLKPISummary } from "@/hooks/useMLKPISummary";
+import { useMLOrdersByBrand } from "@/hooks/useMLOrdersByBrand";
+import { BrandRevenueChart } from "@/components/mercadolivre/BrandRevenueChart";
+import { BrandMarkupChart } from "@/components/mercadolivre/BrandMarkupChart";
+import { CustoOperacionalChart } from "@/components/mercadolivre/CustoOperacionalChart";
+import { BrandSharePieChart } from "@/components/mercadolivre/BrandSharePieChart";
 import { MLKPIGrid } from "@/components/mercadolivre/MLKPIGrid";
 import { MLPeriodPicker } from "@/components/mercadolivre/MLPeriodPicker";
 import { MLRevenueChart } from "@/components/mercadolivre/MLRevenueChart";
@@ -117,6 +122,10 @@ export default function MercadoLivre() {
   );
 
   const { data: ordersSummary } = useMLOrders(currentFrom, currentTo);
+  const {
+    data: brandData,
+    isLoading: brandLoading,
+  } = useMLOrdersByBrand(currentFrom, currentTo);
   const { data: kpiSummary, isLoading: kpiSummaryLoading } = useMLKPISummary(
     currentFrom,
     currentTo,
@@ -509,6 +518,31 @@ export default function MercadoLivre() {
           <div className="grid grid-cols-1 lg:grid-cols-6 gap-3">
             <MLCostCard costSummary={costSummary} />
             <MLTopProducts products={effectiveProducts} />
+          </div>
+
+          {/* ── Gráficos de Marca — Phase 16 ── */}
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <BrandRevenueChart
+                data={brandData?.brandRevenueSeries ?? []}
+                topBrands={brandData?.topBrands ?? []}
+                loading={brandLoading}
+              />
+              <BrandMarkupChart
+                data={brandData?.brandMarkupSeries ?? []}
+                topBrands={brandData?.topBrands ?? []}
+                loading={brandLoading}
+              />
+            </div>
+            <CustoOperacionalChart
+              custoSeries={brandData?.custoSeries ?? []}
+              adsDaily={adsDaily}
+              loading={brandLoading}
+            />
+            <BrandSharePieChart
+              brandAggregates={brandData?.brandAggregates ?? []}
+              loading={brandLoading}
+            />
           </div>
         </TabsContent>
 
