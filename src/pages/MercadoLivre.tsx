@@ -18,7 +18,6 @@ import { useMLSync } from "@/hooks/useMLSync";
 import { useMLOrders } from "@/hooks/useMLOrders";
 import { useMLKPISummary } from "@/hooks/useMLKPISummary";
 import { useMLCostWaterfall } from "@/hooks/useMLCostWaterfall";
-import { useMLTaxConfig } from "@/hooks/useMLTaxConfig";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useMLOrdersByBrand } from "@/hooks/useMLOrdersByBrand";
 import { BrandRevenueChart } from "@/components/mercadolivre/BrandRevenueChart";
@@ -129,24 +128,6 @@ export default function MercadoLivre() {
 
   const { data: costWaterfall, isLoading: costWaterfallLoading } = useMLCostWaterfall(currentFrom, currentTo);
 
-  // Tax config para calcular impostos por loja
-  const { data: taxMap } = useMLTaxConfig(resolvedMLUserIds, currentOrg?.id ?? "");
-
-  // Impostos: receita por loja × alíquota efetiva
-  const impostosTotal = useMemo(() => {
-    if (!costWaterfall?.revenue_per_store || !taxMap || taxMap.size === 0) return null;
-    let total = 0;
-    let hasConfig = false;
-    for (const [mlUserId, rev] of costWaterfall.revenue_per_store) {
-      const taxEntry = taxMap.get(mlUserId);
-      if (taxEntry?.effective_rate != null && taxEntry.effective_rate > 0) {
-        hasConfig = true;
-        total += (rev * taxEntry.effective_rate) / 100;
-      }
-    }
-    return hasConfig ? Math.round(total * 100) / 100 : null;
-  }, [costWaterfall, taxMap]);
-
   const {
     data: brandData,
     isLoading: brandLoading,
@@ -156,6 +137,9 @@ export default function MercadoLivre() {
     currentTo,
     adsSummary.total_spend,
   );
+
+  // Imposto: usa SUM(orders.tax_amount) do período — dados reais, não effective_rate × receita
+  const impostosTotal = kpiSummary?.has_tax_data ? (kpiSummary.total_tax || null) : null;
 
   // ── Sync state to context (debounced) ──
   const syncTimerRef = useRef<ReturnType<typeof setTimeout>>();

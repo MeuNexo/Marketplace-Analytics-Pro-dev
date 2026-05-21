@@ -36,18 +36,18 @@ function computeOrderTaxRate(cfg: any, ufDest: string | null): number {
     case "lucro_presumido":
       return Math.max(0, c(cfg.lp_pis) + c(cfg.lp_cofins) + c(cfg.lp_irpj) + c(cfg.lp_csll));
     case "lucro_real": {
-      const intra = cfg.lr_icms_aliquota_intra ?? cfg.lr_icms_debito ?? 0;
-      const interSE = cfg.lr_icms_aliquota_inter_sul_sudeste ?? 12;
-      const interNNE = cfg.lr_icms_aliquota_inter_norte_nordeste ?? 7;
+      const intra      = Number(cfg.lr_icms_aliquota_intra ?? cfg.lr_icms_debito ?? 0);
+      const interSulSE = Number(cfg.lr_icms_aliquota_inter_sul_sudeste ?? 12);
+      const interNNECO = Number(cfg.lr_icms_aliquota_inter_norte_nordeste ?? 7);
       const orig = (cfg.uf_origem ?? "").toString().toUpperCase() || null;
       const dest = ufDest ? ufDest.toUpperCase() : null;
-      let icms = Number(intra);
+      let icmsAliq = intra;
       if (orig && dest && orig !== dest) {
-        icms = isReducedInterstateDest(dest) ? Number(interNNE) : Number(interSE);
+        icmsAliq = isReducedInterstateDest(dest) ? interNNECO : interSulSE;
       }
-      const debits  = c(cfg.lr_pis_debito) + c(cfg.lr_cofins_debito) + icms;
-      const credits = c(cfg.lr_pis_credito) + c(cfg.lr_cofins_credito) + c(cfg.lr_icms_credito);
-      return Math.max(0, debits - credits);
+      // Fórmula Wesley: ICMS + PIS×(1-ICMS%) + COFINS×(1-ICMS%)
+      const baseFactor = 1 - icmsAliq / 100;
+      return Math.max(0, icmsAliq + baseFactor * (1.65 + 7.60));
     }
   }
   return 0;
@@ -534,13 +534,48 @@ serve(async (req) => {
 
     let upserted = 0;
     if (records.length > 0) {
-      const { error: upsertErr } = await supabaseAdmin
-        .from("orders")
-        .upsert(records, {
-          onConflict: "ml_order_id,ml_user_id,item_id,variation_id",
-        });
-      if (upsertErr) throw new Error(`orders upsert: ${upsertErr.message}`);
-      upserted = records.length;
+      // upsert_order_preserve_cost preserva custo_unit existente (não sobrescreve histórico)
+      for (const r of records) {
+        const { error: upsertErr } = await supabaseAdmin.rpc(
+          "upsert_order_preserve_cost",
+          {
+            p_ml_order_id:     r.ml_order_id,
+            p_ml_user_id:      r.ml_user_id,
+            p_item_id:         r.item_id,
+            p_variation_id:    r.variation_id,
+            p_seller_id:       r.seller_id,
+            p_user_id:         r.user_id,
+            p_organization_id: r.organization_id,
+            p_sku:             r.sku,
+            p_titulo:          r.titulo,
+            p_listing_type:    r.listing_type,
+            p_quantidade:      r.quantidade,
+            p_preco_unit:      r.preco_unit,
+            p_comissao:        r.comissao,
+            p_frete:           r.frete,
+            p_status:          r.status,
+            p_data_pedido:     r.data_pedido,
+            p_data_pagamento:  r.data_pagamento,
+            p_estado:          r.estado,
+            p_cidade:          r.cidade,
+            p_comprador:       r.comprador,
+            p_synced_at:       r.synced_at,
+            p_custo_unit:      r.custo_unit,
+            p_tax_rate:        r.tax_rate,
+            p_tax_amount:      r.tax_amount,
+            p_uf_origem:       r.uf_origem,
+            p_receita_bruta:   r.receita_bruta,
+            p_receita_liquida: r.receita_liquida,
+            p_marca:           r.marca,
+          },
+        );
+        if (upsertErr) {
+          console.warn(`upsert_order_preserve_cost failed for order ${r.ml_order_id}:`, upsertErr.message);
+        } else {
+          upserted++;
+        }
+      }
+      console.log(`Upserted ${upserted}/${records.length} orders (cost preserved)`);
     }
 
     // ── Log to ml_sync_log ────────────────────────────────────────────────────

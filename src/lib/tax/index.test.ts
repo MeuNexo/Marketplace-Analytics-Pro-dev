@@ -73,76 +73,61 @@ describe("calculateEffectiveRate", () => {
   });
 
   // ── Lucro Real ────────────────────────────────────────────────────────────
+  // Fórmula: rate = icmsAliq + (1 − icmsAliq/100) × (1,65 + 7,60)
+  // Exemplo ICMS 12%: 12 + 0,88 × 9,25 = 20,14%
 
   describe("lucro_real", () => {
-    it("computes debits minus credits (standard case)", () => {
+    it("computes Wesley formula with ICMS 12% (inter Sul/SE)", () => {
       expect(
         calculateEffectiveRate({
           regime: "lucro_real",
-          lr_pis_debito: 1.65,
-          lr_cofins_debito: 7.6,
-          lr_icms_debito: 0,
-          lr_pis_credito: 0.5,
-          lr_cofins_credito: 1.0,
-          lr_icms_credito: 0,
+          lr_icms_aliquota_intra: 12,
         })
-      ).toBeCloseTo(7.75);
+      ).toBeCloseTo(20.14);
     });
 
-    it("returns negative when credits exceed debits (credit > debit edge case)", () => {
+    it("computes Wesley formula with ICMS 7% (inter N/NE/CO)", () => {
+      // 7 + 0.93 × 9.25 = 7 + 8.6025 = 15.6025
       expect(
         calculateEffectiveRate({
           regime: "lucro_real",
-          lr_pis_debito: 1.0,
-          lr_cofins_debito: 2.0,
-          lr_pis_credito: 2.0,
-          lr_cofins_credito: 3.0,
+          lr_icms_aliquota_intra: 7,
         })
-      ).toBeCloseTo(-2.0);
+      ).toBeCloseTo(15.60);
     });
 
-    it("returns 0 when debits equal credits exactly", () => {
+    it("uses lr_icms_debito as legacy fallback when lr_icms_aliquota_intra is null", () => {
       expect(
         calculateEffectiveRate({
           regime: "lucro_real",
-          lr_pis_debito: 1.0,
-          lr_cofins_debito: 1.0,
-          lr_pis_credito: 1.0,
-          lr_cofins_credito: 1.0,
+          lr_icms_aliquota_intra: null,
+          lr_icms_debito: 12,
         })
-      ).toBe(0);
+      ).toBeCloseTo(20.14);
     });
 
-    it("treats null ICMS as 0", () => {
+    it("returns PIS+COFINS only (9.25%) when ICMS aliquota is 0", () => {
+      // 0 + 1.0 × 9.25 = 9.25
       expect(
         calculateEffectiveRate({
           regime: "lucro_real",
-          lr_pis_debito: 1.65,
-          lr_cofins_debito: 7.6,
-          lr_pis_credito: 0,
-          lr_cofins_credito: 0,
-          lr_icms_debito: null,
-          lr_icms_credito: null,
+          lr_icms_aliquota_intra: 0,
         })
       ).toBeCloseTo(9.25);
     });
 
-    it("returns 0 when all fields are null (not configured)", () => {
-      expect(calculateEffectiveRate({ regime: "lucro_real" })).toBe(0);
+    it("returns PIS+COFINS only (9.25%) when all fields are null (not configured)", () => {
+      expect(calculateEffectiveRate({ regime: "lucro_real" })).toBeCloseTo(9.25);
     });
 
-    it("handles ICMS debit with no credit", () => {
+    it("handles ICMS 17% (intraestadual SP)", () => {
+      // 17 + 0.83 × 9.25 = 17 + 7.6775 = 24.6775
       expect(
         calculateEffectiveRate({
           regime: "lucro_real",
-          lr_pis_debito: 1.65,
-          lr_cofins_debito: 7.6,
-          lr_icms_debito: 3.0,
-          lr_pis_credito: 0,
-          lr_cofins_credito: 0,
-          lr_icms_credito: 0,
+          lr_icms_aliquota_intra: 17,
         })
-      ).toBeCloseTo(12.25);
+      ).toBeCloseTo(24.68);
     });
   });
 });

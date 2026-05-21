@@ -7,20 +7,23 @@ export interface TaxInput {
   lp_cofins?: number | null;
   lp_irpj?: number | null;
   lp_csll?: number | null;
-  lr_pis_debito?: number | null;
-  lr_pis_credito?: number | null;
-  lr_cofins_debito?: number | null;
-  lr_cofins_credito?: number | null;
+  // Lucro Real — ICMS (sem campos de crédito; nova fórmula não usa créditos)
+  lr_icms_aliquota_intra?: number | null;
+  lr_icms_aliquota_inter_sul_sudeste?: number | null;
+  lr_icms_aliquota_inter_norte_nordeste?: number | null;
+  /** Legado — fallback se lr_icms_aliquota_intra não estiver preenchido */
   lr_icms_debito?: number | null;
-  lr_icms_credito?: number | null;
 }
 
 const c = (v: number | null | undefined): number => v ?? 0;
 
 /**
- * Mirrors the DB trigger `calculate_effective_rate()`.
- * Result may be negative for lucro_real when credits exceed debits.
- * Use `clampEffectiveRate()` before display.
+ * Computes effective tax rate (%) for preview/display.
+ * Mirrors the per-order formula but uses the intrastate ICMS rate as base
+ * (since destination UF is not available at config level).
+ *
+ * For Lucro Real with ICMS intra = 12%:
+ *   rate = 12 + (1 - 0.12) × 9.25 = 20.14%
  */
 export function calculateEffectiveRate(input: TaxInput): number {
   switch (input.regime) {
@@ -30,31 +33,20 @@ export function calculateEffectiveRate(input: TaxInput): number {
     case "lucro_presumido":
       return c(input.lp_pis) + c(input.lp_cofins) + c(input.lp_irpj) + c(input.lp_csll);
 
-    case "lucro_real":
-      return (
-        c(input.lr_pis_debito) +
-        c(input.lr_cofins_debito) +
-        c(input.lr_icms_debito) -
-        (c(input.lr_pis_credito) +
-          c(input.lr_cofins_credito) +
-          c(input.lr_icms_credito))
+    case "lucro_real": {
+      const icmsAliq = Number(
+        input.lr_icms_aliquota_intra ?? input.lr_icms_debito ?? 0
       );
+      const baseFactor = 1 - icmsAliq / 100;
+      return Math.max(0, icmsAliq + baseFactor * (1.65 + 7.60));
+    }
   }
 }
 
-/**
- * Clamps a negative effective rate to 0 for display purposes.
- * Lucro Real with credits > debits produces a negative rate that
- * the UI shows as 0% with a "Crédito" badge.
- */
 export function clampEffectiveRate(rate: number): number {
   return Math.max(0, rate);
 }
 
-/**
- * Computes the tax monetary amount from a product price and an effective rate (in percent).
- * e.g. computeTaxAmount(100, 15) → 15
- */
 export function computeTaxAmount(price: number, effectiveRatePct: number): number {
   return price * (effectiveRatePct / 100);
 }

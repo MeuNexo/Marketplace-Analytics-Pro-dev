@@ -10,6 +10,8 @@ export interface MLKPISummary {
   custo_operacional: number;
   pct_custo_operacional: number;
   gross_revenue: number;
+  total_tax: number;       // SUM(orders.tax_amount) para o período
+  has_tax_data: boolean;   // true se ao menos 1 order com tax_amount > 0
 }
 
 export function useMLKPISummary(
@@ -28,7 +30,7 @@ export function useMLKPISummary(
 
       const { data, error } = await supabase
         .from("orders")
-        .select("receita_bruta, custo_unit, quantidade, frete, comissao")
+        .select("receita_bruta, custo_unit, quantidade, frete, comissao, tax_amount")
         .eq("organization_id", orgId)
         .in("ml_user_id", resolvedMLUserIds)
         .gte("data_pedido", from)
@@ -57,6 +59,9 @@ export function useMLKPISummary(
       const markup_ratio =
         markup_has_cost && sum_custo > 0 ? sum_receita / sum_custo : null;
 
+      const total_tax = rows.reduce((s, r) => s + (r.tax_amount ?? 0), 0);
+      const has_tax_data = rows.some((r) => (r.tax_amount ?? 0) > 0);
+
       const total_frete = rows.reduce((s, r) => s + (r.frete ?? 0), 0);
       const total_comissao = rows.reduce((s, r) => s + (r.comissao ?? 0), 0);
       const custo_plataforma = total_frete + total_comissao;
@@ -74,6 +79,8 @@ export function useMLKPISummary(
         custo_operacional,
         pct_custo_operacional,
         gross_revenue,
+        total_tax,
+        has_tax_data,
       };
     },
     enabled: !!orgId && resolvedMLUserIds.length > 0 && !!from && !!to,

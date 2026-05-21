@@ -11,13 +11,7 @@ export interface OrderTaxConfig {
   lp_cofins: number | null;
   lp_irpj: number | null;
   lp_csll: number | null;
-  // Lucro Real (federais)
-  lr_pis_debito: number | null;
-  lr_pis_credito: number | null;
-  lr_cofins_debito: number | null;
-  lr_cofins_credito: number | null;
-  lr_icms_credito: number | null;
-  // Lucro Real (ICMS por destino)
+  // Lucro Real — ICMS por destino
   lr_icms_aliquota_intra: number | null;
   lr_icms_aliquota_inter_sul_sudeste: number | null;
   lr_icms_aliquota_inter_norte_nordeste: number | null;
@@ -28,10 +22,15 @@ export interface OrderTaxConfig {
 const c = (v: number | null | undefined): number => v ?? 0;
 
 /**
- * Computes the effective tax rate (%) for a single order, taking the
- * destination UF into account when the regime is Lucro Real.
+ * Computes the effective tax rate (%) for a single order using Wesley's formula:
  *
- * Result is clamped to ≥ 0 (negative net = "crédito" displays as 0).
+ *   Débito ICMS     = Receita × aliq_ICMS_UF
+ *   Base PIS/COFINS = Receita × (1 − aliq_ICMS_UF)
+ *   Débito PIS      = Base × 1,65%
+ *   Débito COFINS   = Base × 7,60%
+ *   Total           = ICMS + PIS + COFINS
+ *
+ * For ICMS = 12%: rate = 12 + 88% × 9.25% = 20.14%
  */
 export function computeOrderTaxRate(
   config: OrderTaxConfig,
@@ -48,24 +47,22 @@ export function computeOrderTaxRate(
       );
 
     case "lucro_real": {
-      const intra = config.lr_icms_aliquota_intra ?? config.lr_icms_debito ?? 0;
-      const interSulSE = config.lr_icms_aliquota_inter_sul_sudeste ?? 12;
-      const interNNECO = config.lr_icms_aliquota_inter_norte_nordeste ?? 7;
+      const intra      = Number(config.lr_icms_aliquota_intra ?? config.lr_icms_debito ?? 0);
+      const interSulSE = Number(config.lr_icms_aliquota_inter_sul_sudeste ?? 12);
+      const interNNECO = Number(config.lr_icms_aliquota_inter_norte_nordeste ?? 7);
 
-      let icms = intra;
       const orig = config.uf_origem?.toUpperCase() ?? null;
       const dest = ufDestino?.toUpperCase() ?? null;
 
+      // Determinar alíquota ICMS pela UF destino
+      let icmsAliq = intra; // padrão: intraestadual
       if (orig && dest && orig !== dest) {
-        icms = isReducedInterstateDest(dest) ? interNNECO : interSulSE;
+        icmsAliq = isReducedInterstateDest(dest) ? interNNECO : interSulSE;
       }
 
-      const debits =
-        c(config.lr_pis_debito) + c(config.lr_cofins_debito) + Number(icms);
-      const credits =
-        c(config.lr_pis_credito) + c(config.lr_cofins_credito) + c(config.lr_icms_credito);
-
-      return Math.max(0, debits - credits);
+      // Fórmula: ICMS + PIS×(1−ICMS%) + COFINS×(1−ICMS%)
+      const baseFactor = 1 - icmsAliq / 100;
+      return Math.max(0, icmsAliq + baseFactor * (1.65 + 7.60));
     }
   }
 }
