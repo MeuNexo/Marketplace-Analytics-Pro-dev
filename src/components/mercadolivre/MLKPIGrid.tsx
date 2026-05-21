@@ -1,5 +1,5 @@
 import { KPICard } from "@/components/dashboard/KPICard";
-import { DollarSign, ShoppingCart, Tag, Eye, Percent, TrendingUp, Wallet } from "lucide-react";
+import { DollarSign, ShoppingCart, Tag, Eye, Percent, TrendingUp, Wallet, Users, Package, Receipt } from "lucide-react";
 import type { MLKPISummary } from "@/hooks/useMLKPISummary";
 
 const currencyFmt = (v: number) =>
@@ -59,15 +59,27 @@ export function MLKPIGrid({
     ? `${((custoTotal / kpiSummary.gross_revenue) * 100).toFixed(1)}% da receita`
     : undefined;
 
+  const impostosValue = (() => {
+    if (!kpiSummary) return "—";
+    if (!kpiSummary.has_tax_data) return "s/ dados";
+    if (kpiSummary.total_tax == null) return "—";
+    return currencyFmt(kpiSummary.total_tax);
+  })();
+
+  const impostosSubtitle = (() => {
+    if (!kpiSummary?.has_tax_data || kpiSummary.total_tax == null) return undefined;
+    if (!kpiSummary.gross_revenue || kpiSummary.gross_revenue === 0) return undefined;
+    return `${((kpiSummary.total_tax / kpiSummary.gross_revenue) * 100).toFixed(1)}% da receita`;
+  })();
+
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
       <KPICard
         title="Receita Total"
         value={metrics ? currencyFmt(metrics.total_revenue) : "—"}
         icon={<DollarSign className="w-4 h-4" />}
         variant="minimal"
         iconClassName="bg-accent/10 text-accent"
-        size="compact"
         loading={loading}
         refreshing={refreshing}
         delta={metrics && previousMetrics ? calcDelta(metrics.total_revenue, previousMetrics.total_revenue) : undefined}
@@ -78,7 +90,6 @@ export function MLKPIGrid({
         icon={<ShoppingCart className="w-4 h-4" />}
         variant="minimal"
         iconClassName="bg-[hsl(270,70%,50%)]/10 text-[hsl(270,70%,50%)]"
-        size="compact"
         loading={loading}
         refreshing={refreshing}
         delta={metrics && previousMetrics ? calcDelta(metrics.total_orders, previousMetrics.total_orders) : undefined}
@@ -98,7 +109,6 @@ export function MLKPIGrid({
         icon={<Tag className="w-4 h-4" />}
         variant="minimal"
         iconClassName="bg-[hsl(25,95%,53%)]/10 text-[hsl(25,95%,53%)]"
-        size="compact"
         loading={loading}
         refreshing={refreshing}
         delta={metrics && previousMetrics ? calcDelta(metrics.avg_ticket, previousMetrics.avg_ticket) : undefined}
@@ -109,7 +119,6 @@ export function MLKPIGrid({
         icon={<Eye className="w-4 h-4" />}
         variant="minimal"
         iconClassName="bg-accent/10 text-accent"
-        size="compact"
         loading={loading}
         refreshing={refreshing}
         delta={metrics && previousMetrics ? calcDelta(metrics.unique_visits, previousMetrics.unique_visits) : undefined}
@@ -120,10 +129,30 @@ export function MLKPIGrid({
         icon={<Percent className="w-4 h-4" />}
         variant="minimal"
         iconClassName="bg-success/10 text-success"
-        size="compact"
         loading={loading}
         refreshing={refreshing}
         delta={metrics && previousMetrics ? calcDelta(metrics.conversion_rate, previousMetrics.conversion_rate) : undefined}
+      />
+      <KPICard
+        title="Compradores"
+        value={metrics ? metrics.unique_buyers.toLocaleString("pt-BR") : "—"}
+        icon={<Users className="w-4 h-4" />}
+        variant="minimal"
+        iconClassName="bg-sky-500/10 text-sky-500"
+        loading={loading}
+        refreshing={refreshing}
+        delta={metrics && previousMetrics ? calcDelta(metrics.unique_buyers, previousMetrics.unique_buyers) : undefined}
+        tooltip="Compradores únicos no período selecionado."
+      />
+      <KPICard
+        title="Unidades Vendidas"
+        value={metrics ? metrics.units_sold.toLocaleString("pt-BR") : "—"}
+        icon={<Package className="w-4 h-4" />}
+        variant="minimal"
+        iconClassName="bg-violet-500/10 text-violet-500"
+        loading={loading}
+        refreshing={refreshing}
+        delta={metrics && previousMetrics ? calcDelta(metrics.units_sold, previousMetrics.units_sold) : undefined}
       />
       <KPICard
         title="Markup das Vendas"
@@ -136,7 +165,6 @@ export function MLKPIGrid({
         icon={<TrendingUp className="w-4 h-4" />}
         variant="minimal"
         iconClassName="bg-emerald-500/10 text-emerald-500"
-        size="compact"
         loading={summaryLoading}
         refreshing={refreshing}
         tooltip="Receita bruta total dividida pelo custo total dos produtos vendidos (custo_unit × quantidade). Requer custo cadastrado em Anúncios."
@@ -148,10 +176,20 @@ export function MLKPIGrid({
         icon={<Wallet className="w-4 h-4" />}
         variant="minimal"
         iconClassName="bg-orange-500/10 text-orange-500"
-        size="compact"
         loading={summaryLoading}
         refreshing={refreshing}
         tooltip="Frete + Comissão ML + Publicidade (ads) no período selecionado."
+      />
+      <KPICard
+        title="Impostos"
+        value={impostosValue}
+        subtitle={impostosSubtitle}
+        icon={<Receipt className="w-4 h-4" />}
+        variant="minimal"
+        iconClassName="bg-red-500/10 text-red-500"
+        loading={summaryLoading}
+        refreshing={refreshing}
+        tooltip="Total de impostos calculados no período (regime tributário configurado em Organização)."
       />
     </div>
   );

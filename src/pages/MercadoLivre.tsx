@@ -32,10 +32,13 @@ import { MLTopProducts } from "@/components/mercadolivre/MLTopProducts";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { GoalsCard } from "@/components/mercadolivre/GoalsCard";
 import type { ProductSalesRow } from "@/components/mercadolivre/TopSellingProducts";
-import { Plug, Info, Loader2, Monitor, RefreshCw } from "lucide-react";
+import { Plug, Info, Loader2, Monitor, RefreshCw, Settings2, ChevronUp, ChevronDown, RotateCcw } from "lucide-react";
 import { format, parseISO, startOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { MLSalesAnalytics } from "@/components/mercadolivre/MLSalesAnalytics";
+import { useDashboardLayout } from "@/hooks/useDashboardLayout";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { Switch } from "@/components/ui/switch";
 
 const currencyFmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -80,6 +83,10 @@ export default function MercadoLivre() {
   const { stores, selectedStore, setSalesCache, scopeKey, sellerId, resolvedMLUserIds, hasMLConnection, loading: storeLoading } = useMLStore();
   const { selectedSeller, selectedStoreIds } = useSeller();
   const { currentOrg } = useOrganization();
+
+  // ── Dashboard layout personalização ──
+  const { widgets, toggleWidget, moveUp, moveDown, resetLayout, isVisible } = useDashboardLayout();
+  const [layoutOpen, setLayoutOpen] = useState(false);
 
   // ── Filters ──
   const filters = useMLFilters();
@@ -460,6 +467,16 @@ export default function MercadoLivre() {
                 <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
                 <span className="hidden sm:inline">{syncing ? "Atualizando..." : "Atualizar"}</span>
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setLayoutOpen(true)}
+                className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted hover:text-muted-foreground"
+                aria-label="Personalizar dashboard"
+              >
+                <Settings2 className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Personalizar</span>
+              </Button>
             </div>
           </div>
         </div>
@@ -476,80 +493,148 @@ export default function MercadoLivre() {
             </Card>
           )}
 
-          <MLKPIGrid
-            metrics={effectiveMetrics}
-            previousMetrics={previousMetrics}
-            loading={effectiveLoading}
-            syncing={effectiveSyncing}
-            hasSyncProgress={!!syncProgress}
-            kpiSummary={kpiSummary}
-            kpiSummaryLoading={kpiSummaryLoading}
-            adsTotalForPeriod={adsSummary.total_spend}
-          />
-
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-3">
-            <MLRevenueChart
-              chartTitle={chartTitle}
-              showHourlyChart={showHourlyChart}
-              hasHourlyData={hasHourlyData}
-              syncing={syncing}
-              chartData={chartData}
-              isAll={isAll}
-              overlaidHourlyData={overlaidHourlyData}
-              perMarketplaceHourly={perMarketplaceHourly}
-            />
-            <GoalsCard
-              currentRevenue={monthlyMetrics?.total_revenue ?? 0}
-              currentOrders={monthlyMetrics?.units_sold ?? 0}
-              currentTicket={monthlyMetrics?.avg_ticket ?? 0}
-              currentConversion={monthlyMetrics?.conversion_rate ?? 0}
-              storeId={selectedStore !== "all" ? String(selectedStore) : (stores[0]?.ml_user_id ?? undefined)}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-6 gap-3">
-            <MLCostCard
-              gross_revenue={effectiveMetrics?.total_revenue ?? 0}
-              cancelled_revenue={costWaterfall?.cancelled_revenue ?? 0}
-              comissao={costWaterfall?.total_comissao ?? ordersSummary?.total_comissao ?? (effectiveMetrics?.total_revenue ?? 0) * 0.11}
-              frete={costWaterfall?.total_frete ?? ordersSummary?.total_frete ?? (effectiveMetrics?.total_revenue ?? 0) * 0.05}
-              publicidade={adsSummary.total_spend}
-              cmv={costWaterfall?.has_cmv ? costWaterfall.cmv : null}
-              impostos={impostosTotal}
-              loading={costWaterfallLoading}
-            />
-            <MLTopProducts products={effectiveProducts} />
-          </div>
-
-          {/* ── Gráficos de Marca — Phase 16 ── */}
-          <div className="space-y-3">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              <BrandRevenueChart
-                data={brandData?.brandRevenueSeries ?? []}
-                topBrands={brandData?.topBrands ?? []}
-                loading={brandLoading}
+          {widgets.map((widget) => {
+            if (!widget.visible) return null;
+            if (widget.id === "kpi_grid") return (
+              <MLKPIGrid
+                key="kpi_grid"
+                metrics={effectiveMetrics}
+                previousMetrics={previousMetrics}
+                loading={effectiveLoading}
+                syncing={effectiveSyncing}
+                hasSyncProgress={!!syncProgress}
+                kpiSummary={kpiSummary}
+                kpiSummaryLoading={kpiSummaryLoading}
+                adsTotalForPeriod={adsSummary.total_spend}
               />
-              <BrandMarkupChart
-                data={brandData?.brandMarkupSeries ?? []}
-                topBrands={brandData?.topBrands ?? []}
-                loading={brandLoading}
-              />
-            </div>
-            <CustoOperacionalChart
-              custoSeries={brandData?.custoSeries ?? []}
-              adsDaily={adsDaily}
-              loading={brandLoading}
-            />
-            <BrandSharePieChart
-              brandAggregates={brandData?.brandAggregates ?? []}
-              loading={brandLoading}
-            />
-          </div>
+            );
+            if (widget.id === "revenue_chart") return (
+              <div key="revenue_chart" className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-3">
+                <MLRevenueChart
+                  chartTitle={chartTitle}
+                  showHourlyChart={showHourlyChart}
+                  hasHourlyData={hasHourlyData}
+                  syncing={syncing}
+                  chartData={chartData}
+                  isAll={isAll}
+                  overlaidHourlyData={overlaidHourlyData}
+                  perMarketplaceHourly={perMarketplaceHourly}
+                />
+                <GoalsCard
+                  currentRevenue={monthlyMetrics?.total_revenue ?? 0}
+                  currentOrders={monthlyMetrics?.units_sold ?? 0}
+                  currentTicket={monthlyMetrics?.avg_ticket ?? 0}
+                  currentConversion={monthlyMetrics?.conversion_rate ?? 0}
+                  storeId={selectedStore !== "all" ? String(selectedStore) : (stores[0]?.ml_user_id ?? undefined)}
+                />
+              </div>
+            );
+            if (widget.id === "cost_waterfall") return (
+              <div key="cost_waterfall" className="grid grid-cols-1 lg:grid-cols-6 gap-3">
+                <MLCostCard
+                  gross_revenue={effectiveMetrics?.total_revenue ?? 0}
+                  cancelled_revenue={costWaterfall?.cancelled_revenue ?? 0}
+                  comissao={costWaterfall?.total_comissao ?? ordersSummary?.total_comissao ?? (effectiveMetrics?.total_revenue ?? 0) * 0.11}
+                  frete={costWaterfall?.total_frete ?? ordersSummary?.total_frete ?? (effectiveMetrics?.total_revenue ?? 0) * 0.05}
+                  publicidade={adsSummary.total_spend}
+                  cmv={costWaterfall?.has_cmv ? costWaterfall.cmv : null}
+                  impostos={impostosTotal}
+                  loading={costWaterfallLoading}
+                />
+                <MLTopProducts products={effectiveProducts} />
+              </div>
+            );
+            if (widget.id === "brand_charts") return (
+              <div key="brand_charts" className="space-y-3">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  <BrandRevenueChart
+                    data={brandData?.brandRevenueSeries ?? []}
+                    topBrands={brandData?.topBrands ?? []}
+                    loading={brandLoading}
+                  />
+                  <BrandMarkupChart
+                    data={brandData?.brandMarkupSeries ?? []}
+                    topBrands={brandData?.topBrands ?? []}
+                    loading={brandLoading}
+                  />
+                </div>
+                <CustoOperacionalChart
+                  custoSeries={brandData?.custoSeries ?? []}
+                  adsDaily={adsDaily}
+                  loading={brandLoading}
+                />
+                <BrandSharePieChart
+                  brandAggregates={brandData?.brandAggregates ?? []}
+                  loading={brandLoading}
+                />
+              </div>
+            );
+            return null;
+          })}
 
           {/* ── Análises Detalhadas — Phase 17 ── */}
           <MLSalesAnalytics from={currentFrom} to={currentTo} />
         </TabsContent>
       </Tabs>
+
+      {/* ── Sheet de personalização ── */}
+      <Sheet open={layoutOpen} onOpenChange={setLayoutOpen}>
+        <SheetContent side="right" className="w-[340px] sm:w-[400px]">
+          <SheetHeader className="pb-4">
+            <SheetTitle>Personalizar Dashboard</SheetTitle>
+            <SheetDescription>
+              Ative, oculte e reordene as seções da página de Vendas.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="space-y-2">
+            {widgets.map((widget, idx) => (
+              <div
+                key={widget.id}
+                className="flex items-center gap-3 rounded-lg border border-border/50 bg-muted/20 p-3"
+              >
+                <div className="flex flex-col gap-0.5">
+                  <button
+                    onClick={() => moveUp(widget.id)}
+                    disabled={idx === 0}
+                    className="rounded p-0.5 hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="Mover para cima"
+                  >
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => moveDown(widget.id)}
+                    disabled={idx === widgets.length - 1}
+                    className="rounded p-0.5 hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="Mover para baixo"
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium leading-none">{widget.label}</p>
+                  <p className="text-xs text-muted-foreground mt-1 leading-tight">{widget.description}</p>
+                </div>
+                <Switch
+                  checked={widget.visible}
+                  onCheckedChange={() => toggleWidget(widget.id)}
+                  aria-label={`${widget.visible ? "Ocultar" : "Mostrar"} ${widget.label}`}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="pt-4 border-t border-border/40 mt-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={resetLayout}
+              className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Restaurar padrão
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
