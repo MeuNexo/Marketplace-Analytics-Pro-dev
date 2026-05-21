@@ -549,22 +549,35 @@ export default function Integrations() {
     checkTokens();
   }, [currentOrg?.id]);
 
-  // Check Tiny connection status — aguarda sessão e org para garantir que RLS passe
+  // Check Tiny connection status — aguarda sessão via listener para garantir que RLS passe
   useEffect(() => {
+    let mounted = true;
+
     const checkTinyConnection = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        if (!session) return;
+        if (!session || !mounted) return;
         const { data } = await supabase
           .from("ml_tokens")
           .select("tiny_access_token")
           .not("tiny_access_token", "is", null)
           .limit(1)
           .maybeSingle();
-        setTinyConnected(!!data?.tiny_access_token);
+        if (mounted) setTinyConnected(!!data?.tiny_access_token);
       } catch (_e) { /* ignore */ }
     };
+
     checkTinyConnection();
+
+    // Retenta quando a sessão ficar disponível (ex: navegação de volta à página)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session && mounted) checkTinyConnection();
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, [currentOrg?.id]);
 
   // Handle OAuth callbacks — ML and Tiny
