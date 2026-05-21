@@ -188,8 +188,8 @@ async function fetchShipmentDetails(
       batch.map(async (id) => {
         const s = await mlFetch(`/shipments/${id}`, accessToken, 8_000);
 
-        // Seller-absorbed shipping cost
-        const cost = s.base_cost ?? s.cost?.gross ?? null;
+        // Seller-absorbed shipping cost — usa list_cost (mesmo que nexo-mcp)
+        const cost = s.shipping_option?.list_cost ?? s.base_cost ?? null;
 
         // Receiver address → UF + cidade
         const addr     = s.receiver_address ?? {};
