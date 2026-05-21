@@ -285,6 +285,7 @@ function expandOrder(
   costMap:        Map<string, number>,
   taxConfig:      any | null,
   brandMap:       Map<string, string | null>,
+  skuCostMap:     Map<string, number>,
 ): Array<Record<string, unknown>> {
   const datePedido    = (order.date_created || "").substring(0, 10) || null;
   const dataPagamento = (order.date_approved || "").substring(0, 10) || null;
@@ -316,9 +317,10 @@ function expandOrder(
       : (detail?.cost ?? null);
 
     const itemId      = String(prod.id || "");
+    const itemSku     = prod.seller_custom_field ?? prod.seller_sku ?? null;
     const quantidade  = Number(item.quantity || 0);
     const precoUnit   = item.unit_price != null ? Number(item.unit_price) : null;
-    const custoUnit   = costMap.get(itemId) ?? null;
+    const custoUnit   = (itemSku ? skuCostMap.get(itemSku) : null) ?? costMap.get(itemId) ?? null;
     const taxRate     = taxConfig ? computeOrderTaxRate(taxConfig, estado) : null;
     const taxAmount   = (taxRate != null && precoUnit != null)
       ? (precoUnit * quantidade * taxRate) / 100
@@ -506,16 +508,17 @@ serve(async (req) => {
       orders.flatMap((o) => (o.order_items ?? []).map((i: any) => String(i.item?.id ?? ""))).filter(Boolean),
     ));
     const costMap = new Map<string, number>();
-    if (itemIds.length > 0) {
+    const skuCostMap = new Map<string, number>(); // fallback: custo por seller_sku (Tiny sync)
+    {
+      // Busca por item_id E por seller_sku (sem filtrar item_id para pegar custos do Tiny)
       const { data: costRows } = await supabaseAdmin
         .from("ml_product_costs")
-        .select("item_id, cost, organization_id, user_id")
-        .in("item_id", itemIds);
+        .select("item_id, seller_sku, cost, organization_id, user_id")
+        .or(`user_id.eq.${userId}${organizationId ? `,organization_id.eq.${organizationId}` : ""}`);
       for (const r of (costRows ?? []) as any[]) {
         if (r.cost == null) continue;
-        const matchesOrg = organizationId && r.organization_id === organizationId;
-        const matchesUser = r.user_id === userId;
-        if (matchesOrg || matchesUser) costMap.set(r.item_id, Number(r.cost));
+        if (r.item_id) costMap.set(r.item_id, Number(r.cost));
+        if (r.seller_sku) skuCostMap.set(r.seller_sku, Number(r.cost));
       }
     }
 
@@ -526,7 +529,7 @@ serve(async (req) => {
 
     // ── Expand + upsert ───────────────────────────────────────────────────────
     const records = orders.flatMap((o) =>
-      expandOrder(o, ml_user_id, effectiveSellerId, userId, organizationId, syncAt, shipmentMap, costMap, taxConfig, brandMap),
+      expandOrder(o, ml_user_id, effectiveSellerId, userId, organizationId, syncAt, shipmentMap, costMap, taxConfig, brandMap, skuCostMap),
     );
 
     let upserted = 0;
