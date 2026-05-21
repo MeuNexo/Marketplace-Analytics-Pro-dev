@@ -7,6 +7,11 @@ const TINY_API     = "https://api.tiny.com.br/public-api/v3";
 const RATE_MS   = 1100; // 60 req/min → 1 req/s com margem
 const BATCH_SIZE = 50;
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
 const sb = createClient(SUPABASE_URL, SERVICE_KEY);
 
 function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
@@ -14,7 +19,7 @@ function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 }
 
@@ -116,6 +121,8 @@ async function fetchAllProducts(token: string): Promise<Array<{ id: string; sku:
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
   try {
     // Auth: aceitar user JWT ou service_role
     const authHeader = req.headers.get("Authorization") ?? "";
