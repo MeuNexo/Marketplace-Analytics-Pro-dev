@@ -662,7 +662,7 @@ export function MLSalesAnalytics({ from, to }: MLSalesAnalyticsProps) {
       <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider px-1 pb-1">
         Análises Detalhadas
       </p>
-      <Accordion type="multiple" className="space-y-2">
+      <Accordion type="multiple" defaultValue={["horario", "ticket", "estado", "funil"]} className="space-y-2">
         <AccordionItem value="horario" className="border rounded-lg px-3">
           <AccordionTrigger className="text-sm font-medium hover:no-underline py-3">
             <span className="flex items-center gap-2">
