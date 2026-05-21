@@ -159,6 +159,20 @@ export function useMLSync(opts: UseMLSyncOptions) {
                 try { optsRef.current.setSellerReputation(syncData.seller_reputation); } catch {}
               }
 
+              // Sync orders para este chunk (non-fatal — não aborta o sync principal)
+              try {
+                await supabase.functions.invoke("sync-ml-orders", {
+                  body: {
+                    ml_user_id: mlUserId,
+                    date_from: format(chunkStart, "yyyy-MM-dd"),
+                    date_to: format(chunkEnd, "yyyy-MM-dd"),
+                    seller_id: capturedStores.find(s => s.ml_user_id === mlUserId)?.seller_id || null,
+                  },
+                });
+              } catch (ordersErr) {
+                console.warn("sync-ml-orders (non-fatal):", ordersErr);
+              }
+
               chunksDone++;
               _emit({ progress: { current: chunksDone, total: totalChunks } });
               cursor.setDate(cursor.getDate() + SYNC_CHUNK_DAYS);
