@@ -9,6 +9,7 @@ export interface EnrichedAdsProduct extends AdsProductStat {
   cvr: number | null;
   share_ads_pct: number | null;
   acos_breakeven: number | null;
+  seller_sku: string | null;
 }
 
 export interface AdsGlobalDerived {
@@ -33,13 +34,13 @@ export function useMLAdsDerivedMetrics(
       if (!currentOrg?.id) return { total_revenue: 0, total_orders: 0 };
       const { data } = await supabase
         .from("ml_daily_cache")
-        .select("approved, qty")
+        .select("approved_revenue, qty_orders")
         .eq("organization_id", currentOrg.id)
         .in("ml_user_id", resolvedMLUserIds)
         .gte("date", dateFrom)
         .lte("date", dateTo);
-      const total_revenue = (data ?? []).reduce((s, r) => s + ((r.approved as number) ?? 0), 0);
-      const total_orders  = (data ?? []).reduce((s, r) => s + ((r.qty as number) ?? 0), 0);
+      const total_revenue = (data ?? []).reduce((s, r) => s + ((r.approved_revenue as number) ?? 0), 0);
+      const total_orders  = (data ?? []).reduce((s, r) => s + ((r.qty_orders as number) ?? 0), 0);
       return { total_revenue, total_orders };
     },
     enabled: !!currentOrg?.id && resolvedMLUserIds.length > 0,
@@ -49,16 +50,21 @@ export function useMLAdsDerivedMetrics(
   const itemIds = products.map((p) => p.item_id).filter(Boolean);
   const { data: costsMap } = useQuery({
     queryKey: ["ml_ads_product_costs", currentOrg?.id, itemIds] as const,
-    queryFn: async () => {
-      if (!currentOrg?.id || !itemIds.length) return new Map<string, number>();
+    queryFn: async (): Promise<Map<string, { cost: number; sku: string | null }>> => {
+      if (!currentOrg?.id || !itemIds.length) return new Map();
       const { data } = await supabase
-        .from("product_costs")
-        .select("item_id, unit_cost")
+        .from("ml_product_costs")
+        .select("item_id, cost, seller_sku")
         .eq("organization_id", currentOrg.id)
         .in("item_id", itemIds)
-        .not("unit_cost", "is", null);
-      const map = new Map<string, number>();
-      for (const r of data ?? []) map.set(r.item_id as string, r.unit_cost as number);
+        .not("cost", "is", null);
+      const map = new Map<string, { cost: number; sku: string | null }>();
+      for (const r of data ?? []) {
+        map.set(r.item_id as string, {
+          cost: r.cost as number,
+          sku: (r.seller_sku as string | null) ?? null,
+        });
+      }
       return map;
     },
     enabled: !!currentOrg?.id && itemIds.length > 0,
@@ -78,12 +84,14 @@ export function useMLAdsDerivedMetrics(
     const share_ads_pct = total_orders > 0
       ? Math.round((p.attributed_orders / total_orders) * 10000) / 100
       : null;
-    const unit_cost = costsMap?.get(p.item_id);
+    const costEntry = costsMap?.get(p.item_id);
+    const unit_cost = costEntry?.cost ?? null;
+    const seller_sku = costEntry?.sku ?? null;
     const avg_price = p.attributed_orders > 0 ? p.attributed_revenue / p.attributed_orders : 0;
     const acos_breakeven = unit_cost != null && avg_price > 0
       ? Math.round(((avg_price - unit_cost) / avg_price) * 10000) / 100
       : null;
-    return { ...p, acos, cvr, share_ads_pct, acos_breakeven };
+    return { ...p, acos, cvr, share_ads_pct, acos_breakeven, seller_sku };
   });
 
   const organic_revenue = total_revenue > totalAttributedRevenue

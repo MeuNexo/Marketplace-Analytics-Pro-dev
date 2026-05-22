@@ -27,6 +27,11 @@ import { useMLInventory } from "@/contexts/MLInventoryContext";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+function adProductLabel(p: { item_id: string; seller_sku: string | null }) {
+  const code = p.item_id.replace(/^MLB(\d+)$/, "MLB-$1");
+  return p.seller_sku ? `${code} · ${p.seller_sku}` : code;
+}
+
 const currFmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const numFmt  = (v: number) => v.toLocaleString("pt-BR");
 const pctFmt  = (v: number) => `${v.toFixed(2)}%`;
@@ -65,6 +70,8 @@ export default function MLAnuncios() {
   const [productPage, setProductPage]       = useState(1);
   const [productPageSize, setProductPageSize] = useState<number>(20);
   const [campaignSort, setCampaignSort]     = useState<{ key: "daily_budget" | "spend" | "ctr" | "roas"; dir: "asc" | "desc" } | null>(null);
+  const [campaignStatusFilter, setCampaignStatusFilter] = useState<"all" | "active" | "paused">("all");
+  const [productDiagFilter, setProductDiagFilter] = useState<"all" | "sem_conversao" | "acos_critico" | "ruptura">("all");
 
   // ── Filters — default 30 days (ads data is not real-time, "Hoje" would be zeros) ──
   const filters = useMLFilters(30);
@@ -198,9 +205,16 @@ export default function MLAnuncios() {
   // ── Sorted + filtered product list (all sponsored products) ──
   const sortedProducts = useMemo(() => {
     const q = productSearch.trim().toLowerCase();
-    const filtered = q
+    let filtered = q
       ? enrichedProducts.filter((p) => p.title.toLowerCase().includes(q) || p.item_id.toLowerCase().includes(q))
       : enrichedProducts;
+    if (productDiagFilter === "sem_conversao") {
+      filtered = filtered.filter((p) => p.attributed_orders === 0 && p.spend > SPEND_THRESHOLD);
+    } else if (productDiagFilter === "acos_critico") {
+      filtered = filtered.filter((p) => p.acos != null && p.acos_breakeven != null && p.acos > p.acos_breakeven);
+    } else if (productDiagFilter === "ruptura") {
+      filtered = filtered.filter((p) => (stockByItem.get(p.item_id) ?? -1) === 0 && p.spend > 0);
+    }
     const { key, dir } = productSort;
     const mult = dir === "desc" ? -1 : 1;
     return [...filtered].sort((a, b) => {
@@ -223,7 +237,7 @@ export default function MLAnuncios() {
       }
       return ((a[key] ?? 0) - (b[key] ?? 0)) * mult;
     });
-  }, [enrichedProducts, productSearch, productSort, stockByItem]);
+  }, [enrichedProducts, productSearch, productDiagFilter, productSort, stockByItem]);
 
   const toggleSort = useCallback((key: typeof productSort.key) => {
     setProductSort((prev) =>
@@ -254,12 +268,15 @@ export default function MLAnuncios() {
   // ── Filtered campaigns ──
   const filteredCampaigns = useMemo(() => {
     const q = campaignSearch.trim().toLowerCase();
-    const list = q ? campaigns.filter((c) => c.name.toLowerCase().includes(q)) : campaigns;
+    let list = q ? campaigns.filter((c) => c.name.toLowerCase().includes(q)) : campaigns;
+    if (campaignStatusFilter !== "all") {
+      list = list.filter((c) => c.status === campaignStatusFilter);
+    }
     if (!campaignSort) return list;
     const { key, dir } = campaignSort;
     const mult = dir === "desc" ? -1 : 1;
     return [...list].sort((a, b) => ((a[key] ?? 0) - (b[key] ?? 0)) * mult);
-  }, [campaigns, campaignSearch, campaignSort]);
+  }, [campaigns, campaignSearch, campaignStatusFilter, campaignSort]);
 
   const toggleCampaignSort = useCallback((key: NonNullable<typeof campaignSort>["key"]) => {
     setCampaignSort((prev) =>
@@ -401,7 +418,7 @@ export default function MLAnuncios() {
             ) : (
               semConversao.slice(0, 5).map((p) => (
                 <div key={p.item_id} className="flex items-center justify-between py-1 text-xs border-b border-border/30 last:border-0 gap-2">
-                  <span className="truncate flex-1 text-muted-foreground">{p.title}</span>
+                  <span className="text-muted-foreground font-mono text-[11px]">{adProductLabel(p)}</span>
                   <span className="font-semibold text-red-500 whitespace-nowrap tabular-nums">{currFmt(p.spend)}</span>
                 </div>
               ))
@@ -425,7 +442,7 @@ export default function MLAnuncios() {
             ) : (
               topAcos.slice(0, 5).map((p) => (
                 <div key={p.item_id} className="flex items-center justify-between py-1 text-xs border-b border-border/30 last:border-0 gap-2">
-                  <span className="truncate flex-1 text-muted-foreground">{p.title}</span>
+                  <span className="text-muted-foreground font-mono text-[11px]">{adProductLabel(p)}</span>
                   <span className={`font-semibold whitespace-nowrap tabular-nums ${(p.acos ?? 0) > 30 ? "text-red-500" : "text-amber-500"}`}>
                     {p.acos != null ? pctFmt(p.acos) : "—"}
                   </span>
@@ -453,7 +470,7 @@ export default function MLAnuncios() {
             ) : (
               emRuptura.slice(0, 5).map((p) => (
                 <div key={p.item_id} className="flex items-center justify-between py-1 text-xs border-b border-border/30 last:border-0 gap-2">
-                  <span className="truncate flex-1 text-muted-foreground">{p.title}</span>
+                  <span className="text-muted-foreground font-mono text-[11px]">{adProductLabel(p)}</span>
                   <span className="font-semibold text-orange-500 whitespace-nowrap tabular-nums">{currFmt(p.spend)}</span>
                 </div>
               ))
@@ -586,6 +603,21 @@ export default function MLAnuncios() {
               />
             </div>
           </div>
+          <div className="flex items-center gap-2 flex-wrap mt-2">
+            {(["all", "active", "paused"] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setCampaignStatusFilter(s)}
+                className={`text-xs px-3 py-1 rounded-full border transition-colors ${
+                  campaignStatusFilter === s
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "border-border text-muted-foreground hover:border-primary/50"
+                }`}
+              >
+                {s === "all" ? "Todas" : s === "active" ? "Ativas" : "Pausadas"}
+              </button>
+            ))}
+          </div>
         </div>
 
         <CardContent className="p-0">
@@ -677,6 +709,26 @@ export default function MLAnuncios() {
                 />
               </div>
             </div>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap mt-2">
+            {([
+              { key: "all",           label: "Todos" },
+              { key: "sem_conversao", label: `Sem Conversão (${semConversao.length})` },
+              { key: "acos_critico",  label: "ACoS Crítico" },
+              { key: "ruptura",       label: `Ruptura (${emRuptura.length})` },
+            ] as const).map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setProductDiagFilter(key)}
+                className={`text-xs px-3 py-1 rounded-full border transition-colors ${
+                  productDiagFilter === key
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "border-border text-muted-foreground hover:border-primary/50"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         </div>
         <CardContent className="p-0">
