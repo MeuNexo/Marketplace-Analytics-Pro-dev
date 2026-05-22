@@ -96,17 +96,16 @@ export function MLCostCard({
     },
   ];
 
-  const totalDeductions =
-    cancelled_revenue +
-    comissao +
-    frete +
-    publicidade +
-    (cmv ?? 0) +
-    (impostos ?? 0);
+  const effectivePaid =
+    (paid_revenue ?? 0) > 0
+      ? paid_revenue!
+      : gross_revenue - cancelled_revenue;
 
-  const lucro = gross_revenue - totalDeductions;
+  const operationalCosts = comissao + frete + publicidade + (cmv ?? 0) + (impostos ?? 0);
+  const totalDeductions = cancelled_revenue + operationalCosts;
+  const lucro = effectivePaid - operationalCosts;
   const lucroPositivo = lucro >= 0;
-  const paidRevenue = (paid_revenue ?? 0) > 0 ? paid_revenue! : gross_revenue - cancelled_revenue;
+  const paidRevenue = effectivePaid;
 
   return (
     <motion.div

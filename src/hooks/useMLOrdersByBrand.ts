@@ -72,7 +72,8 @@ export function useMLOrdersByBrand(from: string, to: string) {
         .eq("organization_id", orgId)
         .in("ml_user_id", resolvedMLUserIds)
         .gte("data_pedido", from)
-        .lte("data_pedido", to);
+        .lte("data_pedido", to)
+        .in("status", ["paid", "shipped", "delivered"]);
 
       if (error) throw error;
 
@@ -118,7 +119,7 @@ export function useMLOrdersByBrand(from: string, to: string) {
       sorted.forEach(([marca, vals]) => {
         const markup_ratio =
           vals.hasCusto && vals.sumCusto > 0
-            ? vals.receita / vals.sumCusto
+            ? Math.min(vals.receita / vals.sumCusto, 10)
             : null;
         if (topSet.has(marca)) {
           brandAggregates.push({
@@ -201,7 +202,8 @@ export function useMLOrdersByBrand(from: string, to: string) {
           if (!vals || !vals.hasC || vals.sumC === 0) {
             row[marca] = null;
           } else {
-            row[marca] = Math.round((vals.sumR / vals.sumC) * 100) / 100;
+            const rawMarkup = Math.round((vals.sumR / vals.sumC) * 100) / 100;
+            row[marca] = rawMarkup > 10 ? null : rawMarkup;
           }
         }
         return row;

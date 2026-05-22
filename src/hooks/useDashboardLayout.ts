@@ -8,14 +8,17 @@ export interface WidgetConfig {
 }
 
 const DEFAULT_WIDGETS: WidgetConfig[] = [
-  { id: "kpi_grid",       label: "KPIs de Vendas",        description: "Cards com receita, pedidos, ticket, visitas e mais",  visible: true },
-  { id: "revenue_chart",  label: "Gráfico de Receita",    description: "Evolução diária ou horária da receita + metas",       visible: true },
-  { id: "cost_waterfall", label: "Custos & Top Produtos", description: "Waterfall financeiro e produtos mais vendidos",        visible: true },
-  { id: "brand_charts",   label: "Gráficos de Marca",     description: "Faturamento, markup e share por marca",              visible: true },
-  { id: "analytics",      label: "Análises Detalhadas",   description: "Venda por hora, ticket médio, estados e funil",      visible: true },
+  { id: "kpi_grid",         label: "KPIs de Vendas",           description: "Cards com receita, pedidos, ticket, visitas e mais",   visible: true },
+  { id: "revenue_chart",    label: "Gráfico de Receita",       description: "Evolução diária ou horária da receita + metas",         visible: true },
+  { id: "cost_waterfall",   label: "Custos & Top Anúncios",    description: "Waterfall financeiro e produtos mais vendidos",         visible: true },
+  { id: "brand_revenue",    label: "Receita por Marca",        description: "Faturamento diário por marca ao longo do período",      visible: true },
+  { id: "brand_markup",     label: "Markup por Marca",         description: "Evolução do markup médio por marca",                   visible: true },
+  { id: "operational_cost", label: "Custo Operacional Diário", description: "Frete + Comissão + Publicidade em R$ e % da receita",  visible: true },
+  { id: "brand_share",      label: "Share de Marca",           description: "Participação de receita e volume por marca",           visible: true },
+  { id: "analytics",        label: "Análises Detalhadas",      description: "Venda por hora, ticket médio, estados e funil",        visible: true },
 ];
 
-const STORAGE_KEY = "ml_dashboard_layout_v1";
+const STORAGE_KEY = "ml_dashboard_layout_v2";
 
 function loadLayout(): WidgetConfig[] {
   try {

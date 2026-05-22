@@ -5,9 +5,10 @@ import type { ProductSalesRow } from "./TopSellingProducts";
 
 interface MLTopProductsProps {
   products: (ProductSalesRow & { _marketplace?: string })[];
+  marginMap?: Map<string, number>;
 }
 
-function MLTopProductsImpl({ products }: MLTopProductsProps) {
+function MLTopProductsImpl({ products, marginMap }: MLTopProductsProps) {
   return (
     <motion.div className="lg:col-span-4" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.05 }}>
       <Card className="h-full">
@@ -25,6 +26,7 @@ function MLTopProductsImpl({ products }: MLTopProductsProps) {
                 <span className="w-14 text-right">Vendidos</span>
                 <span className="w-20 text-right">Receita</span>
                 <span className="w-12 text-right">% Part.</span>
+                <span className="w-16 text-right">Margem</span>
                 <span className="w-14 text-right">Estoque</span>
               </div>
               {(() => {
@@ -65,6 +67,16 @@ function MLTopProductsImpl({ products }: MLTopProductsProps) {
                       <span className="w-12 text-right text-xs tabular-nums text-muted-foreground">
                         {share.toFixed(1)}%
                       </span>
+                      {(() => {
+                        const margin = marginMap?.get(p.item_id);
+                        if (margin == null) return <span className="w-16 text-right text-[10px] text-muted-foreground">—</span>;
+                        const positive = margin >= 0;
+                        return (
+                          <span className={`w-16 text-right text-xs font-semibold tabular-nums ${positive ? "text-emerald-500" : "text-red-500"}`}>
+                            {margin.toFixed(1)}%
+                          </span>
+                        );
+                      })()}
                       <span className="w-14 text-right text-[10px] text-muted-foreground whitespace-nowrap">
                         {p.available_quantity != null ? `${p.available_quantity} un` : "—"}
                       </span>

@@ -37,6 +37,7 @@ import { format, parseISO, startOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { MLSalesAnalytics } from "@/components/mercadolivre/MLSalesAnalytics";
 import { useDashboardLayout } from "@/hooks/useDashboardLayout";
+import { useMLProductMargins } from "@/hooks/useMLProductMargins";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 
@@ -141,6 +142,7 @@ export default function MercadoLivre() {
     data: brandData,
     isLoading: brandLoading,
   } = useMLOrdersByBrand(currentFrom, currentTo);
+  const { data: marginMap } = useMLProductMargins(currentFrom, currentTo);
   const { data: kpiSummary, isLoading: kpiSummaryLoading } = useMLKPISummary(
     currentFrom,
     currentTo,
@@ -331,6 +333,11 @@ export default function MercadoLivre() {
     if (m.unique_visits > 0) m.conversion_rate = (m.unique_buyers / m.unique_visits) * 100;
     return m;
   }, [effectiveDaily, ordersSummary]);
+
+  const dailyRevenue = useMemo(
+    () => effectiveDaily.map((d) => ({ date: d.date, revenue: d.approved ?? 0 })),
+    [effectiveDaily],
+  );
 
   const effectivePreviousDaily = useMemo(
     () => aggregateDailyRows(previousDaily),
@@ -556,7 +563,7 @@ export default function MercadoLivre() {
             if (widget.id === "cost_waterfall") return (
               <div key="cost_waterfall" className="grid grid-cols-1 lg:grid-cols-6 gap-3">
                 <MLCostCard
-                  gross_revenue={(costWaterfall?.paid_revenue ?? 0) + (costWaterfall?.cancelled_revenue ?? 0)}
+                  gross_revenue={effectiveMetrics?.total_revenue ?? 0}
                   cancelled_revenue={costWaterfall?.cancelled_revenue ?? 0}
                   paid_revenue={costWaterfall?.paid_revenue}
                   comissao={costWaterfall?.total_comissao ?? ordersSummary?.total_comissao ?? (effectiveMetrics?.total_revenue ?? 0) * 0.11}
@@ -566,33 +573,40 @@ export default function MercadoLivre() {
                   impostos={impostosTotal}
                   loading={costWaterfallLoading}
                 />
-                <MLTopProducts products={effectiveProducts} />
+                <MLTopProducts products={effectiveProducts} marginMap={marginMap} />
               </div>
             );
-            if (widget.id === "brand_charts") return (
-              <div key="brand_charts" className="space-y-3">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                  <BrandRevenueChart
-                    data={brandData?.brandRevenueSeries ?? []}
-                    topBrands={brandData?.topBrands ?? []}
-                    loading={brandLoading}
-                  />
-                  <BrandMarkupChart
-                    data={brandData?.brandMarkupSeries ?? []}
-                    topBrands={brandData?.topBrands ?? []}
-                    loading={brandLoading}
-                  />
-                </div>
-                <CustoOperacionalChart
-                  custoSeries={brandData?.custoSeries ?? []}
-                  adsDaily={adsDaily}
-                  loading={brandLoading}
-                />
-                <BrandSharePieChart
-                  brandAggregates={brandData?.brandAggregates ?? []}
-                  loading={brandLoading}
-                />
-              </div>
+            if (widget.id === "brand_revenue") return (
+              <BrandRevenueChart
+                key="brand_revenue"
+                data={brandData?.brandRevenueSeries ?? []}
+                topBrands={brandData?.topBrands ?? []}
+                loading={brandLoading}
+              />
+            );
+            if (widget.id === "brand_markup") return (
+              <BrandMarkupChart
+                key="brand_markup"
+                data={brandData?.brandMarkupSeries ?? []}
+                topBrands={brandData?.topBrands ?? []}
+                loading={brandLoading}
+              />
+            );
+            if (widget.id === "operational_cost") return (
+              <CustoOperacionalChart
+                key="operational_cost"
+                custoSeries={brandData?.custoSeries ?? []}
+                adsDaily={adsDaily}
+                dailyRevenue={dailyRevenue}
+                loading={brandLoading}
+              />
+            );
+            if (widget.id === "brand_share") return (
+              <BrandSharePieChart
+                key="brand_share"
+                brandAggregates={brandData?.brandAggregates ?? []}
+                loading={brandLoading}
+              />
             );
             if (widget.id === "analytics") return (
               <MLSalesAnalytics key="analytics" from={currentFrom} to={currentTo} />
