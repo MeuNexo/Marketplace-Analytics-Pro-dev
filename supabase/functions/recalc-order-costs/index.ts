@@ -41,9 +41,9 @@ function computeOrderTaxRate(cfg: any, ufDest: string | null): number {
       if (orig && dest && orig !== dest) {
         icms = isReducedInterstateDest(dest) ? Number(interNNE) : Number(interSE);
       }
-      const debits  = c(cfg.lr_pis_debito) + c(cfg.lr_cofins_debito) + icms;
-      const credits = c(cfg.lr_pis_credito) + c(cfg.lr_cofins_credito) + c(cfg.lr_icms_credito);
-      return Math.max(0, debits - credits);
+      // Formula: ICMS + (1 - ICMS%) × (PIS 1.65% + COFINS 7.60%)
+      const baseFactor = 1 - icms / 100;
+      return Math.max(0, icms + baseFactor * (1.65 + 7.60));
     }
   }
   return 0;
