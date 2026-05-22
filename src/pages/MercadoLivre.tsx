@@ -32,7 +32,7 @@ import { MLTopProducts } from "@/components/mercadolivre/MLTopProducts";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { GoalsCard } from "@/components/mercadolivre/GoalsCard";
 import type { ProductSalesRow } from "@/components/mercadolivre/TopSellingProducts";
-import { Plug, Info, Loader2, Monitor, RefreshCw, Settings2, ChevronUp, ChevronDown, RotateCcw } from "lucide-react";
+import { Plug, Info, Loader2, RefreshCw, Settings2, ChevronUp, ChevronDown, RotateCcw } from "lucide-react";
 import { format, parseISO, startOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { MLSalesAnalytics } from "@/components/mercadolivre/MLSalesAnalytics";
@@ -465,12 +465,6 @@ export default function MercadoLivre() {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4 min-w-0">
             <MLPageHeader title="Vendas" lastUpdated={lastSyncTimestamp ? new Date(lastSyncTimestamp) : null} />
             <div className="flex items-center gap-2 flex-wrap min-w-0">
-              <Link to="/tv" target="_blank">
-                <Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs px-2 sm:px-3" aria-label="Modo TV">
-                  <Monitor className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Modo TV</span>
-                </Button>
-              </Link>
               <MLPeriodPicker
                 periodLabel={periodLabel}
                 popoverOpen={filters.popoverOpen}
@@ -576,30 +570,25 @@ export default function MercadoLivre() {
                 <MLTopProducts products={effectiveProducts} marginMap={marginMap} />
               </div>
             );
-            if (widget.id === "brand_revenue") return (
-              <BrandRevenueChart
-                key="brand_revenue"
-                data={brandData?.brandRevenueSeries ?? []}
-                topBrands={brandData?.topBrands ?? []}
-                loading={brandLoading}
-              />
-            );
-            if (widget.id === "brand_markup") return (
-              <BrandMarkupChart
-                key="brand_markup"
-                data={brandData?.brandMarkupSeries ?? []}
-                topBrands={brandData?.topBrands ?? []}
-                loading={brandLoading}
-              />
-            );
-            if (widget.id === "operational_cost") return (
-              <CustoOperacionalChart
-                key="operational_cost"
-                custoSeries={brandData?.custoSeries ?? []}
-                adsDaily={adsDaily}
-                dailyRevenue={dailyRevenue}
-                loading={brandLoading}
-              />
+            if (widget.id === "brand_row") return (
+              <div key="brand_row" className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                <BrandRevenueChart
+                  data={brandData?.brandRevenueSeries ?? []}
+                  topBrands={brandData?.topBrands ?? []}
+                  loading={brandLoading}
+                />
+                <BrandMarkupChart
+                  data={brandData?.brandMarkupSeries ?? []}
+                  topBrands={brandData?.topBrands ?? []}
+                  loading={brandLoading}
+                />
+                <CustoOperacionalChart
+                  custoSeries={brandData?.custoSeries ?? []}
+                  adsDaily={adsDaily}
+                  dailyRevenue={dailyRevenue}
+                  loading={brandLoading}
+                />
+              </div>
             );
             if (widget.id === "brand_share") return (
               <BrandSharePieChart
