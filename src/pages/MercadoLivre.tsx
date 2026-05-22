@@ -195,25 +195,33 @@ export default function MercadoLivre() {
     return () => clearTimeout(syncTimerRef.current);
   }, [allDaily, allHourly, allProductSales, mlUser, connected, lastSyncedAt, productStockMap, setSalesCache]);
 
-  // ── Inventory fetch on connect (sem auto-sync) ──
+  // ── Auto-sync de hoje no mount (1x por sessão, se stale > 10min) ──
+  const autoSyncDoneRef = useRef(false);
   useEffect(() => {
-    if (!user || storeLoading || !connected) return;
+    if (!user || storeLoading || !connected || autoSyncDoneRef.current) return;
+    autoSyncDoneRef.current = true;
+    const lastTs = Number(localStorage.getItem("ml_last_synced_ts") ?? 0);
+    if (Date.now() - lastTs > 10 * 60 * 1000) {
+      syncFromAPI({ periodDays: 1 });
+    }
     const firstStore = stores.find((s) => resolvedMLUserIds.includes(s.ml_user_id));
-    if (!firstStore) return;
-    supabase.functions
-      .invoke("ml-inventory", { body: { ml_user_id: firstStore.ml_user_id } })
-      .then(({ data: invData }) => {
-        if (invData?.items) {
-          const stockMap: Record<string, number> = {};
-          for (const item of invData.items) stockMap[item.id] = item.available_quantity ?? 0;
-          setProductStockMap(stockMap);
-        }
-      })
-      .catch(() => {});
-  }, [user, storeLoading, connected, stores, resolvedMLUserIds]);
+    if (firstStore) {
+      supabase.functions
+        .invoke("ml-inventory", { body: { ml_user_id: firstStore.ml_user_id } })
+        .then(({ data: invData }) => {
+          if (invData?.items) {
+            const stockMap: Record<string, number> = {};
+            for (const item of invData.items) stockMap[item.id] = item.available_quantity ?? 0;
+            setProductStockMap(stockMap);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [user, storeLoading, connected, stores, resolvedMLUserIds, syncFromAPI]);
 
   // Reset on scope change
   useEffect(() => {
+    autoSyncDoneRef.current = false;
     resetSync();
     setProductStockMap({});
   }, [scopeKey, resetSync]);

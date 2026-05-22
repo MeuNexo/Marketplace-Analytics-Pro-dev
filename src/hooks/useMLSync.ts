@@ -182,6 +182,7 @@ export function useMLSync(opts: UseMLSyncOptions) {
           const nowIso = new Date().toISOString();
           _emit({ lastSyncedAt: nowIso });
           localStorage.setItem(LAST_ML_SYNC_KEY, nowIso);
+          localStorage.setItem("ml_last_synced_ts", String(Date.now()));
 
           // Log sync
           const daysCount = Math.round((rangeEnd.getTime() - rangeStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
