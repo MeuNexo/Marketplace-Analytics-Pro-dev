@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { format, subDays } from "date-fns";
 import { useMLStore } from "@/contexts/MLStoreContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -111,6 +112,7 @@ export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
   const { daysBack = 30, dateFrom, dateTo } = opts;
   const { stores, selectedStore, loading: storeLoading, scopeKey, hasMLConnection } = useMLStore();
   const { user } = useAuth();
+  const { currentOrg } = useOrganization();
   const { toast } = useToast();
 
   const [loading, setLoading]   = useState(false);
@@ -163,7 +165,9 @@ export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
         supabase
           .from("ml_ads_products_cache")
           .select("*")
-          .in("ml_user_id", mlUserIds),
+          .in("ml_user_id", mlUserIds)
+          .gte("date", effectiveDateFrom)
+          .lte("date", effectiveDateTo),
       ]);
 
       if (dailyRes.error) throw dailyRes.error;
@@ -215,18 +219,37 @@ export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
         roas:                r.roas ?? 0,
       }));
 
-      const products: AdsProductStat[] = productRows.map((r) => ({
-        item_id:             r.item_id,
-        title:               r.title     ?? "",
-        thumbnail:           r.thumbnail ?? null,
-        impressions:         r.impressions      ?? 0,
-        clicks:              r.clicks           ?? 0,
-        spend:               r.spend            ?? 0,
-        attributed_revenue:  r.attributed_revenue ?? 0,
-        attributed_orders:   r.attributed_orders  ?? 0,
-        cpc:                 r.cpc  ?? 0,
-        ctr:                 r.ctr  ?? 0,
-        roas:                r.roas ?? 0,
+      // Aggregate per item_id — sync-ads v10 writes one row per item per day
+      const productAcc = new Map<string, AdsProductStat>();
+      for (const r of productRows) {
+        const prev = productAcc.get(r.item_id);
+        if (prev) {
+          prev.impressions        += r.impressions        ?? 0;
+          prev.clicks             += r.clicks             ?? 0;
+          prev.spend              += r.spend              ?? 0;
+          prev.attributed_revenue += r.attributed_revenue ?? 0;
+          prev.attributed_orders  += r.attributed_orders  ?? 0;
+        } else {
+          productAcc.set(r.item_id, {
+            item_id:             r.item_id,
+            title:               r.title     ?? "",
+            thumbnail:           r.thumbnail ?? null,
+            impressions:         r.impressions        ?? 0,
+            clicks:              r.clicks             ?? 0,
+            spend:               r.spend              ?? 0,
+            attributed_revenue:  r.attributed_revenue ?? 0,
+            attributed_orders:   r.attributed_orders  ?? 0,
+            cpc:  0,
+            ctr:  0,
+            roas: 0,
+          });
+        }
+      }
+      const products: AdsProductStat[] = Array.from(productAcc.values()).map((p) => ({
+        ...p,
+        cpc:  p.clicks > 0      ? p.spend / p.clicks                  : 0,
+        ctr:  p.impressions > 0 ? (p.clicks / p.impressions) * 100    : 0,
+        roas: p.spend > 0       ? p.attributed_revenue / p.spend      : 0,
       }));
 
       const summary = computeAdsSummary(daily);
@@ -249,13 +272,19 @@ export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
 
   // Trigger a fresh sync from ML API, then re-read cache
   const syncNow = useCallback(async () => {
-    if (!user || syncing || mlUserIds.length === 0) return;
+    if (!user || syncing || mlUserIds.length === 0 || !currentOrg?.id) return;
     setSyncing(true);
     try {
-      await Promise.all(
-        mlUserIds.map((ml_user_id) =>
-          supabase.functions.invoke("ml-ads", { body: { ml_user_id, force: true } })
-        )
+      const today = format(new Date(), "yyyy-MM-dd");
+      await supabase.from("sync_jobs").insert(
+        mlUserIds.map((ml_user_id) => ({
+          job_type:        "ads",
+          ml_user_id,
+          organization_id: currentOrg?.id,
+          date_from:       effectiveDateFrom,
+          date_to:         today,
+          status:          "pending",
+        }))
       );
       await refresh();
       localStorage.setItem(ADS_SYNC_LS_KEY, String(Date.now()));
@@ -266,7 +295,7 @@ export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
     } finally {
       setSyncing(false);
     }
-  }, [user, syncing, mlUserIds, refresh, toast]);
+  }, [user, syncing, mlUserIds, currentOrg, effectiveDateFrom, refresh, toast]);
 
   // Auto-sync on mount when > 10min since last sync
   useEffect(() => {

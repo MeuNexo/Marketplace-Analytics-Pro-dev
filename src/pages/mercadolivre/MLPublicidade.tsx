@@ -22,6 +22,7 @@ import { MLPeriodPicker } from "@/components/mercadolivre/MLPeriodPicker";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { useMLAds, type AdsCampaign } from "@/hooks/useMLAds";
 import { useMLAdsDerivedMetrics, type EnrichedAdsProduct } from "@/hooks/useMLAdsDerivedMetrics";
+import { useMLProductMargins } from "@/hooks/useMLProductMargins";
 import { useMLFilters } from "@/hooks/useMLFilters";
 import { useMLInventory } from "@/contexts/MLInventoryContext";
 
@@ -91,6 +92,9 @@ export default function MLAnuncios() {
     for (const it of inventoryItems) map.set(it.id, it.available_quantity ?? 0);
     return map;
   }, [inventoryItems]);
+
+  // ── Margin per product (includes ads spend deduction) ──
+  const { data: marginMap } = useMLProductMargins(currentFrom, currentTo);
 
   // ── Derived metrics hook ──
   const { enriched: enrichedProducts, global: globalDerived } = useMLAdsDerivedMetrics(
@@ -777,6 +781,7 @@ export default function MLAnuncios() {
                   >
                     <span className="inline-flex items-center gap-1">TACoS <SortIcon k="tacos" /></span>
                   </th>
+                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Margem Líq.</th>
                   <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Share Ads</th>
                   <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">ACoS BE</th>
                   <th
@@ -790,7 +795,7 @@ export default function MLAnuncios() {
               <tbody>
                 {sortedProducts.length === 0 && (
                   <tr>
-                    <td colSpan={14} className="px-6 py-8 text-center text-sm text-muted-foreground">
+                    <td colSpan={15} className="px-6 py-8 text-center text-sm text-muted-foreground">
                       Nenhum produto patrocinado encontrado.
                     </td>
                   </tr>
@@ -834,6 +839,17 @@ export default function MLAnuncios() {
                           {pctFmt(p.tacos)}
                         </span>
                       ) : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right text-xs tabular-nums">
+                      {(() => {
+                        const m = marginMap?.get(p.item_id);
+                        if (m == null) return <span className="text-muted-foreground">—</span>;
+                        return (
+                          <span className={m >= 0 ? "text-emerald-500 font-semibold" : "text-red-500 font-semibold"}>
+                            {m.toFixed(1)}%
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-3 text-right text-xs tabular-nums text-muted-foreground">
                       {p.share_ads_pct != null ? pctFmt(p.share_ads_pct) : "—"}
