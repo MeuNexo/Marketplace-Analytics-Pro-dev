@@ -556,7 +556,7 @@ export default function MercadoLivre() {
             if (widget.id === "cost_waterfall") return (
               <div key="cost_waterfall" className="grid grid-cols-1 lg:grid-cols-6 gap-3">
                 <MLCostCard
-                  gross_revenue={effectiveMetrics?.total_revenue ?? 0}
+                  gross_revenue={(costWaterfall?.paid_revenue ?? 0) + (costWaterfall?.cancelled_revenue ?? 0)}
                   cancelled_revenue={costWaterfall?.cancelled_revenue ?? 0}
                   paid_revenue={costWaterfall?.paid_revenue}
                   comissao={costWaterfall?.total_comissao ?? ordersSummary?.total_comissao ?? (effectiveMetrics?.total_revenue ?? 0) * 0.11}
