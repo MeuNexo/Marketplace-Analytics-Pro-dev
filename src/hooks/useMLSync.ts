@@ -9,8 +9,6 @@ import { useInvalidateMLQueries } from "./useMLQueries";
 import type { DateRange } from "./useMLFilters";
 
 const LAST_ML_SYNC_KEY = "ml_last_synced_at";
-const LAST_ML_SYNC_TS_KEY = "ml_last_synced_ts";
-export const AUTO_SYNC_STALE_MS = 10 * 60 * 1000;
 const SYNC_CHUNK_DAYS = 1;
 const SYNC_COOLDOWN_MS = 30_000;
 
@@ -57,7 +55,6 @@ export function useMLSync(opts: UseMLSyncOptions) {
   const { stores, resolvedMLUserIds } = useMLStore();
   const { currentOrg } = useOrganization();
   const invalidate = useInvalidateMLQueries();
-  const autoSyncTriggeredRef = useRef(false);
 
   // Subscribe to module-level state
   const state = useSyncExternalStore(_subscribe, _getSnapshot);
@@ -185,7 +182,6 @@ export function useMLSync(opts: UseMLSyncOptions) {
           const nowIso = new Date().toISOString();
           _emit({ lastSyncedAt: nowIso });
           localStorage.setItem(LAST_ML_SYNC_KEY, nowIso);
-          localStorage.setItem(LAST_ML_SYNC_TS_KEY, String(Date.now()));
 
           // Log sync
           const daysCount = Math.round((rangeEnd.getTime() - rangeStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
@@ -219,15 +215,7 @@ export function useMLSync(opts: UseMLSyncOptions) {
     [], // stable — all deps via refs
   );
 
-  const shouldAutoSync = useCallback(() => {
-    if (autoSyncTriggeredRef.current) return false;
-    autoSyncTriggeredRef.current = true;
-    const lastTs = Number(localStorage.getItem(LAST_ML_SYNC_TS_KEY) ?? 0);
-    return Date.now() - lastTs > AUTO_SYNC_STALE_MS;
-  }, []);
-
   const resetSync = useCallback(() => {
-    autoSyncTriggeredRef.current = false;
     _emit({ lastSyncedAt: null });
   }, []);
 
@@ -237,7 +225,6 @@ export function useMLSync(opts: UseMLSyncOptions) {
     setLastSyncedAt: (v: string | null) => _emit({ lastSyncedAt: v }),
     syncProgress: state.progress,
     syncFromAPI,
-    shouldAutoSync,
     resetSync,
   };
 }
