@@ -57,6 +57,7 @@ export interface AdsSummary {
   avg_cpc: number;
   avg_ctr: number;
   avg_roas: number;
+  acos_global: number;
 }
 
 export function computeAdsSummary(daily: AdsDailyStat[]): AdsSummary {
@@ -64,7 +65,7 @@ export function computeAdsSummary(daily: AdsDailyStat[]): AdsSummary {
     return {
       total_impressions: 0, total_clicks: 0, total_spend: 0,
       total_attributed_revenue: 0, total_attributed_orders: 0,
-      avg_cpc: 0, avg_ctr: 0, avg_roas: 0,
+      avg_cpc: 0, avg_ctr: 0, avg_roas: 0, acos_global: 0,
     };
   }
   const total_impressions = daily.reduce((s, d) => s + d.impressions, 0);
@@ -75,7 +76,10 @@ export function computeAdsSummary(daily: AdsDailyStat[]): AdsSummary {
   const avg_cpc  = total_clicks      > 0 ? Math.round((total_spend / total_clicks) * 100) / 100 : 0;
   const avg_ctr  = total_impressions > 0 ? Math.round((total_clicks / total_impressions) * 10000) / 100 : 0;
   const avg_roas = total_spend       > 0 ? Math.round((total_attributed_revenue / total_spend) * 100) / 100 : 0;
-  return { total_impressions, total_clicks, total_spend, total_attributed_revenue, total_attributed_orders, avg_cpc, avg_ctr, avg_roas };
+  const acos_global = total_attributed_revenue > 0
+    ? Math.round((total_spend / total_attributed_revenue) * 10000) / 100
+    : 0;
+  return { total_impressions, total_clicks, total_spend, total_attributed_revenue, total_attributed_orders, avg_cpc, avg_ctr, avg_roas, acos_global };
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -124,6 +128,9 @@ export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
     if (selectedStore !== "all" && selectedStore) return [selectedStore];
     return stores.map((s) => s.ml_user_id);
   }, [selectedStore, stores]);
+
+  const ADS_SYNC_LS_KEY = "ads_last_synced_ts";
+  const ADS_SYNC_COOLDOWN_MS = 10 * 60 * 1000;
 
   const connected = stores.length > 0;
 
@@ -251,6 +258,7 @@ export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
         )
       );
       await refresh();
+      localStorage.setItem(ADS_SYNC_LS_KEY, String(Date.now()));
       toast({ title: "Publicidade sincronizada", description: "Dados atualizados com sucesso." });
     } catch (err: any) {
       console.error("useMLAds syncNow error:", err);
@@ -259,6 +267,16 @@ export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
       setSyncing(false);
     }
   }, [user, syncing, mlUserIds, refresh, toast]);
+
+  // Auto-sync on mount when > 10min since last sync
+  useEffect(() => {
+    if (!user || mlUserIds.length === 0) return;
+    const lastTs = Number(localStorage.getItem(ADS_SYNC_LS_KEY) ?? 0);
+    if (Date.now() - lastTs > ADS_SYNC_COOLDOWN_MS) {
+      syncNow();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, scopeKey]);
 
   // Reset on scope/date change
   useEffect(() => {
