@@ -30,7 +30,7 @@ export function useMLOrders(from: string, to: string) {
 
       const { data, error } = await supabase
         .from("orders")
-        .select("comissao, frete, status, preco_unit, quantidade")
+        .select("comissao, frete, status, receita_bruta")
         .eq("organization_id", orgId)
         .in("ml_user_id", resolvedMLUserIds)
         .gte("data_pedido", from)
@@ -44,13 +44,15 @@ export function useMLOrders(from: string, to: string) {
       // Caller falls back to hardcoded percentages.
       if (rows.length === 0) return null;
 
+      const PAID = ["paid", "shipped", "delivered"];
+
       const total_comissao = rows.reduce((s, r) => s + (r.comissao ?? 0), 0);
       const total_frete = rows.reduce((s, r) => s + (r.frete ?? 0), 0);
 
-      const paidRows = rows.filter((r) => r.status === "paid");
+      const paidRows = rows.filter((r) => PAID.includes(r.status ?? ""));
       const paid_orders_count = paidRows.length;
       const paid_revenue = paidRows.reduce(
-        (s, r) => s + (r.preco_unit ?? 0) * (r.quantidade ?? 1),
+        (s, r) => s + ((r.receita_bruta as number | null) ?? 0),
         0,
       );
 

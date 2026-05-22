@@ -21,6 +21,7 @@ import {
   Package,
   RefreshCw,
   Search,
+  Megaphone,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
@@ -35,6 +36,8 @@ import { useOrganization } from "@/contexts/OrganizationContext";
 import { useMLFilters } from "@/hooks/useMLFilters";
 import { useMLSync } from "@/hooks/useMLSync";
 import { useMLMarginAnalysis } from "@/hooks/useMLMarginAnalysis";
+import { useMLCostWaterfall } from "@/hooks/useMLCostWaterfall";
+import { useMLAds } from "@/hooks/useMLAds";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -150,11 +153,29 @@ export default function MLFinanceiro() {
     currentFrom,
     currentTo,
   );
-  const summary = marginData?.summary;
   const daily = marginData?.daily ?? [];
   const byProduct = marginData?.byProduct ?? [];
   const byBrand = marginData?.byBrand ?? [];
   const byEstado = marginData?.byEstado ?? [];
+
+  // ── KPI totais: usar useMLCostWaterfall (mesma fonte da página Vendas)
+  const { data: waterfall, isLoading: waterfallLoading } = useMLCostWaterfall(currentFrom, currentTo);
+  const kpiReceita    = waterfall?.paid_revenue    ?? 0;
+  const kpiCmv        = waterfall?.cmv             ?? 0;
+  const kpiComissao   = waterfall?.total_comissao  ?? 0;
+  const kpiFrete      = waterfall?.total_frete     ?? 0;
+  const kpiImpostos   = waterfall?.total_tax       ?? 0;
+
+  // ── Publicidade: total_spend do período (ml_ads_daily_cache)
+  const { daily: adsDaily, loading: adsLoading } = useMLAds({ dateFrom: currentFrom, dateTo: currentTo });
+  const kpiPublicidade = useMemo(
+    () => Math.round(adsDaily.reduce((s, d) => s + d.spend, 0) * 100) / 100,
+    [adsDaily],
+  );
+
+  // ── Lucro Bruto = Receita - CMV - Comissão - Frete - Impostos - Publicidade
+  const kpiLucro = kpiReceita - kpiCmv - kpiComissao - kpiFrete - kpiImpostos - kpiPublicidade;
+  const kpiLucroPct = kpiReceita > 0 ? Math.round((kpiLucro / kpiReceita) * 10000) / 100 : null;
 
   // ── Supabase Realtime em orders
   useEffect(() => {
@@ -208,47 +229,65 @@ export default function MLFinanceiro() {
     setProductPage(1);
   }, [abcFilter, productSearch]);
 
-  // ── Chart data
+  // ── Chart data (merge ads daily para publicidade por dia)
+  const adsDailyByDate = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const d of adsDaily) m.set(d.date, (m.get(d.date) ?? 0) + d.spend);
+    return m;
+  }, [adsDaily]);
+
   const chartData = useMemo(
     () =>
-      daily.map((d) => ({
-        label: format(parseISO(d.date), "dd/MM", { locale: ptBR }),
-        "Lucro Bruto": Math.max(0, d.lucro),
-        CMV: d.cmv,
-        "Comissão": d.comissao,
-        Frete: d.frete,
-        Impostos: d.impostos,
-        "Margem %": d.lucro_pct ?? 0,
-      })),
-    [daily],
+      daily.map((d) => {
+        const pub = adsDailyByDate.get(d.date) ?? 0;
+        const lucroAjustado = d.lucro - pub;
+        const receitaDia = d.receita > 0 ? d.receita : 1;
+        return {
+          label: format(parseISO(d.date), "dd/MM", { locale: ptBR }),
+          "Lucro Bruto": Math.max(0, lucroAjustado),
+          CMV: d.cmv,
+          "Comissão": d.comissao,
+          Frete: d.frete,
+          Impostos: d.impostos,
+          Publicidade: pub,
+          "Margem %": d.receita > 0 ? Math.round((lucroAjustado / receitaDia) * 10000) / 100 : 0,
+        };
+      }),
+    [daily, adsDailyByDate],
   );
 
   const trendData = useMemo(
     () =>
-      daily.map((d) => ({
-        label: format(parseISO(d.date), "dd/MM", { locale: ptBR }),
-        "Lucro %": d.lucro_pct ?? 0,
-        zero: 0,
-      })),
-    [daily],
+      daily.map((d) => {
+        const pub = adsDailyByDate.get(d.date) ?? 0;
+        const lucroAjustado = d.lucro - pub;
+        const pct = d.receita > 0 ? Math.round((lucroAjustado / d.receita) * 10000) / 100 : 0;
+        return {
+          label: format(parseISO(d.date), "dd/MM", { locale: ptBR }),
+          "Lucro %": pct,
+          zero: 0,
+        };
+      }),
+    [daily, adsDailyByDate],
   );
 
   const waterfallData = useMemo(
     () => [
-      { key: "receita", label: "Receita Bruta", value: summary?.receita ?? 0 },
-      { key: "cmv", label: "(-) CMV", value: -(summary?.cmv ?? 0) },
-      { key: "comissao", label: "(-) Comissão ML", value: -(summary?.comissao ?? 0) },
-      { key: "frete", label: "(-) Frete", value: -(summary?.frete ?? 0) },
-      { key: "impostos", label: "(-) Impostos", value: -(summary?.impostos ?? 0) },
-      { key: "lucro", label: "= Lucro Bruto", value: summary?.lucro ?? 0 },
+      { key: "receita",     label: "Receita Bruta",   value: kpiReceita },
+      { key: "cmv",         label: "(-) CMV",         value: -kpiCmv },
+      { key: "comissao",    label: "(-) Comissão ML", value: -kpiComissao },
+      { key: "frete",       label: "(-) Frete",       value: -kpiFrete },
+      { key: "impostos",    label: "(-) Impostos",    value: -kpiImpostos },
+      { key: "publicidade", label: "(-) Publicidade", value: -kpiPublicidade },
+      { key: "lucro",       label: "= Lucro Bruto",   value: kpiLucro },
     ],
-    [summary],
+    [kpiReceita, kpiCmv, kpiComissao, kpiFrete, kpiImpostos, kpiPublicidade, kpiLucro],
   );
 
   // ── Guards
   if (!storeLoading && !connected) return <NotConnected />;
 
-  if (storeLoading || dataLoading) {
+  if (storeLoading || dataLoading || waterfallLoading) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-10 w-72" />
@@ -304,11 +343,11 @@ export default function MLFinanceiro() {
         </div>
       </div>
 
-      {/* ── KPI Row — 7 cards ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
+      {/* ── KPI Row — 8 cards ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
         <KPICard
           title="Receita Bruta"
-          value={currFmt(summary?.receita ?? 0)}
+          value={currFmt(kpiReceita)}
           icon={<DollarSign className="w-4 h-4" />}
           variant="minimal"
           size="compact"
@@ -316,7 +355,7 @@ export default function MLFinanceiro() {
         />
         <KPICard
           title="CMV"
-          value={currFmt(summary?.cmv ?? 0)}
+          value={currFmt(kpiCmv)}
           icon={<Package className="w-4 h-4" />}
           variant="minimal"
           size="compact"
@@ -324,7 +363,7 @@ export default function MLFinanceiro() {
         />
         <KPICard
           title="Comissão ML"
-          value={currFmt(summary?.comissao ?? 0)}
+          value={currFmt(kpiComissao)}
           icon={<Receipt className="w-4 h-4" />}
           variant="minimal"
           size="compact"
@@ -332,7 +371,7 @@ export default function MLFinanceiro() {
         />
         <KPICard
           title="Frete"
-          value={currFmt(summary?.frete ?? 0)}
+          value={currFmt(kpiFrete)}
           icon={<Truck className="w-4 h-4" />}
           variant="minimal"
           size="compact"
@@ -340,42 +379,50 @@ export default function MLFinanceiro() {
         />
         <KPICard
           title="Impostos"
-          value={currFmt(summary?.impostos ?? 0)}
+          value={currFmt(kpiImpostos)}
           icon={<Percent className="w-4 h-4" />}
           variant="minimal"
           size="compact"
           iconClassName="bg-purple-500/10 text-purple-500"
         />
         <KPICard
+          title="Publicidade"
+          value={adsLoading ? "..." : currFmt(kpiPublicidade)}
+          icon={<Megaphone className="w-4 h-4" />}
+          variant="minimal"
+          size="compact"
+          iconClassName="bg-rose-500/10 text-rose-500"
+        />
+        <KPICard
           title="Lucro Bruto"
-          value={currFmt(summary?.lucro ?? 0)}
+          value={currFmt(kpiLucro)}
           icon={<TrendingUp className="w-4 h-4" />}
-          variant={(summary?.lucro ?? 0) >= 0 ? "success" : "danger"}
+          variant={kpiLucro >= 0 ? "success" : "danger"}
           size="compact"
           iconClassName={
-            (summary?.lucro ?? 0) >= 0
+            kpiLucro >= 0
               ? "bg-emerald-500/10 text-emerald-500"
               : "bg-red-500/10 text-red-500"
           }
         />
         <KPICard
           title="Lucro Bruto %"
-          value={summary?.lucro_pct != null ? pctFmt(summary.lucro_pct) : "—"}
+          value={kpiLucroPct != null ? pctFmt(kpiLucroPct) : "—"}
           icon={<Percent className="w-4 h-4" />}
           variant={
-            summary?.lucro_pct == null
+            kpiLucroPct == null
               ? "minimal"
-              : summary.lucro_pct >= 15
+              : kpiLucroPct >= 15
               ? "success"
-              : summary.lucro_pct >= 5
+              : kpiLucroPct >= 5
               ? "warning"
               : "danger"
           }
           size="compact"
           iconClassName={
-            (summary?.lucro_pct ?? 0) >= 15
+            (kpiLucroPct ?? 0) >= 15
               ? "bg-emerald-500/10 text-emerald-500"
-              : (summary?.lucro_pct ?? 0) >= 5
+              : (kpiLucroPct ?? 0) >= 5
               ? "bg-amber-500/10 text-amber-500"
               : "bg-red-500/10 text-red-500"
           }
@@ -409,6 +456,10 @@ export default function MLFinanceiro() {
               <span className="flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 rounded-sm bg-purple-500" />
                 Impostos
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-sm bg-rose-500" />
+                Publicidade
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="h-0.5 w-4 bg-cyan-500" />
@@ -488,6 +539,13 @@ export default function MLFinanceiro() {
                 dataKey="Impostos"
                 stackId="a"
                 fill="#8b5cf6"
+                maxBarSize={32}
+              />
+              <Bar
+                yAxisId="brl"
+                dataKey="Publicidade"
+                stackId="a"
+                fill="#f43f5e"
                 radius={[3, 3, 0, 0]}
                 maxBarSize={32}
               />
@@ -524,7 +582,7 @@ export default function MLFinanceiro() {
                 ? "#10b981"
                 : "#ef4444"
               : "#ef4444";
-            const maxVal = summary?.receita ?? 1;
+            const maxVal = kpiReceita > 0 ? kpiReceita : 1;
             const widthPct =
               maxVal > 0 ? (Math.abs(step.value) / maxVal) * 100 : 0;
             return (
@@ -553,8 +611,8 @@ export default function MLFinanceiro() {
                   </span>
                 </div>
                 <span className="text-xs text-muted-foreground tabular-nums w-14 text-right shrink-0">
-                  {summary?.receita
-                    ? pctFmt((Math.abs(step.value) / summary.receita) * 100)
+                  {kpiReceita > 0
+                    ? pctFmt((Math.abs(step.value) / kpiReceita) * 100)
                     : "—"}
                 </span>
               </div>
