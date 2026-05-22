@@ -12,8 +12,9 @@ import { useMLAds } from "@/hooks/useMLAds";
 import { computeAdsSummary } from "@/hooks/useMLAds";
 import { useMLReputation } from "@/hooks/useMLReputation";
 import { useMLFilters, getFilterDates, todayUTC, getComparisonRanges } from "@/hooks/useMLFilters";
-import { useMLDailyQuery, useMLHourlyQuery, useMLProductsQuery, useMLUserQuery, useMLMonthlyDailyQuery, type DailyBreakdown, type HourlyBreakdown } from "@/hooks/useMLQueries";
+import { useMLDailyQuery, useMLHourlyQuery, useMLProductsQuery, useMLUserQuery, useMLMonthlyDailyQuery, useInvalidateMLQueries, type DailyBreakdown, type HourlyBreakdown } from "@/hooks/useMLQueries";
 import { useMLSync } from "@/hooks/useMLSync";
+import { useMLLastSync } from "@/hooks/useMLLastSync";
 import { useMLOrders } from "@/hooks/useMLOrders";
 import { useMLKPISummary } from "@/hooks/useMLKPISummary";
 import { useMLCostWaterfall } from "@/hooks/useMLCostWaterfall";
@@ -121,7 +122,9 @@ export default function MercadoLivre() {
     customRange, period,
     setSellerReputation,
   });
-  const { syncing, lastSyncedAt, syncProgress, syncFromAPI, shouldAutoSync, resetSync } = sync;
+  const { syncing, lastSyncedAt, syncProgress, syncFromAPI, resetSync } = sync;
+  const { data: lastSyncTimestamp } = useMLLastSync();
+  const invalidate = useInvalidateMLQueries();
 
   const { reputation: realReputation } = useMLReputation();
   const { daily: adsDaily } = useMLAds({ dateFrom: adsChartFrom, dateTo: currentTo });
@@ -192,37 +195,52 @@ export default function MercadoLivre() {
     return () => clearTimeout(syncTimerRef.current);
   }, [allDaily, allHourly, allProductSales, mlUser, connected, lastSyncedAt, productStockMap, setSalesCache]);
 
-  // ── Auto sync & inventory on initial load ──
-  const autoSyncDoneRef = useRef(false);
+  // ── Inventory fetch on connect (sem auto-sync) ──
   useEffect(() => {
-    if (!user || storeLoading || autoSyncDoneRef.current || !connected) return;
-    autoSyncDoneRef.current = true;
-
+    if (!user || storeLoading || !connected) return;
     const firstStore = stores.find((s) => resolvedMLUserIds.includes(s.ml_user_id));
-    if (firstStore) {
-      supabase.functions
-        .invoke("ml-inventory", { body: { ml_user_id: firstStore.ml_user_id } })
-        .then(({ data: invData }) => {
-          if (invData?.items) {
-            const stockMap: Record<string, number> = {};
-            for (const item of invData.items) stockMap[item.id] = item.available_quantity ?? 0;
-            setProductStockMap(stockMap);
-          }
-        })
-        .catch(() => {});
-    }
-
-    if (shouldAutoSync()) {
-      syncFromAPI();
-    }
-  }, [user, storeLoading, connected, stores, resolvedMLUserIds, shouldAutoSync, syncFromAPI]);
+    if (!firstStore) return;
+    supabase.functions
+      .invoke("ml-inventory", { body: { ml_user_id: firstStore.ml_user_id } })
+      .then(({ data: invData }) => {
+        if (invData?.items) {
+          const stockMap: Record<string, number> = {};
+          for (const item of invData.items) stockMap[item.id] = item.available_quantity ?? 0;
+          setProductStockMap(stockMap);
+        }
+      })
+      .catch(() => {});
+  }, [user, storeLoading, connected, stores, resolvedMLUserIds]);
 
   // Reset on scope change
   useEffect(() => {
-    autoSyncDoneRef.current = false;
     resetSync();
     setProductStockMap({});
   }, [scopeKey, resetSync]);
+
+  // ── Supabase Realtime: auto-refresh quando cron atualiza ml_daily_cache ──
+  const orgId = currentOrg?.id;
+  useEffect(() => {
+    if (!orgId || resolvedMLUserIds.length === 0) return;
+    const channel = supabase
+      .channel("ml_daily_cache_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "ml_daily_cache",
+          filter: `organization_id=eq.${orgId}`,
+        },
+        () => {
+          invalidate.invalidateAll();
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [orgId, resolvedMLUserIds, invalidate]);
 
   // ── Period confirmation ──
   const handleConfirm = useCallback(() => {
@@ -436,7 +454,7 @@ export default function MercadoLivre() {
             })()}
           </AnimatePresence>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4 min-w-0">
-            <MLPageHeader title="Vendas" lastUpdated={useRealData && lastSyncedAt ? new Date(lastSyncedAt) : null} />
+            <MLPageHeader title="Vendas" lastUpdated={lastSyncTimestamp ? new Date(lastSyncTimestamp) : null} />
             <div className="flex items-center gap-2 flex-wrap min-w-0">
               <Link to="/tv" target="_blank">
                 <Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs px-2 sm:px-3" aria-label="Modo TV">
