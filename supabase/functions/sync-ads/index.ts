@@ -146,8 +146,11 @@ async function syncSeller(
   const syncedAt = new Date().toISOString();
   const days     = daysBetween(dateFrom, dateTo);
 
+  // dailyAgg: date → totals
   const dailyAgg = new Map<string, { impressions: number; clicks: number; spend: number; revenue: number; orders: number }>();
-  const itemAgg  = new Map<string, { title: string; thumbnail: string | null; impressions: number; clicks: number; spend: number; revenue: number; orders: number }>();
+  // itemDayAgg: "date|item_id" → per-product per-day totals
+  type ItemMetrics = { title: string; thumbnail: string | null; impressions: number; clicks: number; spend: number; revenue: number; orders: number };
+  const itemDayAgg = new Map<string, ItemMetrics>();
 
   for (const day of days) {
     let offset = 0;
@@ -177,15 +180,17 @@ async function syncSeller(
         const rev = Number(it.total_amount  ?? 0);
         const ord = Number(it.units_quantity ?? 0);
 
+        // Daily totals
         const d = dailyAgg.get(day) ?? { impressions: 0, clicks: 0, spend: 0, revenue: 0, orders: 0 };
         d.impressions += p; d.clicks += cl; d.spend += sp; d.revenue += rev; d.orders += ord;
         dailyAgg.set(day, d);
 
+        // Per-product per-day (keyed by "date|item_id")
         if (it.item_id) {
-          const k = String(it.item_id);
-          const x = itemAgg.get(k) ?? { title: it.title ?? "", thumbnail: it.thumbnail ?? null, impressions: 0, clicks: 0, spend: 0, revenue: 0, orders: 0 };
+          const key = day + "|" + String(it.item_id);
+          const x = itemDayAgg.get(key) ?? { title: it.title ?? "", thumbnail: it.thumbnail ?? null, impressions: 0, clicks: 0, spend: 0, revenue: 0, orders: 0 };
           x.impressions += p; x.clicks += cl; x.spend += sp; x.revenue += rev; x.orders += ord;
-          itemAgg.set(k, x);
+          itemDayAgg.set(key, x);
         }
       }
       offset += items.length;
@@ -193,7 +198,7 @@ async function syncSeller(
     }
   }
 
-  // Upsert daily
+  // Upsert daily totals
   const dailyRows = Array.from(dailyAgg.entries()).map(([date, d]) => ({
     user_id: userId, organization_id: orgId, ml_user_id: mlUserId, seller_id: sellerId, date,
     impressions: d.impressions, clicks: d.clicks,
@@ -210,23 +215,26 @@ async function syncSeller(
     if (error) console.error("sync-ads daily upsert:", error.message);
   }
 
-  // Replace products
-  const productRows = Array.from(itemAgg.entries())
-    .sort((a, b) => b[1].spend - a[1].spend)
-    .slice(0, 100)
-    .map(([itemId, d]) => ({
-      user_id: userId, organization_id: orgId, ml_user_id: mlUserId, seller_id: sellerId,
-      item_id: itemId, title: d.title, thumbnail: d.thumbnail,
-      impressions: d.impressions, clicks: d.clicks,
-      spend: round2(d.spend), attributed_revenue: round2(d.revenue), attributed_orders: d.orders,
-      ctr:  d.impressions > 0 ? round2(d.clicks  / d.impressions * 100) : 0,
-      cpc:  d.clicks      > 0 ? round2(d.spend   / d.clicks)            : 0,
-      roas: d.spend       > 0 ? round2(d.revenue / d.spend)             : 0,
-      synced_at: syncedAt,
-    }));
+  // Upsert per-product per-day rows (série histórica)
+  const productRows = Array.from(itemDayAgg.entries())
+    .map(([key, d]) => {
+      const [date, itemId] = key.split("|");
+      return {
+        user_id: userId, organization_id: orgId, ml_user_id: mlUserId, seller_id: sellerId,
+        item_id: itemId, date, title: d.title, thumbnail: d.thumbnail,
+        impressions: d.impressions, clicks: d.clicks,
+        spend: round2(d.spend), attributed_revenue: round2(d.revenue), attributed_orders: d.orders,
+        ctr:  d.impressions > 0 ? round2(d.clicks  / d.impressions * 100) : 0,
+        cpc:  d.clicks      > 0 ? round2(d.spend   / d.clicks)            : 0,
+        roas: d.spend       > 0 ? round2(d.revenue / d.spend)             : 0,
+        synced_at: syncedAt,
+      };
+    });
   if (productRows.length > 0) {
-    await sb.from("ml_ads_products_cache").delete().eq("ml_user_id", mlUserId);
-    await sb.from("ml_ads_products_cache").insert(productRows);
+    const { error } = await sb
+      .from("ml_ads_products_cache")
+      .upsert(productRows, { onConflict: "organization_id,ml_user_id,item_id,date" });
+    if (error) console.error("sync-ads products upsert:", error.message);
   }
 
   // Campaigns
