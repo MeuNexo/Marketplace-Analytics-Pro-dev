@@ -144,7 +144,7 @@ export default function MercadoLivre() {
     adsSummary.total_spend,
   );
 
-  // KPISummary mensal separado — sempre mês corrente, independente do filtro de período
+  // Waterfall mensal — sempre mês corrente, independente do filtro de período
   const monthlyFrom = useMemo(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
@@ -154,19 +154,21 @@ export default function MercadoLivre() {
     () => adsDaily.filter((d) => d.date >= monthlyFrom && d.date <= monthlyTo).reduce((s, d) => s + d.spend, 0),
     [adsDaily, monthlyFrom, monthlyTo],
   );
-  const { data: monthlyKpiSummary } = useMLKPISummary(monthlyFrom, monthlyTo, monthlyAdsTotal);
+  const { data: monthlyCostWaterfall } = useMLCostWaterfall(monthlyFrom, monthlyTo);
 
   const currentGrossProfit = useMemo(() => {
-    if (!monthlyKpiSummary) return 0;
-    // Receita − CMV (custo produto) − custos plataforma (frete+comissão+ads) − impostos
+    if (!monthlyCostWaterfall) return 0;
+    const { paid_revenue, cmv, has_cmv, total_comissao, total_frete, total_tax, has_tax_data } = monthlyCostWaterfall;
     return Math.max(
       0,
-      monthlyKpiSummary.gross_revenue
-        - (monthlyKpiSummary.cmv_has_cost ? monthlyKpiSummary.cmv : 0)
-        - monthlyKpiSummary.custo_operacional
-        - (monthlyKpiSummary.has_tax_data ? monthlyKpiSummary.total_tax : 0),
+      paid_revenue
+        - (has_cmv ? cmv : 0)
+        - total_comissao
+        - total_frete
+        - monthlyAdsTotal
+        - (has_tax_data ? total_tax : 0),
     );
-  }, [monthlyKpiSummary]);
+  }, [monthlyCostWaterfall, monthlyAdsTotal]);
 
   // Imposto: usa SUM(orders.tax_amount) do período — dados reais, não effective_rate × receita
   const impostosTotal = kpiSummary?.has_tax_data ? (kpiSummary.total_tax || null) : null;
@@ -214,25 +216,6 @@ export default function MercadoLivre() {
       syncFromAPI();
     }
   }, [user, storeLoading, connected, stores, resolvedMLUserIds, shouldAutoSync, syncFromAPI]);
-
-  // ── Force sync when the current filter range has no cached data ──
-  // Only triggers when the range includes today (historical ranges won't be
-  // helped by a sync). Always syncs just 1 day (today) to stay inside the
-  // edge function CPU budget.
-  const rangeSyncedRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!connected || dailyLoading || syncing) return;
-    const todayStr = format(new Date(), "yyyy-MM-dd");
-    if (currentTo < todayStr) return; // historical range — sync won't help
-    const rangeKey = `${currentFrom}:${currentTo}:${scopeKey}`;
-    if (rangeSyncedRef.current === rangeKey) return;
-    const hasRangeData = allDaily.some(
-      (d) => d.date >= currentFrom && d.date <= currentTo,
-    );
-    if (hasRangeData) return;
-    rangeSyncedRef.current = rangeKey;
-    syncFromAPI({ periodDays: 1 });
-  }, [connected, dailyLoading, syncing, allDaily, currentFrom, currentTo, scopeKey, syncFromAPI]);
 
   // Reset on scope change
   useEffect(() => {
@@ -545,6 +528,7 @@ export default function MercadoLivre() {
                   currentTicket={monthlyMetrics?.avg_ticket ?? 0}
                   currentConversion={monthlyMetrics?.conversion_rate ?? 0}
                   currentGrossProfit={currentGrossProfit}
+                  grossProfitRevenue={monthlyCostWaterfall?.paid_revenue ?? 0}
                   storeId={selectedStore !== "all" ? String(selectedStore) : (stores[0]?.ml_user_id ?? undefined)}
                 />
               </div>

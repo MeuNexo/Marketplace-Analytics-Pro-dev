@@ -39,6 +39,9 @@ export function useMLDailyQuery(fetchFrom: string, fetchTo: string) {
   const userId = user?.id ?? "";
   const orgId = currentOrg?.id ?? null;
 
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const isHistorical = !!fetchTo && fetchTo < todayStr;
+
   return useQuery({
     queryKey: mlKeys.daily(userId, resolvedMLUserIds, fetchFrom, fetchTo, selectedStore),
     queryFn: async () => {
@@ -46,7 +49,7 @@ export function useMLDailyQuery(fetchFrom: string, fetchTo: string) {
       return rows.map(mapDailyRow);
     },
     enabled: !!userId && resolvedMLUserIds.length > 0 && !!fetchFrom,
-    staleTime: 2 * 60 * 1000,
+    staleTime: isHistorical ? 24 * 60 * 60 * 1000 : 2 * 60 * 1000,
     placeholderData: keepPreviousData,
   });
 }

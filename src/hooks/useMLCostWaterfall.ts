@@ -16,6 +16,10 @@ export interface CostWaterfallData {
   cmv: number;
   /** true se ao menos 1 pedido pago tem custo_unit preenchido */
   has_cmv: boolean;
+  /** SUM(tax_amount) dos pedidos pagos */
+  total_tax: number;
+  /** true se ao menos 1 pedido pago tem tax_amount > 0 */
+  has_tax_data: boolean;
   /** Receita bruta por ml_user_id (para calcular impostos no caller) */
   revenue_per_store: Map<string, number>;
 }
@@ -35,7 +39,7 @@ export function useMLCostWaterfall(from: string, to: string) {
 
       const { data, error } = await supabase
         .from("orders")
-        .select("receita_bruta, custo_unit, quantidade, frete, comissao, status, ml_user_id")
+        .select("receita_bruta, custo_unit, quantidade, frete, comissao, status, ml_user_id, tax_amount")
         .eq("organization_id", orgId)
         .in("ml_user_id", resolvedMLUserIds)
         .gte("data_pedido", from)
@@ -52,6 +56,8 @@ export function useMLCostWaterfall(from: string, to: string) {
       let total_frete = 0;
       let cmv = 0;
       let has_cmv = false;
+      let total_tax = 0;
+      let has_tax_data = false;
       const revenue_per_store = new Map<string, number>();
 
       for (const r of rows) {
@@ -71,6 +77,9 @@ export function useMLCostWaterfall(from: string, to: string) {
             has_cmv = true;
             cmv += custo * qty;
           }
+          const tax = (r.tax_amount as number | null) ?? 0;
+          if (tax > 0) has_tax_data = true;
+          total_tax += tax;
         } else if (CANCELLED_STATUSES.includes(status)) {
           cancelled_revenue += receita;
         }
@@ -83,6 +92,8 @@ export function useMLCostWaterfall(from: string, to: string) {
         total_frete,
         cmv: Math.round(cmv * 100) / 100,
         has_cmv,
+        total_tax: Math.round(total_tax * 100) / 100,
+        has_tax_data,
         revenue_per_store,
       };
     },

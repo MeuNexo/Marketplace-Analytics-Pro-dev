@@ -17,6 +17,7 @@ interface GoalsCardProps {
   currentTicket: number;
   currentConversion: number;
   currentGrossProfit?: number;
+  grossProfitRevenue?: number;
   storeId?: string;
   year?: number;
   month?: number;
@@ -62,6 +63,7 @@ export function GoalsCard({
   currentTicket,
   currentConversion,
   currentGrossProfit = 0,
+  grossProfitRevenue,
   storeId,
   year,
   month,
@@ -82,7 +84,8 @@ export function GoalsCard({
   const targetConversion  = kpi?.conversion   ?? 0;
   const targetGrossProfit = kpi?.gross_profit ?? 0;
 
-  const grossProfitPct = currentRevenue > 0 ? (currentGrossProfit / currentRevenue) * 100 : 0;
+  const gpDenominator = (grossProfitRevenue ?? 0) > 0 ? grossProfitRevenue! : currentRevenue;
+  const grossProfitPct = gpDenominator > 0 ? (currentGrossProfit / gpDenominator) * 100 : 0;
 
   const allGoals: GoalItem[] = [
     { label: "Receita Mensal", current: currentRevenue,    target: targetRevenue,     format: "currency" },
