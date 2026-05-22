@@ -158,9 +158,11 @@ export default function MercadoLivre() {
 
   const currentGrossProfit = useMemo(() => {
     if (!monthlyKpiSummary) return 0;
+    // Receita − CMV (custo produto) − custos plataforma (frete+comissão+ads) − impostos
     return Math.max(
       0,
       monthlyKpiSummary.gross_revenue
+        - (monthlyKpiSummary.cmv_has_cost ? monthlyKpiSummary.cmv : 0)
         - monthlyKpiSummary.custo_operacional
         - (monthlyKpiSummary.has_tax_data ? monthlyKpiSummary.total_tax : 0),
     );

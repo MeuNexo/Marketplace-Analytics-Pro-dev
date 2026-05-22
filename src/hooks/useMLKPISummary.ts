@@ -12,6 +12,8 @@ export interface MLKPISummary {
   gross_revenue: number;
   total_tax: number;       // SUM(orders.tax_amount) para o período
   has_tax_data: boolean;   // true se ao menos 1 order com tax_amount > 0
+  cmv: number;             // SUM(custo_unit × quantidade) — custo do produto
+  cmv_has_cost: boolean;   // true se ao menos 1 order com custo_unit preenchido
 }
 
 export function useMLKPISummary(
@@ -81,6 +83,8 @@ export function useMLKPISummary(
         gross_revenue,
         total_tax,
         has_tax_data,
+        cmv: sum_custo,
+        cmv_has_cost: markup_has_cost,
       };
     },
     enabled: !!orgId && resolvedMLUserIds.length > 0 && !!from && !!to,

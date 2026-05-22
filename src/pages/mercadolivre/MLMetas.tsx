@@ -29,7 +29,7 @@ function parseCurrency(raw: string): number {
 }
 
 function parseDecimal(raw: string): number {
-  const n = parseFloat(raw.replace(/[^\d.]/g, ""));
+  const n = parseFloat(raw.replace(",", ".").replace(/[^\d.]/g, ""));
   return isNaN(n) ? 0 : n;
 }
 
@@ -41,13 +41,13 @@ function KpiInput({ label, icon, value, onChange, format: fmt, color }: {
   format: "currency" | "number" | "percent";
   color: string;
 }) {
-  const [raw, setRaw] = useState(value > 0 ? String(Math.round(value)) : "");
+  const [raw, setRaw] = useState(value > 0 ? (fmt === "percent" ? String(value) : String(Math.round(value))) : "");
   const [lastExternal, setLastExternal] = useState(value);
 
   // Only sync from external when the parent resets (store/month change)
   if (value !== lastExternal) {
     setLastExternal(value);
-    setRaw(value > 0 ? String(Math.round(value)) : "");
+    setRaw(value > 0 ? (fmt === "percent" ? String(value) : String(Math.round(value))) : "");
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
