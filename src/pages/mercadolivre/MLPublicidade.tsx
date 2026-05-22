@@ -66,7 +66,7 @@ function NotConnected() {
 export default function MLAnuncios() {
   const [campaignSearch, setCampaignSearch] = useState("");
   const [productSearch, setProductSearch]   = useState("");
-  const [productSort, setProductSort]       = useState<{ key: "spend" | "roas" | "clicks" | "attributed_orders" | "attributed_revenue" | "ctr" | "stock" | "acos" | "cvr"; dir: "asc" | "desc" }>({ key: "spend", dir: "desc" });
+  const [productSort, setProductSort]       = useState<{ key: "spend" | "roas" | "clicks" | "attributed_orders" | "attributed_revenue" | "ctr" | "stock" | "acos" | "cvr" | "tacos"; dir: "asc" | "desc" }>({ key: "spend", dir: "desc" });
   const [productPage, setProductPage]       = useState(1);
   const [productPageSize, setProductPageSize] = useState<number>(20);
   const [campaignSort, setCampaignSort]     = useState<{ key: "daily_budget" | "spend" | "ctr" | "roas"; dir: "asc" | "desc" } | null>(null);
@@ -234,6 +234,9 @@ export default function MLAnuncios() {
       }
       if (key === "cvr") {
         return ((a.cvr ?? 0) - (b.cvr ?? 0)) * mult;
+      }
+      if (key === "tacos") {
+        return ((a.tacos ?? 0) - (b.tacos ?? 0)) * mult;
       }
       return ((a[key] ?? 0) - (b[key] ?? 0)) * mult;
     });
@@ -768,6 +771,12 @@ export default function MLAnuncios() {
                   >
                     <span className="inline-flex items-center gap-1">ACoS <SortIcon k="acos" /></span>
                   </th>
+                  <th
+                    onClick={() => toggleSort("tacos")}
+                    className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
+                  >
+                    <span className="inline-flex items-center gap-1">TACoS <SortIcon k="tacos" /></span>
+                  </th>
                   <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Share Ads</th>
                   <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">ACoS BE</th>
                   <th
@@ -781,7 +790,7 @@ export default function MLAnuncios() {
               <tbody>
                 {sortedProducts.length === 0 && (
                   <tr>
-                    <td colSpan={13} className="px-6 py-8 text-center text-sm text-muted-foreground">
+                    <td colSpan={14} className="px-6 py-8 text-center text-sm text-muted-foreground">
                       Nenhum produto patrocinado encontrado.
                     </td>
                   </tr>
@@ -816,6 +825,13 @@ export default function MLAnuncios() {
                       {p.acos != null ? (
                         <span className={p.acos_breakeven != null && p.acos > p.acos_breakeven ? "text-red-500 font-semibold" : ""}>
                           {pctFmt(p.acos)}
+                        </span>
+                      ) : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right text-xs tabular-nums">
+                      {p.tacos != null ? (
+                        <span className={p.tacos > 8 ? "text-red-500 font-semibold" : p.tacos < 4 ? "text-emerald-600" : "text-amber-600"}>
+                          {pctFmt(p.tacos)}
                         </span>
                       ) : "—"}
                     </td>

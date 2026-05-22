@@ -7,6 +7,7 @@ import type { AdsProductStat } from "./useMLAds";
 export interface EnrichedAdsProduct extends AdsProductStat {
   acos: number | null;
   cvr: number | null;
+  tacos: number | null;
   share_ads_pct: number | null;
   acos_breakeven: number | null;
   seller_sku: string | null;
@@ -81,6 +82,9 @@ export function useMLAdsDerivedMetrics(
     const cvr = p.clicks > 0
       ? Math.round((p.attributed_orders / p.clicks) * 10000) / 100
       : null;
+    const tacos = p.spend > 0 && total_revenue > 0
+      ? Math.round((p.spend / total_revenue) * 10000) / 100
+      : null;
     const share_ads_pct = total_orders > 0
       ? Math.round((p.attributed_orders / total_orders) * 10000) / 100
       : null;
@@ -91,7 +95,7 @@ export function useMLAdsDerivedMetrics(
     const acos_breakeven = unit_cost != null && avg_price > 0
       ? Math.round(((avg_price - unit_cost) / avg_price) * 10000) / 100
       : null;
-    return { ...p, acos, cvr, share_ads_pct, acos_breakeven, seller_sku };
+    return { ...p, acos, cvr, tacos, share_ads_pct, acos_breakeven, seller_sku };
   });
 
   const organic_revenue = total_revenue > totalAttributedRevenue
