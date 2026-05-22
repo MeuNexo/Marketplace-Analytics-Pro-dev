@@ -103,6 +103,7 @@ export function MLCostCard({
 
   const lucro = gross_revenue - totalDeductions;
   const lucroPositivo = lucro >= 0;
+  const paidRevenue = gross_revenue - cancelled_revenue;
 
   return (
     <motion.div
@@ -168,7 +169,7 @@ export function MLCostCard({
                 </span>
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] text-muted-foreground tabular-nums w-10 text-right">
-                    {pct(Math.abs(lucro), gross_revenue)}
+                    {pct(Math.abs(lucro), paidRevenue > 0 ? paidRevenue : gross_revenue)}
                   </span>
                   <span
                     className={`text-base font-bold tabular-nums w-24 text-right ${

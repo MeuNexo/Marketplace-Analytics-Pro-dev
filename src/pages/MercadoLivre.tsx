@@ -250,18 +250,12 @@ export default function MercadoLivre() {
       setCustomRange(resolvedRange);
       setPeriod(0);
       filters.setPopoverOpen(false);
-      const todayStr = format(new Date(), "yyyy-MM-dd");
-      const toStr = format(startOfDay(resolvedRange.to), "yyyy-MM-dd");
-      if (toStr >= todayStr) {
-        syncFromAPI({ from: resolvedRange.from, to: resolvedRange.to });
-      }
     } else if (filters.pendingPeriod !== null) {
       setCustomRange(null);
       setPeriod(filters.pendingPeriod);
       filters.setPopoverOpen(false);
-      syncFromAPI({ periodDays: filters.pendingPeriod === 0 ? 1 : filters.pendingPeriod });
     }
-  }, [filters, setCustomRange, setPeriod, syncFromAPI]);
+  }, [filters, setCustomRange, setPeriod]);
 
   // ── Filtered data ──
   const isNonZero = (d: DailyBreakdown) => d.total > 0 || d.qty > 0 || d.units_sold > 0;
