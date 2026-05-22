@@ -173,8 +173,8 @@ export default function MercadoLivre() {
     );
   }, [monthlyCostWaterfall, monthlyAdsTotal]);
 
-  // Imposto: usa SUM(orders.tax_amount) do período — dados reais, não effective_rate × receita
-  const impostosTotal = kpiSummary?.has_tax_data ? (kpiSummary.total_tax || null) : null;
+  // Imposto: usa costWaterfall (pedidos pagos) como fonte — mesmo que GoalsCard
+  const impostosTotal = costWaterfall?.has_tax_data ? costWaterfall.total_tax : null;
 
   // ── Sync state to context (debounced) ──
   const syncTimerRef = useRef<ReturnType<typeof setTimeout>>();
@@ -558,6 +558,7 @@ export default function MercadoLivre() {
                 <MLCostCard
                   gross_revenue={effectiveMetrics?.total_revenue ?? 0}
                   cancelled_revenue={costWaterfall?.cancelled_revenue ?? 0}
+                  paid_revenue={costWaterfall?.paid_revenue}
                   comissao={costWaterfall?.total_comissao ?? ordersSummary?.total_comissao ?? (effectiveMetrics?.total_revenue ?? 0) * 0.11}
                   frete={costWaterfall?.total_frete ?? ordersSummary?.total_frete ?? (effectiveMetrics?.total_revenue ?? 0) * 0.05}
                   publicidade={adsSummary.total_spend}

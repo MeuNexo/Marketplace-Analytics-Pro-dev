@@ -23,6 +23,8 @@ interface CostWaterfallCardProps {
   gross_revenue: number;
   /** Receita de pedidos cancelados/devolvidos — 0 se nenhum */
   cancelled_revenue: number;
+  /** Receita de pedidos pagos (orders filtrado por PAID_STATUSES) — denominador real do Lucro % */
+  paid_revenue?: number;
   comissao: number;
   frete: number;
   publicidade: number;
@@ -36,6 +38,7 @@ interface CostWaterfallCardProps {
 export function MLCostCard({
   gross_revenue,
   cancelled_revenue,
+  paid_revenue,
   comissao,
   frete,
   publicidade,
@@ -103,7 +106,7 @@ export function MLCostCard({
 
   const lucro = gross_revenue - totalDeductions;
   const lucroPositivo = lucro >= 0;
-  const paidRevenue = gross_revenue - cancelled_revenue;
+  const paidRevenue = (paid_revenue ?? 0) > 0 ? paid_revenue! : gross_revenue - cancelled_revenue;
 
   return (
     <motion.div
