@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v6.0
 milestone_name: Dashboard de Vendas — KPIs de Marca
 status: complete
-stopped_at: "Sessao 2026-05-21c — Phase 16 completa. Todos os gráficos de marca deployados e dados validados."
-last_updated: "2026-05-21T20:00:00Z"
-last_activity: 2026-05-21c -- Phase 16 executada. ml_product_costs 592 SKUs, orders 320/327 com custo, 327/327 com marca (7 marcas: Pralana, Sandrini, Zebu, TXC, Radade, Eldorado Company, El Dorado). sync-ml-orders v9 deployado.
+stopped_at: "Sessao 2026-05-21d — Phase 20 planejada: dashboard expansível + personalização por usuário"
+last_updated: "2026-05-21T23:00:00Z"
+last_activity: 2026-05-21d -- Phase 19 concluída (ICMS correto por estado, v11 deployado). Phase 20 planejada: KPIs expandidos + painel de personalização via localStorage.
 progress:
   total_phases: 2
   completed_phases: 1
