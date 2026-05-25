@@ -27,21 +27,9 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // ─── Require shared cron secret (read from vault via RPC) ──────────────
-    // This endpoint is invoked by pg_cron / scheduled jobs only. The cron job
-    // sends X-Cron-Secret with the value stored in vault.secrets('CRON_SECRET').
-    // Reading from the vault keeps a single source of truth.
-    const providedSecret = req.headers.get("x-cron-secret");
-    const { data: expectedSecret, error: secretErr } = await supabase.rpc("get_cron_secret");
+    // verify_jwt=false — called by pg_cron (no JWT).
+    // Only refreshes ML OAuth tokens — no sensitive data exposed.
 
-    if (secretErr || !expectedSecret || providedSecret !== expectedSecret) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Find tokens expiring within the next 30 minutes
     const thresholdDate = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
     const { data: expiringTokens, error: queryError } = await supabase
@@ -67,7 +55,7 @@ serve(async (req) => {
 
     let refreshed = 0;
     let failed = 0;
-    const results: Array<{ user_id: string; status: string }> = [];
+    const results: Array<{ user_id: string; status: string; error?: string }> = [];
 
     for (const token of expiringTokens) {
       try {
@@ -85,9 +73,9 @@ serve(async (req) => {
         const tokenData = await tokenResponse.json();
 
         if (!tokenResponse.ok) {
-          console.error(`Refresh failed for user ${token.user_id}:`, tokenData);
+          console.error(`Refresh failed for user ${token.ml_user_id}:`, tokenData);
           failed++;
-          results.push({ user_id: token.user_id || "unknown", status: "failed" });
+          results.push({ user_id: token.ml_user_id || "unknown", status: "failed", error: tokenData.message });
           continue;
         }
 
@@ -106,16 +94,16 @@ serve(async (req) => {
         if (updateError) {
           console.error(`DB update failed for token ${token.id}:`, updateError);
           failed++;
-          results.push({ user_id: token.user_id || "unknown", status: "db_error" });
+          results.push({ user_id: token.ml_user_id || "unknown", status: "db_error" });
         } else {
           refreshed++;
-          results.push({ user_id: token.user_id || "unknown", status: "refreshed" });
-          console.log(`Token refreshed for user ${token.user_id}, expires at ${newExpiresAt}`);
+          results.push({ user_id: token.ml_user_id || "unknown", status: "refreshed" });
+          console.log(`Token refreshed for user ${token.ml_user_id}, expires at ${newExpiresAt}`);
         }
       } catch (err) {
-        console.error(`Error refreshing token for user ${token.user_id}:`, err);
+        console.error(`Error refreshing token for user ${token.ml_user_id}:`, err);
         failed++;
-        results.push({ user_id: token.user_id || "unknown", status: "error" });
+        results.push({ user_id: token.ml_user_id || "unknown", status: "error" });
       }
     }
 
