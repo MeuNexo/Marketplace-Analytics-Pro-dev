@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v6.0
 milestone_name: Dashboard de Vendas — KPIs de Marca
 status: complete
-stopped_at: "Sessao 2026-05-21d — Phase 20 planejada: dashboard expansível + personalização por usuário"
-last_updated: "2026-05-21T23:00:00Z"
-last_activity: 2026-05-21d -- Phase 19 concluída (ICMS correto por estado, v11 deployado). Phase 20 planejada: KPIs expandidos + painel de personalização via localStorage.
+stopped_at: "Sessao 2026-05-22 — Phase 24 (ads fixes+TACoS) e Phase 25 (margem real+publicidade) concluídas. Pronto para Phase 16 (KPIs de Marca)."
+last_updated: "2026-05-22T00:00:00Z"
+last_activity: "2026-05-22 -- Phase 24 e 25 concluídas. Commit fb10bdf0. Próximo: /gsd:execute-phase 16"
 progress:
   total_phases: 2
   completed_phases: 1

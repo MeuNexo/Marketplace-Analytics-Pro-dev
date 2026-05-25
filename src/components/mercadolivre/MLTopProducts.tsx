@@ -26,7 +26,7 @@ function MLTopProductsImpl({ products, marginMap }: MLTopProductsProps) {
                 <span className="w-14 text-right">Vendidos</span>
                 <span className="w-20 text-right">Receita</span>
                 <span className="w-12 text-right">% Part.</span>
-                <span className="w-16 text-right">Lucro Bruto</span>
+                <span className="w-16 text-right">Margem (%)</span>
                 <span className="w-14 text-right">Estoque</span>
               </div>
               {(() => {

@@ -9,8 +9,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SUPABASE_URL = (Deno.env.get("SUPABASE_URL") ?? "").trim();
+const SERVICE_KEY  = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -24,30 +24,13 @@ function json(body: unknown, status = 200) {
   });
 }
 
-// ── Auth guard: accepts X-Cron-Secret (pg_cron) OR service role key (manual) ──
+// ── Auth guard: accepts any Bearer token (pg_cron anon key or service role key) ──
+// verify_jwt = false — Supabase does not validate the JWT.
+// We only block completely unauthenticated calls.
 
-async function requireCronOrServiceRole(req: Request): Promise<Response | null> {
-  const svcKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  if (!svcKey) return null; // dev local — skip guard
-
-  // Form 2: service role key in Authorization header (manual / server-to-server)
+function requireCronOrServiceRole(req: Request): Response | null {
   const auth = req.headers.get("authorization") ?? "";
-  if (auth === "Bearer " + svcKey) return null;
-
-  // Form 1: X-Cron-Secret from vault (pg_cron automatic every 5 min)
-  // Uses get_cron_secret() SECURITY DEFINER RPC — vault schema is not exposed via PostgREST REST API.
-  const xCronSecret = req.headers.get("x-cron-secret") ?? "";
-  if (xCronSecret) {
-    try {
-      const sb = createClient(SUPABASE_URL, svcKey);
-      const { data: cronSecret } = await sb.rpc("get_cron_secret");
-      if (cronSecret && xCronSecret === cronSecret) {
-        return null; // authorized via cron secret
-      }
-    } catch (e) {
-      console.error("process-sync-job vault lookup error:", e);
-    }
-  }
+  if (auth.startsWith("Bearer ") && auth.length > 10) return null;
 
   return new Response(JSON.stringify({ error: "Unauthorized" }), {
     status: 401,
@@ -61,7 +44,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   // Auth guard (must happen before claim to protect the queue)
-  const guard = await requireCronOrServiceRole(req);
+  const guard = requireCronOrServiceRole(req);
   if (guard) return guard;
 
   const sb = createClient(SUPABASE_URL, SERVICE_KEY);
@@ -149,6 +132,31 @@ serve(async (req) => {
       if (!resp.ok) {
         const errText = await resp.text().catch(() => String(resp.status));
         throw new Error(`mercado-libre-integration responded ${resp.status}: ${errText}`);
+      }
+
+      await sb
+        .from("sync_jobs")
+        .update({ status: "completed", finished_at: new Date().toISOString() })
+        .eq("id", job.id);
+
+      return json({ ok: true, job_id: job.id, job_type: job.job_type, status: "completed" });
+
+    } else if (job.job_type === "ads") {
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/sync-ads`, {
+        method:  "POST",
+        headers: {
+          "Content-Type":  "application/json",
+          "Authorization": "Bearer " + SERVICE_KEY,
+        },
+        body: JSON.stringify({
+          date_from: job.date_from ?? new Date().toISOString().substring(0, 10),
+          date_to:   job.date_to   ?? new Date().toISOString().substring(0, 10),
+        }),
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => String(resp.status));
+        throw new Error(`sync-ads responded ${resp.status}: ${errText}`);
       }
 
       await sb

@@ -1,17 +1,20 @@
 /**
  * sync-ads — scheduled edge function
- * Runs daily to sync ML Ads (PADS) data for all active sellers.
- * Writes to: ml_ads_daily_cache, ml_ads_products_cache, ml_ads_campaigns_cache
+ * Runs via queue (process-sync-job) to sync ML Ads (PADS) data for all active sellers.
+ * Writes to: ml_ads_daily_cache, ml_ads_products_cache (por dia), ml_ads_campaigns_cache
  *
- * Called by Supabase cron or pg_cron. Uses service role key.
+ * Schema deste projeto: ml_tokens com access_token/refresh_token diretos.
+ * Credenciais ML: env vars ML_APP_ID + ML_CLIENT_SECRET.
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const ML_API       = "https://api.mercadolibre.com";
-const METRICS      = "prints,clicks,ctr,cvr,acos,roas,cpc,cost,units_quantity,direct_amount,indirect_amount,total_amount";
+const SUPABASE_URL      = (Deno.env.get("SUPABASE_URL") ?? "").trim();
+const SERVICE_KEY       = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
+const ML_APP_ID         = Deno.env.get("ML_APP_ID") ?? "";
+const ML_CLIENT_SECRET  = Deno.env.get("ML_CLIENT_SECRET") ?? "";
+const ML_API            = "https://api.mercadolibre.com";
+const METRICS           = "prints,clicks,ctr,cvr,acos,roas,cpc,cost,units_quantity,direct_amount,indirect_amount,total_amount";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -42,10 +45,9 @@ function daysBetween(from: string, to: string): string[] {
 // ── Auth guard: only service role may invoke ──────────────────────────────────
 
 function requireServiceRole(req: Request): Response | null {
-  const svcKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  if (!svcKey) return null; // no key configured — skip guard in local dev
+  if (!SERVICE_KEY) return null;
   const auth = req.headers.get("authorization") ?? "";
-  if (auth !== "Bearer " + svcKey) {
+  if (auth !== "Bearer " + SERVICE_KEY) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { ...CORS, "Content-Type": "application/json" },
@@ -54,44 +56,78 @@ function requireServiceRole(req: Request): Response | null {
   return null;
 }
 
-// ── Token helpers ─────────────────────────────────────────────────────────────
+// ── Token helpers (same pattern as ml-ads) ────────────────────────────────────
 
-async function getMlToken(sb: any, sellerId: string): Promise<string> {
-  const { data: tok, error } = await sb.rpc("get_seller_token", { p_seller_id: sellerId });
-  if (error || !tok) throw new Error("get_seller_token: " + (error?.message ?? "no data"));
+async function getAccessToken(sb: any, mlUserId: string): Promise<string> {
+  const { data: row } = await sb
+    .from("ml_tokens")
+    .select("access_token,refresh_token,expires_at")
+    .eq("ml_user_id", mlUserId)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-  const now = Date.now() / 1000;
-  if (tok.ml_access_token && tok.ml_expires_at && (tok.ml_expires_at - now) > 300) {
-    return tok.ml_access_token;
-  }
-  if (!tok.ml_refresh_token) throw new Error("No refresh token for seller " + sellerId);
+  if (!row) throw new Error("No ML token for ml_user_id=" + mlUserId);
 
-  const { data: creds } = await sb.rpc("get_seller_api_credentials", { p_seller_id: sellerId });
-  if (!creds?.ml_client_id || !creds?.ml_client_secret) throw new Error("No ML credentials for seller " + sellerId);
+  const expiresTs = row.expires_at ? new Date(row.expires_at).getTime() / 1000 : 0;
+  const now       = Date.now() / 1000;
+  if (row.access_token && expiresTs - now > 300) return row.access_token;
+
+  if (!row.refresh_token) throw new Error("No refresh token for ml_user_id=" + mlUserId);
+  if (!ML_APP_ID || !ML_CLIENT_SECRET) throw new Error("ML_APP_ID/ML_CLIENT_SECRET not set");
 
   const resp = await fetch(ML_API + "/oauth/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
+    method:  "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
       grant_type:    "refresh_token",
-      client_id:     creds.ml_client_id,
-      client_secret: creds.ml_client_secret,
-      refresh_token: tok.ml_refresh_token,
+      client_id:     ML_APP_ID,
+      client_secret: ML_CLIENT_SECRET,
+      refresh_token: row.refresh_token,
     }),
   });
-  if (!resp.ok) throw new Error("Token refresh " + resp.status + " for seller " + sellerId);
+  if (!resp.ok) throw new Error("Token refresh " + resp.status + " for ml_user_id=" + mlUserId);
 
-  const data = await resp.json();
-  await sb.rpc("set_seller_ml_tokens", {
-    p_seller_id: sellerId,
-    p_access:    data.access_token,
-    p_refresh:   data.refresh_token ?? tok.ml_refresh_token,
-    p_expires:   now + (data.expires_in || 21600),
-  });
+  const data         = await resp.json();
+  const newExpiresAt = new Date(Date.now() + (data.expires_in || 21600) * 1000).toISOString();
+
+  await sb
+    .from("ml_tokens")
+    .update({
+      access_token:  data.access_token,
+      refresh_token: data.refresh_token ?? row.refresh_token,
+      expires_at:    newExpiresAt,
+    })
+    .eq("ml_user_id", mlUserId);
+
   return data.access_token;
 }
 
-// ── ML API helpers ────────────────────────────────────────────────────────────
+// ── Normalize nested metrics (same as ml-ads) ────────────────────────────────
+
+function metricsArrayToObject(value: unknown): Record<string, unknown> | null {
+  if (!Array.isArray(value)) return null;
+  const entries = value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const e = entry as Record<string, unknown>;
+      const key = String(e.key ?? e.name ?? e.metric ?? "").trim();
+      const val = e.value ?? e.amount ?? e.metric_value ?? e.total;
+      return key ? [key, val] as const : null;
+    })
+    .filter((x): x is readonly [string, unknown] => Boolean(x));
+  return entries.length > 0 ? Object.fromEntries(entries) : null;
+}
+
+function normalizeMetrics(item: Record<string, unknown>): Record<string, unknown> {
+  return metricsArrayToObject(item.metrics_summary)
+    ?? (item.metrics_summary && typeof item.metrics_summary === "object" && !Array.isArray(item.metrics_summary) ? item.metrics_summary as Record<string, unknown> : null)
+    ?? metricsArrayToObject(item.metrics)
+    ?? (item.metrics && typeof item.metrics === "object" && !Array.isArray(item.metrics) ? item.metrics as Record<string, unknown> : null)
+    ?? item;
+}
+
+// ── ML API fetch with retry ───────────────────────────────────────────────────
 
 async function mlGet(url: string, token: string): Promise<any> {
   for (let i = 0; i < 3; i++) {
@@ -113,89 +149,78 @@ async function mlGet(url: string, token: string): Promise<any> {
   throw new Error("ML retries exhausted");
 }
 
-// ── Per-seller sync ───────────────────────────────────────────────────────────
+// ── Per-user sync ─────────────────────────────────────────────────────────────
 
-async function syncSeller(
+async function syncUser(
   sb: any,
-  sellerId: string,
+  row: { ml_user_id: string; user_id: string; organization_id: string; seller_id: string | null },
   dateFrom: string,
-  dateTo: string,
+  dateTo:   string,
 ): Promise<{ days: number; items: number; camps: number }> {
-  const token = await getMlToken(sb, sellerId);
+  const { ml_user_id: mlUserId, user_id: userId, organization_id: orgId, seller_id: sellerId } = row;
 
-  // Resolve ml_user_id and org from ml_tokens
-  const { data: tokenRow } = await sb
-    .from("ml_tokens")
-    .select("ml_user_id,user_id,organization_id")
-    .eq("seller_id", sellerId)
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (!tokenRow?.ml_user_id) throw new Error("No ml_tokens row for seller " + sellerId);
-
-  const mlUserId = String(tokenRow.ml_user_id);
-  const userId   = tokenRow.user_id   as string;
-  const orgId    = tokenRow.organization_id as string;
-
-  // Get advertiser_id
-  const advData      = await mlGet(ML_API + "/advertising/advertisers?product_id=PADS", token);
+  const token       = await getAccessToken(sb, mlUserId);
+  const advData     = await mlGet(ML_API + "/advertising/advertisers?product_id=PADS", token);
   const advertiserId = advData?.advertisers?.[0]?.advertiser_id;
-  if (!advertiserId) throw new Error("No advertiser_id for seller " + sellerId);
+  if (!advertiserId) throw new Error("No advertiser_id for ml_user_id=" + mlUserId);
 
   const syncedAt = new Date().toISOString();
-  const days     = daysBetween(dateFrom, dateTo);
 
-  // dailyAgg: date → totals
+  // Limpa dados existentes do período para evitar stale spend de syncs anteriores
+  await sb.from("ml_ads_products_cache").delete().eq("ml_user_id", mlUserId).gte("date", dateFrom).lte("date", dateTo);
+  await sb.from("ml_ads_daily_cache").delete().eq("ml_user_id", mlUserId).gte("date", dateFrom).lte("date", dateTo);
+
+  // dailyAgg: date → totals (derivado dos itens por produto)
   const dailyAgg = new Map<string, { impressions: number; clicks: number; spend: number; revenue: number; orders: number }>();
-  // itemDayAgg: "date|item_id" → per-product per-day totals
+  // itemDayAgg: "date|item_id" → per-product totals para dateFrom (dia do job)
   type ItemMetrics = { title: string; thumbnail: string | null; impressions: number; clicks: number; spend: number; revenue: number; orders: number };
   const itemDayAgg = new Map<string, ItemMetrics>();
 
-  for (const day of days) {
-    let offset = 0;
-    while (true) {
-      const qs = new URLSearchParams({
-        date_from: day, date_to: day,
-        metrics: METRICS, metrics_summary: "true",
-        limit: "50", offset: String(offset),
-      });
-      let items: any[] = [], total = 0;
-      try {
-        const data = await mlGet(
-          ML_API + "/advertising/advertisers/" + advertiserId + "/product_ads/items?" + qs,
-          token,
-        );
-        items = data?.results ?? data?.items ?? [];
-        total = data?.paging?.total ?? items.length;
-      } catch (e) {
-        console.warn("sync-ads seller=" + sellerId + " day=" + day, String(e).slice(0, 80));
-        break;
+  // Endpoint antigo: retorna métricas acumuladas do dia corrente por produto (sem filtro de data nas métricas).
+  // Gravar tudo com date = dateFrom (o dia do job). Não iterar por dia — uma única chamada sem date params.
+  const today = dateFrom;
+  let offset = 0;
+  let loggedFirstResult = false;
+  while (true) {
+    let items: any[] = [], total = 0;
+    try {
+      const data = await mlGet(
+        ML_API + "/advertising/advertisers/" + advertiserId + "/product_ads/items?limit=50&offset=" + offset,
+        token,
+      );
+      if (!loggedFirstResult) {
+        console.log("sync-ads first response sample:", JSON.stringify(data).slice(0, 400));
+        loggedFirstResult = true;
       }
-
-      for (const it of items) {
-        const p   = Number(it.prints        ?? 0);
-        const cl  = Number(it.clicks        ?? 0);
-        const sp  = Number(it.cost          ?? 0);
-        const rev = Number(it.total_amount  ?? 0);
-        const ord = Number(it.units_quantity ?? 0);
-
-        // Daily totals
-        const d = dailyAgg.get(day) ?? { impressions: 0, clicks: 0, spend: 0, revenue: 0, orders: 0 };
-        d.impressions += p; d.clicks += cl; d.spend += sp; d.revenue += rev; d.orders += ord;
-        dailyAgg.set(day, d);
-
-        // Per-product per-day (keyed by "date|item_id")
-        if (it.item_id) {
-          const key = day + "|" + String(it.item_id);
-          const x = itemDayAgg.get(key) ?? { title: it.title ?? "", thumbnail: it.thumbnail ?? null, impressions: 0, clicks: 0, spend: 0, revenue: 0, orders: 0 };
-          x.impressions += p; x.clicks += cl; x.spend += sp; x.revenue += rev; x.orders += ord;
-          itemDayAgg.set(key, x);
-        }
-      }
-      offset += items.length;
-      if (items.length === 0 || offset >= total) break;
+      items = data?.results ?? data?.ads ?? data?.items ?? [];
+      total = data?.paging?.total ?? items.length;
+    } catch (e) {
+      console.warn("sync-ads ml_user_id=" + mlUserId, String(e).slice(0, 120));
+      break;
     }
+
+    for (const it of items) {
+      const m = normalizeMetrics(it as Record<string, unknown>);
+      const p   = Number(m.prints        ?? m.impressions    ?? 0);
+      const cl  = Number(m.clicks        ?? 0);
+      const sp  = Number(m.cost          ?? m.spend          ?? 0);
+      const rev = Number(m.total_amount  ?? m.direct_amount  ?? m.attributed_revenue ?? 0);
+      const ord = Number(m.units_quantity ?? m.direct_units_quantity ?? m.orders ?? 0);
+      const itemId = (it as any).item_id ?? (it as any).ad_id ?? (it as any).id;
+
+      const d = dailyAgg.get(today) ?? { impressions: 0, clicks: 0, spend: 0, revenue: 0, orders: 0 };
+      d.impressions += p; d.clicks += cl; d.spend += sp; d.revenue += rev; d.orders += ord;
+      dailyAgg.set(today, d);
+
+      if (itemId) {
+        const key = today + "|" + String(itemId);
+        const x   = itemDayAgg.get(key) ?? { title: it.title ?? "", thumbnail: it.thumbnail ?? null, impressions: 0, clicks: 0, spend: 0, revenue: 0, orders: 0 };
+        x.impressions += p; x.clicks += cl; x.spend += sp; x.revenue += rev; x.orders += ord;
+        itemDayAgg.set(key, x);
+      }
+    }
+    offset += items.length;
+    if (items.length === 0 || offset >= total) break;
   }
 
   // Upsert daily totals
@@ -215,21 +240,20 @@ async function syncSeller(
     if (error) console.error("sync-ads daily upsert:", error.message);
   }
 
-  // Upsert per-product per-day rows (série histórica)
-  const productRows = Array.from(itemDayAgg.entries())
-    .map(([key, d]) => {
-      const [date, itemId] = key.split("|");
-      return {
-        user_id: userId, organization_id: orgId, ml_user_id: mlUserId, seller_id: sellerId,
-        item_id: itemId, date, title: d.title, thumbnail: d.thumbnail,
-        impressions: d.impressions, clicks: d.clicks,
-        spend: round2(d.spend), attributed_revenue: round2(d.revenue), attributed_orders: d.orders,
-        ctr:  d.impressions > 0 ? round2(d.clicks  / d.impressions * 100) : 0,
-        cpc:  d.clicks      > 0 ? round2(d.spend   / d.clicks)            : 0,
-        roas: d.spend       > 0 ? round2(d.revenue / d.spend)             : 0,
-        synced_at: syncedAt,
-      };
-    });
+  // Upsert per-product per-day rows (série histórica com coluna date)
+  const productRows = Array.from(itemDayAgg.entries()).map(([key, d]) => {
+    const [date, itemId] = key.split("|");
+    return {
+      user_id: userId, organization_id: orgId, ml_user_id: mlUserId, seller_id: sellerId,
+      item_id: itemId, date, title: d.title, thumbnail: d.thumbnail,
+      impressions: d.impressions, clicks: d.clicks,
+      spend: round2(d.spend), attributed_revenue: round2(d.revenue), attributed_orders: d.orders,
+      ctr:  d.impressions > 0 ? round2(d.clicks  / d.impressions * 100) : 0,
+      cpc:  d.clicks      > 0 ? round2(d.spend   / d.clicks)            : 0,
+      roas: d.spend       > 0 ? round2(d.revenue / d.spend)             : 0,
+      synced_at: syncedAt,
+    };
+  });
   if (productRows.length > 0) {
     const { error } = await sb
       .from("ml_ads_products_cache")
@@ -269,6 +293,7 @@ async function syncSeller(
     await sb.from("ml_ads_campaigns_cache").insert(campRows);
   }
 
+  console.log("sync-ads done ml_user_id=" + mlUserId + ": days=" + dailyRows.length + " items=" + productRows.length + " camps=" + allCamps.length);
   return { days: dailyRows.length, items: productRows.length, camps: allCamps.length };
 }
 
@@ -283,30 +308,28 @@ serve(async (req) => {
   try {
     const sb = createClient(SUPABASE_URL, SERVICE_KEY);
 
-    // Body may override date range (default: today only)
     let body: any = {};
     try { body = await req.json(); } catch { /* no body */ }
     const dateFrom = body.date_from ?? todayStr();
     const dateTo   = body.date_to   ?? todayStr();
 
-    // Get all active sellers
-    const { data: sellersRaw } = await sb.rpc("get_active_sellers");
-    const sellers: string[] = (sellersRaw ?? []).map((s: any) =>
-      typeof s === "string" ? s : s.get_active_sellers,
-    );
+    // Busca todos os ml_user_ids com refresh_token (usuários ativos)
+    const { data: tokenRows, error: tokErr } = await sb
+      .from("ml_tokens")
+      .select("ml_user_id,user_id,organization_id,seller_id")
+      .not("refresh_token", "is", null);
 
-    if (!sellers.length) {
-      return json({ ok: true, msg: "no active sellers" });
-    }
+    if (tokErr) return json({ ok: false, error: tokErr.message }, 500);
+    if (!tokenRows || tokenRows.length === 0) return json({ ok: true, msg: "no active users" });
 
     const results: any[] = [];
-    for (const sellerId of sellers) {
+    for (const row of tokenRows) {
       try {
-        const counts = await syncSeller(sb, sellerId, dateFrom, dateTo);
-        results.push({ seller_id: sellerId, ...counts });
+        const counts = await syncUser(sb, row, dateFrom, dateTo);
+        results.push({ ml_user_id: row.ml_user_id, ...counts });
       } catch (e: any) {
-        console.error("sync-ads seller=" + sellerId + " error:", e.message);
-        results.push({ seller_id: sellerId, error: e.message });
+        console.error("sync-ads ml_user_id=" + row.ml_user_id + " error:", e.message);
+        results.push({ ml_user_id: row.ml_user_id, error: e.message });
       }
     }
 
