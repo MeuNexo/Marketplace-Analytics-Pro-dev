@@ -6,7 +6,7 @@ const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ANON_KEY     = Deno.env.get("SUPABASE_ANON_KEY")!;
 const ML_API       = "https://api.mercadolibre.com";
 const METRICS      = "prints,clicks,ctr,cvr,acos,roas,cpc,cost,units_quantity,direct_amount,indirect_amount,total_amount";
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hora
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -42,7 +42,6 @@ function round2(n: number)  { return Math.round(n * 100) / 100; }
 
 function metricsArrayToObject(value: unknown): Record<string, unknown> | null {
   if (!Array.isArray(value)) return null;
-
   const entries = value
     .map((entry) => {
       if (!entry || typeof entry !== "object") return null;
@@ -54,7 +53,6 @@ function metricsArrayToObject(value: unknown): Record<string, unknown> | null {
       return key ? [key, rawValue] as const : null;
     })
     .filter((entry): entry is readonly [string, unknown] => Boolean(entry));
-
   return entries.length > 0 ? Object.fromEntries(entries) : null;
 }
 
@@ -69,7 +67,7 @@ function normalizeMetrics(item: Record<string, unknown>) {
 // ── ML token retrieval ────────────────────────────────────────────────────────
 
 async function getAccessToken(admin: any, mlUserId: string): Promise<string> {
-  const ML_APP_ID       = Deno.env.get("ML_APP_ID")!;
+  const ML_APP_ID        = Deno.env.get("ML_APP_ID")!;
   const ML_CLIENT_SECRET = Deno.env.get("ML_CLIENT_SECRET")!;
 
   const { data: row } = await admin
@@ -82,16 +80,12 @@ async function getAccessToken(admin: any, mlUserId: string): Promise<string> {
 
   if (!row) throw new Error("No ML token for ml_user_id=" + mlUserId);
 
-  // Se o token ainda é válido (com 5min de margem), retorna direto
   const expiresTs = row.expires_at ? new Date(row.expires_at).getTime() / 1000 : 0;
   const now = Date.now() / 1000;
-  if (row.access_token && expiresTs - now > 300) {
-    return row.access_token;
-  }
+  if (row.access_token && expiresTs - now > 300) return row.access_token;
 
   if (!row.refresh_token) throw new Error("No refresh token available for ml_user_id=" + mlUserId);
 
-  // Renova usando as credenciais do app (env vars)
   const resp = await fetch(ML_API + "/oauth/token", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -142,6 +136,17 @@ async function mlGet(url: string, token: string): Promise<any> {
 
 // ── Sync: fetch from ML Ads API and write to cache tables ─────────────────────
 
+type DayItemMetrics = {
+  date: string;
+  title: string;
+  thumbnail: string | null;
+  impressions: number;
+  clicks: number;
+  spend: number;
+  revenue: number;
+  orders: number;
+};
+
 async function syncAds(
   admin: any,
   userId: string,
@@ -153,7 +158,6 @@ async function syncAds(
 ): Promise<void> {
   const token = await getAccessToken(admin, mlUserId);
 
-  // 1. Get advertiser_id for Product Ads (PADS)
   const advData      = await mlGet(ML_API + "/advertising/advertisers?product_id=PADS", token);
   const advertiserId = advData?.advertisers?.[0]?.advertiser_id;
   if (!advertiserId) throw new Error("No advertiser_id — PADS may not be enabled for this account");
@@ -161,10 +165,11 @@ async function syncAds(
   const syncedAt = new Date().toISOString();
   const days     = daysBetween(dateFrom, dateTo);
 
+  // dailyAgg: date → totais do dia
   const dailyAgg = new Map<string, { impressions: number; clicks: number; spend: number; revenue: number; orders: number }>();
-  const itemAgg  = new Map<string, { title: string; thumbnail: string | null; impressions: number; clicks: number; spend: number; revenue: number; orders: number }>();
+  // itemDayAgg: "date|item_id" → métricas por produto por dia (para useMLProductMargins)
+  const itemDayAgg = new Map<string, DayItemMetrics>();
 
-  // 2. Per-day item metrics (paginated)
   for (const day of days) {
     let offset = 0;
     while (true) {
@@ -187,8 +192,6 @@ async function syncAds(
       }
 
       for (const it of items) {
-        // ML Ads v2 API may return metrics flat on item, nested as an object,
-        // or as an array of { key, value } entries. Support all shapes.
         const m = normalizeMetrics(it);
         const p   = Number(m.prints        ?? m.impressions    ?? 0);
         const cl  = Number(m.clicks        ?? 0);
@@ -196,8 +199,8 @@ async function syncAds(
         const rev = Number(m.total_amount  ?? m.direct_amount  ?? 0);
         const ord = Number(m.units_quantity ?? m.direct_units_quantity ?? 0);
 
-        if (offset === 0 && day === days[0] && itemAgg.size === 0) {
-          console.log("ml-ads sample item keys:", Object.keys(it).join(","), "| metrics:", JSON.stringify(m).slice(0, 300));
+        if (offset === 0 && day === days[0] && dailyAgg.size === 0) {
+          console.log("ml-ads sample item keys:", Object.keys(it).join(","), "| metrics:", JSON.stringify(m).slice(0, 200));
         }
 
         const d = dailyAgg.get(day) ?? { impressions: 0, clicks: 0, spend: 0, revenue: 0, orders: 0 };
@@ -205,10 +208,14 @@ async function syncAds(
         dailyAgg.set(day, d);
 
         if (it.item_id) {
-          const k = String(it.item_id);
-          const x = itemAgg.get(k) ?? { title: it.title ?? "", thumbnail: it.thumbnail ?? null, impressions: 0, clicks: 0, spend: 0, revenue: 0, orders: 0 };
+          // Chave por dia+item para gravar série histórica por produto
+          const dayKey = `${day}|${String(it.item_id)}`;
+          const x = itemDayAgg.get(dayKey) ?? {
+            date: day, title: it.title ?? "", thumbnail: it.thumbnail ?? null,
+            impressions: 0, clicks: 0, spend: 0, revenue: 0, orders: 0,
+          };
           x.impressions += p; x.clicks += cl; x.spend += sp; x.revenue += rev; x.orders += ord;
-          itemAgg.set(k, x);
+          itemDayAgg.set(dayKey, x);
         }
       }
 
@@ -217,7 +224,7 @@ async function syncAds(
     }
   }
 
-  // 3. Upsert ml_ads_daily_cache
+  // Upsert ml_ads_daily_cache (uma linha por dia)
   const dailyRows = Array.from(dailyAgg.entries()).map(([date, d]) => ({
     user_id: userId, organization_id: orgId, ml_user_id: mlUserId, seller_id: sellerId, date,
     impressions: d.impressions, clicks: d.clicks,
@@ -234,26 +241,31 @@ async function syncAds(
     if (error) console.error("ml-ads daily upsert:", error.message);
   }
 
-  // 4. Replace ml_ads_products_cache (delete + insert for this store)
-  const productRows = Array.from(itemAgg.entries())
-    .sort((a, b) => b[1].spend - a[1].spend)
-    .slice(0, 100)
-    .map(([itemId, d]) => ({
+  // Upsert ml_ads_products_cache — uma linha por (produto, dia)
+  // Isso permite que useMLProductMargins filtre por período e some spend corretamente
+  const productRows = Array.from(itemDayAgg.entries()).map(([key, d]) => {
+    const sepIdx = key.indexOf("|");
+    const date   = key.slice(0, sepIdx);
+    const itemId = key.slice(sepIdx + 1);
+    return {
       user_id: userId, organization_id: orgId, ml_user_id: mlUserId, seller_id: sellerId,
-      item_id: itemId, title: d.title, thumbnail: d.thumbnail,
+      item_id: itemId, date, title: d.title, thumbnail: d.thumbnail,
       impressions: d.impressions, clicks: d.clicks,
       spend: round2(d.spend), attributed_revenue: round2(d.revenue), attributed_orders: d.orders,
       ctr:  d.impressions > 0 ? round2(d.clicks  / d.impressions * 100) : 0,
       cpc:  d.clicks      > 0 ? round2(d.spend   / d.clicks)            : 0,
       roas: d.spend       > 0 ? round2(d.revenue / d.spend)             : 0,
       synced_at: syncedAt,
-    }));
+    };
+  });
   if (productRows.length > 0) {
-    await admin.from("ml_ads_products_cache").delete().eq("ml_user_id", mlUserId);
-    await admin.from("ml_ads_products_cache").insert(productRows);
+    const { error } = await admin
+      .from("ml_ads_products_cache")
+      .upsert(productRows, { onConflict: "organization_id,ml_user_id,item_id,date" });
+    if (error) console.error("ml-ads products upsert:", error.message);
   }
 
-  // 5. Campaigns (paginated)
+  // Campaigns (paginado)
   const allCamps: any[] = [];
   let campOff = 0;
   while (true) {
@@ -284,7 +296,7 @@ async function syncAds(
       const rev = Number(m.total_amount ?? m.direct_amount ?? 0);
       const ord = Number(m.units_quantity ?? m.direct_units_quantity ?? 0);
       if (idx === 0) {
-        console.log("ml-ads campaign sample keys:", Object.keys(c).join(","), "| metrics:", JSON.stringify(m).slice(0, 300));
+        console.log("ml-ads campaign sample:", Object.keys(c).join(","), "| metrics:", JSON.stringify(m).slice(0, 200));
       }
       return {
         user_id: userId, organization_id: orgId, ml_user_id: mlUserId, seller_id: sellerId,
@@ -304,7 +316,7 @@ async function syncAds(
     await admin.from("ml_ads_campaigns_cache").insert(campRows);
   }
 
-  console.log("ml-ads sync done: days=" + dailyRows.length + " items=" + productRows.length + " camps=" + allCamps.length);
+  console.log("ml-ads sync done: days=" + dailyRows.length + " products=" + productRows.length + " camps=" + allCamps.length);
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -325,10 +337,9 @@ serve(async (req) => {
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
     const url   = new URL(req.url);
 
-    // Support both GET (URL params) and POST (JSON body) — frontend uses POST via supabase.functions.invoke
     let body: Record<string, unknown> = {};
     if (req.method !== "GET") {
-      try { body = await req.json(); } catch { /* ignore non-JSON bodies */ }
+      try { body = await req.json(); } catch { /* ignore non-JSON */ }
     }
     const mlUserIdRaw = url.searchParams.get("ml_user_id") ?? (body.ml_user_id != null ? String(body.ml_user_id) : null);
     const mlUserId    = mlUserIdRaw || null;
@@ -338,7 +349,6 @@ serve(async (req) => {
 
     if (!mlUserId) return json({ error: "ml_user_id required" }, 400);
 
-    // Lookup token row (service role reads org + seller info)
     const { data: tokenRow } = await admin
       .from("ml_tokens")
       .select("seller_id,organization_id,user_id")
@@ -353,7 +363,7 @@ serve(async (req) => {
 
     const { seller_id, organization_id: orgId, user_id: tokenUserId } = tokenRow;
 
-    // Access check: caller must be org member (or token owner for legacy)
+    // Verifica acesso: usuário deve ser membro da org
     if (orgId) {
       const { data: isMember } = await admin.rpc("is_org_member", { _user_id: user.id, _org_id: orgId });
       if (!isMember) return json({ error: "Forbidden" }, 403);
@@ -361,7 +371,7 @@ serve(async (req) => {
       return json({ error: "Forbidden" }, 403);
     }
 
-    // Check cache freshness
+    // Verifica freshness do cache
     const { data: latestDaily } = await admin
       .from("ml_ads_daily_cache")
       .select("synced_at")
@@ -376,18 +386,16 @@ serve(async (req) => {
 
     if (force || cacheAgeMs > CACHE_TTL_MS) {
       try {
-        // Allow up to 90 days of history; reject requests beyond that to avoid
-        // runaway API calls while still supporting all UI filter options.
         const maxFrom       = subDaysStr(90);
         const effectiveFrom = dateFrom < maxFrom ? maxFrom : dateFrom;
         await syncAds(admin, user.id, mlUserId, seller_id, orgId, effectiveFrom, dateTo);
       } catch (e: any) {
         console.error("ml-ads sync failed:", e.message);
-        // Continue — return whatever is already in cache
+        // Continua — retorna o que está no cache
       }
     }
 
-    // Read from cache tables
+    // Lê dados do cache com filtro de período
     const [dailyRes, campaignsRes, productsRes] = await Promise.all([
       admin
         .from("ml_ads_daily_cache")
@@ -403,12 +411,13 @@ serve(async (req) => {
         .eq("ml_user_id", mlUserId)
         .order("spend", { ascending: false }),
 
+      // Lê todas as linhas do período e agrega por item_id no servidor
       admin
         .from("ml_ads_products_cache")
-        .select("item_id,title,thumbnail,impressions,clicks,spend,attributed_revenue,attributed_orders,cpc,ctr,roas")
+        .select("item_id,title,thumbnail,impressions,clicks,spend,attributed_revenue,attributed_orders")
         .eq("ml_user_id", mlUserId)
-        .order("spend", { ascending: false })
-        .limit(50),
+        .gte("date", dateFrom)
+        .lte("date", dateTo),
     ]);
 
     const daily = (dailyRes.data ?? []).map((r: any) => ({
@@ -424,12 +433,31 @@ serve(async (req) => {
       cpc: r.cpc, ctr: r.ctr, roas: r.roas,
     }));
 
-    const products = (productsRes.data ?? []).map((r: any) => ({
-      item_id: r.item_id, title: r.title, thumbnail: r.thumbnail,
-      impressions: r.impressions, clicks: r.clicks, spend: r.spend,
-      attributed_revenue: r.attributed_revenue, attributed_orders: r.attributed_orders,
-      cpc: r.cpc, ctr: r.ctr, roas: r.roas,
-    }));
+    // Agrega produtos por item_id (múltiplas linhas/dia → um total por produto)
+    const productAgg = new Map<string, any>();
+    for (const r of productsRes.data ?? []) {
+      const ex = productAgg.get(r.item_id);
+      if (ex) {
+        ex.impressions        += r.impressions        ?? 0;
+        ex.clicks             += r.clicks             ?? 0;
+        ex.spend              += r.spend              ?? 0;
+        ex.attributed_revenue += r.attributed_revenue ?? 0;
+        ex.attributed_orders  += r.attributed_orders  ?? 0;
+      } else {
+        productAgg.set(r.item_id, { ...r });
+      }
+    }
+    const products = Array.from(productAgg.values())
+      .map((p: any) => ({
+        item_id: p.item_id, title: p.title, thumbnail: p.thumbnail,
+        impressions: p.impressions, clicks: p.clicks,
+        spend: round2(p.spend), attributed_revenue: round2(p.attributed_revenue), attributed_orders: p.attributed_orders,
+        cpc:  p.clicks > 0      ? round2(p.spend / p.clicks)                  : 0,
+        ctr:  p.impressions > 0 ? round2((p.clicks / p.impressions) * 100)    : 0,
+        roas: p.spend > 0       ? round2(p.attributed_revenue / p.spend)      : 0,
+      }))
+      .sort((a: any, b: any) => b.spend - a.spend)
+      .slice(0, 50);
 
     return json({
       adsAvailable: daily.length > 0 || campaigns.length > 0,

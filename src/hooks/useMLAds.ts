@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { format, subDays } from "date-fns";
 import { useMLStore } from "@/contexts/MLStoreContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { useOrganization } from "@/contexts/OrganizationContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -107,12 +106,20 @@ export interface UseMLAdsResult {
 }
 
 const EMPTY_SUMMARY = computeAdsSummary([]);
+const ADS_SYNC_LS_KEY     = "ads_last_synced_ts";
+const ADS_SYNC_COOLDOWN_MS = 10 * 60 * 1000;
+
+type MLAdsResponse = {
+  adsAvailable: boolean;
+  daily: AdsDailyStat[];
+  campaigns: AdsCampaign[];
+  products: AdsProductStat[];
+};
 
 export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
   const { daysBack = 30, dateFrom, dateTo } = opts;
   const { stores, selectedStore, loading: storeLoading, scopeKey, hasMLConnection } = useMLStore();
   const { user } = useAuth();
-  const { currentOrg } = useOrganization();
   const { toast } = useToast();
 
   const [loading, setLoading]   = useState(false);
@@ -131,9 +138,6 @@ export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
     return stores.map((s) => s.ml_user_id);
   }, [selectedStore, stores]);
 
-  const ADS_SYNC_LS_KEY = "ads_last_synced_ts";
-  const ADS_SYNC_COOLDOWN_MS = 10 * 60 * 1000;
-
   const connected = stores.length > 0;
 
   const effectiveDateFrom = useMemo(() => {
@@ -146,106 +150,70 @@ export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
     return format(new Date(), "yyyy-MM-dd");
   }, [dateTo]);
 
-  // Read from cache tables (DB-first — no live ML API calls)
-  const refresh = useCallback(async () => {
+  // Chama ml-ads edge function diretamente (sync síncrono ou leitura de cache)
+  const fetchAdsData = useCallback(async (force = false) => {
     if (!user || mlUserIds.length === 0) return;
-    setLoading(true);
+    force ? setSyncing(true) : setLoading(true);
     try {
-      const [dailyRes, campaignsRes, productsRes] = await Promise.all([
-        supabase
-          .from("ml_ads_daily_cache")
-          .select("*")
-          .in("ml_user_id", mlUserIds)
-          .gte("date", effectiveDateFrom)
-          .lte("date", effectiveDateTo),
-        supabase
-          .from("ml_ads_campaigns_cache")
-          .select("*")
-          .in("ml_user_id", mlUserIds),
-        supabase
-          .from("ml_ads_products_cache")
-          .select("*")
-          .in("ml_user_id", mlUserIds)
-          .gte("date", effectiveDateFrom)
-          .lte("date", effectiveDateTo),
-      ]);
+      const results = await Promise.all(
+        mlUserIds.map(async (ml_user_id) => {
+          const { data: respData, error } = await supabase.functions.invoke("ml-ads", {
+            body: {
+              ml_user_id,
+              date_from: effectiveDateFrom,
+              date_to:   effectiveDateTo,
+              ...(force && { force: true }),
+            },
+          });
+          if (error) throw error;
+          return respData as MLAdsResponse;
+        })
+      );
 
-      if (dailyRes.error) throw dailyRes.error;
-      if (campaignsRes.error) throw campaignsRes.error;
-      if (productsRes.error) throw productsRes.error;
-
-      const dailyRows = dailyRes.data ?? [];
-      const campaignRows = campaignsRes.data ?? [];
-      const productRows = productsRes.data ?? [];
-
-      // Aggregate daily rows by date (multiple stores)
+      // Agrega daily por data (múltiplas lojas)
       const dailyMap = new Map<string, AdsDailyStat>();
-      for (const row of dailyRows) {
-        const existing = dailyMap.get(row.date);
-        if (existing) {
-          existing.impressions        += row.impressions        ?? 0;
-          existing.clicks             += row.clicks             ?? 0;
-          existing.spend              += row.spend              ?? 0;
-          existing.attributed_revenue += row.attributed_revenue ?? 0;
-          existing.attributed_orders  += row.attributed_orders  ?? 0;
-        } else {
-          dailyMap.set(row.date, {
-            date:                row.date,
-            impressions:         row.impressions        ?? 0,
-            clicks:              row.clicks             ?? 0,
-            spend:               row.spend              ?? 0,
-            attributed_revenue:  row.attributed_revenue ?? 0,
-            attributed_orders:   row.attributed_orders  ?? 0,
-            cpc:                 row.cpc                ?? 0,
-            ctr:                 row.ctr                ?? 0,
-            roas:                row.roas               ?? 0,
-          });
+      for (const r of results) {
+        for (const row of r.daily ?? []) {
+          const ex = dailyMap.get(row.date);
+          if (ex) {
+            ex.impressions        += row.impressions        ?? 0;
+            ex.clicks             += row.clicks             ?? 0;
+            ex.spend              += row.spend              ?? 0;
+            ex.attributed_revenue += row.attributed_revenue ?? 0;
+            ex.attributed_orders  += row.attributed_orders  ?? 0;
+          } else {
+            dailyMap.set(row.date, { ...row });
+          }
         }
       }
-      const daily = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+      const daily = Array.from(dailyMap.values())
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .map(d => ({
+          ...d,
+          cpc:  d.clicks > 0      ? d.spend / d.clicks                  : 0,
+          ctr:  d.impressions > 0 ? (d.clicks / d.impressions) * 100    : 0,
+          roas: d.spend > 0       ? d.attributed_revenue / d.spend      : 0,
+        }));
 
-      const campaigns: AdsCampaign[] = campaignRows.map((r) => ({
-        id:                  r.campaign_id,
-        name:                r.name ?? "",
-        status:              (r.status as AdsCampaign["status"]) ?? "ended",
-        daily_budget:        r.daily_budget     ?? 0,
-        impressions:         r.impressions      ?? 0,
-        clicks:              r.clicks           ?? 0,
-        spend:               r.spend            ?? 0,
-        attributed_revenue:  r.attributed_revenue ?? 0,
-        attributed_orders:   r.attributed_orders  ?? 0,
-        cpc:                 r.cpc  ?? 0,
-        ctr:                 r.ctr  ?? 0,
-        roas:                r.roas ?? 0,
-      }));
+      const campaigns: AdsCampaign[] = results.flatMap(r => r.campaigns ?? []);
 
-      // Aggregate per item_id — sync-ads v10 writes one row per item per day
-      const productAcc = new Map<string, AdsProductStat>();
-      for (const r of productRows) {
-        const prev = productAcc.get(r.item_id);
-        if (prev) {
-          prev.impressions        += r.impressions        ?? 0;
-          prev.clicks             += r.clicks             ?? 0;
-          prev.spend              += r.spend              ?? 0;
-          prev.attributed_revenue += r.attributed_revenue ?? 0;
-          prev.attributed_orders  += r.attributed_orders  ?? 0;
-        } else {
-          productAcc.set(r.item_id, {
-            item_id:             r.item_id,
-            title:               r.title     ?? "",
-            thumbnail:           r.thumbnail ?? null,
-            impressions:         r.impressions        ?? 0,
-            clicks:              r.clicks             ?? 0,
-            spend:               r.spend              ?? 0,
-            attributed_revenue:  r.attributed_revenue ?? 0,
-            attributed_orders:   r.attributed_orders  ?? 0,
-            cpc:  0,
-            ctr:  0,
-            roas: 0,
-          });
+      // Agrega produtos por item_id (múltiplas lojas)
+      const productMap = new Map<string, AdsProductStat>();
+      for (const r of results) {
+        for (const p of r.products ?? []) {
+          const ex = productMap.get(p.item_id);
+          if (ex) {
+            ex.impressions        += p.impressions        ?? 0;
+            ex.clicks             += p.clicks             ?? 0;
+            ex.spend              += p.spend              ?? 0;
+            ex.attributed_revenue += p.attributed_revenue ?? 0;
+            ex.attributed_orders  += p.attributed_orders  ?? 0;
+          } else {
+            productMap.set(p.item_id, { ...p });
+          }
         }
       }
-      const products: AdsProductStat[] = Array.from(productAcc.values()).map((p) => ({
+      const products: AdsProductStat[] = Array.from(productMap.values()).map(p => ({
         ...p,
         cpc:  p.clicks > 0      ? p.spend / p.clicks                  : 0,
         ctr:  p.impressions > 0 ? (p.clicks / p.impressions) * 100    : 0,
@@ -254,81 +222,56 @@ export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
 
       const summary = computeAdsSummary(daily);
       setData({ daily, campaigns, products, summary });
-      setAdsAvailable(daily.length > 0 || campaigns.length > 0);
+      setAdsAvailable(results.some(r => r.adsAvailable));
+      setLastUpdated(new Date());
 
-      // lastUpdated = most recent synced_at across all rows
-      const allSyncedAt = [
-        ...dailyRows.map((r) => r.synced_at),
-        ...campaignRows.map((r) => r.synced_at),
-      ].filter(Boolean) as string[];
-      const latest = allSyncedAt.reduce<string | null>((max, v) => (!max || v > max ? v : max), null);
-      setLastUpdated(latest ? new Date(latest) : null);
+      if (force) {
+        localStorage.setItem(ADS_SYNC_LS_KEY, String(Date.now()));
+        toast({ title: "Publicidade sincronizada", description: "Dados atualizados com sucesso." });
+      }
     } catch (err: any) {
-      console.error("useMLAds cache read error:", err);
+      console.error("useMLAds fetchAdsData error:", err);
+      if (force) {
+        toast({ title: "Erro ao sincronizar", description: err.message, variant: "destructive" });
+      }
     } finally {
       setLoading(false);
-    }
-  }, [user, mlUserIds, effectiveDateFrom, effectiveDateTo]);
-
-  // Trigger a fresh sync from ML API, then re-read cache
-  const syncNow = useCallback(async () => {
-    if (!user || syncing || mlUserIds.length === 0 || !currentOrg?.id) return;
-    setSyncing(true);
-    try {
-      const today = format(new Date(), "yyyy-MM-dd");
-      await supabase.from("sync_jobs").insert(
-        mlUserIds.map((ml_user_id) => ({
-          job_type:        "ads",
-          ml_user_id,
-          organization_id: currentOrg?.id,
-          date_from:       effectiveDateFrom,
-          date_to:         today,
-          status:          "pending",
-        }))
-      );
-      await refresh();
-      localStorage.setItem(ADS_SYNC_LS_KEY, String(Date.now()));
-      toast({ title: "Publicidade sincronizada", description: "Dados atualizados com sucesso." });
-    } catch (err: any) {
-      console.error("useMLAds syncNow error:", err);
-      toast({ title: "Erro ao sincronizar", description: err.message, variant: "destructive" });
-    } finally {
       setSyncing(false);
     }
-  }, [user, syncing, mlUserIds, currentOrg, effectiveDateFrom, refresh, toast]);
+  }, [user, mlUserIds, effectiveDateFrom, effectiveDateTo, toast]);
 
-  // Auto-sync on mount when > 10min since last sync
+  const refresh = useCallback(() => fetchAdsData(false), [fetchAdsData]);
+  const syncNow = useCallback(() => fetchAdsData(true),  [fetchAdsData]);
+  const sync    = syncNow;
+
+  // Auto-sync no mount: força se >10min desde último sync, senão lê cache
   useEffect(() => {
     if (!user || mlUserIds.length === 0) return;
     const lastTs = Number(localStorage.getItem(ADS_SYNC_LS_KEY) ?? 0);
-    if (Date.now() - lastTs > ADS_SYNC_COOLDOWN_MS) {
-      syncNow();
-    }
+    fetchAdsData(Date.now() - lastTs > ADS_SYNC_COOLDOWN_MS);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, scopeKey]);
 
-  // Reset on scope/date change
+  // Reset no troca de escopo
   useEffect(() => {
     setData(null);
     setAdsAvailable(null);
     setLastUpdated(null);
   }, [scopeKey]);
 
-  // Load from cache on mount / scope change
+  // Recarrega ao mudar período de datas
   useEffect(() => {
     if (!hasMLConnection || stores.length === 0) return;
-    refresh();
+    fetchAdsData(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stores.length, scopeKey, effectiveDateFrom, effectiveDateTo]);
-
-  // Keep sync() as alias for syncNow (backward compat for existing callers)
-  const sync = syncNow;
 
   return {
     daily:     data?.daily     ?? [],
     campaigns: data?.campaigns ?? [],
     products:  data?.products  ?? [],
     summary:   data?.summary   ?? EMPTY_SUMMARY,
-    loading: storeLoading || loading,
+    loading:   storeLoading || loading,
     connected,
     isRealData: data !== null,
     adsAvailable,
