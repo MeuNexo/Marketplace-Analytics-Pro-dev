@@ -10,10 +10,10 @@ export interface MLKPISummary {
   custo_operacional: number;
   pct_custo_operacional: number;
   gross_revenue: number;
-  total_tax: number;       // SUM(orders.tax_amount) para o período
-  has_tax_data: boolean;   // true se ao menos 1 order com tax_amount > 0
-  cmv: number;             // SUM(custo_unit × quantidade) — custo do produto
-  cmv_has_cost: boolean;   // true se ao menos 1 order com custo_unit preenchido
+  total_tax: number;
+  has_tax_data: boolean;
+  cmv: number;
+  cmv_has_cost: boolean;
 }
 
 export function useMLKPISummary(
@@ -30,45 +30,31 @@ export function useMLKPISummary(
     queryFn: async (): Promise<MLKPISummary | null> => {
       if (!orgId || resolvedMLUserIds.length === 0) return null;
 
-      const { data, error } = await supabase
-        .from("orders")
-        .select("receita_bruta, custo_unit, quantidade, frete, comissao, tax_amount")
-        .eq("organization_id", orgId)
-        .in("ml_user_id", resolvedMLUserIds)
-        .gte("data_pedido", from)
-        .lte("data_pedido", to);
+      const { data, error } = await supabase.rpc("get_kpi_summary", {
+        p_org_id:   orgId,
+        p_user_ids: resolvedMLUserIds,
+        p_from:     from.slice(0, 10),
+        p_to:       to.slice(0, 10),
+      });
 
       if (error) throw error;
 
-      const rows = data ?? [];
-      if (rows.length === 0) return null;
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row) return null;
 
-      let sum_receita = 0;
-      let sum_custo = 0;
-      let markup_has_cost = false;
+      const gross_revenue  = Number(row.gross_revenue)  || 0;
+      const total_frete    = Number(row.total_frete)    || 0;
+      const total_comissao = Number(row.total_comissao) || 0;
+      const total_tax      = Number(row.total_tax)      || 0;
+      const cmv            = Number(row.cmv)            || 0;
+      const has_tax_data   = Boolean(row.has_tax_data);
+      const cmv_has_cost   = Boolean(row.cmv_has_cost);
 
-      for (const r of rows) {
-        const receita = r.receita_bruta ?? 0;
-        const custo = r.custo_unit;
-        const qty = r.quantidade ?? 1;
-        sum_receita += receita;
-        if (custo != null) {
-          markup_has_cost = true;
-          sum_custo += custo * qty;
-        }
-      }
+      if (gross_revenue === 0 && cmv === 0 && total_frete === 0) return null;
 
-      const markup_ratio =
-        markup_has_cost && sum_custo > 0 ? sum_receita / sum_custo : null;
-
-      const total_tax = rows.reduce((s, r) => s + (r.tax_amount ?? 0), 0);
-      const has_tax_data = rows.some((r) => (r.tax_amount ?? 0) > 0);
-
-      const total_frete = rows.reduce((s, r) => s + (r.frete ?? 0), 0);
-      const total_comissao = rows.reduce((s, r) => s + (r.comissao ?? 0), 0);
+      const markup_ratio = cmv_has_cost && cmv > 0 ? gross_revenue / cmv : null;
       const custo_plataforma = total_frete + total_comissao;
       const custo_operacional = custo_plataforma + ads_total;
-      const gross_revenue = sum_receita;
       const pct_custo_operacional =
         gross_revenue > 0
           ? Math.round((custo_operacional / gross_revenue) * 10000) / 100
@@ -76,15 +62,15 @@ export function useMLKPISummary(
 
       return {
         markup_ratio,
-        markup_has_cost,
+        markup_has_cost: cmv_has_cost,
         custo_plataforma,
         custo_operacional,
         pct_custo_operacional,
         gross_revenue,
         total_tax,
         has_tax_data,
-        cmv: sum_custo,
-        cmv_has_cost: markup_has_cost,
+        cmv,
+        cmv_has_cost,
       };
     },
     enabled: !!orgId && resolvedMLUserIds.length > 0 && !!from && !!to,

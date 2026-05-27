@@ -411,13 +411,15 @@ serve(async (req) => {
         .eq("ml_user_id", mlUserId)
         .order("spend", { ascending: false }),
 
-      // Lê todas as linhas do período e agrega por item_id no servidor
+      // Lê top produtos por spend — LIMIT defensivo evita carregar todo o período
       admin
         .from("ml_ads_products_cache")
         .select("item_id,title,thumbnail,impressions,clicks,spend,attributed_revenue,attributed_orders")
         .eq("ml_user_id", mlUserId)
         .gte("date", dateFrom)
-        .lte("date", dateTo),
+        .lte("date", dateTo)
+        .order("spend", { ascending: false })
+        .limit(500),
     ]);
 
     const daily = (dailyRes.data ?? []).map((r: any) => ({
