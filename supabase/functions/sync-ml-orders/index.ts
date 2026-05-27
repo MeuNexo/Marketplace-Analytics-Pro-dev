@@ -520,7 +520,8 @@ serve(async (req) => {
       const { data: costRows } = await supabaseAdmin
         .from("ml_product_costs")
         .select("item_id, seller_sku, cost, organization_id, user_id")
-        .or(`user_id.eq.${userId}${organizationId ? `,organization_id.eq.${organizationId}` : ""}`);
+        .or(`user_id.eq.${userId}${organizationId ? `,organization_id.eq.${organizationId}` : ""}`)
+        .limit(50000);
       for (const r of (costRows ?? []) as any[]) {
         if (r.cost == null) continue;
         if (r.item_id) costMap.set(r.item_id, Number(r.cost));

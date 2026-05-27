@@ -84,53 +84,30 @@ serve(async (req) => {
       date: string;
       synced_at?: string | null;
     }> = [];
+    // Guard: if no scope filters can be built, return empty immediately
+    const orFilterParts: string[] = [];
+    if (ml_user_ids.length > 0) orFilterParts.push(`ml_user_id.in.(${ml_user_ids.join(",")})`);
+    if (organizationIds.length > 0) orFilterParts.push(`organization_id.in.(${organizationIds.join(",")})`);
+    if (orFilterParts.length === 0) {
+      return jsonResponse({ success: true, products: [], total_raw_rows: 0, deduped_rows: 0, aggregated_count: 0 });
+    }
+    const orFilter = orFilterParts.join(",");
+
     let from = 0;
     while (from < MAX_ROWS) {
-      const userScopedQuery = supabase
+      const { data: page, error } = await supabase
         .from("ml_product_daily_cache")
         .select("item_id, title, thumbnail, qty_sold, revenue, ml_user_id, date, synced_at")
-        .eq("user_id", userId)
-        .in("ml_user_id", ml_user_ids)
+        .or(orFilter)
         .gte("date", date_from)
         .lte("date", date_to)
         .order("date", { ascending: true })
+        .order("synced_at", { ascending: false })
         .range(from, from + PAGE - 1);
-
-      const { data: userPage, error } = await userScopedQuery;
 
       if (error) {
         console.error("Query error:", error);
         return jsonResponse({ error: "Database query failed" }, 500);
-      }
-
-      let page = userPage || [];
-      if (organizationIds.length > 0) {
-        const { data: orgPage, error: orgError } = await supabase
-          .from("ml_product_daily_cache")
-          .select("item_id, title, thumbnail, qty_sold, revenue, ml_user_id, date, synced_at")
-          .in("organization_id", organizationIds)
-          .in("ml_user_id", ml_user_ids)
-          .gte("date", date_from)
-          .lte("date", date_to)
-          .order("date", { ascending: true })
-          .order("synced_at", { ascending: false })
-          .range(from, from + PAGE - 1);
-
-        if (orgError) {
-          console.error("Organization query error:", orgError);
-          return jsonResponse({ error: "Database query failed" }, 500);
-        }
-
-        const merged = [...page, ...(orgPage || [])].sort((a: any, b: any) =>
-          String(b.synced_at || "").localeCompare(String(a.synced_at || "")),
-        );
-        const seen = new Set<string>();
-        page = merged.filter((row: any) => {
-          const key = `${row.ml_user_id || ""}:${row.date}:${row.item_id}`;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
       }
 
       if (!page || page.length === 0) break;

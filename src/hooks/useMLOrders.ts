@@ -34,7 +34,8 @@ export function useMLOrders(from: string, to: string) {
         .eq("organization_id", orgId)
         .in("ml_user_id", resolvedMLUserIds)
         .gte("data_pedido", from)
-        .lte("data_pedido", to);
+        .lte("data_pedido", to)
+        .limit(50000);
 
       if (error) throw error;
 

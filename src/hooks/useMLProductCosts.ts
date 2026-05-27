@@ -33,7 +33,8 @@ export function useMLProductCosts() {
       const { data, error } = await supabase
         .from("ml_product_costs")
         .select("item_id, cost, tax_rate, seller_sku")
-        .eq("user_id", user.id);
+        .eq("user_id", user.id)
+        .limit(10000);
       if (error) { console.warn("useMLProductCosts fetch error", error); return; }
       const map = new Map<string, ProductCost>();
       for (const row of data ?? []) {
