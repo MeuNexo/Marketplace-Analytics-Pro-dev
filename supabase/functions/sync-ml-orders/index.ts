@@ -540,48 +540,20 @@ serve(async (req) => {
 
     let upserted = 0;
     if (records.length > 0) {
-      // upsert_order_preserve_cost preserva custo_unit existente (não sobrescreve histórico)
-      for (const r of records) {
-        const { error: upsertErr } = await supabaseAdmin.rpc(
-          "upsert_order_preserve_cost",
-          {
-            p_ml_order_id:     r.ml_order_id,
-            p_ml_user_id:      r.ml_user_id,
-            p_item_id:         r.item_id,
-            p_variation_id:    r.variation_id,
-            p_seller_id:       r.seller_id,
-            p_user_id:         r.user_id,
-            p_organization_id: r.organization_id,
-            p_sku:             r.sku,
-            p_titulo:          r.titulo,
-            p_listing_type:    r.listing_type,
-            p_quantidade:      r.quantidade,
-            p_preco_unit:      r.preco_unit,
-            p_comissao:        r.comissao,
-            p_frete:           r.frete,
-            p_status:          r.status,
-            p_data_pedido:     r.data_pedido,
-            p_data_pagamento:  r.data_pagamento,
-            p_estado:          r.estado,
-            p_cidade:          r.cidade,
-            p_comprador:       r.comprador,
-            p_synced_at:       r.synced_at,
-            p_custo_unit:      r.custo_unit,
-            p_tax_rate:        r.tax_rate,
-            p_tax_amount:      r.tax_amount,
-            p_uf_origem:       r.uf_origem,
-            p_receita_bruta:   r.receita_bruta,
-            p_receita_liquida: r.receita_liquida,
-            p_marca:           r.marca,
-          },
-        );
-        if (upsertErr) {
-          console.warn(`upsert_order_preserve_cost failed for order ${r.ml_order_id}:`, upsertErr.message);
-        } else {
-          upserted++;
-        }
+      // Batch upsert via RPC — 1 round-trip para todos os pedidos do lote
+      const { data: batchCount, error: batchErr } = await supabaseAdmin.rpc(
+        "batch_upsert_orders",
+        { p_records: JSON.stringify(records) },
+      );
+
+      if (batchErr) {
+        console.error("batch_upsert_orders failed:", batchErr.message);
+        // Fallback: marcar 0 upsertados mas continuar o fluxo
+        upserted = 0;
+      } else {
+        upserted = (batchCount as number) ?? records.length;
       }
-      console.log(`Upserted ${upserted}/${records.length} orders (cost preserved)`);
+      console.log(`Batch upserted ${upserted}/${records.length} orders (cost preserved, 1 RPC)`);
     }
 
     // ── Log to ml_sync_log ────────────────────────────────────────────────────
