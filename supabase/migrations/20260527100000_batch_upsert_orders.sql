@@ -19,7 +19,7 @@ BEGIN
   )
   SELECT
     (r->>'ml_order_id'),
-    (r->>'ml_user_id')::uuid,
+    (r->>'ml_user_id'),
     (r->>'item_id'),
     (r->>'variation_id'),
     (r->>'seller_id'),
