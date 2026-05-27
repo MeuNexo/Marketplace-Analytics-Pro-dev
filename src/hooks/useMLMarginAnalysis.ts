@@ -3,8 +3,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useMLStore } from "@/contexts/MLStoreContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
 
-const PAID = ["paid", "shipped", "delivered"] as const;
-
 export interface MarginRow {
   receita: number;
   cmv: number;
@@ -52,98 +50,81 @@ export function useMLMarginAnalysis(dateFrom: string, dateTo: string) {
     queryFn: async (): Promise<MarginAnalysisResult> => {
       if (!currentOrg?.id || !resolvedMLUserIds.length) return emptyResult();
 
-      const { data, error } = await supabase
-        .from("orders")
-        .select(
-          "data_pedido,receita_bruta,custo_unit,quantidade,comissao,frete,tax_amount,item_id,titulo,sku,marca,estado,listing_type",
-        )
-        .eq("organization_id", currentOrg.id)
-        .in("ml_user_id", resolvedMLUserIds)
-        .in("status", [...PAID])
-        .gte("data_pedido", dateFrom)
-        .lte("data_pedido", dateTo)
-        .not("item_id", "is", null);
+      const orgId = currentOrg.id;
+      const from  = dateFrom.substring(0, 10);
+      const to    = dateTo.substring(0, 10);
 
-      if (error) throw error;
-      const rows = data ?? [];
+      // Todas as 5 queries em paralelo — o Postgres agrega, o browser só recebe resumos
+      const [summaryRes, dayRes, productRes, brandRes, estadoRes] = await Promise.all([
+        supabase.rpc("get_margin_summary", {
+          p_org_id: orgId, p_user_ids: resolvedMLUserIds, p_from: from, p_to: to,
+        }),
+        supabase.rpc("get_margin_by_day", {
+          p_org_id: orgId, p_user_ids: resolvedMLUserIds, p_from: from, p_to: to,
+        }),
+        supabase.rpc("get_margin_by_product", {
+          p_org_id: orgId, p_user_ids: resolvedMLUserIds, p_from: from, p_to: to,
+        }),
+        supabase.rpc("get_margin_by_brand", {
+          p_org_id: orgId, p_user_ids: resolvedMLUserIds, p_from: from, p_to: to,
+        }),
+        supabase.rpc("get_margin_by_estado", {
+          p_org_id: orgId, p_user_ids: resolvedMLUserIds, p_from: from, p_to: to,
+        }),
+      ]);
 
-      // Aggregate maps
-      const dayMap = new Map<string, DayMarginRow>();
-      const productMap = new Map<string, ProductMarginRow>();
-      const brandMap = new Map<string, MarginRow & { marca: string }>();
-      const estadoMap = new Map<string, MarginRow & { estado: string }>();
+      if (summaryRes.error) throw summaryRes.error;
+      if (dayRes.error)     throw dayRes.error;
+      if (productRes.error) throw productRes.error;
+      if (brandRes.error)   throw brandRes.error;
+      if (estadoRes.error)  throw estadoRes.error;
 
-      for (const r of rows) {
-        const receita = (r.receita_bruta as number) ?? 0;
-        const qty = (r.quantidade as number) ?? 1;
-        const cmv = ((r.custo_unit as number) ?? 0) * qty;
-        const comissao = (r.comissao as number) ?? 0;
-        const frete = (r.frete as number) ?? 0;
-        const impostos = (r.tax_amount as number) ?? 0;
-        const lucro = receita - cmv - comissao - frete - impostos;
-        const has_cmv = (r.custo_unit as number | null) != null;
-        const date = ((r.data_pedido as string) ?? "").substring(0, 10);
-        const item_id = r.item_id as string;
-        const marca = (r.marca as string | null) ?? "Sem marca";
-        const estado = (r.estado as string | null) ?? "Desconhecido";
+      const s = summaryRes.data?.[0];
 
-        // day
-        const d = dayMap.get(date) ?? { ...zeroMarginRow(), date };
-        addToRow(d, receita, cmv, comissao, frete, impostos, lucro, qty, has_cmv);
-        dayMap.set(date, d);
-
-        // product
-        const p = productMap.get(item_id) ?? {
-          ...zeroMarginRow(),
-          item_id,
-          titulo: (r.titulo as string) ?? item_id,
-          sku: (r.sku as string | null) ?? null,
-          listing_type: (r.listing_type as string | null) ?? null,
-          curva: "C" as const,
-        };
-        addToRow(p, receita, cmv, comissao, frete, impostos, lucro, qty, has_cmv);
-        productMap.set(item_id, p);
-
-        // brand
-        const b = brandMap.get(marca) ?? { ...zeroMarginRow(), marca };
-        addToRow(b, receita, cmv, comissao, frete, impostos, lucro, qty, has_cmv);
-        brandMap.set(marca, b);
-
-        // estado
-        const e = estadoMap.get(estado) ?? { ...zeroMarginRow(), estado };
-        addToRow(e, receita, cmv, comissao, frete, impostos, lucro, qty, has_cmv);
-        estadoMap.set(estado, e);
-      }
-
-      // Compute lucro_pct for all maps
-      finalizePct(dayMap);
-      finalizePct(productMap);
-      finalizePct(brandMap);
-      finalizePct(estadoMap);
-
-      // Curva ABC para produtos (por lucro_bruto R$, ordenado desc)
-      const productsSorted = Array.from(productMap.values()).sort((a, b) => b.lucro - a.lucro);
-      const totalLucroPositivo = productsSorted.reduce((s, p) => s + Math.max(p.lucro, 0), 0);
+      // Curva ABC calculada no cliente sobre os dados já agregados por produto
+      const productsSorted = (productRes.data ?? []) as ProductMarginRow[];
+      const totalLucro = productsSorted.reduce((acc, p) => acc + Math.max(Number(p.lucro), 0), 0);
       let accLucro = 0;
       for (const p of productsSorted) {
-        if (p.lucro > 0) accLucro += p.lucro;
-        const pct = totalLucroPositivo > 0 ? accLucro / totalLucroPositivo : 1;
-        p.curva = pct <= 0.8 ? "A" : pct <= 0.95 ? "B" : "C";
-        productMap.set(p.item_id, p);
+        if (Number(p.lucro) > 0) accLucro += Number(p.lucro);
+        const pct = totalLucro > 0 ? accLucro / totalLucro : 1;
+        p.curva = pct <= 0.80 ? "A" : pct <= 0.95 ? "B" : "C";
+        // Garantir tipos numéricos (RPC retorna strings em alguns drivers)
+        p.receita   = Number(p.receita);
+        p.cmv       = Number(p.cmv);
+        p.comissao  = Number(p.comissao);
+        p.frete     = Number(p.frete);
+        p.impostos  = Number(p.impostos);
+        p.lucro     = Number(p.lucro);
+        p.lucro_pct = p.lucro_pct != null ? Number(p.lucro_pct) : null;
+        p.pedidos   = Number(p.pedidos);
+        p.unidades  = Number(p.unidades);
+        p.has_cmv   = Boolean(p.has_cmv);
       }
 
-      // Summary
-      const summary = buildSummary(rows);
-
-      // Daily sorted
-      const daily = Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+      const summary: MarginSummary = {
+        receita:            Number(s?.receita ?? 0),
+        cmv:                Number(s?.cmv ?? 0),
+        comissao:           Number(s?.comissao ?? 0),
+        frete:              Number(s?.frete ?? 0),
+        impostos:           Number(s?.impostos ?? 0),
+        lucro:              Number(s?.lucro ?? 0),
+        lucro_pct:          s?.lucro_pct != null ? Number(s.lucro_pct) : null,
+        pedidos:            Number(s?.pedidos ?? 0),
+        unidades:           Number(s?.unidades ?? 0),
+        has_cmv:            false,
+        ticket_medio:       Number(s?.ticket_medio ?? 0),
+        lucro_medio_pedido: Number(s?.pedidos ?? 0) > 0
+          ? Number(s?.lucro ?? 0) / Number(s?.pedidos ?? 1)
+          : 0,
+      };
 
       return {
         summary,
-        daily,
+        daily:     (dayRes.data ?? []).map(normalizeRow) as DayMarginRow[],
         byProduct: productsSorted,
-        byBrand: Array.from(brandMap.values()).sort((a, b) => b.lucro - a.lucro),
-        byEstado: Array.from(estadoMap.values()).sort((a, b) => b.lucro - a.lucro),
+        byBrand:   (brandRes.data ?? []).map(normalizeBrand),
+        byEstado:  (estadoRes.data ?? []).map(normalizeEstado),
       };
     },
     enabled: !!currentOrg?.id && resolvedMLUserIds.length > 0,
@@ -151,78 +132,47 @@ export function useMLMarginAnalysis(dateFrom: string, dateTo: string) {
   });
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function zeroMarginRow(): MarginRow {
-  return {
-    receita: 0,
-    cmv: 0,
-    comissao: 0,
-    frete: 0,
-    impostos: 0,
-    lucro: 0,
-    lucro_pct: null,
-    pedidos: 0,
-    unidades: 0,
-    has_cmv: false,
-  };
-}
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function emptyResult(): MarginAnalysisResult {
+  const zero: MarginSummary = {
+    receita: 0, cmv: 0, comissao: 0, frete: 0, impostos: 0,
+    lucro: 0, lucro_pct: null, pedidos: 0, unidades: 0,
+    has_cmv: false, ticket_medio: 0, lucro_medio_pedido: 0,
+  };
+  return { summary: zero, daily: [], byProduct: [], byBrand: [], byEstado: [] };
+}
+
+function normalizeRow(r: Record<string, unknown>): DayMarginRow {
   return {
-    summary: { ...zeroMarginRow(), ticket_medio: 0, lucro_medio_pedido: 0 },
-    daily: [],
-    byProduct: [],
-    byBrand: [],
-    byEstado: [],
+    date:     String(r.date ?? "").substring(0, 10),
+    receita:  Number(r.receita), cmv: Number(r.cmv),
+    comissao: Number(r.comissao), frete: Number(r.frete),
+    impostos: Number(r.impostos), lucro: Number(r.lucro),
+    lucro_pct: r.lucro_pct != null ? Number(r.lucro_pct) : null,
+    pedidos:  Number(r.pedidos), unidades: Number(r.pedidos),
+    has_cmv:  false,
   };
 }
 
-function addToRow(
-  row: MarginRow,
-  receita: number,
-  cmv: number,
-  comissao: number,
-  frete: number,
-  impostos: number,
-  lucro: number,
-  qty: number,
-  has_cmv: boolean,
-) {
-  row.receita += receita;
-  row.cmv += cmv;
-  row.comissao += comissao;
-  row.frete += frete;
-  row.impostos += impostos;
-  row.lucro += lucro;
-  row.pedidos += 1;
-  row.unidades += qty;
-  if (has_cmv) row.has_cmv = true;
+function normalizeBrand(r: Record<string, unknown>): MarginRow & { marca: string } {
+  return {
+    marca:    String(r.marca ?? "Sem marca"),
+    receita:  Number(r.receita), cmv: Number(r.cmv),
+    comissao: Number(r.comissao), frete: Number(r.frete),
+    impostos: Number(r.impostos), lucro: Number(r.lucro),
+    lucro_pct: r.lucro_pct != null ? Number(r.lucro_pct) : null,
+    pedidos:  Number(r.pedidos), unidades: Number(r.pedidos),
+    has_cmv:  Boolean(r.has_cmv),
+  };
 }
 
-function finalizePct(map: Map<string, MarginRow & Record<string, unknown>>) {
-  for (const row of map.values()) {
-    row.lucro_pct =
-      row.receita > 0 ? Math.round((row.lucro / row.receita) * 10000) / 100 : null;
-  }
-}
-
-function buildSummary(rows: Record<string, unknown>[]): MarginSummary {
-  const s = zeroMarginRow();
-  for (const r of rows) {
-    const receita = (r.receita_bruta as number) ?? 0;
-    const qty = (r.quantidade as number) ?? 1;
-    const cmv = ((r.custo_unit as number) ?? 0) * qty;
-    const comissao = (r.comissao as number) ?? 0;
-    const frete = (r.frete as number) ?? 0;
-    const impostos = (r.tax_amount as number) ?? 0;
-    const lucro = receita - cmv - comissao - frete - impostos;
-    const has_cmv = (r.custo_unit as number | null) != null;
-    addToRow(s, receita, cmv, comissao, frete, impostos, lucro, qty, has_cmv);
-  }
-  s.lucro_pct = s.receita > 0 ? Math.round((s.lucro / s.receita) * 10000) / 100 : null;
-  const ticket_medio = s.pedidos > 0 ? Math.round((s.receita / s.pedidos) * 100) / 100 : 0;
-  const lucro_medio_pedido =
-    s.pedidos > 0 ? Math.round((s.lucro / s.pedidos) * 100) / 100 : 0;
-  return { ...s, ticket_medio, lucro_medio_pedido };
+function normalizeEstado(r: Record<string, unknown>): MarginRow & { estado: string } {
+  return {
+    estado:   String(r.estado ?? "Desconhecido"),
+    receita:  Number(r.receita), lucro: Number(r.lucro),
+    lucro_pct: r.lucro_pct != null ? Number(r.lucro_pct) : null,
+    pedidos:  Number(r.pedidos), unidades: Number(r.pedidos),
+    cmv: 0, comissao: 0, frete: 0, impostos: 0, has_cmv: false,
+  };
 }

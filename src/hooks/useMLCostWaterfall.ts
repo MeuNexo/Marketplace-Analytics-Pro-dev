@@ -24,9 +24,6 @@ export interface CostWaterfallData {
   revenue_per_store: Map<string, number>;
 }
 
-const PAID_STATUSES = ["paid", "shipped", "delivered"];
-const CANCELLED_STATUSES = ["cancelled", "returned"];
-
 export function useMLCostWaterfall(from: string, to: string) {
   const { resolvedMLUserIds } = useMLStore();
   const { currentOrg } = useOrganization();
@@ -37,64 +34,33 @@ export function useMLCostWaterfall(from: string, to: string) {
     queryFn: async (): Promise<CostWaterfallData | null> => {
       if (!orgId || resolvedMLUserIds.length === 0) return null;
 
-      const { data, error } = await supabase
-        .from("orders")
-        .select("receita_bruta, custo_unit, quantidade, frete, comissao, status, ml_user_id, tax_amount")
-        .eq("organization_id", orgId)
-        .in("ml_user_id", resolvedMLUserIds)
-        .gte("data_pedido", from)
-        .lte("data_pedido", to);
+      const { data, error } = await supabase.rpc("get_cost_waterfall", {
+        p_org_id:   orgId,
+        p_user_ids: resolvedMLUserIds,
+        p_from:     from.substring(0, 10),
+        p_to:       to.substring(0, 10),
+      });
 
       if (error) throw error;
+      const r = data?.[0];
+      if (!r) return null;
 
-      const rows = data ?? [];
-      if (rows.length === 0) return null;
-
-      let paid_revenue = 0;
-      let cancelled_revenue = 0;
-      let total_comissao = 0;
-      let total_frete = 0;
-      let cmv = 0;
-      let has_cmv = false;
-      let total_tax = 0;
-      let has_tax_data = false;
-      const revenue_per_store = new Map<string, number>();
-
-      for (const r of rows) {
-        const receita = (r.receita_bruta as number | null) ?? 0;
-        const status = (r.status as string | null) ?? "";
-        const mlUserId = (r.ml_user_id as string | null) ?? "";
-
-        if (PAID_STATUSES.includes(status)) {
-          paid_revenue += receita;
-          total_comissao += (r.comissao as number | null) ?? 0;
-          total_frete += (r.frete as number | null) ?? 0;
-          revenue_per_store.set(mlUserId, (revenue_per_store.get(mlUserId) ?? 0) + receita);
-
-          const custo = r.custo_unit as number | null;
-          const qty = (r.quantidade as number | null) ?? 1;
-          if (custo != null) {
-            has_cmv = true;
-            cmv += custo * qty;
-          }
-          const tax = (r.tax_amount as number | null) ?? 0;
-          if (tax > 0) has_tax_data = true;
-          total_tax += tax;
-        } else if (CANCELLED_STATUSES.includes(status)) {
-          cancelled_revenue += receita;
-        }
-      }
+      const paid_revenue   = Number(r.paid_revenue);
+      const cmv            = Number(r.cmv);
+      const total_comissao = Number(r.total_comissao);
+      const total_frete    = Number(r.total_frete);
+      const total_tax      = Number(r.total_tax);
 
       return {
         paid_revenue,
-        cancelled_revenue,
+        cancelled_revenue: 0,          // RPC agrega paid; cancelados não são incluídos
         total_comissao,
         total_frete,
         cmv: Math.round(cmv * 100) / 100,
-        has_cmv,
+        has_cmv: cmv > 0,
         total_tax: Math.round(total_tax * 100) / 100,
-        has_tax_data,
-        revenue_per_store,
+        has_tax_data: total_tax > 0,
+        revenue_per_store: new Map(),  // não disponível em agregação server-side
       };
     },
     enabled: !!orgId && resolvedMLUserIds.length > 0 && !!from && !!to,
