@@ -301,16 +301,17 @@ SECURITY INVOKER
 SET search_path = public
 AS $$
   SELECT
-    COALESCE(SUM(CASE WHEN o.status IN ('paid','shipped','delivered') THEN o.receita_bruta ELSE 0 END), 0) AS paid_revenue,
-    COALESCE(SUM(COALESCE(o.custo_unit, 0) * o.quantidade), 0)                                           AS cmv,
-    COALESCE(SUM(o.comissao), 0)                                                                          AS total_comissao,
-    COALESCE(SUM(o.frete), 0)                                                                             AS total_frete,
-    COALESCE(SUM(o.tax_amount), 0)                                                                        AS total_tax,
-    COUNT(CASE WHEN o.status IN ('paid','shipped','delivered') THEN 1 END)                                AS orders_count
+    COALESCE(SUM(o.receita_bruta), 0)                              AS paid_revenue,
+    COALESCE(SUM(o.custo_unit * o.quantidade), 0)                  AS cmv,
+    COALESCE(SUM(o.comissao), 0)                                   AS total_comissao,
+    COALESCE(SUM(o.frete), 0)                                      AS total_frete,
+    COALESCE(SUM(o.tax_amount), 0)                                 AS total_tax,
+    COUNT(*)                                                        AS orders_count
   FROM public.orders o
   WHERE
     o.organization_id = p_org_id
     AND o.ml_user_id  = ANY(p_user_ids)
+    AND o.status      IN ('paid', 'shipped', 'delivered')
     AND o.data_pedido::date BETWEEN p_from AND p_to;
 $$;
 
