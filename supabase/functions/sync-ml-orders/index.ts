@@ -517,10 +517,15 @@ serve(async (req) => {
     const skuCostMap = new Map<string, number>(); // fallback: custo por seller_sku (Tiny sync)
     {
       // Busca por item_id E por seller_sku (sem filtrar item_id para pegar custos do Tiny)
+      // Quando service role (cron, userId=null): busca por org_id OU org_id IS NULL (custos salvos sem contexto de org)
+      // Quando user JWT: busca por user_id (cobre todos os custos que o usuário salvou)
+      const costOr = userId
+        ? `user_id.eq.${userId}${organizationId ? `,organization_id.eq.${organizationId}` : ""}`
+        : `${organizationId ? `organization_id.eq.${organizationId},` : ""}organization_id.is.null`;
       const { data: costRows } = await supabaseAdmin
         .from("ml_product_costs")
         .select("item_id, seller_sku, cost, organization_id, user_id")
-        .or(`user_id.eq.${userId}${organizationId ? `,organization_id.eq.${organizationId}` : ""}`)
+        .or(costOr)
         .limit(50000);
       for (const r of (costRows ?? []) as any[]) {
         if (r.cost == null) continue;

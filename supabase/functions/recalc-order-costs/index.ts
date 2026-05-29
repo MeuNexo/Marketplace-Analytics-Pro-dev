@@ -91,11 +91,11 @@ serve(async (req) => {
     const taxByStore = new Map<string, any>();
     for (const c of taxConfigs ?? []) taxByStore.set(c.ml_user_id, c);
 
-    // Load product costs for the org
+    // Load product costs for the org — inclui custos sem org_id (salvos antes da configuração de org)
     const { data: costs } = await supabase
       .from("ml_product_costs")
       .select("item_id, cost")
-      .eq("organization_id", organization_id);
+      .or(`organization_id.eq.${organization_id},organization_id.is.null`);
     const costByItem = new Map<string, number>();
     for (const c of costs ?? []) {
       if (c.cost != null) costByItem.set(c.item_id, Number(c.cost));
