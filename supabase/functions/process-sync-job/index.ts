@@ -66,7 +66,8 @@ serve(async (req) => {
   // ── Dispatch and update status ─────────────────────────────────────────────
   try {
     if (job.job_type === "orders") {
-      // Invoke sync-ml-orders with job parameters
+      // Invoke sync-ml-orders with job parameters — null dates default to today (intraday sync)
+      const today = new Date().toISOString().substring(0, 10);
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/sync-ml-orders`, {
         method:  "POST",
         headers: {
@@ -75,8 +76,8 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           ml_user_id: job.ml_user_id,
-          date_from:  job.date_from,
-          date_to:    job.date_to,
+          date_from:  job.date_from ?? today,
+          date_to:    job.date_to   ?? today,
         }),
       });
 
@@ -116,6 +117,8 @@ serve(async (req) => {
       return json({ ok: true, job_id: job.id, job_type: job.job_type, status: "completed" });
 
     } else if (job.job_type === "daily_cache") {
+      // null dates default to today (intraday sync via dispatch_sync_jobs)
+      const today = new Date().toISOString().substring(0, 10);
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/mercado-libre-integration`, {
         method:  "POST",
         headers: {
@@ -124,8 +127,8 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           ml_user_id: job.ml_user_id,
-          date_from:  job.date_from,
-          date_to:    job.date_to,
+          date_from:  job.date_from ?? today,
+          date_to:    job.date_to   ?? today,
         }),
       });
 
