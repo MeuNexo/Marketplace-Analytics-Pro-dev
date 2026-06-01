@@ -698,6 +698,14 @@ export default function MLPedidos() {
       let allRows: OrderRow[] = [];
       let from = 0;
 
+      // dateTo + 1 dia: data_pedido é timestamptz armazenado como meia-noite UTC.
+      // Para cobrir o dia completo em BRT (UTC-3), o lte precisa ir até o começo do dia seguinte.
+      const queryDateTo = (() => {
+        const d = new Date(dateTo + "T00:00:00Z");
+        d.setUTCDate(d.getUTCDate() + 1);
+        return d.toISOString().substring(0, 10);
+      })();
+
       while (true) {
         // Sem count:"exact" — evita um COUNT(*) extra em cada página e reduz
         // latência de forma significativa em períodos longos.
@@ -714,7 +722,7 @@ export default function MLPedidos() {
           )
           .in("ml_user_id", resolvedMLUserIds)
           .gte("data_pedido", dateFrom)
-          .lte("data_pedido", dateTo)
+          .lte("data_pedido", queryDateTo)
           .order("data_pedido", { ascending: false })
           .range(from, from + PAGE - 1);
 

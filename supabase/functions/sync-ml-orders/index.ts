@@ -293,8 +293,15 @@ function expandOrder(
   brandMap:       Map<string, string | null>,
   skuCostMap:     Map<string, number>,
 ): Array<Record<string, unknown>> {
-  const datePedido    = (order.date_created || "").substring(0, 10) || null;
-  const dataPagamento = (order.date_approved || "").substring(0, 10) || null;
+  // Converter para BRT (UTC-3) antes de extrair a data: o range de sync usa meia-noite BRT,
+  // e o cliente filtra por data BRT — armazenar em UTC causava desvio de um dia nas bordas.
+  const toBRT = (iso: string | null | undefined): string | null => {
+    if (!iso) return null;
+    const brtMs = new Date(iso).getTime() - 3 * 60 * 60 * 1000;
+    return new Date(brtMs).toISOString().substring(0, 10);
+  };
+  const datePedido    = toBRT(order.date_created);
+  const dataPagamento = toBRT(order.date_approved);
 
   const comprador = safeStr(
     order.buyer?.nickname ?? order.buyer?.first_name ?? null,

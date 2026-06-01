@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v6.0
 milestone_name: Dashboard de Vendas — KPIs de Marca
 status: complete
-stopped_at: "Sessao 2026-05-22 — Phase 24 (ads fixes+TACoS) e Phase 25 (margem real+publicidade) concluídas. Pronto para Phase 16 (KPIs de Marca)."
-last_updated: "2026-05-22T00:00:00Z"
-last_activity: "2026-05-22 -- Phase 24 e 25 concluídas. Commit fb10bdf0. Próximo: /gsd:execute-phase 16"
+stopped_at: "Sessao 2026-06-01 — Phase 30 criada para corrigir Lucro Bruto errado em /vendas e pedidos não carregando em /pedidos."
+last_updated: "2026-06-01T00:00:00Z"
+last_activity: "2026-06-01 -- Phase 30 criada (fix-pedidos-lucro-bruto). Executar: /gsd:execute-phase 30"
 progress:
   total_phases: 2
   completed_phases: 1
@@ -80,7 +80,8 @@ Dashboard atual mostra:
 ### Pending Todos
 
 - Testar sync Tiny ERP em /integracoes → clicar "Sincronizar Custos" → verificar `SELECT COUNT(*) FROM ml_product_costs WHERE cost > 0;`
-- Após sync validada: iniciar Phase 16 (KPIs de Marca) com `/gsd:execute-phase 16`
+- Phase 16 (KPIs de Marca): `/gsd:execute-phase 16` — 3 planos prontos
+- ~~Phase 28 (Performance)~~ ✅ CONCLUÍDA (2026-05-27) — 3 commits: de06fdf8, 77591401, ff7369d0
 
 ### Blockers/Concerns
 

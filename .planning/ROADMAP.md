@@ -45,9 +45,44 @@ billing mensal (Phase 15) traz CFFE real e CFONPN — custos hoje invisíveis qu
 
 ---
 
+---
+
+### Phase 28: Performance & Escalabilidade Multi-Conta
+**Goal**: Sistema responsivo com múltiplas contas ML — eliminar N+1 no sync, mover agregações para o Postgres, fixar dual-scope query
+**Mode:** mvp
+**Depends on**: Nothing
+**Success Criteria** (what must be TRUE):
+  1. `sync-ml-orders` executa 1 RPC batch por lote, não 1 RPC por pedido
+  2. `/financeiro` não faz mais SELECT * de orders no browser — usa RPCs de agregação Postgres
+  3. `/anuncios` executa 1 query por paginação, não 2
+  4. Indexes `(status, data_pedido)` e `(ml_user_id, data_pedido)` existem em `orders`
+  5. `npx tsc --noEmit` e `npm run build` sem erros
+**Plans**: 28-01 (batch upsert), 28-02 (RPCs agregação), 28-03 (dual-scope + indexes + limits)
+
+---
+
+---
+
+### Phase 30: fix-pedidos-lucro-bruto
+**Goal**: Lucro Bruto em `/vendas` calculado com fonte consistente; página `/pedidos` carrega pedidos corretamente
+**Mode:** bugfix
+**Depends on**: Nothing
+**Success Criteria** (what must be TRUE):
+  1. `useMLCostWaterfall` retorna `null` quando `paid_revenue = 0` — evita mistura de `ml_daily_cache` + `orders` no MLCostCard
+  2. Página `/pedidos` exibe pedidos após sync manual para qualquer período com dados
+  3. Edge functions `sync-ml-orders` e `process-sync-job` deployadas com fixes do commit `9ba8d630`
+  4. `data_pedido` armazenado em BRT (UTC-3) OU query compensada com `dateTo + 1 dia`
+  5. Lucro Bruto no card bate com cálculo manual: Receita Paga − (Comissão + Frete + Publicidade + CMV + Impostos)
+**Plans**: 30-01 (diagnóstico + 4 fixes + deploy)
+
+---
+
 ## Progress
 
 | Phase | Goal | Status | Plans |
 |-------|------|--------|-------|
-| 14 — ml_orders | KPIs comissão/frete/ticket reais | ⬜ Pendente | TBD |
-| 15 — ml_billing_monthly | CFFE + CFONPN visíveis | ⬜ Pendente | TBD |
+| 14 — ml_orders | KPIs comissão/frete/ticket reais | ✅ Concluído | — |
+| 15 — ml_billing_monthly | CFFE + CFONPN visíveis | ⏸ Adiado | — |
+| 16 — kpis-marca | KPIs e gráficos por marca | ⬜ Pendente | 3 planos prontos |
+| 28 — performance-scalability | Sistema responsivo multi-conta | ⬜ Pendente | 28-01, 28-02, 28-03 |
+| 30 — fix-pedidos-lucro-bruto | Lucro Bruto + Pedidos corrigidos | 🔧 Em progresso | 30-01 |

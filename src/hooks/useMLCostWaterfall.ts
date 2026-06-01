@@ -51,6 +51,11 @@ export function useMLCostWaterfall(from: string, to: string) {
       const total_frete    = Number(r.total_frete);
       const total_tax      = Number(r.total_tax);
 
+      // paid_revenue=0 significa sem pedidos pagos no período (receita_bruta nula ou tabela vazia).
+      // Retornar null força o caller a usar ml_daily_cache + estimativas hardcoded de forma consistente,
+      // evitando mistura de fontes que inflava o Lucro Bruto.
+      if (paid_revenue === 0) return null;
+
       return {
         paid_revenue,
         cancelled_revenue: 0,          // RPC agrega paid; cancelados não são incluídos
