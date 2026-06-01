@@ -77,6 +77,22 @@ billing mensal (Phase 15) traz CFFE real e CFONPN — custos hoje invisíveis qu
 
 ---
 
+---
+
+### Phase 32: fix-lucro-bruto-cmv-impostos
+**Goal**: CMV e Impostos corretamente descontados no Lucro Bruto do card "Custos" em /vendas
+**Mode:** bugfix
+**Depends on**: Nothing
+**Success Criteria** (what must be TRUE):
+  1. Card "Custos" exibe CMV e Impostos com valores não-nulos quando há configuração cadastrada
+  2. `get_cost_waterfall` RPC retorna `paid_revenue > 0` quando há orders no período
+  3. Lucro Bruto = Receita Paga − Comissão − Frete − Publicidade − CMV − Impostos
+  4. `batch_upsert_orders` preserva `receita_bruta` e `receita_liquida` existentes em re-sync
+  5. Orders históricos com `preco_unit` preenchido têm `receita_bruta` populado após backfill
+**Plans**: 32-01 (migration + backfill)
+
+---
+
 ## Progress
 
 | Phase | Goal | Status | Plans |
@@ -86,3 +102,5 @@ billing mensal (Phase 15) traz CFFE real e CFONPN — custos hoje invisíveis qu
 | 16 — kpis-marca | KPIs e gráficos por marca | ⬜ Pendente | 3 planos prontos |
 | 28 — performance-scalability | Sistema responsivo multi-conta | ⬜ Pendente | 28-01, 28-02, 28-03 |
 | 30 — fix-pedidos-lucro-bruto | Lucro Bruto + Pedidos corrigidos | 🔧 Em progresso | 30-01 |
+| 31 — auto-sync-cmv-impostos | Auto-recalc CMV/impostos + /pedidos real-time | ⬜ Pendente | 31-01 |
+| 32 — fix-lucro-bruto-cmv-impostos | CMV e Impostos no Lucro Bruto (DB fix) | 🔧 Em progresso | 32-01 |
