@@ -687,8 +687,8 @@ export default function MLPedidos() {
   }, [resolvedMLUserIds]);
 
   // ── Load orders from DB ─────────────────────────────────────────────────────
-  const loadOrders = useCallback(async () => {
-    if (!resolvedMLUserIds.length) return;
+  const loadOrders = useCallback(async (): Promise<number> => {
+    if (!resolvedMLUserIds.length) return 0;
     setLoading(true);
     setLoadProgress(0);
     setCappedAt(null);
@@ -740,8 +740,10 @@ export default function MLPedidos() {
       }
 
       setRows(allRows);
+      return allRows.length;
     } catch (err: any) {
       toast({ title: "Erro ao carregar pedidos", description: err.message, variant: "destructive" });
+      return 0;
     } finally {
       setLoading(false);
       setLoadProgress(0);
@@ -749,8 +751,22 @@ export default function MLPedidos() {
   }, [resolvedMLUserIds, dateFrom, dateTo, toast]);
 
   useEffect(() => {
-    if (connected) loadOrders();
-  }, [connected, loadOrders]);
+    if (!connected) return;
+    const today = new Date().toISOString().substring(0, 10);
+
+    loadOrders().then(async (count) => {
+      // Se o período inclui hoje e não há pedidos, sincroniza automaticamente
+      if (count === 0 && dateTo >= today) {
+        toast({ title: "Sincronizando dados de hoje…", description: "Buscando pedidos recentes." });
+        for (const mlUserId of resolvedMLUserIds) {
+          await supabase.functions.invoke("sync-ml-orders", {
+            body: { ml_user_id: mlUserId, date_from: today, date_to: today },
+          });
+        }
+        loadOrders();
+      }
+    });
+  }, [connected, loadOrders, dateTo, resolvedMLUserIds, toast]);
 
   // ── Sync — direto para períodos curtos, job queue para períodos longos ───────
   const handleSync = useCallback(async () => {

@@ -18,6 +18,7 @@ import { useMLLastSync } from "@/hooks/useMLLastSync";
 import { useMLOrders } from "@/hooks/useMLOrders";
 import { useMLKPISummary } from "@/hooks/useMLKPISummary";
 import { useMLCostWaterfall } from "@/hooks/useMLCostWaterfall";
+import { useAutoRecalc } from "@/hooks/useAutoRecalc";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useMLOrdersByBrand } from "@/hooks/useMLOrdersByBrand";
 import { BrandRevenueChart } from "@/components/mercadolivre/BrandRevenueChart";
@@ -177,6 +178,11 @@ export default function MercadoLivre() {
 
   // Imposto: usa costWaterfall (pedidos pagos) como fonte — mesmo que GoalsCard
   const impostosTotal = costWaterfall?.has_tax_data ? costWaterfall.total_tax : null;
+
+  // Auto-recalc silencioso: se CMV ou impostos ausentes, dispara recalc-order-costs em background
+  const autoRecalcOrgId = currentOrg?.id ?? null;
+  useAutoRecalc(costWaterfall, autoRecalcOrgId, resolvedMLUserIds, currentFrom, currentTo);
+  useAutoRecalc(monthlyCostWaterfall, autoRecalcOrgId, resolvedMLUserIds, monthlyFrom, monthlyTo);
 
   // ── Sync state to context (debounced) ──
   const syncTimerRef = useRef<ReturnType<typeof setTimeout>>();
