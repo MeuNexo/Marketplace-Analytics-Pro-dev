@@ -34,7 +34,7 @@ import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { GoalsCard } from "@/components/mercadolivre/GoalsCard";
 import type { ProductSalesRow } from "@/components/mercadolivre/TopSellingProducts";
 import { Plug, Info, Loader2, RefreshCw, Settings2, ChevronUp, ChevronDown, RotateCcw } from "lucide-react";
-import { format, parseISO, startOfDay } from "date-fns";
+import { format, parseISO, startOfDay, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { MLSalesAnalytics } from "@/components/mercadolivre/MLSalesAnalytics";
 import { useDashboardLayout } from "@/hooks/useDashboardLayout";
@@ -161,6 +161,11 @@ export default function MercadoLivre() {
     [adsDaily, monthlyFrom, monthlyTo],
   );
   const { data: monthlyCostWaterfall } = useMLCostWaterfall(monthlyFrom, monthlyTo);
+
+  // Waterfall dos últimos 30 dias — usado como base de estimativa quando o mês corrente
+  // ainda não tem orders (ex: primeiros dias do mês, ou mês sem sync ainda).
+  const trailing30From = useMemo(() => format(subDays(new Date(), 30), "yyyy-MM-dd"), []);
+  const { data: trailingWaterfall } = useMLCostWaterfall(trailing30From, monthlyTo);
 
   const currentGrossProfit = useMemo(() => {
     if (!monthlyCostWaterfall) return 0;
@@ -340,19 +345,26 @@ export default function MercadoLivre() {
 
   // CMV e Impostos para o card: usa dados reais do período quando disponíveis,
   // senão estima via % do waterfall mensal aplicado à receita do dia (ml_daily_cache).
+  // Base de estimativa: mês corrente se tiver dados, senão últimos 30 dias
+  const estimationBase = (monthlyCostWaterfall?.paid_revenue ?? 0) > 0
+    ? monthlyCostWaterfall
+    : (trailingWaterfall?.paid_revenue ?? 0) > 0 ? trailingWaterfall : null;
+
   const cmvParaCard = useMemo(() => {
     if (costWaterfall?.has_cmv) return costWaterfall.cmv;
-    if (!costWaterfall && monthlyCostWaterfall?.has_cmv && monthlyCostWaterfall.paid_revenue > 0 && (effectiveMetrics?.total_revenue ?? 0) > 0)
-      return Math.round((monthlyCostWaterfall.cmv / monthlyCostWaterfall.paid_revenue) * effectiveMetrics!.total_revenue * 100) / 100;
+    const base = estimationBase;
+    if (!costWaterfall && base?.has_cmv && base.paid_revenue > 0 && (effectiveMetrics?.total_revenue ?? 0) > 0)
+      return Math.round((base.cmv / base.paid_revenue) * effectiveMetrics!.total_revenue * 100) / 100;
     return null;
-  }, [costWaterfall, monthlyCostWaterfall, effectiveMetrics]);
+  }, [costWaterfall, estimationBase, effectiveMetrics]);
 
   const impostosParaCard = useMemo(() => {
     if (costWaterfall?.has_tax_data) return costWaterfall.total_tax;
-    if (!costWaterfall && monthlyCostWaterfall?.has_tax_data && monthlyCostWaterfall.paid_revenue > 0 && (effectiveMetrics?.total_revenue ?? 0) > 0)
-      return Math.round((monthlyCostWaterfall.total_tax / monthlyCostWaterfall.paid_revenue) * effectiveMetrics!.total_revenue * 100) / 100;
+    const base = estimationBase;
+    if (!costWaterfall && base?.has_tax_data && base.paid_revenue > 0 && (effectiveMetrics?.total_revenue ?? 0) > 0)
+      return Math.round((base.total_tax / base.paid_revenue) * effectiveMetrics!.total_revenue * 100) / 100;
     return null;
-  }, [costWaterfall, monthlyCostWaterfall, effectiveMetrics]);
+  }, [costWaterfall, estimationBase, effectiveMetrics]);
 
   const dailyRevenue = useMemo(
     () => effectiveDaily.map((d) => ({ date: d.date, revenue: d.approved ?? 0 })),
