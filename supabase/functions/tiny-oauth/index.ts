@@ -70,6 +70,7 @@ serve(async (req) => {
 
       const tokenData = await tokenResp.json();
       if (!tokenResp.ok) {
+        console.error("Tiny token exchange failed:", JSON.stringify({ error: tokenData.error, error_description: tokenData.error_description }));
         return json({ success: false, error: tokenData.error_description || "Token exchange failed" }, tokenResp.status);
       }
 
