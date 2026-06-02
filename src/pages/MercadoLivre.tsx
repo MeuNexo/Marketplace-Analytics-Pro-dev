@@ -176,36 +176,6 @@ export default function MercadoLivre() {
     );
   }, [monthlyCostWaterfall, monthlyAdsTotal]);
 
-  // Estimativa de CMV e Impostos para "Hoje" quando não há orders sincronizados ainda.
-  // Deriva percentuais do waterfall mensal e aplica à receita do dia (ml_daily_cache).
-  const { cmvParaCard, impostosParaCard } = useMemo(() => {
-    // Se costWaterfall existe com dados reais, usa diretamente
-    if (costWaterfall) {
-      return {
-        cmvParaCard: costWaterfall.has_cmv ? costWaterfall.cmv : null,
-        impostosParaCard: costWaterfall.has_tax_data ? costWaterfall.total_tax : null,
-      };
-    }
-    // Sem waterfall do período (ex: "Hoje" sem orders na tabela):
-    // estima a partir do waterfall mensal se disponível
-    if (
-      monthlyCostWaterfall &&
-      monthlyCostWaterfall.paid_revenue > 0 &&
-      effectiveMetrics &&
-      effectiveMetrics.total_revenue > 0
-    ) {
-      const todayRevenue = effectiveMetrics.total_revenue;
-      const monthlyBase = monthlyCostWaterfall.paid_revenue;
-      const estimatedCmv = monthlyCostWaterfall.has_cmv
-        ? Math.round((monthlyCostWaterfall.cmv / monthlyBase) * todayRevenue * 100) / 100
-        : null;
-      const estimatedImpostos = monthlyCostWaterfall.has_tax_data
-        ? Math.round((monthlyCostWaterfall.total_tax / monthlyBase) * todayRevenue * 100) / 100
-        : null;
-      return { cmvParaCard: estimatedCmv, impostosParaCard: estimatedImpostos };
-    }
-    return { cmvParaCard: null, impostosParaCard: null };
-  }, [costWaterfall, monthlyCostWaterfall, effectiveMetrics]);
 
   // Auto-recalc silencioso: se CMV ou impostos ausentes, dispara recalc-order-costs em background
   const autoRecalcOrgId = currentOrg?.id ?? null;
@@ -367,6 +337,22 @@ export default function MercadoLivre() {
     if (m.unique_visits > 0) m.conversion_rate = (m.unique_buyers / m.unique_visits) * 100;
     return m;
   }, [effectiveDaily, ordersSummary]);
+
+  // CMV e Impostos para o card: usa dados reais do período quando disponíveis,
+  // senão estima via % do waterfall mensal aplicado à receita do dia (ml_daily_cache).
+  const cmvParaCard = useMemo(() => {
+    if (costWaterfall?.has_cmv) return costWaterfall.cmv;
+    if (!costWaterfall && monthlyCostWaterfall?.has_cmv && monthlyCostWaterfall.paid_revenue > 0 && (effectiveMetrics?.total_revenue ?? 0) > 0)
+      return Math.round((monthlyCostWaterfall.cmv / monthlyCostWaterfall.paid_revenue) * effectiveMetrics!.total_revenue * 100) / 100;
+    return null;
+  }, [costWaterfall, monthlyCostWaterfall, effectiveMetrics]);
+
+  const impostosParaCard = useMemo(() => {
+    if (costWaterfall?.has_tax_data) return costWaterfall.total_tax;
+    if (!costWaterfall && monthlyCostWaterfall?.has_tax_data && monthlyCostWaterfall.paid_revenue > 0 && (effectiveMetrics?.total_revenue ?? 0) > 0)
+      return Math.round((monthlyCostWaterfall.total_tax / monthlyCostWaterfall.paid_revenue) * effectiveMetrics!.total_revenue * 100) / 100;
+    return null;
+  }, [costWaterfall, monthlyCostWaterfall, effectiveMetrics]);
 
   const dailyRevenue = useMemo(
     () => effectiveDaily.map((d) => ({ date: d.date, revenue: d.approved ?? 0 })),
