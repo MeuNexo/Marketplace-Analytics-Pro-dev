@@ -176,8 +176,36 @@ export default function MercadoLivre() {
     );
   }, [monthlyCostWaterfall, monthlyAdsTotal]);
 
-  // Imposto: usa costWaterfall (pedidos pagos) como fonte — mesmo que GoalsCard
-  const impostosTotal = costWaterfall?.has_tax_data ? costWaterfall.total_tax : null;
+  // Estimativa de CMV e Impostos para "Hoje" quando não há orders sincronizados ainda.
+  // Deriva percentuais do waterfall mensal e aplica à receita do dia (ml_daily_cache).
+  const { cmvParaCard, impostosParaCard } = useMemo(() => {
+    // Se costWaterfall existe com dados reais, usa diretamente
+    if (costWaterfall) {
+      return {
+        cmvParaCard: costWaterfall.has_cmv ? costWaterfall.cmv : null,
+        impostosParaCard: costWaterfall.has_tax_data ? costWaterfall.total_tax : null,
+      };
+    }
+    // Sem waterfall do período (ex: "Hoje" sem orders na tabela):
+    // estima a partir do waterfall mensal se disponível
+    if (
+      monthlyCostWaterfall &&
+      monthlyCostWaterfall.paid_revenue > 0 &&
+      effectiveMetrics &&
+      effectiveMetrics.total_revenue > 0
+    ) {
+      const todayRevenue = effectiveMetrics.total_revenue;
+      const monthlyBase = monthlyCostWaterfall.paid_revenue;
+      const estimatedCmv = monthlyCostWaterfall.has_cmv
+        ? Math.round((monthlyCostWaterfall.cmv / monthlyBase) * todayRevenue * 100) / 100
+        : null;
+      const estimatedImpostos = monthlyCostWaterfall.has_tax_data
+        ? Math.round((monthlyCostWaterfall.total_tax / monthlyBase) * todayRevenue * 100) / 100
+        : null;
+      return { cmvParaCard: estimatedCmv, impostosParaCard: estimatedImpostos };
+    }
+    return { cmvParaCard: null, impostosParaCard: null };
+  }, [costWaterfall, monthlyCostWaterfall, effectiveMetrics]);
 
   // Auto-recalc silencioso: se CMV ou impostos ausentes, dispara recalc-order-costs em background
   const autoRecalcOrgId = currentOrg?.id ?? null;
@@ -569,8 +597,8 @@ export default function MercadoLivre() {
                   comissao={costWaterfall?.total_comissao ?? ordersSummary?.total_comissao ?? (effectiveMetrics?.total_revenue ?? 0) * 0.11}
                   frete={costWaterfall?.total_frete ?? ordersSummary?.total_frete ?? (effectiveMetrics?.total_revenue ?? 0) * 0.05}
                   publicidade={adsSummary.total_spend}
-                  cmv={costWaterfall?.has_cmv ? costWaterfall.cmv : null}
-                  impostos={impostosTotal}
+                  cmv={cmvParaCard}
+                  impostos={impostosParaCard}
                   loading={costWaterfallLoading}
                 />
                 <MLTopProducts products={effectiveProducts} marginMap={marginMap} />
