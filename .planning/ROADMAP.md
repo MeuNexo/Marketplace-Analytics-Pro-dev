@@ -93,6 +93,20 @@ billing mensal (Phase 15) traz CFFE real e CFONPN — custos hoje invisíveis qu
 
 ---
 
+### Phase 34: fix-kpi-summary-hoje
+**Goal**: Cards Markup das Vendas, Custo Operacional e Impostos exibem valores reais ao filtrar "Hoje" em /vendas
+**Mode:** bugfix
+**Depends on**: Nothing
+**Success Criteria** (what must be TRUE):
+  1. Após auto-sync (~12-15s), os 3 cards do `kpiSummary` atualizam com valores reais (não "—")
+  2. Durante o auto-recalc, os 3 cards mostram skeleton loading — não "—" estático
+  3. `useAutoRecalc` invalida `["ml", "kpi-summary"]` além de `["ml", "cost-waterfall"]`
+  4. Para períodos históricos (7d, 30d), comportamento não muda
+  5. `npx tsc --noEmit` sem erros
+**Plans**: 34-01 (fix useAutoRecalc + useMLKPISummary + MercadoLivre.tsx)
+
+---
+
 ## Progress
 
 | Phase | Goal | Status | Plans |
@@ -104,3 +118,4 @@ billing mensal (Phase 15) traz CFFE real e CFONPN — custos hoje invisíveis qu
 | 30 — fix-pedidos-lucro-bruto | Lucro Bruto + Pedidos corrigidos | 🔧 Em progresso | 30-01 |
 | 31 — auto-sync-cmv-impostos | Auto-recalc CMV/impostos + /pedidos real-time | ⬜ Pendente | 31-01 |
 | 32 — fix-lucro-bruto-cmv-impostos | CMV e Impostos no Lucro Bruto (DB fix) | 🔧 Em progresso | 32-01 |
+| 34 — fix-kpi-summary-hoje | KPI cards Markup/Custo/Impostos carregam para "Hoje" | ✅ Concluído | 34-01 |

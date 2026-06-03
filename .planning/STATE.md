@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v6.0
 milestone_name: Dashboard de Vendas — KPIs de Marca
 status: complete
-stopped_at: "Sessao 2026-06-01 — Phase 30 criada para corrigir Lucro Bruto errado em /vendas e pedidos não carregando em /pedidos."
-last_updated: "2026-06-01T00:00:00Z"
-last_activity: "2026-06-01 -- Phase 30 criada (fix-pedidos-lucro-bruto). Executar: /gsd:execute-phase 30"
+stopped_at: "Sessao 2026-06-03 — Phase 34 concluída: fix KPI cards Markup/Custo/Impostos para filtro Hoje. Commit 61b028ff."
+last_updated: "2026-06-03T00:00:00Z"
+last_activity: "2026-06-03 -- Phase 34 concluída (fix-kpi-summary-hoje). Commit: 61b028ff."
 progress:
   total_phases: 2
   completed_phases: 1
