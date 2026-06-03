@@ -182,9 +182,10 @@ export default function MercadoLivre() {
   }, [monthlyCostWaterfall, monthlyAdsTotal]);
 
 
-  // Auto-recalc silencioso: se CMV ou impostos ausentes, dispara recalc-order-costs em background
+  // Auto-recalc silencioso: se CMV ou impostos ausentes, dispara recalc-order-costs em background.
+  // isRecalcing expõe o estado de loading para os cards que dependem de kpiSummary.
   const autoRecalcOrgId = currentOrg?.id ?? null;
-  useAutoRecalc(costWaterfall, autoRecalcOrgId, resolvedMLUserIds, currentFrom, currentTo);
+  const { isRecalcing } = useAutoRecalc(costWaterfall, autoRecalcOrgId, resolvedMLUserIds, currentFrom, currentTo);
   useAutoRecalc(monthlyCostWaterfall, autoRecalcOrgId, resolvedMLUserIds, monthlyFrom, monthlyTo);
 
   // ── Sync state to context (debounced) ──
@@ -559,7 +560,7 @@ export default function MercadoLivre() {
                 syncing={effectiveSyncing}
                 hasSyncProgress={!!syncProgress}
                 kpiSummary={kpiSummary}
-                kpiSummaryLoading={kpiSummaryLoading}
+                kpiSummaryLoading={kpiSummaryLoading || isRecalcing}
                 adsTotalForPeriod={adsSummary.total_spend}
               />
             );

@@ -50,7 +50,22 @@ export function useMLKPISummary(
       const has_tax_data   = Boolean(row.has_tax_data);
       const cmv_has_cost   = Boolean(row.cmv_has_cost);
 
-      if (gross_revenue === 0 && cmv === 0 && total_frete === 0) return null;
+      // Retorna objeto vazio em vez de null quando não há dados — permite que a
+      // invalidação de query após auto-recalc re-faça o fetch com dados reais.
+      if (gross_revenue === 0 && cmv === 0 && total_frete === 0) {
+        return {
+          markup_ratio: null,
+          markup_has_cost: false,
+          custo_plataforma: 0,
+          custo_operacional: 0,
+          pct_custo_operacional: 0,
+          gross_revenue: 0,
+          total_tax: 0,
+          has_tax_data: false,
+          cmv: 0,
+          cmv_has_cost: false,
+        };
+      }
 
       const markup_ratio = cmv_has_cost && cmv > 0 ? gross_revenue / cmv : null;
       const custo_plataforma = total_frete + total_comissao;
