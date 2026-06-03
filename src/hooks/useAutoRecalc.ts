@@ -6,8 +6,9 @@ import type { CostWaterfallData } from "./useMLCostWaterfall";
 const today = () => new Date().toISOString().substring(0, 10);
 
 function invalidateKPIQueries(queryClient: ReturnType<typeof useQueryClient>) {
-  queryClient.invalidateQueries({ queryKey: ["ml", "cost-waterfall"] });
-  queryClient.invalidateQueries({ queryKey: ["ml", "kpi-summary"] });
+  // Invalida todos os queries que dependem da tabela orders:
+  // cost-waterfall, kpi-summary, orders-by-brand, orders-summary e futuros hooks.
+  queryClient.invalidateQueries({ queryKey: ["ml"] });
 }
 
 /**
