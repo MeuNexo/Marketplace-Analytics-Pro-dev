@@ -9,25 +9,37 @@ Os 3 gráficos de marca em `/` (Vendas) renderizavam sobrepostos: eixos X invadi
 o vizinho e legendas (Pralana/Zebu/Sandrini/TXC...) misturadas entre charts. Print
 reportado por Wesley em 2026-06-04.
 
-## Causa raiz
+## Causa raiz (real — 2 fatores)
 
-Itens de CSS grid têm `min-width: auto`. O `ResponsiveContainer` do Recharts tem
-largura intrínseca > 0, então cada coluna `1fr` do grid `lg:grid-cols-3`
-(`MercadoLivre.tsx:607`) crescia além do permitido e transbordava sobre as vizinhas.
-Os `<Card>` raiz dos 3 componentes não tinham `min-w-0`.
+1. **`aspect-video` no `ChartContainer`** (`src/components/ui/chart.tsx:48`): a classe base
+   tem `aspect-video` (16:9). Os 3 componentes passavam apenas `className="h-[280px]"` /
+   `h-[220px]`. Altura fixa + aspect-video força uma **largura intrínseca de ~498px por
+   chart** (280×16/9), maior que a coluna `1fr` (~330px) do grid `lg:grid-cols-3`
+   (`MercadoLivre.tsx:607`) → cada chart transborda e sobrepõe os vizinhos. Esta é a
+   causa dominante.
+2. **Grid item sem `min-w-0`**: itens de CSS grid têm `min-width:auto`, deixando a coluna
+   crescer com o conteúdo do Recharts. Contribui para o transbordo.
 
-## Fix aplicado
+## Fix aplicado (2 partes)
 
-`className="min-w-0 overflow-hidden"` adicionado ao `<Card>` raiz dos 3 componentes,
-em **todos os 3 estados** de cada um (loading + erro + sucesso) = 9 edições:
+**Parte A — neutralizar aspect-video + forçar largura total** (a correção decisiva):
+`ChartContainer` className → `h-[...] w-full aspect-auto` nos 3 componentes.
+`aspect-auto` sobrescreve `aspect-video` (via tailwind-merge), `w-full` faz o chart
+ocupar 100% da coluna. ResponsiveContainer passa a medir a largura real × altura fixa.
 
-- `src/components/mercadolivre/BrandRevenueChart.tsx` (3 Cards)
-- `src/components/mercadolivre/BrandMarkupChart.tsx` (3 Cards)
-- `src/components/mercadolivre/CustoOperacionalChart.tsx` (3 Cards)
+**Parte B — `min-w-0 overflow-hidden`** no `<Card>` raiz dos 3 componentes, em todos os
+3 estados (loading + erro + sucesso) = 9 edições. Impede o grid item de crescer.
 
-`min-w-0` permite a coluna do grid encolher ao tamanho real (1fr) → ResponsiveContainer
-mede a largura correta e não vaza. `overflow-hidden` é defesa extra contra labels de
-eixo na borda.
+Arquivos:
+- `src/components/mercadolivre/BrandRevenueChart.tsx`
+- `src/components/mercadolivre/BrandMarkupChart.tsx`
+- `src/components/mercadolivre/CustoOperacionalChart.tsx`
+
+## Deploy
+
+Projeto hospedado na **Vercel** (builda de `origin/main` no GitHub). O 1º commit
+(`83a34fbe`, só Parte B) ficou local e nunca foi pra Vercel — por isso o preview
+continuava igual. Esta correção (Parte A+B) precisa de `git push` para a Vercel rebuildar.
 
 ## Verificação
 

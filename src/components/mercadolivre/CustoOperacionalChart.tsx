@@ -73,7 +73,7 @@ export function CustoOperacionalChart({
         <p className="text-xs text-muted-foreground">Frete + Comissão + Publicidade</p>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={chartConfig} className="h-[220px]">
+        <ChartContainer config={chartConfig} className="h-[220px] w-full aspect-auto">
           <LineChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
             <XAxis dataKey="label" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />

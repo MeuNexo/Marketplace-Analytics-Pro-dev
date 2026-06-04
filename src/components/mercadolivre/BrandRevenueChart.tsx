@@ -64,7 +64,7 @@ export function BrandRevenueChart({ data, topBrands, loading }: BrandRevenueChar
         <CardTitle className="text-sm font-medium">Faturamento por Marca</CardTitle>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={chartConfig} className="h-[280px]">
+        <ChartContainer config={chartConfig} className="h-[280px] w-full aspect-auto">
           <AreaChart data={formattedData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
             <XAxis dataKey="label" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
