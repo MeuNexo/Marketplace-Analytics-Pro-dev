@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
 import type { CostWaterfallData } from "./useMLCostWaterfall";
 
 // Usa data local (BRT) — mesmo critério que useMLFilters.todayUTC
@@ -64,13 +63,10 @@ export function useAutoRecalc(
           const totalSynced = syncResults.reduce((sum, r) => {
             if (r.error) {
               console.error("[useAutoRecalc] sync-ml-orders error:", r.error);
-              toast.error(`Sync falhou: ${r.error.message ?? JSON.stringify(r.error)}`);
               return sum;
             }
             return sum + (Number((r.data as any)?.orders_synced) || 0);
           }, 0);
-
-          toast.info(`Auto-sync: ${totalSynced} pedido(s) sincronizado(s) para ${dateFrom}`);
 
           if (totalSynced === 0) {
             firedRef.current.delete(key);
