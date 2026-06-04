@@ -100,9 +100,11 @@ export function useMLOrdersByBrand(from: string, to: string) {
         const itemIds = [...new Set(cacheRows.map((r) => r.item_id).filter(Boolean))];
         const costMap = new Map<string, number>();
         if (itemIds.length > 0) {
+          // Filtra por org (isolamento multi-tenant) e aceita legados com org null (RLS garante user_id)
           const { data: costData } = await supabase
             .from("ml_product_costs")
             .select("item_id, cost")
+            .or(`organization_id.eq.${orgId},organization_id.is.null`)
             .in("item_id", itemIds);
           for (const c of costData ?? []) {
             if (c.cost != null) costMap.set(c.item_id, Number(c.cost));
