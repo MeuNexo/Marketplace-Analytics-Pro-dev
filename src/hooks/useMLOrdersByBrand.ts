@@ -103,7 +103,6 @@ export function useMLOrdersByBrand(from: string, to: string) {
           const { data: costData } = await supabase
             .from("ml_product_costs")
             .select("item_id, cost")
-            .eq("organization_id", orgId)
             .in("item_id", itemIds);
           for (const c of costData ?? []) {
             if (c.cost != null) costMap.set(c.item_id, Number(c.cost));
