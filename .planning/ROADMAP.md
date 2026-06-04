@@ -149,6 +149,29 @@ billing mensal (Phase 15) traz CFFE real e CFONPN — custos hoje invisíveis qu
 
 ---
 
+### Phase 38: validar-paginas-dashboard
+**Goal**: As 5 páginas do dashboard (Publicidade, Margem, Anúncios, Estoque, Pedidos) carregam dados reais para o período atual — diagnosticar e corrigir a regressão que zerou os dados / forçou pedido de sync, comportamento que antes funcionava
+**Mode:** bugfix
+**Depends on**: Nothing
+**Success Criteria** (what must be TRUE):
+  1. `/publicidade` exibe métricas de ads (impressões, cliques, ROAS, ACoS, TACoS) reais — não zeradas — para o período padrão
+  2. `/anuncios` (margem real + publicidade no Lucro) lista produtos com preço, custo e margem — não tela vazia pedindo sync
+  3. `/estoque` exibe inventário vivo via ml-inventory — não zerado
+  4. `/pedidos` lista pedidos do período (orders está parado em 2026-05-27 — investigar por que o sync de orders não avança)
+  5. A página de margem/lucro (/vendas MLCostCard) exibe waterfall com valores reais para o período atual
+  6. Identificada e corrigida a causa raiz da regressão (auto-sync frontend, hook compartilhado MLStore/Organization, ou crash TDZ) — com nota no SUMMARY de qual commit introduziu
+  7. `npx tsc --noEmit` sem erros
+
+**Diagnóstico inicial (2026-06-04)**:
+  - Backend saudável: edge functions retornando 200 (mercado-libre-integration, sync-ml-orders, ml-inventory, ml-ads, ml-products-aggregated). 1x 500 process-sync-job + 1x 401 mercado-libre-integration isolados (transitórios, pós token-refresh).
+  - Freshness DB: ml_daily_cache / ml_product_daily_cache / ml_hourly_cache param em 2026-06-03 (ontem). orders parado em 2026-05-27 (1 semana). ml_ads_daily_cache fresco em 2026-06-04 (cron próprio).
+  - Hipótese principal: filtro padrão inclui "hoje" mas o auto-sync do frontend (useAutoRecalc / useMLSync) não dispara o sync principal (mercado-libre-integration) → dashboard zera e pede sync.
+  - Hipótese secundária: regressão em hook compartilhado (resolvedMLUserIds / orgId) afeta todas as queries simultaneamente; ou crash TDZ (vide commit 7108053a) em página específica.
+  - Suspeitos: commits 31, 33, 34, 35, 36 (mexeram em useAutoRecalc, invalidação ["ml"], MLCostCard).
+**Plans**: TBD
+
+---
+
 ## Progress
 
 | Phase | Goal | Status | Plans |
@@ -164,3 +187,4 @@ billing mensal (Phase 15) traz CFFE real e CFONPN — custos hoje invisíveis qu
 | 35 — fix-brand-charts-hoje | Brand charts + KPI cards carregam para "Hoje" sem depender de marca | ✅ Concluído | 35-01 |
 | 36 — fix-brand-from-product-cache | Brand charts usando ml_product_daily_cache como fallback quando orders vazio | 🔧 Em progresso | — |
 | 37 — fix-markup-sem-custo | Markup por Marca carrega quando custo está cadastrado | 🔧 Em progresso | TBD |
+| 38 — validar-paginas-dashboard | 5 páginas (publicidade/margem/anúncios/estoque/pedidos) carregam dados reais | ⬜ Pendente | TBD |

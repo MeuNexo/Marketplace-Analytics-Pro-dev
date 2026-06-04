@@ -138,3 +138,31 @@ Stopped at: Todos os fixes Tiny ERP concluídos e deployados. Aguardando Wesley 
 1. Testar sync: /integracoes → "Sincronizar Custos"
 2. Verificar: `SELECT COUNT(*) FROM ml_product_costs WHERE cost > 0;`
 3. Partir para Phase 16: `/gsd:execute-phase 16`
+
+---
+
+## Sessão 2026-06-04 — Phases 36/37/38
+
+**Phase 36 (concluída, deployada)** — brand charts via ml_product_daily_cache fallback
+- Migration `marca` em ml_product_daily_cache + mercado-libre-integration busca BRAND
+- useMLOrdersByBrand: fallback para cache quando orders vazio
+
+**Phase 37 (deployada)** — markup por marca via seller_sku
+- Root cause: ml_product_costs.item_id = `TINY_<sku>` mas cache.item_id = `MLB...` → join nunca casava
+- Ponte correta: seller_sku (`seller_custom_field` no ML)
+- Migration `seller_sku` em ml_product_daily_cache (20260604120000)
+- mercado-libre-integration v12: popula seller_sku
+- recalc-order-costs v13: usa orders.sku → costs.seller_sku (prioridade Tiny) + fallback item_id legado
+- useMLOrdersByBrand: join por seller_sku
+- PENDENTE: aguardar próximo sync para popular seller_sku no cache; validar markup carregando
+
+**Phase 38 (criada, pendente execução)** — validar 5 páginas do dashboard
+- Wesley reportou: dados zerados / pedindo sync em publicidade, margem, anúncios, estoque, pedidos
+- Investigação: backend saudável (200s), caches param em 2026-06-03, orders parado em 2026-05-27
+- Ver `.planning/phases/38-validar-paginas-dashboard/38-CONTEXT.md` para hipóteses
+- Hipótese principal: auto-sync frontend não dispara sync principal para "hoje"
+- PRÓXIMO PASSO: reproduzir cada página com DevTools → confirmar hipótese → fix causa raiz
+
+**Deploys confirmados (project ckcdevcxgvueywivefgx):**
+- mercado-libre-integration v12 ACTIVE
+- recalc-order-costs v13 ACTIVE
