@@ -398,7 +398,7 @@ serve(async (req) => {
     > = {};
     const productSales: Record<
       string,
-      { item_id: string; date: string; title: string; thumbnail: string | null; qty_sold: number; revenue: number; marca: string | null }
+      { item_id: string; date: string; title: string; thumbnail: string | null; qty_sold: number; revenue: number; marca: string | null; seller_sku: string | null }
     > = {};
     const stateSales: Record<
       string,
@@ -505,6 +505,7 @@ serve(async (req) => {
               qty_sold: 0,
               revenue: 0,
               marca: null,
+              seller_sku: null,
             };
           }
           productSales[prodKey].qty_sold += itemQty;
@@ -562,16 +563,18 @@ serve(async (req) => {
       }
       await Promise.all(
         thumbnailBatches.map(async (batch) => {
-          const multiGet = await mlFetch(`/items?ids=${batch.join(",")}&attributes=id,thumbnail,attributes`, access_token);
+          const multiGet = await mlFetch(`/items?ids=${batch.join(",")}&attributes=id,thumbnail,attributes,seller_custom_field`, access_token);
           for (const entry of multiGet) {
             if (entry.code === 200 && entry.body) {
               const body = entry.body;
               const brandAttr = (body.attributes ?? []).find((a: any) => a.id === "BRAND");
               const marca = brandAttr?.value_name ?? null;
+              const sellerSku: string | null = body.seller_custom_field ?? null;
               for (const ps of Object.values(productSales)) {
                 if (ps.item_id === String(body.id)) {
                   if (body.thumbnail) ps.thumbnail = body.thumbnail;
                   if (marca) ps.marca = marca;
+                  if (sellerSku) ps.seller_sku = sellerSku;
                 }
               }
             }
@@ -696,6 +699,7 @@ serve(async (req) => {
           qty_sold: p.qty_sold,
           revenue: p.revenue,
           marca: p.marca ?? null,
+          seller_sku: p.seller_sku ?? null,
           synced_at: syncedAt,
           ...(effectiveSellerId ? { seller_id: effectiveSellerId } : {}),
           ...(organization_id ? { organization_id } : {}),

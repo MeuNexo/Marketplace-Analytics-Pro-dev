@@ -87,7 +87,7 @@ export function useMLOrdersByBrand(from: string, to: string) {
       } else {
         const { data: cacheData } = await supabase
           .from("ml_product_daily_cache")
-          .select("date, marca, revenue, qty_sold, item_id")
+          .select("date, marca, revenue, qty_sold, item_id, seller_sku")
           .eq("organization_id", orgId)
           .in("ml_user_id", resolvedMLUserIds)
           .gte("date", from.slice(0, 10))
@@ -96,18 +96,17 @@ export function useMLOrdersByBrand(from: string, to: string) {
         const cacheRows = (cacheData ?? []).filter((r) => r.revenue > 0);
         if (cacheRows.length === 0) return empty;
 
-        // Busca custo unitário por item_id para calcular markup mesmo sem orders
-        const itemIds = [...new Set(cacheRows.map((r) => r.item_id).filter(Boolean))];
-        const costMap = new Map<string, number>();
-        if (itemIds.length > 0) {
-          // Filtra por org (isolamento multi-tenant) e aceita legados com org null (RLS garante user_id)
+        // Busca custo por seller_sku (Tiny) para calcular markup mesmo sem orders
+        const sellerSkus = [...new Set(cacheRows.map((r) => (r as any).seller_sku as string | null).filter((s): s is string => !!s))];
+        const costBySku = new Map<string, number>(); // seller_sku → cost
+        if (sellerSkus.length > 0) {
           const { data: costData } = await supabase
             .from("ml_product_costs")
-            .select("item_id, cost")
+            .select("seller_sku, cost")
             .or(`organization_id.eq.${orgId},organization_id.is.null`)
-            .in("item_id", itemIds);
+            .in("seller_sku", sellerSkus);
           for (const c of costData ?? []) {
-            if (c.cost != null) costMap.set(c.item_id, Number(c.cost));
+            if (c.cost != null && c.seller_sku) costBySku.set(c.seller_sku, Number(c.cost));
           }
         }
 
@@ -115,7 +114,7 @@ export function useMLOrdersByBrand(from: string, to: string) {
           data_pedido: r.date as string,
           marca: (r.marca as string | null) ?? "Sem Marca",
           receita_bruta: Number(r.revenue) || 0,
-          custo_unit: costMap.get(r.item_id) ?? null,
+          custo_unit: (r as any).seller_sku ? (costBySku.get((r as any).seller_sku) ?? null) : null,
           quantidade: Number(r.qty_sold) || 1,
           frete: null,
           comissao: null,

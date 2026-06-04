@@ -135,6 +135,20 @@ billing mensal (Phase 15) traz CFFE real e CFONPN — custos hoje invisíveis qu
 
 ---
 
+### Phase 37: fix-markup-sem-custo
+**Goal**: Gráfico "Markup por Marca" exibe dados quando custos estão cadastrados em `ml_product_costs` — diagnosticar por que `custo_unit` chega null mesmo com custo cadastrado
+**Mode:** bugfix
+**Depends on**: Phase 36
+**Success Criteria** (what must be TRUE):
+  1. Com custos cadastrados em `/precos-custos`, o gráfico "Markup por Marca" exibe linhas para "Hoje"
+  2. A query em `ml_product_costs` retorna custo para os `item_id`s presentes em `ml_product_daily_cache`
+  3. `custo_unit` é não-nulo nos rows do fallback quando custo existe na tabela
+  4. `hasMarkupData = true` para períodos com dados de custo + cache
+  5. `npx tsc --noEmit` sem erros
+**Plans**: TBD
+
+---
+
 ## Progress
 
 | Phase | Goal | Status | Plans |
@@ -148,4 +162,5 @@ billing mensal (Phase 15) traz CFFE real e CFONPN — custos hoje invisíveis qu
 | 32 — fix-lucro-bruto-cmv-impostos | CMV e Impostos no Lucro Bruto (DB fix) | 🔧 Em progresso | 32-01 |
 | 34 — fix-kpi-summary-hoje | KPI cards Markup/Custo/Impostos carregam para "Hoje" | ✅ Concluído | 34-01 |
 | 35 — fix-brand-charts-hoje | Brand charts + KPI cards carregam para "Hoje" sem depender de marca | ✅ Concluído | 35-01 |
-| 36 — fix-brand-from-product-cache | Brand charts usando ml_product_daily_cache como fallback quando orders vazio | ⬜ Pendente | TBD |
+| 36 — fix-brand-from-product-cache | Brand charts usando ml_product_daily_cache como fallback quando orders vazio | 🔧 Em progresso | — |
+| 37 — fix-markup-sem-custo | Markup por Marca carrega quando custo está cadastrado | 🔧 Em progresso | TBD |
