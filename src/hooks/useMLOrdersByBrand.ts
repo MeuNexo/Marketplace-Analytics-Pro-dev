@@ -66,7 +66,8 @@ export function useMLOrdersByBrand(from: string, to: string) {
 
       if (!orgId || resolvedMLUserIds.length === 0) return empty;
 
-      const { data, error } = await supabase
+      // Fonte primária: tabela orders (populada por sync-ml-orders)
+      const { data: ordersData, error } = await supabase
         .from("orders")
         .select("data_pedido, marca, receita_bruta, custo_unit, quantidade, frete, comissao")
         .eq("organization_id", orgId)
@@ -77,7 +78,35 @@ export function useMLOrdersByBrand(from: string, to: string) {
 
       if (error) throw error;
 
-      const rows = data ?? [];
+      // Fallback: ml_product_daily_cache quando orders está vazio para o período
+      // (ex: sync-ml-orders retorna 0 pedidos da API mas há dados de visitas/vendas)
+      let rows: { data_pedido: string; marca: string | null; receita_bruta: number | null; custo_unit: null; quantidade: number; frete: null; comissao: null }[];
+
+      if ((ordersData ?? []).length > 0) {
+        rows = ordersData as typeof rows;
+      } else {
+        const { data: cacheData } = await supabase
+          .from("ml_product_daily_cache")
+          .select("date, marca, revenue, qty_sold")
+          .eq("organization_id", orgId)
+          .in("ml_user_id", resolvedMLUserIds)
+          .gte("date", from.slice(0, 10))
+          .lte("date", to.slice(0, 10));
+
+        const cacheRows = (cacheData ?? []).filter((r) => r.revenue > 0);
+        if (cacheRows.length === 0) return empty;
+
+        rows = cacheRows.map((r) => ({
+          data_pedido: r.date as string,
+          marca: (r.marca as string | null) ?? "Sem Marca",
+          receita_bruta: Number(r.revenue) || 0,
+          custo_unit: null,
+          quantidade: Number(r.qty_sold) || 1,
+          frete: null,
+          comissao: null,
+        }));
+      }
+
       if (rows.length === 0) return empty;
 
       const brandMap = new Map<

@@ -121,6 +121,20 @@ billing mensal (Phase 15) traz CFFE real e CFONPN — custos hoje invisíveis qu
 
 ---
 
+### Phase 36: fix-brand-from-product-cache
+**Goal**: Brand charts carregam para "Hoje" usando `ml_product_daily_cache` como fallback quando `orders` está vazio — independente de `sync-ml-orders` retornar pedidos ou não
+**Mode:** bugfix
+**Depends on**: Nothing
+**Success Criteria** (what must be TRUE):
+  1. `ml_product_daily_cache` tem coluna `marca` populada após sync via `mercado-libre-integration`
+  2. `useMLOrdersByBrand` usa `ml_product_daily_cache` quando `orders` está vazio para o período
+  3. Gráficos de marca aparecem para "Hoje" mesmo com 0 orders em `orders` table
+  4. Gráficos baseados em `orders` (quando disponível) continuam funcionando para períodos históricos
+  5. `npx tsc --noEmit` sem erros
+**Plans**: 36-01
+
+---
+
 ## Progress
 
 | Phase | Goal | Status | Plans |
@@ -133,4 +147,5 @@ billing mensal (Phase 15) traz CFFE real e CFONPN — custos hoje invisíveis qu
 | 31 — auto-sync-cmv-impostos | Auto-recalc CMV/impostos + /pedidos real-time | ⬜ Pendente | 31-01 |
 | 32 — fix-lucro-bruto-cmv-impostos | CMV e Impostos no Lucro Bruto (DB fix) | 🔧 Em progresso | 32-01 |
 | 34 — fix-kpi-summary-hoje | KPI cards Markup/Custo/Impostos carregam para "Hoje" | ✅ Concluído | 34-01 |
-| 35 — fix-brand-charts-hoje | Brand charts + KPI cards carregam para "Hoje" sem depender de marca | ⬜ Pendente | TBD |
+| 35 — fix-brand-charts-hoje | Brand charts + KPI cards carregam para "Hoje" sem depender de marca | ✅ Concluído | 35-01 |
+| 36 — fix-brand-from-product-cache | Brand charts usando ml_product_daily_cache como fallback quando orders vazio | ⬜ Pendente | TBD |
