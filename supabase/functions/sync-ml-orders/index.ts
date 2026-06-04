@@ -553,10 +553,13 @@ serve(async (req) => {
 
     let upserted = 0;
     if (records.length > 0) {
-      // Batch upsert via RPC — 1 round-trip para todos os pedidos do lote
+      // Batch upsert via RPC — 1 round-trip para todos os pedidos do lote.
+      // Passa o array direto (NÃO JSON.stringify): o param é jsonb; uma string
+      // viraria escalar e jsonb_array_elements falha ("cannot extract elements
+      // from a scalar").
       const { data: batchCount, error: batchErr } = await supabaseAdmin.rpc(
         "batch_upsert_orders",
-        { p_records: JSON.stringify(records) },
+        { p_records: records },
       );
 
       if (batchErr) {
