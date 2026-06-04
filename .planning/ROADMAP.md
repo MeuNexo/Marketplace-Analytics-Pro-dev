@@ -211,4 +211,4 @@ billing mensal (Phase 15) traz CFFE real e CFONPN — custos hoje invisíveis qu
 | 36 — fix-brand-from-product-cache | Brand charts usando ml_product_daily_cache como fallback quando orders vazio | 🔧 Em progresso | — |
 | 37 — fix-markup-sem-custo | Markup por Marca carrega quando custo está cadastrado | 🔧 Em progresso | TBD |
 | 38 — validar-paginas-dashboard | 5 páginas (publicidade/margem/anúncios/estoque/pedidos) carregam dados reais | ✅ Concluído | — |
-| 39 — fix-anuncios-custo-publicidade-produtos | /anuncios custo+margem por seller_sku + /publicidade produtos patrocinados | 🔧 Em progresso | TBD |
+| 39 — fix-anuncios-custo-publicidade-produtos | /anuncios custo+margem por seller_sku + /publicidade produtos patrocinados | ✅ Concluído | — |

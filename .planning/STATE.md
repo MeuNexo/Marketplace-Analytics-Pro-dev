@@ -191,3 +191,21 @@ passava JSON.stringify(records) → escalar em vez de array jsonb.
 o bug por ~1 semana. Sempre propagar erro de RPC + checar count no caller.
 
 **Commits:** 0f31e710 (RPC+EFs), f69a8bc1 (stringify fix). Phase 38 ✅.
+
+---
+
+## Sessão 2026-06-04c — Phase 39 RESOLVIDA (/anuncios custo + /publicidade produtos)
+
+**/anuncios custo/margem:** costs.get(item.id) buscava por MLB item_id; ml_product_costs
+é keyado por seller_sku (TINY_). Fix: costFor() com fallback por seller_sku
+(useMLProductCosts expõe costsBySku). Frontend, commit 57bbb9aa.
+
+**/publicidade produtos patrocinados (zerado, parado 05-23):** DUAS causas:
+1. sync-ads buscava /product_ads/items SEM metrics params → spend=0.
+2. Constraint única obsoleta ml_ads_products_cache_unique (user_id,ml_user_id,item_id)
+   SEM date conflitava com modelo série-por-dia → upsert falhava silenciosamente
+   (logado, não lançado) → travado na 1ª data de cada item.
+Fixes: sync-ads passa metrics+metrics_summary+date (v18); migration dropa a constraint
+(20260604140000). Backfill 30 dias: 1639558873 spend R$6.112, 427063369 spend R$188k.
+
+**Deploys:** sync-ads v18. Commits 57bbb9aa, cb0ec5c9. Phase 39 ✅.
