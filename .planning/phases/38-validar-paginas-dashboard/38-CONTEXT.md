@@ -68,3 +68,73 @@ Ver ROADMAP.md Phase 38 (7 critérios).
 2. Confirmar qual hipótese por página.
 3. Bisect nos commits suspeitos se for regressão de código.
 4. Corrigir causa raiz (provavelmente 1 fix cobre múltiplas páginas se for H1/H2).
+
+---
+
+## CAUSA RAIZ CONFIRMADA (investigação 2026-06-04)
+
+Sintoma do usuário: empty-state pedindo sync; **não é crash; já vinha de antes**
+(NÃO é regressão dos fixes de hoje 34-37).
+
+### Pipeline de sync por cron está QUEBRADO no backend (não é o frontend)
+
+Crons ativos (cron.job): `sync-orders-daily` (9h), `sync-sales-daily` (9h),
+`sync-dispatch-every-30min`, `sync-process-job-every-5min`, etc.
+Eles inserem em `sync_jobs`; `process-sync-job` drena a fila chamando as EFs.
+
+**Estado de sync_jobs:**
+| job_type | completed | failed | observação |
+|----------|-----------|--------|-----------|
+| daily_cache | 0 | 874 | TODOS falhando, contínuo até hoje |
+| orders | 69 | 912 | failed pararam 05-29; "completed" não gravam |
+| inventory | 231 | 0 | OK |
+| ads | 111 | 0 | OK |
+
+**error_msg revelador:**
+1. **daily_cache → 401**: `mercado-libre-integration responded 401:
+   UNAUTHORIZED_INVALID_JWT_FORMAT / Invalid JWT`.
+   - `process-sync-job` chama com `Bearer SUPABASE_SERVICE_ROLE_KEY`. A Supabase
+     rotacionou as keys para formato `sb_secret_…` (NÃO é JWT). EFs com
+     `verify_jwt=true` (mercado-libre-integration, sync-ml-orders) são rejeitadas
+     no gateway antes de entrar na função.
+   - (Mesma classe de bug já visto no projeto nexo-mcp — ver memória
+     "pg_cron auth Supabase rotacionou para sb_secret_".)
+2. **orders → 400 (histórico, até 05-29)**: `sync-ml-orders responded 400:
+   date_from/date_to Expected string, received null`. Jobs do dispatcher de 30min
+   vinham com data nula. "Corrigido" em process-sync-job com `?? today`.
+
+### Por que ml_daily_cache parece fresco (06-03) mas orders congelou (05-27)
+- `ml_daily_cache` é mantido fresco pelo **auto-sync do FRONTEND** (usuário abre
+  /vendas → mercado-libre-integration roda com JWT de usuário válido → grava).
+  O cron de daily_cache falha (401) mas ninguém percebe pq o frontend cobre.
+- `orders` NÃO tem backfill de dias passados no frontend (só "hoje"). Como o cron
+  está quebrado, o gap 05-28..06-03 (~325 pedidos reais, comprovados no daily
+  cache) nunca foi gravado → /pedidos e /margem vazios para período recente.
+
+### Falha silenciosa que mascara o problema
+- `process-sync-job` (orders) só checa `resp.ok` (HTTP 200), NÃO o `orders_synced`.
+- `sync-ml-orders` retorna `200 {success:true, orders_synced:0}` mesmo quando
+  `batch_upsert_orders` falha (linhas 562-568) ou quando busca 0 da API.
+- Resultado: job marcado "completed" sem gravar nada. `ml_sync_log` tem ZERO
+  rows de source='orders' (a EF nunca chega a registrar sync de orders bem-sucedido).
+- Job orders de 06-02 (32 pedidos reais) "completou" em ~2s — rápido demais para
+  buscar pedidos+fretes+marcas → confirma que não está processando de fato.
+
+## PLANO DE FIX (proposto)
+1. **Auth do cron**: resolver o 401. Opções:
+   a. `verify_jwt=false` em mercado-libre-integration + sync-ml-orders (elas já
+      têm auth interna por service-role/isServiceRole) — alinha com process-sync-job.
+   b. process-sync-job enviar um JWT válido (anon key JWT) em vez de sb_secret.
+   Preferir (a) com cuidado de manter a checagem interna isServiceRole robusta.
+2. **process-sync-job**: checar `orders_synced` no corpo da resposta; se 0 com
+   período que tinha vendas, marcar job como failed (não mascarar).
+3. **sync-ml-orders**: lançar erro (não engolir) quando `batch_upsert_orders`
+   falhar, para o job refletir failure.
+4. **Backfill**: rodar sync de orders para 2026-05-28..2026-06-04 (ambas contas)
+   após o fix de auth — repopula /pedidos e /margem.
+5. **Verificar** ml_daily_cache cron também volta a 200 (mesmo fix de auth).
+6. Validar as 5 páginas em produção.
+
+## NOTA DE RISCO
+Fixes 1-3 mexem em AUTH de edge functions e 4 é um backfill que grava muitos
+registros. Confirmar com Wesley antes de aplicar (mudança outward/segurança).
