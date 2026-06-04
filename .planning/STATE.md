@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v6.0
 milestone_name: Dashboard de Vendas — KPIs de Marca
 status: complete
-stopped_at: "Sessao 2026-06-03 — Phase 34 concluída: fix KPI cards Markup/Custo/Impostos para filtro Hoje. Commit 61b028ff."
-last_updated: "2026-06-03T00:00:00Z"
-last_activity: "2026-06-03 -- Phase 34 concluída (fix-kpi-summary-hoje). Commit: 61b028ff."
+stopped_at: "Sessao 2026-06-04 — Phase 35 criada: fix-brand-charts-hoje. Gráficos de marca e KPI cards continuam vazios para Hoje após commits 382a67b5 + fd1798fa."
+last_updated: "2026-06-04T00:00:00Z"
+last_activity: "2026-06-04 -- Phase 35 adicionada (fix-brand-charts-hoje). Root causes: marca=null esvazia charts, auto-sync sem retry/visibilidade."
 progress:
   total_phases: 2
   completed_phases: 1

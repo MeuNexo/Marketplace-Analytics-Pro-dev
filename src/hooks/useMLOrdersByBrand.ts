@@ -78,16 +78,15 @@ export function useMLOrdersByBrand(from: string, to: string) {
       if (error) throw error;
 
       const rows = data ?? [];
-      const rowsWithBrand = rows.filter((r) => r.marca);
-      if (rowsWithBrand.length === 0) return empty;
+      if (rows.length === 0) return empty;
 
       const brandMap = new Map<
         string,
         { receita: number; unidades: number; sumCusto: number; hasCusto: boolean }
       >();
 
-      for (const r of rowsWithBrand) {
-        const marca = r.marca as string;
+      for (const r of rows) {
+        const marca = (r.marca as string | null) ?? "Sem Marca";
         const receita = r.receita_bruta ?? 0;
         const qty = r.quantidade ?? 1;
         const custo = r.custo_unit;
@@ -150,10 +149,10 @@ export function useMLOrdersByBrand(from: string, to: string) {
       const dayBrandCostMap = new Map<DayBrandKey, { sumR: number; sumC: number; hasC: boolean }>();
       const dayCustoMap = new Map<string, number>();
 
-      for (const r of rowsWithBrand) {
+      for (const r of rows) {
         const date = r.data_pedido as string;
         if (!date) continue;
-        const marcaRaw = r.marca as string;
+        const marcaRaw = (r.marca as string | null) ?? "Sem Marca";
         const marca = topSet.has(marcaRaw) ? marcaRaw : "Outros";
         const receita = r.receita_bruta ?? 0;
         const qty = r.quantidade ?? 1;
@@ -180,7 +179,7 @@ export function useMLOrdersByBrand(from: string, to: string) {
       }
 
       const allDates = Array.from(
-        new Set(rowsWithBrand.map((r) => r.data_pedido as string).filter(Boolean)),
+        new Set(rows.map((r) => r.data_pedido as string).filter(Boolean)),
       ).sort();
 
       const brandRevenueSeries: BrandTimeSeries[] = allDates.map((date) => {

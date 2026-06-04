@@ -51,13 +51,26 @@ export function useAutoRecalc(
           const dateTo   = to.slice(0, 10);
 
           // sync-ml-orders diretamente (sem fila), 1 chamada por loja em paralelo
-          await Promise.all(
+          const syncResults = await Promise.all(
             mlUserIds.map((mlUserId) =>
               supabase.functions.invoke("sync-ml-orders", {
                 body: { ml_user_id: mlUserId, date_from: dateFrom, date_to: dateTo },
               }),
             ),
           );
+
+          // Se todas as lojas retornaram erro ou 0 pedidos, remove do firedRef para permitir retry
+          const totalSynced = syncResults.reduce((sum, r) => {
+            if (r.error) {
+              console.error("[useAutoRecalc] sync-ml-orders error:", r.error);
+              return sum;
+            }
+            return sum + (Number((r.data as any)?.orders_synced) || 0);
+          }, 0);
+
+          if (totalSynced === 0) {
+            firedRef.current.delete(key);
+          }
 
           // Recalcula CMV e impostos nos orders recém-sincronizados
           await supabase.functions.invoke("recalc-order-costs", {
@@ -75,7 +88,10 @@ export function useAutoRecalc(
           setIsRecalcing(false);
         }
       };
-      syncAndRecalc().catch(() => setIsRecalcing(false));
+      syncAndRecalc().catch(() => {
+        firedRef.current.delete(key);
+        setIsRecalcing(false);
+      });
       return;
     }
 

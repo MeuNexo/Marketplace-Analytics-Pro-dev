@@ -107,6 +107,20 @@ billing mensal (Phase 15) traz CFFE real e CFONPN — custos hoje invisíveis qu
 
 ---
 
+### Phase 35: fix-brand-charts-hoje
+**Goal**: Gráficos de marca e cards KPI carregam corretamente para o filtro "Hoje" — marca null não esvazia os charts, e auto-sync tem retry visível
+**Mode:** bugfix
+**Depends on**: Nothing
+**Success Criteria** (what must be TRUE):
+  1. Gráficos de marca (Faturamento por Marca, Markup por Marca) exibem dados para "Hoje" mesmo quando `marca = null` em alguns orders — agrupados em "Sem Marca" ou pela categoria disponível
+  2. `useAutoRecalc` loga erros visíveis (toast ou console.error) quando `sync-ml-orders` retorna erro
+  3. Ao terminar o auto-sync, `useMLOrdersByBrand` retorna `hasData = true` se há orders no período — independente de `marca`
+  4. Cards Markup das Vendas, Custo Operacional e Impostos carregam após auto-sync (~15s) para "Hoje"
+  5. `npx tsc --noEmit` sem erros
+**Plans**: TBD
+
+---
+
 ## Progress
 
 | Phase | Goal | Status | Plans |
@@ -119,3 +133,4 @@ billing mensal (Phase 15) traz CFFE real e CFONPN — custos hoje invisíveis qu
 | 31 — auto-sync-cmv-impostos | Auto-recalc CMV/impostos + /pedidos real-time | ⬜ Pendente | 31-01 |
 | 32 — fix-lucro-bruto-cmv-impostos | CMV e Impostos no Lucro Bruto (DB fix) | 🔧 Em progresso | 32-01 |
 | 34 — fix-kpi-summary-hoje | KPI cards Markup/Custo/Impostos carregam para "Hoje" | ✅ Concluído | 34-01 |
+| 35 — fix-brand-charts-hoje | Brand charts + KPI cards carregam para "Hoje" sem depender de marca | ⬜ Pendente | TBD |
