@@ -86,13 +86,20 @@ serve(async (req) => {
         throw new Error(`sync-ml-orders responded ${resp.status}: ${errText}`);
       }
 
+      // Checa o corpo: sync-ml-orders pode responder 200 mesmo em falha de storage.
+      // Se success !== true, trata como falha (não mascarar — vide bug seller_id uuid).
+      const orderBody = await resp.json().catch(() => ({} as any));
+      if (orderBody?.success === false) {
+        throw new Error(`sync-ml-orders falhou: ${orderBody?.error ?? "unknown"}`);
+      }
+
       // Mark completed
       await sb
         .from("sync_jobs")
         .update({ status: "completed", finished_at: new Date().toISOString() })
         .eq("id", job.id);
 
-      return json({ ok: true, job_id: job.id, job_type: job.job_type, status: "completed" });
+      return json({ ok: true, job_id: job.id, job_type: job.job_type, status: "completed", orders_synced: orderBody?.orders_synced ?? null });
 
     } else if (job.job_type === "inventory") {
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/sync-ml-inventory`, {

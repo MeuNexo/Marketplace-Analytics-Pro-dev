@@ -261,16 +261,25 @@ serve(async (req) => {
       });
     }
 
-    const supabaseAdmin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseAdmin = createClient(Deno.env.get("SUPABASE_URL")!, serviceKey);
 
-    const { data: authData, error: authErr } = await supabaseAdmin.auth.getUser(authHeader.replace("Bearer ", ""));
-    if (authErr || !authData?.user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    // Suporte a chamada service-role (process-sync-job / cron). verify_jwt=false
+    // permite a key chegar; aqui distinguimos service-role de JWT de usuário.
+    const token = authHeader.replace("Bearer ", "");
+    const isServiceRole = token === serviceKey;
+
+    let user_id: string | null = null;
+    if (!isServiceRole) {
+      const { data: authData, error: authErr } = await supabaseAdmin.auth.getUser(token);
+      if (authErr || !authData?.user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      user_id = authData.user.id;
     }
-    const user_id = authData.user.id;
 
     const BodySchema = z.object({
       ml_user_id: z.string().min(1, "ml_user_id is required"),
@@ -293,7 +302,7 @@ serve(async (req) => {
     // Look up ML access_token from DB (by ml_user_id, validate org membership)
     const { data: tokenRow, error: tokenErr } = await supabaseAdmin
       .from("ml_tokens")
-      .select("access_token, organization_id, seller_id")
+      .select("access_token, organization_id, seller_id, user_id")
       .eq("ml_user_id", reqMLUserId)
       .not("access_token", "is", null)
       .limit(1)
@@ -306,7 +315,16 @@ serve(async (req) => {
       });
     }
 
-    if (tokenRow.organization_id) {
+    // Service-role (cron): deriva user_id do token row (caches exigem user_id NOT NULL)
+    if (isServiceRole) {
+      user_id = (tokenRow.user_id as string | null) ?? null;
+      if (!user_id) {
+        return new Response(JSON.stringify({ error: "No user_id on token for service-role sync" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } else if (tokenRow.organization_id) {
       const { data: isMember } = await supabaseAdmin.rpc("is_org_member", {
         _user_id: user_id,
         _org_id: tokenRow.organization_id,

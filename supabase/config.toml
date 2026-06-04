@@ -9,8 +9,10 @@ verify_jwt = true
 [functions.ml-oauth]
 verify_jwt = false
 
+# verify_jwt=false: process-sync-job/cron chama com service-role key (formato
+# sb_secret, não-JWT). Auth interna trata service-role + JWT de usuário.
 [functions.mercado-libre-integration]
-verify_jwt = true
+verify_jwt = false
 
 [functions.ml-token-refresh]
 verify_jwt = false

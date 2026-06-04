@@ -560,12 +560,12 @@ serve(async (req) => {
       );
 
       if (batchErr) {
+        // NÃO engolir o erro: lançar para o job refletir failure (antes retornava
+        // 200 orders_synced=0 e mascarava o RPC quebrado — congelou orders em 05-27).
         console.error("batch_upsert_orders failed:", batchErr.message);
-        // Fallback: marcar 0 upsertados mas continuar o fluxo
-        upserted = 0;
-      } else {
-        upserted = (batchCount as number) ?? records.length;
+        throw new Error(`batch_upsert_orders failed: ${batchErr.message}`);
       }
+      upserted = (batchCount as number) ?? records.length;
       console.log(`Batch upserted ${upserted}/${records.length} orders (cost preserved, 1 RPC)`);
     }
 
