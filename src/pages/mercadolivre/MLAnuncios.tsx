@@ -574,7 +574,13 @@ export default function MLProdutos() {
   const [suggestion, setSuggestion] = useState<MLItemSuggestion | null>(null);
   const [noSuggestion, setNoSuggestion] = useState(false);
   const { fetchItemSuggestion, fetchSalePrice, fetchCosts, refresh: precosRefresh } = useMLPrecosCustos();
-  const { costs, upsert: upsertCost } = useMLProductCosts();
+  const { costs, costsBySku, upsert: upsertCost } = useMLProductCosts();
+  // Custo pode estar keyado por MLB item_id (entrada manual) ou por seller_sku (sync Tiny).
+  const costFor = useCallback(
+    (itemId: string, sku: string | null) =>
+      costs.get(itemId) ?? (sku ? costsBySku.get(sku) : undefined),
+    [costs, costsBySku],
+  );
 
   // Cache lazy: busca current_price via suggestions API apenas para itens com deal_ids
   // (promoção ativa), ao entrar na view "Preço"
@@ -1303,7 +1309,7 @@ export default function MLProdutos() {
                             </TableCell>
 
                             {columnView === "financeiro" ? (() => {
-                              const productCost = costs.get(item.id);
+                              const productCost = costFor(item.id, sku);
                               const cost = productCost?.cost ?? null;
                               const taxEntry = item._ml_user_id ? taxMap?.get(item._ml_user_id) : undefined;
                               const effectiveTaxRate = taxEntry != null
@@ -1481,7 +1487,7 @@ export default function MLProdutos() {
                                               </span>
                                             </TableCell>
                                             {columnView === "financeiro" ? (() => {
-                                              const productCost = costs.get(item.id);
+                                              const productCost = costFor(item.id, v.seller_custom_field || null);
                                               const cost = productCost?.cost ?? null;
                                               const taxEntryV = item._ml_user_id ? taxMap?.get(item._ml_user_id) : undefined;
                                               const effectiveTaxRate = taxEntryV != null

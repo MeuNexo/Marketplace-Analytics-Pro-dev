@@ -24,6 +24,9 @@ export function useMLProductCosts() {
   const { user } = useAuth();
   const { currentOrg } = useOrganization();
   const [costs, setCosts] = useState<Map<string, ProductCost>>(new Map());
+  // Índice paralelo por seller_sku — custos do Tiny são keyados por SKU (item_id = TINY_<sku>),
+  // não pelo MLB item_id. Permite lookup correto na tela de Anúncios.
+  const [costsBySku, setCostsBySku] = useState<Map<string, ProductCost>>(new Map());
   const [loading, setLoading] = useState(false);
 
   const fetchAll = useCallback(async () => {
@@ -37,15 +40,19 @@ export function useMLProductCosts() {
         .limit(10000);
       if (error) { console.warn("useMLProductCosts fetch error", error); return; }
       const map = new Map<string, ProductCost>();
+      const skuMap = new Map<string, ProductCost>();
       for (const row of data ?? []) {
-        map.set(row.item_id, {
+        const entry: ProductCost = {
           item_id:    row.item_id,
           cost:       row.cost     != null ? Number(row.cost)     : null,
           tax_rate:   row.tax_rate != null ? Number(row.tax_rate) : null,
           seller_sku: row.seller_sku ?? null,
-        });
+        };
+        map.set(row.item_id, entry);
+        if (row.seller_sku) skuMap.set(row.seller_sku, entry);
       }
       setCosts(map);
+      setCostsBySku(skuMap);
     } finally {
       setLoading(false);
     }
@@ -134,5 +141,5 @@ export function useMLProductCosts() {
     [user, currentOrg],
   );
 
-  return { costs, loading, upsert, upsertBatch, refetch: fetchAll };
+  return { costs, costsBySku, loading, upsert, upsertBatch, refetch: fetchAll };
 }

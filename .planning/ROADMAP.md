@@ -172,6 +172,29 @@ billing mensal (Phase 15) traz CFFE real e CFONPN — custos hoje invisíveis qu
 
 ---
 
+### Phase 39: fix-anuncios-custo-publicidade-produtos
+**Goal**: /anuncios exibe custo + margem bruta/líquida por produto; /publicidade exibe métricas reais de produtos patrocinados (não zeradas)
+**Mode:** bugfix
+**Depends on**: Phase 37, Phase 38
+**Success Criteria** (what must be TRUE):
+  1. /anuncios: coluna Custo carrega o custo cadastrado (join por seller_sku, não por MLB item_id)
+  2. /anuncios: Margem Bruta e Margem Líquida calculam quando há custo
+  3. /publicidade: "produtos patrocinados" exibe spend/ROAS/cliques reais por produto
+  4. `ml_ads_products_cache` (ou resposta ml-ads) tem spend > 0 por produto após sync
+  5. `npx tsc --noEmit` sem erros
+
+**Diagnóstico (2026-06-04)**:
+  - /anuncios: `costs.get(item.id)` busca por MLB item_id, mas ml_product_costs é keyado
+    por seller_sku (TINY_) → custo null → margem null. Mesma raiz da Phase 37. Fix:
+    lookup por seller_sku (item.seller_custom_field).
+  - /publicidade: `ml_ads_products_cache` tem spend/revenue = 0 em todas as linhas e
+    parado em 05-23/05-27, enquanto ml_ads_daily_cache está fresco com spend real.
+    ml-ads: daily agrega sp sem guard (linha 206), produto só `if (it.item_id)` (linha 210).
+    Investigar campo item_id real na resposta /advertising/advertisers/{id}/product_ads/items.
+**Plans**: TBD
+
+---
+
 ## Progress
 
 | Phase | Goal | Status | Plans |
@@ -188,3 +211,4 @@ billing mensal (Phase 15) traz CFFE real e CFONPN — custos hoje invisíveis qu
 | 36 — fix-brand-from-product-cache | Brand charts usando ml_product_daily_cache como fallback quando orders vazio | 🔧 Em progresso | — |
 | 37 — fix-markup-sem-custo | Markup por Marca carrega quando custo está cadastrado | 🔧 Em progresso | TBD |
 | 38 — validar-paginas-dashboard | 5 páginas (publicidade/margem/anúncios/estoque/pedidos) carregam dados reais | ✅ Concluído | — |
+| 39 — fix-anuncios-custo-publicidade-produtos | /anuncios custo+margem por seller_sku + /publicidade produtos patrocinados | 🔧 Em progresso | TBD |

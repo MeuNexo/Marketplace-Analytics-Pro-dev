@@ -184,8 +184,15 @@ async function syncUser(
   while (true) {
     let items: any[] = [], total = 0;
     try {
+      // IMPORTANTE: passar metrics + metrics_summary + date, senão a API retorna itens
+      // SEM métricas (spend/cliques = 0) e ml_ads_products_cache fica zerado.
+      const itemsQs = new URLSearchParams({
+        date_from: today, date_to: today,
+        metrics: METRICS, metrics_summary: "true",
+        limit: "50", offset: String(offset),
+      });
       const data = await mlGet(
-        ML_API + "/advertising/advertisers/" + advertiserId + "/product_ads/items?limit=50&offset=" + offset,
+        ML_API + "/advertising/advertisers/" + advertiserId + "/product_ads/items?" + itemsQs,
         token,
       );
       if (!loggedFirstResult) {
