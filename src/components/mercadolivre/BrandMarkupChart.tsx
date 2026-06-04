@@ -43,7 +43,7 @@ export function BrandMarkupChart({ data, topBrands, loading }: BrandMarkupChartP
         </CardHeader>
         <CardContent>
           <div className="h-[280px] flex items-center justify-center text-xs text-muted-foreground">
-            {!data.length ? "Sem dados de marca para o período." : "Requer custo cadastrado nos anúncios."}
+            {!data.length ? "Sem dados de marca para o período." : "Sem dados de custo para o período."}
           </div>
         </CardContent>
       </Card>
