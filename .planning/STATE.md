@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v6.0
 milestone_name: Dashboard de Vendas — KPIs de Marca
 status: complete
-stopped_at: "Sessao 2026-06-04 — Phase 35 criada: fix-brand-charts-hoje. Gráficos de marca e KPI cards continuam vazios para Hoje após commits 382a67b5 + fd1798fa."
+stopped_at: "Sessao 2026-06-04 — Phase 40 CONCLUÍDA: fix-charts-overlap-brand-row. min-w-0 overflow-hidden aplicado aos 3 Cards raiz (9 edições, todos os estados). tsc exit 0. Validação visual no navegador pendente de confirmação de Wesley."
 last_updated: "2026-06-04T00:00:00Z"
-last_activity: "2026-06-04 -- Phase 35 adicionada (fix-brand-charts-hoje). Root causes: marca=null esvazia charts, auto-sync sem retry/visibilidade."
+last_activity: "2026-06-04 -- Phase 40 concluída. Fix: min-w-0 overflow-hidden em BrandRevenueChart/BrandMarkupChart/CustoOperacionalChart (raiz Card, todos os returns). Causa raiz: grid item min-width:auto deixava ResponsiveContainer do Recharts transbordar. tsc limpo."
 progress:
   total_phases: 2
   completed_phases: 1

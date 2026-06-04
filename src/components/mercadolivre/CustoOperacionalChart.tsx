@@ -26,7 +26,7 @@ export function CustoOperacionalChart({
 }: CustoOperacionalChartProps) {
   if (loading) {
     return (
-      <Card>
+      <Card className="min-w-0 overflow-hidden">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium">Custo Operacional Diário</CardTitle>
         </CardHeader>
@@ -39,7 +39,7 @@ export function CustoOperacionalChart({
 
   if (!custoSeries.length) {
     return (
-      <Card>
+      <Card className="min-w-0 overflow-hidden">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium">Custo Operacional Diário</CardTitle>
         </CardHeader>
@@ -67,7 +67,7 @@ export function CustoOperacionalChart({
   });
 
   return (
-    <Card>
+    <Card className="min-w-0 overflow-hidden">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium">Custo Operacional Diário</CardTitle>
         <p className="text-xs text-muted-foreground">Frete + Comissão + Publicidade</p>

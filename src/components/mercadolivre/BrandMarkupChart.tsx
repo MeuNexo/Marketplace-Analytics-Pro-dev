@@ -20,7 +20,7 @@ export function BrandMarkupChart({ data, topBrands, loading }: BrandMarkupChartP
 
   if (loading) {
     return (
-      <Card>
+      <Card className="min-w-0 overflow-hidden">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium">Markup por Marca</CardTitle>
         </CardHeader>
@@ -37,7 +37,7 @@ export function BrandMarkupChart({ data, topBrands, loading }: BrandMarkupChartP
 
   if (!data.length || !topBrands.length || !hasMarkupData) {
     return (
-      <Card>
+      <Card className="min-w-0 overflow-hidden">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium">Markup por Marca</CardTitle>
         </CardHeader>
@@ -56,7 +56,7 @@ export function BrandMarkupChart({ data, topBrands, loading }: BrandMarkupChartP
   }));
 
   return (
-    <Card>
+    <Card className="min-w-0 overflow-hidden">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium">Markup por Marca</CardTitle>
       </CardHeader>

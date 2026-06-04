@@ -195,6 +195,28 @@ billing mensal (Phase 15) traz CFFE real e CFONPN — custos hoje invisíveis qu
 
 ---
 
+### Phase 40: fix-charts-overlap-brand-row
+**Goal**: Os 3 gráficos da linha de marca (Faturamento por Marca, Markup por Marca, Custo Operacional Diário) renderizam cada um dentro da sua coluna, sem transbordar nem sobrepor eixos/legendas dos vizinhos
+**Mode:** bugfix
+**Depends on**: Nothing (correção puramente visual/layout)
+**Success Criteria** (what must be TRUE):
+  1. Em viewport `lg` (≥1024px) os 3 charts aparecem lado a lado, cada um confinado a 1/3 da largura — sem eixo X de um chart invadindo o vizinho
+  2. As legendas (Pralana/Zebu/Sandrini/TXC/...) de cada chart ficam abaixo do próprio chart, sem duplicar nem se misturar com as do chart ao lado
+  3. O eixo X do "Custo Operacional Diário" não estoura para fora do Card (datas tipo 06/03 não vazam do container)
+  4. Em viewport mobile (`grid-cols-1`) cada chart ocupa largura total e empilha corretamente
+  5. Os estados de loading e erro de cada chart também respeitam a coluna (não transbordam)
+  6. `npx tsc --noEmit` sem erros
+
+**Diagnóstico (2026-06-04)**:
+  - Layout pai: `MercadoLivre.tsx:607` — `<div className="grid grid-cols-1 lg:grid-cols-3 gap-3">` com `<BrandRevenueChart>`, `<BrandMarkupChart>`, `<CustoOperacionalChart>` como filhos diretos.
+  - Causa raiz: itens de CSS grid têm `min-width: auto` por padrão. O `ResponsiveContainer`/SVG do Recharts (dentro de `ChartContainer`) tem largura intrínseca > 0, então cada coluna cresce além de `1fr` e **transborda sobre as vizinhas** → eixos X e legendas sobrepostos (exatamente o sintoma do print enviado por Wesley em 04/06).
+  - Os 3 componentes renderizam `<Card>` como raiz SEM className (`BrandRevenueChart.tsx:62`, `BrandMarkupChart.tsx:59`, `CustoOperacionalChart.tsx:70`) — nenhum tem `min-w-0`. Os returns de loading/erro (linhas ~31/44, ~24/41, ~30/43) também são `<Card>` sem `min-w-0`.
+  - Fix: aplicar `min-w-0 overflow-hidden` ao `<Card>` raiz dos 3 componentes (TODOS os returns: sucesso + loading + erro). Alternativa equivalente: envolver cada chart num `<div className="min-w-0">` no grid pai — preferir o fix no componente para cobrir todos os estados.
+  - Validar também se a legenda do Recharts não força largura mínima maior que a coluna (se persistir, adicionar `overflow-hidden`/`flex-wrap` no wrapper da legenda).
+**Plans**: TBD
+
+---
+
 ## Progress
 
 | Phase | Goal | Status | Plans |
@@ -212,3 +234,4 @@ billing mensal (Phase 15) traz CFFE real e CFONPN — custos hoje invisíveis qu
 | 37 — fix-markup-sem-custo | Markup por Marca carrega quando custo está cadastrado | 🔧 Em progresso | TBD |
 | 38 — validar-paginas-dashboard | 5 páginas (publicidade/margem/anúncios/estoque/pedidos) carregam dados reais | ✅ Concluído | — |
 | 39 — fix-anuncios-custo-publicidade-produtos | /anuncios custo+margem por seller_sku + /publicidade produtos patrocinados | ✅ Concluído | — |
+| 40 — fix-charts-overlap-brand-row | 3 charts de marca sem sobreposição (min-w-0 nos Cards do grid) | ✅ Concluído | — |

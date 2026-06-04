@@ -27,7 +27,7 @@ export function BrandRevenueChart({ data, topBrands, loading }: BrandRevenueChar
 
   if (loading) {
     return (
-      <Card>
+      <Card className="min-w-0 overflow-hidden">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium">Faturamento por Marca</CardTitle>
         </CardHeader>
@@ -40,7 +40,7 @@ export function BrandRevenueChart({ data, topBrands, loading }: BrandRevenueChar
 
   if (!data.length || !topBrands.length) {
     return (
-      <Card>
+      <Card className="min-w-0 overflow-hidden">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium">Faturamento por Marca</CardTitle>
         </CardHeader>
@@ -59,7 +59,7 @@ export function BrandRevenueChart({ data, topBrands, loading }: BrandRevenueChar
   }));
 
   return (
-    <Card>
+    <Card className="min-w-0 overflow-hidden">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium">Faturamento por Marca</CardTitle>
       </CardHeader>
