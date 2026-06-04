@@ -166,3 +166,28 @@ Stopped at: Todos os fixes Tiny ERP concluídos e deployados. Aguardando Wesley 
 **Deploys confirmados (project ckcdevcxgvueywivefgx):**
 - mercado-libre-integration v12 ACTIVE
 - recalc-order-costs v13 ACTIVE
+
+---
+
+## Sessão 2026-06-04b — Phase 38 RESOLVIDA (pipeline de sync de orders)
+
+**Sintoma:** dashboard com dados zerados pedindo sync (pedidos/margem/anúncios).
+**Causa raiz:** orders congelou em 2026-05-27 — batch_upsert_orders falhava e o erro
+era mascarado (sync-ml-orders retornava 200 orders_synced=0; process-sync-job marcava
+completed). DOIS bugs: (1) seller_id virou uuid sem cast no RPC; (2) sync-ml-orders
+passava JSON.stringify(records) → escalar em vez de array jsonb.
+
+**Fixes deployados:**
+- migration 20260604130000: batch_upsert_orders cast ::uuid (seller_id/user_id/org)
+- sync-ml-orders v19: records direto (sem stringify) + throw em vez de engolir erro
+- process-sync-job v14: checa success/orders_synced
+- mercado-libre-integration v13: service-role + verify_jwt=false (corrige 401 do
+  cron daily_cache — key sb_secret rejeitada pelo gateway verify_jwt=true)
+
+**Backfill:** 14.694 linhas em orders (28/05→03/06, 2 contas). Jobs de 1 dia
+(8 dias estouravam WORKER_RESOURCE_LIMIT). Disparo via net.http_post→process-sync-job.
+
+**Aprendizado:** falha silenciosa (retornar 200 mascarando erro de storage) escondeu
+o bug por ~1 semana. Sempre propagar erro de RPC + checar count no caller.
+
+**Commits:** 0f31e710 (RPC+EFs), f69a8bc1 (stringify fix). Phase 38 ✅.

@@ -138,3 +138,45 @@ Eles inserem em `sync_jobs`; `process-sync-job` drena a fila chamando as EFs.
 ## NOTA DE RISCO
 Fixes 1-3 mexem em AUTH de edge functions e 4 é um backfill que grava muitos
 registros. Confirmar com Wesley antes de aplicar (mudança outward/segurança).
+
+---
+
+## RESOLUÇÃO (2026-06-04) — Wesley autorizou "aplicar tudo"
+
+### Causa raiz final (DOIS bugs no storage de orders)
+1. **`orders.seller_id` virou uuid** mas `batch_upsert_orders` inseria como text
+   sem cast → `column seller_id is of type uuid but expression is of type text`.
+2. **`sync-ml-orders` chamava o RPC com `JSON.stringify(records)`** → param jsonb
+   recebia uma STRING (escalar) → `cannot extract elements from a scalar`.
+Ambos mascarados: sync-ml-orders engolia o erro e retornava 200/orders_synced=0;
+process-sync-job marcava "completed". orders congelou em 05-27.
+
+Bug adicional (daily_cache): mercado-libre-integration `verify_jwt=true` rejeitava
+a service key `sb_secret` do cron com 401 (874 jobs falhando).
+
+### Fixes aplicados e deployados
+| # | Mudança | Onde | Status |
+|---|---------|------|--------|
+| 1 | cast `NULLIF(...)::uuid` em seller_id/user_id/org_id | migration `20260604130000` | aplicada |
+| 2 | passar `records` direto (sem JSON.stringify) | sync-ml-orders v19 | deployada |
+| 3 | lançar erro em vez de engolir falha do RPC | sync-ml-orders v19 | deployada |
+| 4 | checar success/orders_synced (não só HTTP 200) | process-sync-job v14 | deployada |
+| 5 | aceitar service-role + verify_jwt=false | mercado-libre-integration v13 | deployada |
+
+### Backfill executado (28/05→03/06, 2 contas)
+- 16 jobs diários (1 dia/conta) — jobs de 8 dias estouravam WORKER_RESOURCE_LIMIT.
+- Resultado: **14.694 linhas** gravadas. Ex: 427063369 (alto volume) 423→3491
+  pedidos/dia; 1639558873 (principal) 31-61/dia.
+- custo_unit/tax_amount preenchidos só na conta principal (310 pedidos) — a conta
+  427063369 não tem ml_tax_config nem custos cadastrados (completude de dados, OK).
+- 04/06 (hoje BRT recém-começou): 0 pedidos ainda — esperado.
+
+### Validação
+- daily_cache job de teste (06-04): completed, SEM 401 → fix de auth confirmado.
+- Pipeline de cron agora grava de verdade (jobs failed surgem com erro real, não
+  mascarado). Crons diários mantêm orders + daily_cache frescos daqui pra frente.
+
+### Próximo (Wesley): validar em produção
+marketplace-analytics-pro-dev.vercel.app — /pedidos, /vendas (margem), /anuncios
+devem mostrar dados de 28/05→03/06. Limpar cache do navegador / refazer login se
+o React Query ainda servir cache vazio.
