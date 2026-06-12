@@ -4,14 +4,14 @@ milestone: v7.0
 milestone_name: milestone
 status: executing
 stopped_at: "Roadmap escrito (Phases 41–47, 27/27 requirements mapeados). Próximo: `/gsd-plan-phase 41`."
-last_updated: "2026-06-12T17:51:33.388Z"
+last_updated: "2026-06-12T18:17:03.291Z"
 last_activity: 2026-06-12 -- Phase 41 execution started
 progress:
   total_phases: 7
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 0
-  percent: 0
+  completed_plans: 3
+  percent: 14
 ---
 
 # Project State
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md
 ## Current Position
 
 Phase: 41 (Veracidade Total) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 41
+Plan: 2 of 3
+Status: Ready to execute
 Last activity: 2026-06-12 -- Phase 41 execution started
 
 ### DATA-01 executado (2026-06-12, commit fc090c46)
@@ -59,6 +59,7 @@ Last activity: 2026-06-12 -- Phase 41 execution started
 | 45. Consultor v1 | TBD | — | — |
 | 46. UX para Leigos | TBD | — | — |
 | 47. QA End-to-End + Go-Live | TBD | — | — |
+| Phase 41-veracidade-total P03 | 15 | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -79,6 +80,8 @@ Last activity: 2026-06-12 -- Phase 41 execution started
 - Entrada de clientes: convite controlado (self-service signup fica para v2)
 - Consultor v1: motor de regras determinístico (~12 regras + score 0-100), sem LLM por usuário
 - /perguntas e /devolucoes: integração real (ML Questions API + Claims API — portar padrão do Nexo MCP)
+- [Phase ?]: DATA-05: guard columnView removido do commCache useEffect — comissao real populada para todos os itens filtrados
+- [Phase ?]: DATA-06: /vendas e /financeiro confirmados usando useMLCostWaterfall como fonte unica — sem fix de codigo necessario
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -126,7 +129,7 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-12 — Roadmap v7.0 criado
+Last session: 2026-06-12T18:16:48.639Z
 Stopped at: Roadmap escrito (Phases 41–47, 27/27 requirements mapeados). Próximo: `/gsd-plan-phase 41`.
 
 ---
