@@ -167,7 +167,14 @@ serve(async (req) => {
     const organizationId: string | null = tokenRow.organization_id ?? null;
 
     // ── Org membership check (when non-service-role) ───────────────────────────
-    if (!isServiceRole && userId && organizationId) {
+    // Deny-by-default: loja sem organization_id só é acessível via service role.
+    if (!isServiceRole) {
+      if (!organizationId) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       const { data: isMember } = await supabaseAdmin.rpc("is_org_member", {
         _user_id: userId,
         _org_id:  organizationId,
