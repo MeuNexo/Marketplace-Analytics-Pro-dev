@@ -50,8 +50,13 @@ async function fetchBillingPeriod(
   const periodsData = await periodsResp.json();
   const periodList: any[] = periodsData.results ?? [];
 
-  // Match period key: may be "2026-04", "202604", or "2026-04-01" depending on seller (Pitfall 1)
-  const month = periodMonth; // YYYY-MM
+  // REGRA DE DOMÍNIO (Wesley, 2026-06-12): a fatura ML é nomeada pelo mês de
+  // FECHAMENTO/PAGAMENTO — o consumo do mês N acumula na fatura N+1.
+  // periodMonth aqui é o mês de CONSUMO (como armazenado em ml_billing_monthly);
+  // a chave da fatura no ML é consumo + 1 mês.
+  const [py, pm] = periodMonth.split("-").map(Number);
+  const invDate = new Date(Date.UTC(py, pm, 1)); // pm é 1-based → índice pm = mês seguinte
+  const month = `${invDate.getUTCFullYear()}-${String(invDate.getUTCMonth() + 1).padStart(2, "0")}`;
   const monthCompact = month.replace("-", "");
   const period = periodList.find((p: any) => {
     const k = String(p.key ?? "");
