@@ -374,6 +374,44 @@ export type Database = {
           },
         ]
       }
+      ml_billing_monthly: {
+        Row: {
+          charges: Json | null
+          id: string
+          ml_user_id: string
+          organization_id: string
+          period_month: string
+          resumo: Json | null
+          synced_at: string | null
+        }
+        Insert: {
+          charges?: Json | null
+          id?: string
+          ml_user_id: string
+          organization_id: string
+          period_month: string
+          resumo?: Json | null
+          synced_at?: string | null
+        }
+        Update: {
+          charges?: Json | null
+          id?: string
+          ml_user_id?: string
+          organization_id?: string
+          period_month?: string
+          resumo?: Json | null
+          synced_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_billing_monthly_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ml_daily_cache: {
         Row: {
           approved_revenue: number
