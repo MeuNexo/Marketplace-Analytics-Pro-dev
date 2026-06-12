@@ -25,10 +25,19 @@ See: .planning/PROJECT.md
 
 ## Current Position
 
-Phase: Not started (roadmap criado, aguardando planejamento da Phase 41)
+Phase: 41 — Veracidade Total (DATA-01 já executado ad-hoc; restante aguarda `/gsd-plan-phase 41`)
 Plan: —
 Status: Ready to plan Phase 41
-Last activity: 2026-06-12 — Roadmap v7.0 criado (Phases 41–47)
+Last activity: 2026-06-12 — Roadmap v7.0 criado (Phases 41–47) + DATA-01 executado e validado em produção
+
+### DATA-01 executado (2026-06-12, commit fc090c46)
+
+- Migration `20260612120000_fix_cost_waterfall_fallback_and_upsert_preserve` aplicada em produção (ckcdevcxgvueywivefgx)
+- **ATENÇÃO:** migration local `20260601000000` foi REMOVIDA do repo — nunca aplicada e continha batch_upsert_orders sem cast ::uuid (reverteria fix da Phase 38)
+- Validado via SQL: get_cost_waterfall jun/01-12 → paid_revenue R$115.195, CMV R$46.165, tax R$23.667 não-nulos (402 orders); fallback + COALESCE + cast ::uuid confirmados via pg_get_functiondef
+- Pendente: confirmação visual de Wesley no card "Custos" em /vendas (CMV e Impostos aparecendo)
+- Descoberta: produção tinha 0 orders com receita_bruta NULL (backfill virou no-op idempotente); o bug ativo era só a definição das funções
+- Supabase CLI local linkado no projeto ERRADO (gionpsuunfkkzzjdubfy) — não usar `db push`; aplicar migrations via MCP apply_migration no ckcdevcxgvueywivefgx
 
 ## Performance Metrics
 

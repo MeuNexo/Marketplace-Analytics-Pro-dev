@@ -13,7 +13,7 @@ Decisões fixadas por Wesley: Stripe | convite controlado | Consultor v1 por reg
 
 ### Bloco DATA — Veracidade total dos números
 
-- [ ] **DATA-01**: Card "Custos" em /vendas exibe CMV e Impostos não-nulos quando há configuração cadastrada (executar plano pronto da Phase 32: fallback receita_bruta + backfill)
+- [x] **DATA-01**: Card "Custos" em /vendas exibe CMV e Impostos não-nulos quando há configuração cadastrada — ✅ executado 2026-06-12 (migration 20260612120000, commit fc090c46; backend validado em produção, confirmação visual pendente)
 - [ ] **DATA-02**: Filtro "Hoje" em /vendas carrega os KPI cards via auto-recalc silencioso com skeleton — nunca "—" estático (executar plano pronto da Phase 31)
 - [ ] **DATA-03**: Lucro Bruto mensal calculado de fonte única (useMLCostWaterfall) sem pedidos cancelados (executar plano pronto da Phase 21)
 - [ ] **DATA-04**: Usuário vê CFFE real ("Frete ML") e linha "Parcelamento (CFONPN)" no breakdown de custos — tabela `ml_billing_monthly` + EF `sync-ml-billing` (ML `/billing/periods`) com indicador de fonte ("billing" vs "estimado")
