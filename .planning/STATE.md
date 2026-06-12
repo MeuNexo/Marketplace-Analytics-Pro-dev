@@ -129,8 +129,28 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-12T18:16:48.639Z
-Stopped at: Roadmap escrito (Phases 41–47, 27/27 requirements mapeados). Próximo: `/gsd-plan-phase 41`.
+Last session: 2026-06-12b — Execução Phase 41 (3/4 planos completos + 41-04 em andamento)
+Stopped at: **41-04 (DRE mensal) parcialmente entregue — retomar AQUI**
+
+### PONTO EXATO DE CONTINUAÇÃO (2026-06-12, fim de sessão)
+
+**Feito na Phase 41:**
+- 41-01 ✅ (consolidação DATA-01/02/03, aprovado visual), 41-02 ✅ (billing CFFE/CFONPN, smoke produção OK), 41-03 ✅ (comissão real + auditoria, aprovado com ressalva)
+- 41-04 (DRE mensal, pedido mid-phase de Wesley): card refeito e APROVADO em estrutura (commits fdd9ecd7, 0e27e711) + **regra de domínio crítica implementada**: fatura ML é nomeada pelo mês de FECHAMENTO → consumo N = fatura N+1 (EF v3 deployada, commit 2a0dcc11; dados re-rotulados; jun CFONPN R$3.008,28 bate EXATO com print do Wesley)
+
+**PENDENTE no 41-04 (próxima sessão, nesta ordem):**
+1. **Deploy EF v4**: index.ts local JÁ inclui bonuses (cancelamentos B*, commit 92ef99e6) mas v4 NÃO foi deployada — deploy via MCP deploy_edge_function (verify_jwt=false)
+2. **Re-sync 4 meses** com bonuses: mar/abr/mai/jun via net.http_get (padrão: token de ml_tokens, keys de fatura = consumo+1: 2026-04..2026-07) + upsert (cancelamentos jun = -674,87)
+3. **Frontend**: (a) grupo "Cancelamentos de tarifas" no groupBillingCharges (types B*, negativos, como no print ML); (b) **navegação de meses no card** (‹ Mês/Ano ›) com sync on-demand da EF para mês sem dados (user JWT funciona) + waterfall do mês selecionado
+4. Checkpoint visual Wesley → SUMMARY 41-04 → roadmap.update-plan-progress 41 41-04 complete
+5. **Fechar a fase**: code review (estava interrompido — spawnar gsd-code-reviewer com escopo dos 8 arquivos da fase incl. 41-04), gsd-verifier, phase.complete, PROJECT.md
+
+**Aprendizados de domínio da sessão (NÃO perder):**
+- Fatura ML = mês de fechamento; consumo N → fatura N+1 (chave period 2026-07 existe em 12/jun = fatura corrente)
+- Cancelamentos/estornos em bill_includes.bonuses (types B*), negativos; total_amount = charges + bonuses
+- Referência "abril" do Nexo na memória era fatura de abril = consumo de MARÇO (Nexo rotula por fatura)
+- Invocar EF programaticamente: net.http_get/post com token de ml_tokens (ML API direto); key sb_secret do cron ≠ SERVICE_ROLE_KEY env → 401 esperado na EF
+- Decisão Wesley: card Custos = DRE mensal (sempre mês), espelhando a fatura ML; demais cards seguem o filtro
 
 ---
 
