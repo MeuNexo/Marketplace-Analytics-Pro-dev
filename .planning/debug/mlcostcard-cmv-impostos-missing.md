@@ -1,5 +1,5 @@
 ---
-status: investigating
+status: awaiting_human_verify
 trigger: "Card Custos na página /vendas não inclui CMV e Impostos no cálculo de Lucro Bruto"
 created: 2026-06-01T00:00:00Z
 updated: 2026-06-01T00:00:00Z
