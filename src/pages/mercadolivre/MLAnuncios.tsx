@@ -814,10 +814,11 @@ export default function MLProdutos() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [columnView, usePromoPrice, filteredItemKey]);
 
-  // Lazy-fetch da comissão real (ML Listing Costs API) para todos os itens visíveis
-  // ao entrar na view "Financeiro"
+  // Lazy-fetch da comissão real (ML Listing Costs API) para todos os itens filtrados.
+  // Populado independentemente de columnView para que a comissão real (via listing_prices/sale_fee)
+  // esteja disponível em qualquer visualização — DATA-05: commCache prioritário sobre LISTING_TYPE_RATES.
   useEffect(() => {
-    if (columnView !== "financeiro" || !filteredItemKey) return;
+    if (!filteredItemKey) return;
     const toFetch = filtered.filter(i => !commCache.has(i.id));
     if (toFetch.length === 0) return;
     toFetch.forEach(async (item) => {
@@ -840,7 +841,7 @@ export default function MLProdutos() {
       setCommCache(prev => new Map(prev).set(item.id, { pct: match.percentage_fee, amount }));
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columnView, filteredItemKey]);
+  }, [filteredItemKey]);
 
   // KPI stats derived from filtered items so cards react to active filters
   const filteredKPIs = useMemo(() => {
