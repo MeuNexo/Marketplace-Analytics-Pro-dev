@@ -1,10 +1,11 @@
 ---
 gsd_state_version: 1.0
 milestone: v7.0
-milestone_name: SaaS Operacional End-to-End
+milestone_name: milestone
 status: planning
-last_updated: "2026-06-12T17:00:00.000Z"
-last_activity: 2026-06-12
+stopped_at: "Roadmap escrito (Phases 41–47, 27/27 requirements mapeados). Próximo: `/gsd-plan-phase 41`."
+last_updated: "2026-06-12T17:48:33.532Z"
+last_activity: 2026-06-12 — Roadmap v7.0 criado (Phases 41–47) + DATA-01 executado e validado em produção
 progress:
   total_phases: 7
   completed_phases: 0
