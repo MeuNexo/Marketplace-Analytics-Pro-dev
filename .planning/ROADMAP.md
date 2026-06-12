@@ -35,7 +35,11 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
   4. Linha "Frete ML" exibe CFFE real da billing API; linha "Parcelamento (CFONPN)" existe e tem valor — com indicador "billing" vs "estimado"
   5. Comissao em /anuncios vem da API ML (sale_fee/listing_prices) — LISTING_TYPE_RATES removido
   6. KPIs de /vendas, /financeiro e /anuncios batem entre si e com referencia Nexo Abril/2026 (comissao R$39,2k, CFFE R$40k, CFONPN R$15,9k)
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 41-01-PLAN.md — Consolidar DATA-01/02/03 (CMV/Impostos visiveis, auto-recalc Hoje, Lucro Bruto fonte unica)
+- [ ] 41-02-PLAN.md — DATA-04 billing real (tabela ml_billing_monthly + EF sync-ml-billing + useMLBilling + CFFE/CFONPN no MLCostCard)
+- [ ] 41-03-PLAN.md — DATA-05 comissao real /anuncios + DATA-06 auditoria de consistencia cruzada
 **UI hint**: yes
 
 ---
@@ -128,7 +132,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 41. Veracidade Total | 0/? | Not started | - |
+| 41. Veracidade Total | 0/3 | Planned | - |
 | 42. Zero Mock | 0/? | Not started | - |
 | 43. Multi-Tenant Hardening | 0/? | Not started | - |
 | 44. Monetizacao Stripe | 0/? | Not started | - |
