@@ -18,7 +18,7 @@ import { useMLLastSync } from "@/hooks/useMLLastSync";
 import { useMLOrders } from "@/hooks/useMLOrders";
 import { useMLKPISummary } from "@/hooks/useMLKPISummary";
 import { useMLCostWaterfall } from "@/hooks/useMLCostWaterfall";
-import { useMLBilling } from "@/hooks/useMLBilling";
+import { useMLBilling, groupBillingCharges } from "@/hooks/useMLBilling";
 import { useAutoRecalc } from "@/hooks/useAutoRecalc";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useMLOrdersByBrand } from "@/hooks/useMLOrdersByBrand";
@@ -35,7 +35,7 @@ import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { GoalsCard } from "@/components/mercadolivre/GoalsCard";
 import type { ProductSalesRow } from "@/components/mercadolivre/TopSellingProducts";
 import { Plug, Info, Loader2, RefreshCw, Settings2, ChevronUp, ChevronDown, RotateCcw } from "lucide-react";
-import { format, parseISO, startOfDay, subDays } from "date-fns";
+import { format, parseISO, startOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { MLSalesAnalytics } from "@/components/mercadolivre/MLSalesAnalytics";
 import { useDashboardLayout } from "@/hooks/useDashboardLayout";
@@ -167,10 +167,80 @@ export default function MercadoLivre() {
   const billingMonth = useMemo(() => currentFrom.substring(0, 7), [currentFrom]);
   const { data: billingData } = useMLBilling(billingMonth);
 
-  // Waterfall dos últimos 30 dias — usado como base de estimativa quando o mês corrente
-  // ainda não tem orders (ex: primeiros dias do mês, ou mês sem sync ainda).
-  const trailing30From = useMemo(() => format(subDays(new Date(), 30), "yyyy-MM-dd"), []);
-  const { data: trailingWaterfall } = useMLCostWaterfall(trailing30From, monthlyTo);
+  // Waterfall do mês do filtro — quando billingMonth ≠ mês corrente precisamos de dados
+  // de CMV/impostos/receita para o mês do filtro (não o mês corrente).
+  const currentCalendarMonth = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }, []);
+  const billingMonthIsCurrentMonth = billingMonth === currentCalendarMonth;
+  // Primeiros/últimos dias do billingMonth — usados para instanciar waterfall do mês do filtro
+  const billingMonthFrom = useMemo(() => `${billingMonth}-01`, [billingMonth]);
+  const billingMonthTo = useMemo(() => {
+    const [year, month] = billingMonth.split("-").map(Number);
+    // Último dia do mês: dia 0 do mês seguinte
+    const lastDay = new Date(year, month, 0).getDate();
+    return `${billingMonth}-${String(lastDay).padStart(2, "0")}`;
+  }, [billingMonth]);
+  // Waterfall específico do mês do filtro (ativado somente quando ≠ mês corrente)
+  const { data: filterMonthWaterfall } = useMLCostWaterfall(
+    billingMonthIsCurrentMonth ? monthlyFrom : billingMonthFrom,
+    billingMonthIsCurrentMonth ? monthlyTo   : billingMonthTo,
+  );
+
+  // DRE: waterfall autoritativo para o mês exibido no card
+  const dreWaterfall = billingMonthIsCurrentMonth ? monthlyCostWaterfall : filterMonthWaterfall;
+
+  // Grupos de tarifas agrupados
+  const { groups: gruposTarifas, totalTarifas } = useMemo(
+    () => groupBillingCharges(billingData?.charges ?? []),
+    [billingData],
+  );
+
+  // Label do mês em pt-BR — ex.: "Junho/2026"
+  const mesLabel = useMemo(() => {
+    const [year, month] = billingMonth.split("-").map(Number);
+    const d = new Date(year, month - 1, 1);
+    const monthName = d.toLocaleString("pt-BR", { month: "long" });
+    return `${monthName.charAt(0).toUpperCase() + monthName.slice(1)}/${year}`;
+  }, [billingMonth]);
+
+  // Receita, CMV e impostos do mês do filtro
+  const receitaMes = dreWaterfall?.paid_revenue ?? 0;
+  const cmvMes = (dreWaterfall?.has_cmv ? dreWaterfall.cmv : null) ?? null;
+  const impostosMes = (dreWaterfall?.has_tax_data ? dreWaterfall.total_tax : null) ?? null;
+
+  // Fallback estimado: ads do mês do filtro somado para linha de publicidade
+  const adsSpendMes = useMemo(
+    () => adsDaily.filter((d) => d.date >= billingMonthFrom && d.date <= billingMonthTo).reduce((s, d) => s + d.spend, 0),
+    [adsDaily, billingMonthFrom, billingMonthTo],
+  );
+
+  // fonte: "billing" quando há dados reais da ML Billing API, "estimado" quando fallback de orders
+  const dreFonte: "billing" | "estimado" = billingData ? "billing" : "estimado";
+
+  // Quando não há billing real, montar grupos estimados a partir de orders
+  const gruposTarifasEfetivos = useMemo(() => {
+    if (billingData) return gruposTarifas;
+    // fallback: grupos estimados de orders (comissão=total_comissao, frete, ads)
+    const comissao = dreWaterfall?.total_comissao ?? 0;
+    const frete    = dreWaterfall?.total_frete    ?? 0;
+    const ads      = adsSpendMes;
+    return [
+      { key: "tarifas_venda", label: "Tarifas de venda",          amount: comissao },
+      { key: "envios_ml",     label: "Envios Mercado Livre",       amount: frete    },
+      { key: "parcelamento",  label: "Taxas de parcelamento",      amount: 0        },
+      { key: "publicidade",   label: "Campanhas de publicidade",   amount: ads      },
+      { key: "tarifas_full",  label: "Tarifas Full",               amount: 0        },
+      { key: "difal",         label: "Impostos cobrados pelo ML (DIFAL)", amount: 0 },
+      { key: "afiliados_outras", label: "Outras tarifas",          amount: 0        },
+    ];
+  }, [billingData, gruposTarifas, dreWaterfall, adsSpendMes]);
+
+  const totalTarifasEfetivo = useMemo(
+    () => gruposTarifasEfetivos.reduce((s, g) => s + g.amount, 0),
+    [gruposTarifasEfetivos],
+  );
 
   const currentGrossProfit = useMemo(() => {
     if (!monthlyCostWaterfall) return 0;
@@ -352,26 +422,6 @@ export default function MercadoLivre() {
   // CMV e Impostos para o card: usa dados reais do período quando disponíveis,
   // senão estima via % do waterfall mensal aplicado à receita do dia (ml_daily_cache).
   // Base de estimativa: mês corrente se tiver dados, senão últimos 30 dias
-  const estimationBase = (monthlyCostWaterfall?.paid_revenue ?? 0) > 0
-    ? monthlyCostWaterfall
-    : (trailingWaterfall?.paid_revenue ?? 0) > 0 ? trailingWaterfall : null;
-
-  const cmvParaCard = useMemo(() => {
-    if (costWaterfall?.has_cmv) return costWaterfall.cmv;
-    const base = estimationBase;
-    if (!costWaterfall && base?.has_cmv && base.paid_revenue > 0 && (effectiveMetrics?.total_revenue ?? 0) > 0)
-      return Math.round((base.cmv / base.paid_revenue) * effectiveMetrics!.total_revenue * 100) / 100;
-    return null;
-  }, [costWaterfall, estimationBase, effectiveMetrics]);
-
-  const impostosParaCard = useMemo(() => {
-    if (costWaterfall?.has_tax_data) return costWaterfall.total_tax;
-    const base = estimationBase;
-    if (!costWaterfall && base?.has_tax_data && base.paid_revenue > 0 && (effectiveMetrics?.total_revenue ?? 0) > 0)
-      return Math.round((base.total_tax / base.paid_revenue) * effectiveMetrics!.total_revenue * 100) / 100;
-    return null;
-  }, [costWaterfall, estimationBase, effectiveMetrics]);
-
   const dailyRevenue = useMemo(
     () => effectiveDaily.map((d) => ({ date: d.date, revenue: d.approved ?? 0 })),
     [effectiveDaily],
@@ -595,16 +645,14 @@ export default function MercadoLivre() {
             if (widget.id === "cost_waterfall") return (
               <div key="cost_waterfall" className="grid grid-cols-1 lg:grid-cols-6 gap-3">
                 <MLCostCard
-                  gross_revenue={(costWaterfall?.paid_revenue ?? 0) > 0 ? costWaterfall!.paid_revenue! : effectiveMetrics?.total_revenue ?? 0}
-                  cancelled_revenue={costWaterfall?.cancelled_revenue ?? 0}
-                  paid_revenue={costWaterfall?.paid_revenue}
-                  comissao={costWaterfall?.total_comissao ?? ordersSummary?.total_comissao ?? (effectiveMetrics?.total_revenue ?? 0) * 0.11}
-                  frete={billingData?.cffe ?? costWaterfall?.total_frete ?? ordersSummary?.total_frete ?? (effectiveMetrics?.total_revenue ?? 0) * 0.05}
-                  cfonpn={billingData?.cfonpn ?? null}
-                  billingSource={!!billingData}
-                  publicidade={adsSummary.total_spend}
-                  cmv={cmvParaCard}
-                  impostos={impostosParaCard}
+                  mesLabel={mesLabel}
+                  receitaMes={receitaMes}
+                  gruposTarifas={gruposTarifasEfetivos}
+                  totalTarifas={totalTarifasEfetivo}
+                  cmvMes={cmvMes}
+                  impostosMes={impostosMes}
+                  fonte={dreFonte}
+                  adsSpendMes={adsSpendMes}
                   loading={costWaterfallLoading}
                 />
                 <MLTopProducts products={effectiveProducts} marginMap={marginMap} />
