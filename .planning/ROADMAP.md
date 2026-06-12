@@ -43,7 +43,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 **Plans**: 3 plansPlans:
 **Wave 1**
 
-- [ ] 41-01-PLAN.md — Consolidar DATA-01/02/03 (CMV/Impostos visiveis, auto-recalc Hoje, Lucro Bruto fonte unica)
+- [x] 41-01-PLAN.md — Consolidar DATA-01/02/03 (CMV/Impostos visiveis, auto-recalc Hoje, Lucro Bruto fonte unica)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -163,7 +163,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 41. Veracidade Total | 0/3 | Planned | - |
+| 41. Veracidade Total | 1/3 | In Progress|  |
 | 42. Zero Mock | 0/? | Not started | - |
 | 43. Multi-Tenant Hardening | 0/? | Not started | - |
 | 44. Monetizacao Stripe | 0/? | Not started | - |
