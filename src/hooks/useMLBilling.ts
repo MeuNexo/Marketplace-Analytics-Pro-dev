@@ -13,6 +13,111 @@ export interface MLBillingData {
   synced_at: string;
 }
 
+export interface BillingGroup {
+  key: string;
+  label: string;
+  amount: number;
+}
+
+export interface GroupedBillingResult {
+  groups: BillingGroup[];
+  totalTarifas: number;
+}
+
+/**
+ * Mapas de types → grupos (conforme plano 41-04).
+ * Todos os types não mapeados caem no bucket "Outras tarifas".
+ */
+const BILLING_GROUP_MAP: Array<{ key: string; label: string; types: Set<string> }> = [
+  {
+    key: "tarifas_venda",
+    label: "Tarifas de venda",
+    types: new Set(["CVVML", "CVVPRC", "CVVFNU"]),
+  },
+  {
+    key: "envios_ml",
+    label: "Envios Mercado Livre",
+    types: new Set(["CFFE", "CXDE", "CFFI", "CXDED"]),
+  },
+  {
+    key: "parcelamento",
+    label: "Taxas de parcelamento",
+    types: new Set(["CFONPN"]),
+  },
+  {
+    key: "publicidade",
+    label: "Campanhas de publicidade",
+    types: new Set(["PADS"]),
+  },
+  {
+    key: "tarifas_full",
+    label: "Tarifas Full",
+    types: new Set(["CFCBE", "CFBA", "CFPB", "CFWA"]),
+  },
+  {
+    key: "difal",
+    label: "Impostos cobrados pelo ML (DIFAL)",
+    types: new Set(["CDIFAL"]),
+  },
+  {
+    key: "afiliados",
+    label: "Afiliados",
+    types: new Set(["CVAF"]),
+  },
+];
+
+const OUTRAS_KEY = "outras";
+const OUTRAS_LABEL = "Outras tarifas";
+
+/**
+ * Agrupa cobranças de billing em grupos semânticos conforme plano 41-04.
+ * Valores somados com sinal (estornos negativos subtraem).
+ * Types não mapeados caem no bucket "Outras tarifas" — nunca dropados.
+ */
+export function groupBillingCharges(
+  charges: Array<{ type: string; label: string; amount: number }>,
+): GroupedBillingResult {
+  // Acumula por grupo
+  const accumulators: Record<string, number> = {};
+  for (const g of BILLING_GROUP_MAP) accumulators[g.key] = 0;
+  accumulators[OUTRAS_KEY] = 0;
+
+  for (const charge of charges) {
+    const group = BILLING_GROUP_MAP.find((g) => g.types.has(charge.type));
+    if (group) {
+      accumulators[group.key] += charge.amount;
+    } else {
+      accumulators[OUTRAS_KEY] += charge.amount;
+    }
+  }
+
+  // Monta lista de grupos — inclui "Outras" sempre que houver valor ou types sem mapa
+  const groups: BillingGroup[] = BILLING_GROUP_MAP.map((g) => ({
+    key: g.key,
+    label: g.label,
+    amount: accumulators[g.key],
+  }));
+
+  // "Afiliados / Outras tarifas" — exibe combinado se ambos tiverem valor,
+  // ou apenas "Outras tarifas" se afiliados for zero
+  const afiliadosIdx = groups.findIndex((g) => g.key === "afiliados");
+  if (afiliadosIdx !== -1) {
+    const afiliadosAmt = groups[afiliadosIdx].amount;
+    const outrasAmt = accumulators[OUTRAS_KEY];
+    groups[afiliadosIdx] = {
+      key: "afiliados_outras",
+      label: afiliadosAmt !== 0 ? "Afiliados / Outras tarifas" : OUTRAS_LABEL,
+      amount: afiliadosAmt + outrasAmt,
+    };
+  } else {
+    groups.push({ key: OUTRAS_KEY, label: OUTRAS_LABEL, amount: accumulators[OUTRAS_KEY] });
+  }
+
+  const totalTarifas = groups.reduce((sum, g) => sum + g.amount, 0);
+
+  return { groups, totalTarifas };
+}
+
 /**
  * Lê ml_billing_monthly para o período YYYY-MM especificado.
  * Retorna null quando não há dados (conta sem Full ou ainda não sincronizado).
