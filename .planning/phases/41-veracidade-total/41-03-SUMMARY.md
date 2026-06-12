@@ -76,47 +76,32 @@ Auditoria por leitura de codigo:
 
 **Resultado:** /vendas e /financeiro usam exatamente o mesmo hook `useMLCostWaterfall` com os mesmos parametros de periodo — os totais sao identicos por construcao (mesma RPC `get_cost_waterfall` no banco). Nenhuma divergencia de fonte detectada. **Sem fix de codigo necessario.**
 
-### Validacao SQL DATA-06 (para o orquestrador executar no banco ckcdevcxgvueywivefgx)
+### Validacao SQL DATA-06 (executada pelo orquestrador no banco ckcdevcxgvueywivefgx)
 
-O plano exige validacao numerica contra a referencia Nexo Abril/2026. Como o executor nao tem acesso MCP Supabase, as queries a executar sao:
+Validacao numerica contra a referencia Nexo Abril/2026 (seller 1639558873):
 
-```sql
--- 1. Comissao total Abril/2026 (referencia: ~R$39.170, 11.15%)
-SELECT
-  SUM(comissao) AS total_comissao,
-  SUM(comissao) / NULLIF(SUM(receita_bruta), 0) * 100 AS pct_comissao,
-  SUM(receita_bruta) AS receita_bruta
-FROM orders
-WHERE ml_user_id = '1639558873'
-  AND date >= '2026-04-01'
-  AND date <= '2026-04-30'
-  AND status IN ('paid', 'shipped', 'delivered');
+| Metrica | Valor garment (SQL producao) | Referencia Nexo | Bate? |
+|---------|------------------------------|-----------------|-------|
+| CFFE abril/2026 (ML Billing API) | R$40.065,33 | R$40.065 | EXATO |
+| CFONPN abril/2026 | R$15.902,70 | R$15.902 | EXATO |
+| Comissao % abril | 11,14% | 11,15% | SIM |
+| Comissao absoluta abril | R$34.484 | R$39.170 | COM RESSALVA (ver Open Items) |
+| /vendas vs /financeiro | mesma RPC get_cost_waterfall | — | SIM (por construcao) |
 
--- 2. CFFE e CFONPN billing Abril/2026 (referencia: CFFE ~R$40.065, CFONPN ~R$15.902)
-SELECT
-  resumo->>'cffe'   AS cffe,
-  resumo->>'cfonpn' AS cfonpn,
-  synced_at
-FROM ml_billing_monthly
-WHERE ml_user_id = '1639558873'
-  AND period_month = '2026-04';
+- Linha 2026-04 persistida em `ml_billing_monthly` (upsert via SQL com o mesmo formato da EF sync-ml-billing)
+- Cobertura de orders abril: 30/30 dias
 
--- 3. Verificar que get_cost_waterfall retorna os mesmos totais que /vendas e /financeiro exibem
-SELECT
-  paid_revenue,
-  total_comissao,
-  total_frete,
-  cmv,
-  total_tax
-FROM get_cost_waterfall(
-  p_org_id      := '<organization_id_pe_vermeio>',
-  p_ml_user_ids := ARRAY['1639558873'],
-  p_from        := '2026-04-01',
-  p_to          := '2026-04-30'
-);
-```
+### Confirmacao Visual (Wesley — checkpoint aprovado)
 
-**Valores esperados:** comissao ~R$39.170, CFFE billing ~R$40.065, CFONPN ~R$15.902. Se `ml_billing_monthly` nao tiver linha para 2026-04, o orquestrador pode invocar a EF `sync-ml-billing` com `{ ml_user_id: "1639558873", period_month: "2026-04" }` para backfill.
+- Comissao variando por anuncio em /anuncios (percentual real via listing_prices, nao % fixo)
+- Consistencia entre paginas (/vendas == /financeiro para o mesmo periodo)
+- Badge "billing" visivel no Frete do card Custos
+
+**Veredito do checkpoint:** "Aprovado com ressalva" — ressalva registrada como a divergencia conhecida de comissao absoluta de abril (ver Open Items).
+
+## Open Items para Phase 47 (QA)
+
+- **Divergencia comissao absoluta abril:** garment R$34.484 vs Nexo R$39.170 (diferenca ~R$4.686), com 30/30 dias cobertos em orders. O percentual bate (11,14% vs 11,15%), o que sugere diferenca de base (conjunto de orders/receita considerados) e nao de tarifa. Investigacao fica para a Phase 47/QA.
 
 ## Task Commits
 
@@ -142,6 +127,13 @@ Nenhum stub novo introduzido por esta plan. O fallback `getCommissionRate(listin
 ## Threat Surface
 
 Nenhuma nova superficie de ataque introduzida. O threat T-41-03-02 (fetch excessivo ao remover guard) e mitigado pela deduplicacao `filtered.filter(i => !commCache.has(i.id))` ja existente — confirmado no codigo, linha 822.
+
+## Checkpoint Resolution
+
+- **Tipo:** human-verify (gate blocking)
+- **Resposta de Wesley:** "Aprovado com ressalva"
+- **Ressalva:** divergencia conhecida de comissao absoluta abril (garment R$34.484 vs Nexo R$39.170) — registrada em Open Items para Phase 47/QA
+- **Validacao SQL:** executada pelo orquestrador (executor sem acesso MCP Supabase) — CFFE e CFONPN EXATOS vs referencia
 
 ## Self-Check: PASSED
 
