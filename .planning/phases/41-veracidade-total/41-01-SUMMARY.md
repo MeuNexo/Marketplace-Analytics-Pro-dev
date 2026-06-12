@@ -23,14 +23,22 @@ decisions:
 metrics:
   duration: "~10min"
   completed: "2026-06-12"
-  tasks_completed: 2
-  tasks_total: 2
+  tasks_completed: 3
+  tasks_total: 3
   files_changed: 0
 ---
 
 # Phase 41 Plan 01: Veracidade Total — Verificação DATA-02/03 Summary
 
-**One-liner:** Verificação end-to-end de DATA-02 (auto-recalc silencioso Hoje) e DATA-03 (Lucro Bruto mensal via useMLCostWaterfall fonte única) — todos os artefatos já estavam corretos, zero edições de src/.
+**One-liner:** Verificação end-to-end de DATA-02 (auto-recalc silencioso Hoje) e DATA-03 (Lucro Bruto mensal via useMLCostWaterfall fonte única) — todos os artefatos já estavam corretos, zero edições de src/. DATA-01/02/03 confirmados visualmente por Wesley.
+
+## Checkpoint: APROVADO (Wesley, 2026-06-12)
+
+Verificação visual em /vendas confirmada nos 3 itens:
+
+1. **DATA-01** — Card "Custos" exibe CMV e Impostos com valores em R$ (backend via fc090c46)
+2. **DATA-02** — Filtro "Hoje" carrega KPI cards via skeleton/auto-recalc silencioso
+3. **DATA-03** — Lucro Bruto % consistente entre GoalsCard e MLCostCard, sem inflação por cancelados
 
 ## O Que Foi Feito
 
