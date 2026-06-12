@@ -176,6 +176,18 @@ export function useMLSync(opts: UseMLSyncOptions) {
             }
           }
 
+          // Sync billing (CFFE/CFONPN) para o mês corrente — non-fatal, não aborta o sync principal
+          const currentPeriodMonth = format(startOfDay(new Date()), "yyyy-MM");
+          for (const mlUserId of capturedMLUserIds) {
+            try {
+              await supabase.functions.invoke("sync-ml-billing", {
+                body: { ml_user_id: mlUserId, period_month: currentPeriodMonth },
+              });
+            } catch (billingErr) {
+              console.warn("sync-ml-billing (non-fatal):", billingErr);
+            }
+          }
+
           // Invalidate React Query caches
           try { await invalidateRef.current.invalidateAll(); } catch {}
 

@@ -18,6 +18,7 @@ import { useMLLastSync } from "@/hooks/useMLLastSync";
 import { useMLOrders } from "@/hooks/useMLOrders";
 import { useMLKPISummary } from "@/hooks/useMLKPISummary";
 import { useMLCostWaterfall } from "@/hooks/useMLCostWaterfall";
+import { useMLBilling } from "@/hooks/useMLBilling";
 import { useAutoRecalc } from "@/hooks/useAutoRecalc";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useMLOrdersByBrand } from "@/hooks/useMLOrdersByBrand";
@@ -161,6 +162,10 @@ export default function MercadoLivre() {
     [adsDaily, monthlyFrom, monthlyTo],
   );
   const { data: monthlyCostWaterfall } = useMLCostWaterfall(monthlyFrom, monthlyTo);
+
+  // Billing real (CFFE/CFONPN) para o período selecionado (DATA-04)
+  const billingMonth = useMemo(() => currentFrom.substring(0, 7), [currentFrom]);
+  const { data: billingData } = useMLBilling(billingMonth);
 
   // Waterfall dos últimos 30 dias — usado como base de estimativa quando o mês corrente
   // ainda não tem orders (ex: primeiros dias do mês, ou mês sem sync ainda).
@@ -594,7 +599,9 @@ export default function MercadoLivre() {
                   cancelled_revenue={costWaterfall?.cancelled_revenue ?? 0}
                   paid_revenue={costWaterfall?.paid_revenue}
                   comissao={costWaterfall?.total_comissao ?? ordersSummary?.total_comissao ?? (effectiveMetrics?.total_revenue ?? 0) * 0.11}
-                  frete={costWaterfall?.total_frete ?? ordersSummary?.total_frete ?? (effectiveMetrics?.total_revenue ?? 0) * 0.05}
+                  frete={billingData?.cffe ?? costWaterfall?.total_frete ?? ordersSummary?.total_frete ?? (effectiveMetrics?.total_revenue ?? 0) * 0.05}
+                  cfonpn={billingData?.cfonpn ?? null}
+                  billingSource={!!billingData}
                   publicidade={adsSummary.total_spend}
                   cmv={cmvParaCard}
                   impostos={impostosParaCard}

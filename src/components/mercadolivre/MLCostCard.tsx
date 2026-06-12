@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
-import { DollarSign, Truck, Megaphone, Package, TrendingDown, TrendingUp } from "lucide-react";
+import { CreditCard, DollarSign, Truck, Megaphone, Package, TrendingDown, TrendingUp } from "lucide-react";
 
 const fmt = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
@@ -33,6 +33,10 @@ interface CostWaterfallCardProps {
   /** SUM(receita × effective_rate/100) por loja — null = sem config fiscal */
   impostos: number | null;
   loading?: boolean;
+  /** Parcelamento sem juros (CFONPN) da ML Billing API — undefined = sem billing */
+  cfonpn?: number | null;
+  /** true = frete vem da billing real (CFFE); false/undefined = estimado de orders */
+  billingSource?: boolean;
 }
 
 export function MLCostCard({
@@ -45,6 +49,8 @@ export function MLCostCard({
   cmv,
   impostos,
   loading,
+  cfonpn,
+  billingSource,
 }: CostWaterfallCardProps) {
   const lines: WaterfallLine[] = [
     ...(cancelled_revenue > 0
@@ -71,6 +77,16 @@ export function MLCostCard({
       base: gross_revenue,
       color: "text-foreground",
     },
+    ...(cfonpn !== undefined
+      ? [{
+          icon: <CreditCard className="w-3.5 h-3.5 text-violet-400" />,
+          label: "Parcelamento (CFONPN)",
+          value: cfonpn ?? null,
+          nullLabel: undefined,
+          base: gross_revenue,
+          color: "text-foreground",
+        }]
+      : []),
     {
       icon: <Megaphone className="w-3.5 h-3.5 text-purple-400" />,
       label: "Publicidade",
@@ -101,7 +117,7 @@ export function MLCostCard({
       ? paid_revenue!
       : gross_revenue - cancelled_revenue;
 
-  const operationalCosts = comissao + frete + publicidade + (cmv ?? 0) + (impostos ?? 0);
+  const operationalCosts = comissao + frete + (cfonpn ?? 0) + publicidade + (cmv ?? 0) + (impostos ?? 0);
   const totalDeductions = cancelled_revenue + operationalCosts;
   const lucro = effectivePaid - operationalCosts;
   const lucroPositivo = lucro >= 0;
@@ -141,6 +157,11 @@ export function MLCostCard({
                   <span className="flex items-center gap-1.5 text-muted-foreground">
                     {line.icon}
                     {line.label}
+                    {line.label === "Frete" && billingSource !== undefined && (
+                      <span className="text-[9px] text-muted-foreground/60 ml-1">
+                        {billingSource ? "billing" : "estimado"}
+                      </span>
+                    )}
                   </span>
                   <div className="flex items-center gap-2">
                     {line.value != null ? (
