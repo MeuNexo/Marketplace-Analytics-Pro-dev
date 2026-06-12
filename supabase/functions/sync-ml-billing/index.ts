@@ -84,7 +84,11 @@ async function fetchBillingPeriod(
 
   const data = await detailResp.json();
   const billIncludes = data.bill_includes ?? {};
-  const charges: any[] = billIncludes.charges ?? [];
+  // bonuses = cancelamentos/estornos de tarifas (tipos B*, valores negativos).
+  // Entram no array de charges para a DRE não inflar (pedido Wesley 2026-06-12).
+  const rawCharges: any[] = billIncludes.charges ?? [];
+  const bonuses: any[] = billIncludes.bonuses ?? [];
+  const charges: any[] = [...rawCharges, ...bonuses];
 
   // Log charge types found (mitiga risco A2 do research — type field "CFFE"/"CFONPN")
   const chargeTypes = [...new Set(charges.map((c: any) => String(c.type ?? "unknown")))];
