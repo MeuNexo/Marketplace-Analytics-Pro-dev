@@ -88,7 +88,38 @@ Regras iniciais candidatas: margem < alvo por produto; ROAS/ACoS fora da meta; T
 
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
-| (preenchido pelo roadmap) | | |
+| DATA-01 | Phase 41 | Pending |
+| DATA-02 | Phase 41 | Pending |
+| DATA-03 | Phase 41 | Pending |
+| DATA-04 | Phase 41 | Pending |
+| DATA-05 | Phase 41 | Pending |
+| DATA-06 | Phase 41 | Pending |
+| MOCK-01 | Phase 42 | Pending |
+| MOCK-02 | Phase 42 | Pending |
+| MOCK-03 | Phase 42 | Pending |
+| MOCK-04 | Phase 42 | Pending |
+| MOCK-05 | Phase 42 | Pending |
+| TENANT-01 | Phase 43 | Pending |
+| TENANT-02 | Phase 43 | Pending |
+| TENANT-03 | Phase 43 | Pending |
+| TENANT-04 | Phase 43 | Pending |
+| TENANT-05 | Phase 43 | Pending |
+| PAY-01 | Phase 44 | Pending |
+| PAY-02 | Phase 44 | Pending |
+| PAY-03 | Phase 44 | Pending |
+| PAY-04 | Phase 44 | Pending |
+| CONSUL-01 | Phase 45 | Pending |
+| CONSUL-02 | Phase 45 | Pending |
+| CONSUL-03 | Phase 45 | Pending |
+| CONSUL-04 | Phase 45 | Pending |
+| CONSUL-05 | Phase 45 | Pending |
+| UX-01 | Phase 46 | Pending |
+| UX-02 | Phase 46 | Pending |
+| UX-03 | Phase 46 | Pending |
+| UX-04 | Phase 46 | Pending |
+| QA-01 | Phase 47 | Pending |
+| QA-02 | Phase 47 | Pending |
+| QA-03 | Phase 47 | Pending |
 
 ---
 *Criado: 2026-06-12 — milestone v7.0*

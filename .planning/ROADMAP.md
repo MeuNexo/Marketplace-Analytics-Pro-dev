@@ -1,237 +1,137 @@
-# Roadmap — v5.0 Dashboard de Vendas — KPIs Reais
+# Roadmap — v7.0 SaaS Operacional End-to-End
 
 ## Overview
 
-Dois pilares transformam o dashboard de Vendas de estimativas hardcoded para dados reais:
-orders individuais (Phase 14) expõem comissão, frete e ticket médio corretos por pedido;
-billing mensal (Phase 15) traz CFFE real e CFONPN — custos hoje invisíveis que somam R$56k/mês.
+Sete fases transformam o dashboard (hoje mono-tenant, com mocks e sem pagamento) em SaaS vendável por assinatura: dados 100% verdadeiros (Phase 41), zero mocks (Phase 42), multi-tenant endurecido (Phase 43), monetização Stripe ativa (Phase 44), Consultor v1 como diferencial de venda (Phase 45), UX compreensível para lojista leigo (Phase 46) e QA end-to-end antes do go-live (Phase 47).
+
+Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: push → Vercel auto.
 
 ## Phases
 
-- [ ] **Phase 14: ml_orders — Orders Individuais** — Tabela + sync + KPIs de comissão/frete/ticket médio corretos
-- [ ] **Phase 15: ml_billing_monthly — Billing Integration** — CFFE real, CFONPN, waterfall financeiro
+- [ ] **Phase 41: Veracidade Total** — KPIs de /vendas, /financeiro e /anuncios com fontes reais e consistentes (CMV, billing, comissao real)
+- [ ] **Phase 42: Zero Mock** — /perguntas, /devolucoes, /reputacao e /tv lendo dados reais da API ML
+- [ ] **Phase 43: Multi-Tenant Hardening** — RLS org-first, backfill de orfaos, quota enforcement, wizard de onboarding guiado
+- [ ] **Phase 44: Monetizacao Stripe** — Checkout + webhooks + /planos + enforcement de tier aplicado de verdade
+- [ ] **Phase 45: Consultor v1** — Engine de ~12 regras, card "O que fazer agora", painel de insights e score de saude 0-100
+- [ ] **Phase 46: UX para Leigos** — Glossario/tooltips em todo KPI, empty states acionaveis, mobile polish, consistencia visual
+- [ ] **Phase 47: QA End-to-End + Go-Live** — Simulacao tenant novo, auditoria de seguranca, tsc + build + smoke de deploy Vercel
 
 ---
 
 ## Phase Details
 
-### Phase 14: ml_orders — Orders Individuais
-**Goal**: Dashboard de Vendas exibe comissão real, frete real e ticket médio correto — calculados de orders individuais, não de percentuais hardcoded
-**Mode:** mvp
-**Depends on**: Nothing (infrastructure phase)
-**Requirements**: ORDERS-01, ORDERS-02, ORDERS-03, ORDERS-04, KPIS-01, KPIS-02, KPIS-03, KPIS-04
+### Phase 41: Veracidade Total
+**Goal**: Usuarios veem KPIs financeiros corretos em /vendas, /financeiro e /anuncios — sem calculos hardcoded, com billing real e fonte unica consistente
+**Depends on**: Nothing (executa plans prontos existentes + Phase 15 adiada)
+**Requirements**: DATA-01, DATA-02, DATA-03, DATA-04, DATA-05, DATA-06
+**Reuse existing plans**:
+  - DATA-01 (CMV/Impostos nulos) → executar plan pronto `.planning/phases/32-fix-lucro-bruto-cmv-impostos/32-01-PLAN.md`
+  - DATA-02 (auto-recalc "Hoje") → executar plan pronto `.planning/phases/31-auto-sync-cmv-impostos-pedidos-realtime/31-01-PLAN.md`
+  - DATA-03 (Lucro Bruto mensal fonte unica) → executar plan pronto `.planning/phases/21-lucro-cache/21-01-PLAN.md`
 **Success Criteria** (what must be TRUE):
-  1. Tabela `ml_orders` existe e RLS restringe por `organization_id`
-  2. Após executar sync (`mercado-libre-integration`) para qualquer período, rows aparecem em `ml_orders` com `comissao` e `frete` preenchidos (não nulos)
-  3. O dashboard de Vendas mostra comissão e frete calculados de `SUM(ml_orders.comissao)` e `SUM(ml_orders.frete)` — não mais os valores derivados de 11% e 5% hardcoded
-  4. Ticket médio = `approved_revenue / COUNT(orders WHERE status='paid')` — cancela os orders cancelados do divisor
-  5. KPIs de visitas e conversão não regridem (mesmos valores de antes)
+  1. Card "Custos" em /vendas exibe CMV e Impostos com valores nao-nulos quando ha configuracao cadastrada
+  2. Filtro "Hoje" em /vendas carrega KPI cards via auto-recalc silencioso com skeleton — nunca "—" estatico
+  3. Lucro Bruto mensal vem de useMLCostWaterfall como fonte unica, excluindo pedidos cancelados
+  4. Linha "Frete ML" exibe CFFE real da billing API; linha "Parcelamento (CFONPN)" existe e tem valor — com indicador "billing" vs "estimado"
+  5. Comissao em /anuncios vem da API ML (sale_fee/listing_prices) — LISTING_TYPE_RATES removido
+  6. KPIs de /vendas, /financeiro e /anuncios batem entre si e com referencia Nexo Abril/2026 (comissao R$39,2k, CFFE R$40k, CFONPN R$15,9k)
+**Plans**: TBD
+**UI hint**: yes
+
+---
+
+### Phase 42: Zero Mock
+**Goal**: Nenhuma pagina do produto exibe dados simulados — /perguntas, /devolucoes, /reputacao e /tv todos lendo de fontes reais
+**Depends on**: Phase 41
+**Requirements**: MOCK-01, MOCK-02, MOCK-03, MOCK-04, MOCK-05
+**Success Criteria** (what must be TRUE):
+  1. /perguntas lista perguntas reais do ML (tabela ml_questions + EF sync-ml-questions) e usuario responde direto pela UI
+  2. /devolucoes lista reclamacoes e devolucoes reais (tabela ml_claims + EF sync-ml-claims)
+  3. /reputacao exibe feedback real da API ML — todos os getMock* removidos do codebase
+  4. /tv lê sellers da tabela sellers filtrada por organization_id — sem UUIDs hardcoded em TVModeVendas.tsx
+  5. Zero badge "dados simulados" visivel em qualquer pagina do produto
+**Plans**: TBD
+**UI hint**: yes
+
+---
+
+### Phase 43: Multi-Tenant Hardening
+**Goal**: Qualquer org nova entra por convite e chega a dashboard com dados reais sem passo manual de super-admin alem de criar org+convite
+**Depends on**: Phase 41
+**Requirements**: TENANT-01, TENANT-02, TENANT-03, TENANT-04, TENANT-05
+**Success Criteria** (what must be TRUE):
+  1. Upserts em ml_product_costs via service role funcionam para qualquer org sem depender de user_id = auth.uid()
+  2. Dados orfaos (organization_id NULL) backfillados ou removidos em todas as tabelas de cache
+  3. Sync consulta quota por plan_tier (check_quota RPC) e bloqueia excedente — confirmado em logs
+  4. Owner novo passa por wizard de onboarding passo a passo (Conectar ML → Tiny opcional → Custos → Fiscal → Pronto) com progresso persistido entre sessoes
+  5. Com 2 orgs em paralelo, dados de uma nao aparecem na outra — isolamento confirmado via teste manual
+**Plans**: TBD
+**UI hint**: yes
+
+---
+
+### Phase 44: Monetizacao Stripe
+**Goal**: Owner pode assinar plano com cartao de teste e a org muda de tier com quota e historico refletindo imediatamente
+**Depends on**: Phase 43
+**Requirements**: PAY-01, PAY-02, PAY-03, PAY-04
+**Success Criteria** (what must be TRUE):
+  1. Owner conclui Stripe Checkout e org passa do tier free para o tier escolhido — sem intervencao manual
+  2. Webhooks Stripe (checkout.session.completed, invoice.paid, customer.subscription.updated/deleted) atualizam tabela subscriptions automaticamente
+  3. Pagina /planos exibe plano atual, estado de pagamento e permite upgrade/downgrade via Stripe Customer Portal
+  4. Limites do tier (history_days, sync_interval_minutes) aplicados de verdade — org no tier free nao acessa historico do tier pro
 **Plans**: TBD
 
 ---
 
-### Phase 15: ml_billing_monthly — Billing Integration
-**Goal**: Dashboard exibe CFFE real e CFONPN — os dois maiores custos invisíveis hoje (R$40k + R$15,9k/mês em Abril/2026)
-**Mode:** mvp
-**Depends on**: Nothing (independent of Phase 14, podem rodar em paralelo)
-**Requirements**: BILLING-01, BILLING-02, BILLING-03, BILLING-04, BILLING-05, BILLING-06
+### Phase 45: Consultor v1
+**Goal**: A Pé Vermeio ve ≥5 insights reais e acionaveis no primeiro run e tem score de saude visivel no topo de /vendas
+**Depends on**: Phase 41, Phase 42
+**Requirements**: CONSUL-01, CONSUL-02, CONSUL-03, CONSUL-04, CONSUL-05
 **Success Criteria** (what must be TRUE):
-  1. Tabela `ml_billing_monthly` existe e tem registro para o mês corrente após sync
-  2. Edge function `sync-ml-billing` invocada manualmente retorna HTTP 200 e salva CFFE + CFONPN em `ml_billing_monthly`
-  3. O dashboard de Vendas exibe linha "Frete ML" com valor real de CFFE (não 5% da receita)
-  4. O dashboard de Vendas exibe linha "Parcelamento" com valor de CFONPN — onde hoje não existe nenhuma linha
-  5. Waterfall financeiro (Receita → Comissão → Frete → CFONPN → Publicidade → Líquido) é visível no breakdown de custos
+  1. Engine consultor-insights roda por org, avalia ~12 regras e grava em tabela insights (severidade, categoria, acao recomendada, impacto estimado em R$)
+  2. Card "O que fazer agora" aparece no topo de /vendas com os top insights acionaveis — com texto em linguagem leiga
+  3. Painel de insights exibe explicacao por insight ("por que isso importa", "como resolver")
+  4. Score de saude do negocio (0-100) visivel — composto por margem, ads, estoque, reputacao e completude de configuracao
+  5. Org Pé Vermeio gera ≥5 insights reais e acionaveis no primeiro run do engine
 **Plans**: TBD
+**UI hint**: yes
 
 ---
 
----
-
-### Phase 28: Performance & Escalabilidade Multi-Conta
-**Goal**: Sistema responsivo com múltiplas contas ML — eliminar N+1 no sync, mover agregações para o Postgres, fixar dual-scope query
-**Mode:** mvp
-**Depends on**: Nothing
+### Phase 46: UX para Leigos
+**Goal**: Qualquer lojista sem experiencia tecnica entende os KPIs e sabe o que fazer ao ver qualquer pagina — incluindo em mobile
+**Depends on**: Phase 45
+**Requirements**: UX-01, UX-02, UX-03, UX-04
 **Success Criteria** (what must be TRUE):
-  1. `sync-ml-orders` executa 1 RPC batch por lote, não 1 RPC por pedido
-  2. `/financeiro` não faz mais SELECT * de orders no browser — usa RPCs de agregação Postgres
-  3. `/anuncios` executa 1 query por paginação, não 2
-  4. Indexes `(status, data_pedido)` e `(ml_user_id, data_pedido)` existem em `orders`
-  5. `npx tsc --noEmit` e `npm run build` sem erros
-**Plans**: 28-01 (batch upsert), 28-02 (RPCs agregação), 28-03 (dual-scope + indexes + limits)
-
----
-
----
-
-### Phase 30: fix-pedidos-lucro-bruto
-**Goal**: Lucro Bruto em `/vendas` calculado com fonte consistente; página `/pedidos` carrega pedidos corretamente
-**Mode:** bugfix
-**Depends on**: Nothing
-**Success Criteria** (what must be TRUE):
-  1. `useMLCostWaterfall` retorna `null` quando `paid_revenue = 0` — evita mistura de `ml_daily_cache` + `orders` no MLCostCard
-  2. Página `/pedidos` exibe pedidos após sync manual para qualquer período com dados
-  3. Edge functions `sync-ml-orders` e `process-sync-job` deployadas com fixes do commit `9ba8d630`
-  4. `data_pedido` armazenado em BRT (UTC-3) OU query compensada com `dateTo + 1 dia`
-  5. Lucro Bruto no card bate com cálculo manual: Receita Paga − (Comissão + Frete + Publicidade + CMV + Impostos)
-**Plans**: 30-01 (diagnóstico + 4 fixes + deploy)
-
----
-
----
-
-### Phase 32: fix-lucro-bruto-cmv-impostos
-**Goal**: CMV e Impostos corretamente descontados no Lucro Bruto do card "Custos" em /vendas
-**Mode:** bugfix
-**Depends on**: Nothing
-**Success Criteria** (what must be TRUE):
-  1. Card "Custos" exibe CMV e Impostos com valores não-nulos quando há configuração cadastrada
-  2. `get_cost_waterfall` RPC retorna `paid_revenue > 0` quando há orders no período
-  3. Lucro Bruto = Receita Paga − Comissão − Frete − Publicidade − CMV − Impostos
-  4. `batch_upsert_orders` preserva `receita_bruta` e `receita_liquida` existentes em re-sync
-  5. Orders históricos com `preco_unit` preenchido têm `receita_bruta` populado após backfill
-**Plans**: 32-01 (migration + backfill)
-
----
-
-### Phase 34: fix-kpi-summary-hoje
-**Goal**: Cards Markup das Vendas, Custo Operacional e Impostos exibem valores reais ao filtrar "Hoje" em /vendas
-**Mode:** bugfix
-**Depends on**: Nothing
-**Success Criteria** (what must be TRUE):
-  1. Após auto-sync (~12-15s), os 3 cards do `kpiSummary` atualizam com valores reais (não "—")
-  2. Durante o auto-recalc, os 3 cards mostram skeleton loading — não "—" estático
-  3. `useAutoRecalc` invalida `["ml", "kpi-summary"]` além de `["ml", "cost-waterfall"]`
-  4. Para períodos históricos (7d, 30d), comportamento não muda
-  5. `npx tsc --noEmit` sem erros
-**Plans**: 34-01 (fix useAutoRecalc + useMLKPISummary + MercadoLivre.tsx)
-
----
-
-### Phase 35: fix-brand-charts-hoje
-**Goal**: Gráficos de marca e cards KPI carregam corretamente para o filtro "Hoje" — marca null não esvazia os charts, e auto-sync tem retry visível
-**Mode:** bugfix
-**Depends on**: Nothing
-**Success Criteria** (what must be TRUE):
-  1. Gráficos de marca (Faturamento por Marca, Markup por Marca) exibem dados para "Hoje" mesmo quando `marca = null` em alguns orders — agrupados em "Sem Marca" ou pela categoria disponível
-  2. `useAutoRecalc` loga erros visíveis (toast ou console.error) quando `sync-ml-orders` retorna erro
-  3. Ao terminar o auto-sync, `useMLOrdersByBrand` retorna `hasData = true` se há orders no período — independente de `marca`
-  4. Cards Markup das Vendas, Custo Operacional e Impostos carregam após auto-sync (~15s) para "Hoje"
-  5. `npx tsc --noEmit` sem erros
+  1. Todo KPI tem tooltip/glossario em linguagem leiga acessivel via hover (ex: "CFFE = o frete que o ML te cobra")
+  2. Toda pagina sem dados exibe empty state com instrucao de acao especifica ("o que fazer para ter dados aqui")
+  3. Tabelas de /anuncios, /pedidos e /financeiro renderizam sem overflow quebrado em viewport mobile (320–768px)
+  4. Consistencia visual revisada nas paginas principais (tokens kpi.positive/negative, espacamentos, dark mode sem elementos quebrados)
 **Plans**: TBD
+**UI hint**: yes
 
 ---
 
-### Phase 36: fix-brand-from-product-cache
-**Goal**: Brand charts carregam para "Hoje" usando `ml_product_daily_cache` como fallback quando `orders` está vazio — independente de `sync-ml-orders` retornar pedidos ou não
-**Mode:** bugfix
-**Depends on**: Nothing
+### Phase 47: QA End-to-End + Go-Live
+**Goal**: Sistema pronto para receber clientes reais — tenant novo funciona sem passo manual, seguranca auditada, build limpo
+**Depends on**: Phase 44, Phase 46
+**Requirements**: QA-01, QA-02, QA-03
 **Success Criteria** (what must be TRUE):
-  1. `ml_product_daily_cache` tem coluna `marca` populada após sync via `mercado-libre-integration`
-  2. `useMLOrdersByBrand` usa `ml_product_daily_cache` quando `orders` está vazio para o período
-  3. Gráficos de marca aparecem para "Hoje" mesmo com 0 orders em `orders` table
-  4. Gráficos baseados em `orders` (quando disponível) continuam funcionando para períodos históricos
-  5. `npx tsc --noEmit` sem erros
-**Plans**: 36-01
-
----
-
-### Phase 37: fix-markup-sem-custo
-**Goal**: Gráfico "Markup por Marca" exibe dados quando custos estão cadastrados em `ml_product_costs` — diagnosticar por que `custo_unit` chega null mesmo com custo cadastrado
-**Mode:** bugfix
-**Depends on**: Phase 36
-**Success Criteria** (what must be TRUE):
-  1. Com custos cadastrados em `/precos-custos`, o gráfico "Markup por Marca" exibe linhas para "Hoje"
-  2. A query em `ml_product_costs` retorna custo para os `item_id`s presentes em `ml_product_daily_cache`
-  3. `custo_unit` é não-nulo nos rows do fallback quando custo existe na tabela
-  4. `hasMarkupData = true` para períodos com dados de custo + cache
-  5. `npx tsc --noEmit` sem erros
-**Plans**: TBD
-
----
-
-### Phase 38: validar-paginas-dashboard
-**Goal**: As 5 páginas do dashboard (Publicidade, Margem, Anúncios, Estoque, Pedidos) carregam dados reais para o período atual — diagnosticar e corrigir a regressão que zerou os dados / forçou pedido de sync, comportamento que antes funcionava
-**Mode:** bugfix
-**Depends on**: Nothing
-**Success Criteria** (what must be TRUE):
-  1. `/publicidade` exibe métricas de ads (impressões, cliques, ROAS, ACoS, TACoS) reais — não zeradas — para o período padrão
-  2. `/anuncios` (margem real + publicidade no Lucro) lista produtos com preço, custo e margem — não tela vazia pedindo sync
-  3. `/estoque` exibe inventário vivo via ml-inventory — não zerado
-  4. `/pedidos` lista pedidos do período (orders está parado em 2026-05-27 — investigar por que o sync de orders não avança)
-  5. A página de margem/lucro (/vendas MLCostCard) exibe waterfall com valores reais para o período atual
-  6. Identificada e corrigida a causa raiz da regressão (auto-sync frontend, hook compartilhado MLStore/Organization, ou crash TDZ) — com nota no SUMMARY de qual commit introduziu
-  7. `npx tsc --noEmit` sem erros
-
-**Diagnóstico inicial (2026-06-04)**:
-  - Backend saudável: edge functions retornando 200 (mercado-libre-integration, sync-ml-orders, ml-inventory, ml-ads, ml-products-aggregated). 1x 500 process-sync-job + 1x 401 mercado-libre-integration isolados (transitórios, pós token-refresh).
-  - Freshness DB: ml_daily_cache / ml_product_daily_cache / ml_hourly_cache param em 2026-06-03 (ontem). orders parado em 2026-05-27 (1 semana). ml_ads_daily_cache fresco em 2026-06-04 (cron próprio).
-  - Hipótese principal: filtro padrão inclui "hoje" mas o auto-sync do frontend (useAutoRecalc / useMLSync) não dispara o sync principal (mercado-libre-integration) → dashboard zera e pede sync.
-  - Hipótese secundária: regressão em hook compartilhado (resolvedMLUserIds / orgId) afeta todas as queries simultaneamente; ou crash TDZ (vide commit 7108053a) em página específica.
-  - Suspeitos: commits 31, 33, 34, 35, 36 (mexeram em useAutoRecalc, invalidação ["ml"], MLCostCard).
-**Plans**: TBD
-
----
-
-### Phase 39: fix-anuncios-custo-publicidade-produtos
-**Goal**: /anuncios exibe custo + margem bruta/líquida por produto; /publicidade exibe métricas reais de produtos patrocinados (não zeradas)
-**Mode:** bugfix
-**Depends on**: Phase 37, Phase 38
-**Success Criteria** (what must be TRUE):
-  1. /anuncios: coluna Custo carrega o custo cadastrado (join por seller_sku, não por MLB item_id)
-  2. /anuncios: Margem Bruta e Margem Líquida calculam quando há custo
-  3. /publicidade: "produtos patrocinados" exibe spend/ROAS/cliques reais por produto
-  4. `ml_ads_products_cache` (ou resposta ml-ads) tem spend > 0 por produto após sync
-  5. `npx tsc --noEmit` sem erros
-
-**Diagnóstico (2026-06-04)**:
-  - /anuncios: `costs.get(item.id)` busca por MLB item_id, mas ml_product_costs é keyado
-    por seller_sku (TINY_) → custo null → margem null. Mesma raiz da Phase 37. Fix:
-    lookup por seller_sku (item.seller_custom_field).
-  - /publicidade: `ml_ads_products_cache` tem spend/revenue = 0 em todas as linhas e
-    parado em 05-23/05-27, enquanto ml_ads_daily_cache está fresco com spend real.
-    ml-ads: daily agrega sp sem guard (linha 206), produto só `if (it.item_id)` (linha 210).
-    Investigar campo item_id real na resposta /advertising/advertisers/{id}/product_ads/items.
-**Plans**: TBD
-
----
-
-### Phase 40: fix-charts-overlap-brand-row
-**Goal**: Os 3 gráficos da linha de marca (Faturamento por Marca, Markup por Marca, Custo Operacional Diário) renderizam cada um dentro da sua coluna, sem transbordar nem sobrepor eixos/legendas dos vizinhos
-**Mode:** bugfix
-**Depends on**: Nothing (correção puramente visual/layout)
-**Success Criteria** (what must be TRUE):
-  1. Em viewport `lg` (≥1024px) os 3 charts aparecem lado a lado, cada um confinado a 1/3 da largura — sem eixo X de um chart invadindo o vizinho
-  2. As legendas (Pralana/Zebu/Sandrini/TXC/...) de cada chart ficam abaixo do próprio chart, sem duplicar nem se misturar com as do chart ao lado
-  3. O eixo X do "Custo Operacional Diário" não estoura para fora do Card (datas tipo 06/03 não vazam do container)
-  4. Em viewport mobile (`grid-cols-1`) cada chart ocupa largura total e empilha corretamente
-  5. Os estados de loading e erro de cada chart também respeitam a coluna (não transbordam)
-  6. `npx tsc --noEmit` sem erros
-
-**Diagnóstico (2026-06-04)**:
-  - Layout pai: `MercadoLivre.tsx:607` — `<div className="grid grid-cols-1 lg:grid-cols-3 gap-3">` com `<BrandRevenueChart>`, `<BrandMarkupChart>`, `<CustoOperacionalChart>` como filhos diretos.
-  - Causa raiz: itens de CSS grid têm `min-width: auto` por padrão. O `ResponsiveContainer`/SVG do Recharts (dentro de `ChartContainer`) tem largura intrínseca > 0, então cada coluna cresce além de `1fr` e **transborda sobre as vizinhas** → eixos X e legendas sobrepostos (exatamente o sintoma do print enviado por Wesley em 04/06).
-  - Os 3 componentes renderizam `<Card>` como raiz SEM className (`BrandRevenueChart.tsx:62`, `BrandMarkupChart.tsx:59`, `CustoOperacionalChart.tsx:70`) — nenhum tem `min-w-0`. Os returns de loading/erro (linhas ~31/44, ~24/41, ~30/43) também são `<Card>` sem `min-w-0`.
-  - Fix: aplicar `min-w-0 overflow-hidden` ao `<Card>` raiz dos 3 componentes (TODOS os returns: sucesso + loading + erro). Alternativa equivalente: envolver cada chart num `<div className="min-w-0">` no grid pai — preferir o fix no componente para cobrir todos os estados.
-  - Validar também se a legenda do Recharts não força largura mínima maior que a coluna (se persistir, adicionar `overflow-hidden`/`flex-wrap` no wrapper da legenda).
+  1. Simulacao completa tenant novo (convite → onboarding → OAuth ML → sync → dados reais → assinar plano → insights) sem nenhum passo manual de super-admin alem de criar org+convite
+  2. Supabase advisors sem erro critico, RLS em todas as tabelas de dados, verify_jwt=true nas EFs de negocio
+  3. tsc --noEmit + npm run build + smoke de deploy Vercel todos limpos sem erros
 **Plans**: TBD
 
 ---
 
 ## Progress
 
-| Phase | Goal | Status | Plans |
-|-------|------|--------|-------|
-| 14 — ml_orders | KPIs comissão/frete/ticket reais | ✅ Concluído | — |
-| 15 — ml_billing_monthly | CFFE + CFONPN visíveis | ⏸ Adiado | — |
-| 16 — kpis-marca | KPIs e gráficos por marca | ⬜ Pendente | 3 planos prontos |
-| 28 — performance-scalability | Sistema responsivo multi-conta | ⬜ Pendente | 28-01, 28-02, 28-03 |
-| 30 — fix-pedidos-lucro-bruto | Lucro Bruto + Pedidos corrigidos | 🔧 Em progresso | 30-01 |
-| 31 — auto-sync-cmv-impostos | Auto-recalc CMV/impostos + /pedidos real-time | ⬜ Pendente | 31-01 |
-| 32 — fix-lucro-bruto-cmv-impostos | CMV e Impostos no Lucro Bruto (DB fix) | 🔧 Em progresso | 32-01 |
-| 34 — fix-kpi-summary-hoje | KPI cards Markup/Custo/Impostos carregam para "Hoje" | ✅ Concluído | 34-01 |
-| 35 — fix-brand-charts-hoje | Brand charts + KPI cards carregam para "Hoje" sem depender de marca | ✅ Concluído | 35-01 |
-| 36 — fix-brand-from-product-cache | Brand charts usando ml_product_daily_cache como fallback quando orders vazio | 🔧 Em progresso | — |
-| 37 — fix-markup-sem-custo | Markup por Marca carrega quando custo está cadastrado | 🔧 Em progresso | TBD |
-| 38 — validar-paginas-dashboard | 5 páginas (publicidade/margem/anúncios/estoque/pedidos) carregam dados reais | ✅ Concluído | — |
-| 39 — fix-anuncios-custo-publicidade-produtos | /anuncios custo+margem por seller_sku + /publicidade produtos patrocinados | ✅ Concluído | — |
-| 40 — fix-charts-overlap-brand-row | 3 charts de marca sem sobreposição (min-w-0 nos Cards do grid) | ✅ Concluído | — |
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 41. Veracidade Total | 0/? | Not started | - |
+| 42. Zero Mock | 0/? | Not started | - |
+| 43. Multi-Tenant Hardening | 0/? | Not started | - |
+| 44. Monetizacao Stripe | 0/? | Not started | - |
+| 45. Consultor v1 | 0/? | Not started | - |
+| 46. UX para Leigos | 0/? | Not started | - |
+| 47. QA End-to-End + Go-Live | 0/? | Not started | - |
