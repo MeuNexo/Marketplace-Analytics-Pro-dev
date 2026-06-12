@@ -1,72 +1,94 @@
-# Requirements — v5.0 Dashboard de Vendas — KPIs Reais
+# Requirements — v7.0 SaaS Operacional End-to-End
 
 ## Contexto
 
-O dashboard de Vendas (`/`) exibe KPIs financeiros calculados de dados agregados em `ml_daily_cache`.
-Problemas identificados via análise do Nexo MCP Supabase (Abril/2026, Pé Vermeio):
-- **Comissão hardcoded 11%** — real: ~11.15% (varia por categoria)
-- **Frete hardcoded 5%** (R$17k/mês) — real CFFE: R$40k/mês (2.3x a mais)
-- **CFONPN (parcelamento)** R$15,9k/mês — completamente invisível no dashboard
-- **Ticket médio** usa total_revenue incluindo cancelados — subestima valor real
-- Sem granularidade: impossível filtrar por SKU, estado, cidade, comprador
+Transformar o dashboard (hoje operando para a Pé Vermeio) em SaaS vendável por assinatura em 10 dias.
+Diagnóstico completo e decisões de produto em `.planning/MILESTONE-v7-SAAS.md` (sessão 2026-06-12).
 
-Solução: dois novos pilares de dados — `ml_orders` (individual) + `ml_billing_monthly`.
+Decisões fixadas por Wesley: Stripe | convite controlado | Consultor v1 por regras | integrar perguntas/devoluções de verdade.
 
 ---
 
 ## Requisitos
 
-### Bloco ORDERS — Orders Individuais
+### Bloco DATA — Veracidade total dos números
 
-**ORDERS-01** — Tabela `ml_orders` existe no banco com colunas: `id`, `organization_id`, `ml_user_id`, `ml_order_id` (unique por org+user), `item_id`, `sku`, `titulo`, `quantidade`, `preco_unit`, `comissao`, `frete`, `status`, `data_pedido`, `estado`, `cidade`, `comprador`, `synced_at`
+- [ ] **DATA-01**: Card "Custos" em /vendas exibe CMV e Impostos não-nulos quando há configuração cadastrada (executar plano pronto da Phase 32: fallback receita_bruta + backfill)
+- [ ] **DATA-02**: Filtro "Hoje" em /vendas carrega os KPI cards via auto-recalc silencioso com skeleton — nunca "—" estático (executar plano pronto da Phase 31)
+- [ ] **DATA-03**: Lucro Bruto mensal calculado de fonte única (useMLCostWaterfall) sem pedidos cancelados (executar plano pronto da Phase 21)
+- [ ] **DATA-04**: Usuário vê CFFE real ("Frete ML") e linha "Parcelamento (CFONPN)" no breakdown de custos — tabela `ml_billing_monthly` + EF `sync-ml-billing` (ML `/billing/periods`) com indicador de fonte ("billing" vs "estimado")
+- [ ] **DATA-05**: Comissão em /anuncios vem da API real do ML (sale_fee/listing_prices) por anúncio — fim do `LISTING_TYPE_RATES` hardcoded
+- [ ] **DATA-06**: KPIs de /vendas, /financeiro e /anuncios batem entre si (mesma fonte) — validados contra referência Nexo Abril/2026 (comissão R$39,2k, CFFE R$40k, CFONPN R$15,9k)
 
-**ORDERS-02** — A edge function `mercado-libre-integration` faz upsert em `ml_orders` durante o sync, salvando cada order individual com os campos acima (além de continuar salvando em `ml_daily_cache`)
+### Bloco MOCK — Zero dados simulados
 
-**ORDERS-03** — RLS em `ml_orders`: usuário autenticado vê apenas rows de sua `organization_id`
+- [ ] **MOCK-01**: /perguntas lista perguntas reais do ML (tabela `ml_questions` + EF de sync via ML Questions API)
+- [ ] **MOCK-02**: Usuário responde pergunta do comprador direto pela UI de /perguntas (POST answer na API ML)
+- [ ] **MOCK-03**: /devolucoes lista reclamações e devoluções reais (tabela `ml_claims` + EF de sync via ML Claims API)
+- [ ] **MOCK-04**: /reputacao exibe feedback real da API ML — remoção de todos os `getMock*`
+- [ ] **MOCK-05**: /tv lê sellers da tabela `sellers` filtrada por `organization_id` (sem UUIDs hardcoded em TVModeVendas.tsx)
 
-**ORDERS-04** — O hook `useMLOrders(from, to)` lê `ml_orders` filtrado por período e `ml_user_id` do contexto de loja
+### Bloco TENANT — Multi-tenant hardening
 
-### Bloco KPIS — KPIs Corretos no Dashboard
+- [ ] **TENANT-01**: RLS de `ml_product_costs` org-first — upserts via service role funcionam para qualquer org, sem dependência de `user_id = auth.uid()`
+- [ ] **TENANT-02**: Dados órfãos (`organization_id` NULL) backfillados ou removidos em todas as tabelas de cache
+- [ ] **TENANT-03**: Sync consulta quota por `plan_tier` (`check_quota` RPC em dispatch/process) e bloqueia excedente
+- [ ] **TENANT-04**: Owner novo passa por wizard de onboarding guiado (Conectar ML → Tiny opcional → Custos → Fiscal → Pronto) com progresso persistido e CTA no dashboard vazio
+- [ ] **TENANT-05**: Teste de isolamento: 2 orgs em paralelo sem vazamento (RLS + caches + queries)
 
-**KPIS-01** — `costSummary.comissao` em `MercadoLivre.tsx` usa `SUM(comissao)` de `ml_orders` no período selecionado (não hardcoded 11%)
+### Bloco PAY — Monetização (Stripe)
 
-**KPIS-02** — `costSummary.frete` em `MercadoLivre.tsx` usa `SUM(frete)` de `ml_orders` no período selecionado quando disponível (fallback para CFFE do billing quando orders não cobrem o período)
+- [ ] **PAY-01**: Owner assina plano via Stripe Checkout (tiers de `organization_plans`, trial configurável)
+- [ ] **PAY-02**: Webhooks Stripe atualizam assinatura/tier (`checkout.session.completed`, `invoice.paid`, `customer.subscription.updated/deleted`) em tabelas `subscriptions`/`billing_events`
+- [ ] **PAY-03**: Página /planos mostra plano atual, estado de pagamento e permite upgrade/downgrade via Stripe Customer Portal
+- [ ] **PAY-04**: Limites do tier aplicados de verdade (`history_days`, `sync_interval_minutes`)
 
-**KPIS-03** — Ticket médio usa `approved_revenue / COUNT(pedidos com status=paid)` de `ml_orders` (não total_revenue / total_orders)
+### Bloco CONSUL — Consultor v1 (motor de regras)
 
-**KPIS-04** — Taxa de conversão mantém cálculo atual (`unique_buyers / unique_visits`) — sem regressão
+- [ ] **CONSUL-01**: Engine de insights roda por org (EF + cron) avaliando ~12 regras e gravando em tabela `insights` (severidade, categoria, ação recomendada, impacto estimado em R$)
+- [ ] **CONSUL-02**: Card "O que fazer agora" no topo de /vendas com os top insights acionáveis
+- [ ] **CONSUL-03**: Painel de insights com explicação leiga por insight ("por que isso importa", "como resolver")
+- [ ] **CONSUL-04**: Score de saúde do negócio (0-100) composto por margem, ads, estoque, reputação e completude de configuração
+- [ ] **CONSUL-05**: Org Pé Vermeio gera ≥5 insights reais e acionáveis no primeiro run
 
-### Bloco BILLING — Billing Mensal Integrado
+Regras iniciais candidatas: margem < alvo por produto; ROAS/ACoS fora da meta; TACoS subindo; ruptura/cobertura crítica; produto sem custo cadastrado; sem regime fiscal; ticket médio caindo; cancelamentos acima da média; anúncio pausado com histórico de venda; campanha gastando sem venda; meta do mês em risco (projeção); pergunta sem resposta > 24h.
 
-**BILLING-01** — Tabela `ml_billing_monthly` existe com colunas: `id`, `organization_id`, `ml_user_id`, `period_month` (YYYY-MM), `charges` (JSONB array com tipo+valor), `resumo` (JSONB com totais), `synced_at`
+### Bloco UX — Compreensível para lojista leigo
 
-**BILLING-02** — Nova edge function `sync-ml-billing` busca ML Billing API (`/billing/periods`) para um `ml_user_id` e `period_month`, faz upsert em `ml_billing_monthly`
+- [ ] **UX-01**: Todo KPI tem tooltip/glossário em linguagem leiga (ex.: "CFFE = o frete que o ML te cobra")
+- [ ] **UX-02**: Toda página tem empty state que orienta ação ("o que fazer para ter dados aqui")
+- [ ] **UX-03**: Tabelas de /anuncios, /pedidos e /financeiro sem overflow quebrado em mobile
+- [ ] **UX-04**: Consistência visual revisada (tokens kpi.positive/negative, espaçamentos, dark mode) nas páginas principais
 
-**BILLING-03** — Botão de sync no dashboard dispara `sync-ml-billing` para o mês atual junto com o sync normal
+### Bloco QA — Go-live
 
-**BILLING-04** — O dashboard de Vendas exibe CFFE real (linha "Frete ML") vindo de `ml_billing_monthly` quando disponível para o período, com indicador visual de fonte ("billing" vs "estimado")
-
-**BILLING-05** — Nova linha "Parcelamento (CFONPN)" visível no breakdown de custos — valor de `ml_billing_monthly.charges` onde tipo=CFONPN
-
-**BILLING-06** — Waterfall financeiro visível: Receita Bruta → (−) Comissão → (−) Frete → (−) CFONPN → (−) Publicidade → = Receita Líquida
+- [ ] **QA-01**: Tenant novo via convite chega a dashboard com dados reais sem nenhum passo manual de super-admin além de criar org+convite
+- [ ] **QA-02**: Auditoria de segurança limpa — Supabase advisors sem erro crítico, RLS em todas as tabelas de dados, verify_jwt correto nas EFs
+- [ ] **QA-03**: `tsc --noEmit` + `npm run build` + smoke de deploy Vercel limpos
 
 ---
 
-## Out of Scope (v5.0)
+## Future Requirements (deferidas para v8+)
 
-- Melhorias em outros menus (Publicidade, Estoque, Financeiro) — próximos milestones
-- Filtros por estado/cidade/SKU no dashboard — infra criada neste milestone, UI fica para v5.1
-- Backfill de orders históricos para períodos antes da data de deploy — migração incremental
-- Billing de contas além da Pé Vermeio — mesmo mecanismo, expandir em v5.1
-- DIFAL, CSHIA e outras cobranças menores do billing — mostrar apenas CFFE + CFONPN neste milestone
+- Self-service signup público com proteção anti-abuso (decisão: lançamento por convite)
+- Consultor com análises geradas por LLM (v1 é determinístico)
+- Phases 28/29 (performance N+1, RPCs de agregação) — entram no dia 10 SOMENTE se QA mostrar lentidão real
+- Phase 23 (dashboard granular — coluna Margem % em Top Anúncios, dual-axis)
+- DIFAL, CSHIA e cobranças menores do billing
+- Landing page pública de marketing/pricing
+
+## Out of Scope
+
+- NCM/CFOP por produto, geração de guias/SPED — plataforma é analytics, não fiscal
+- Múltiplos marketplaces além do ML — foco total no ML neste milestone
+- App mobile nativo — web responsivo cobre
+- Proration custom no Stripe — usar comportamento padrão do Customer Portal
+
+## Traceability
+
+| REQ-ID | Phase | Status |
+|--------|-------|--------|
+| (preenchido pelo roadmap) | | |
 
 ---
-
-## Dados de Referência (Nexo MCP, Abril 2026 — Pé Vermeio)
-
-| KPI | Valor Atual (garment-glow) | Valor Real (Nexo) | Delta |
-|-----|---------------------------|-------------------|-------|
-| Comissão | ~R$38,6k (11% fixo) | R$39,2k (sum orders) | +R$534 |
-| Frete | ~R$17,6k (5% fixo) | R$40,1k (CFFE billing) | −R$22,4k |
-| CFONPN | R$0 | R$15,9k | −R$15,9k |
-| Ticket médio | inclui cancelados | apenas pagos | depende do período |
+*Criado: 2026-06-12 — milestone v7.0*
