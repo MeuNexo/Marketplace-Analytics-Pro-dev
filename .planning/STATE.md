@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v6.0
-milestone_name: Dashboard de Vendas — KPIs de Marca
-status: complete
-stopped_at: "Sessao 2026-06-04 — Phase 40 CONCLUÍDA: fix-charts-overlap-brand-row. min-w-0 overflow-hidden aplicado aos 3 Cards raiz (9 edições, todos os estados). tsc exit 0. Validação visual no navegador pendente de confirmação de Wesley."
-last_updated: "2026-06-04T00:00:00Z"
-last_activity: "2026-06-04 -- Phase 40 concluída. Fix: min-w-0 overflow-hidden em BrandRevenueChart/BrandMarkupChart/CustoOperacionalChart (raiz Card, todos os returns). Causa raiz: grid item min-width:auto deixava ResponsiveContainer do Recharts transbordar. tsc limpo."
+milestone: v7.0
+milestone_name: SaaS Operacional End-to-End
+status: planning
+last_updated: "2026-06-12T16:59:58.214Z"
+last_activity: 2026-06-12
 progress:
-  total_phases: 2
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -26,11 +25,10 @@ See: .planning/PROJECT.md
 
 ## Current Position
 
-Phase: — (milestone completo)
-Status: Milestone v5.0 ✅ ENCERRADO
-Last activity: 2026-05-21 -- Phase 14 validada. Phase 15 adiada por decisão de produto (CFFE/billing pertence a menu financeiro futuro, não ao painel de vendas)
-
-Progress: [█████░░░░░] 50%
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-06-12 — Milestone v7.0 started
 
 ## Performance Metrics
 
@@ -65,6 +63,7 @@ Progress: [█████░░░░░] 50%
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
 Abril/2026 — Pé Vermeio (seller_id=1639558873):
+
 - Receita bruta orders: R$351.236
 - Comissão real (sum orders.comissao): R$39.170 (11.15%)
 - Frete real (sum orders.frete): R$37.555 — mas CFFE billing R$40.065 (inclui extras)
@@ -73,6 +72,7 @@ Abril/2026 — Pé Vermeio (seller_id=1639558873):
 - Bonificações BVVML: −R$3.004
 
 Dashboard atual mostra:
+
 - Frete: ~R$17.561 (5% hardcoded) → erro de R$22.504
 - CFONPN: R$0 → erro de R$15.902
 - Total custos subestimados: ~R$38.406/mês
@@ -106,35 +106,42 @@ Stopped at: Todos os fixes Tiny ERP concluídos e deployados. Aguardando Wesley 
 ### Sessão 2026-05-21b — Fixes Tiny ERP (completo)
 
 **Problema 1 — Timeout sync-tiny-costs (HTTP 546)**
+
 - Root cause: 100+ produtos × 1.1s sleep = >110s → timeout 150s
 - Fix: `sync-tiny-costs` v6 — Phase 1 extrai preços da listagem `/produtos`, Phase 2 apenas para produtos sem preço (cap 80)
 - Deploy: v6 ativo em produção
 
 **Problema 2 — Estado conexão Tiny perdido ao navegar**
+
 - Root cause real: migration `20260513174419` fez REVOKE SELECT em `ml_tokens`; `tiny_access_token` não estava no grant → query retornava null → useEffect limpava estado
 - Fix: `Integrations.tsx` usa `localStorage` para inicializar `tinyConnected` (leitura imediata), background check usa `tiny_expires_at` (coluna permitida via migration `20260521230000`)
 - Testado por Wesley: "funcionou"
 
 **Problema 3 — Upsert retornava "0 sincronizados · 592 erros"**
+
 - Root cause: índice parcial `ml_product_costs_user_sku` (`WHERE seller_sku IS NOT NULL`) incompatível com ON CONFLICT do PostgREST
 - Erro: "there is no unique or exclusion constraint matching the ON CONFLICT specification"
 - Fix: migration `20260521240000` — DROP INDEX + ADD CONSTRAINT UNIQUE (user_id, seller_sku)
 
 **Problema 4 — Usuário thales@pevermeio.com**
+
 - Root cause: INSERT em `auth.users` não cria `auth.identities` automaticamente → login falha
 - Fix: inseriu registro manual em `auth.identities` com `provider='email'`, `provider_id=user_id`
 
 **Problema 5 — Token Tiny não renovava automaticamente**
+
 - Fix: `refresh_all` action adicionada em `tiny-oauth/index.ts`
 - pg_cron `tiny-token-refresh-every-90min` criado e corrigido (sem dependência de vault — vault vazio)
 - Deploy: `tiny-oauth` deployada via `npx supabase@2.100.1 functions deploy`
 
 **Estado do DB:**
+
 - `ml_product_costs`: 0 registros — aguardando primeiro sync
 - Constraint `ml_product_costs_user_sku_unique` confirmada em produção
 - Cron `tiny-token-refresh-every-90min` ativo
 
 **Próxima sessão:**
+
 1. Testar sync: /integracoes → "Sincronizar Custos"
 2. Verificar: `SELECT COUNT(*) FROM ml_product_costs WHERE cost > 0;`
 3. Partir para Phase 16: `/gsd:execute-phase 16`
@@ -144,10 +151,12 @@ Stopped at: Todos os fixes Tiny ERP concluídos e deployados. Aguardando Wesley 
 ## Sessão 2026-06-04 — Phases 36/37/38
 
 **Phase 36 (concluída, deployada)** — brand charts via ml_product_daily_cache fallback
+
 - Migration `marca` em ml_product_daily_cache + mercado-libre-integration busca BRAND
 - useMLOrdersByBrand: fallback para cache quando orders vazio
 
 **Phase 37 (deployada)** — markup por marca via seller_sku
+
 - Root cause: ml_product_costs.item_id = `TINY_<sku>` mas cache.item_id = `MLB...` → join nunca casava
 - Ponte correta: seller_sku (`seller_custom_field` no ML)
 - Migration `seller_sku` em ml_product_daily_cache (20260604120000)
@@ -157,6 +166,7 @@ Stopped at: Todos os fixes Tiny ERP concluídos e deployados. Aguardando Wesley 
 - PENDENTE: aguardar próximo sync para popular seller_sku no cache; validar markup carregando
 
 **Phase 38 (criada, pendente execução)** — validar 5 páginas do dashboard
+
 - Wesley reportou: dados zerados / pedindo sync em publicidade, margem, anúncios, estoque, pedidos
 - Investigação: backend saudável (200s), caches param em 2026-06-03, orders parado em 2026-05-27
 - Ver `.planning/phases/38-validar-paginas-dashboard/38-CONTEXT.md` para hipóteses
@@ -164,6 +174,7 @@ Stopped at: Todos os fixes Tiny ERP concluídos e deployados. Aguardando Wesley 
 - PRÓXIMO PASSO: reproduzir cada página com DevTools → confirmar hipótese → fix causa raiz
 
 **Deploys confirmados (project ckcdevcxgvueywivefgx):**
+
 - mercado-libre-integration v12 ACTIVE
 - recalc-order-costs v13 ACTIVE
 
@@ -178,6 +189,7 @@ completed). DOIS bugs: (1) seller_id virou uuid sem cast no RPC; (2) sync-ml-ord
 passava JSON.stringify(records) → escalar em vez de array jsonb.
 
 **Fixes deployados:**
+
 - migration 20260604130000: batch_upsert_orders cast ::uuid (seller_id/user_id/org)
 - sync-ml-orders v19: records direto (sem stringify) + throw em vez de engolir erro
 - process-sync-job v14: checa success/orders_synced
@@ -201,6 +213,7 @@ o bug por ~1 semana. Sempre propagar erro de RPC + checar count no caller.
 (useMLProductCosts expõe costsBySku). Frontend, commit 57bbb9aa.
 
 **/publicidade produtos patrocinados (zerado, parado 05-23):** DUAS causas:
+
 1. sync-ads buscava /product_ads/items SEM metrics params → spend=0.
 2. Constraint única obsoleta ml_ads_products_cache_unique (user_id,ml_user_id,item_id)
    SEM date conflitava com modelo série-por-dia → upsert falhava silenciosamente

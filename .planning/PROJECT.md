@@ -1,6 +1,37 @@
 # Garment Glow — Plataforma de Gestão ML
 
-## Current Milestone: v5.0 Dashboard de Vendas — KPIs Reais
+## Current Milestone: v7.0 SaaS Operacional End-to-End
+
+**Goal:** Sistema 100% operacional e vendável como assinatura em 10 dias — dados verdadeiros em todas as páginas (zero mock), multi-tenant endurecido, monetização via Stripe ativa, onboarding guiado para lojista leigo, e Consultor v1 (motor de regras + score de saúde) como diferencial de venda.
+
+**Decisões de produto (Wesley, 2026-06-12):**
+- Gateway de pagamento: **Stripe** (checkout + webhook + customer portal)
+- Lançamento por **convite controlado** (self-service signup fica para v2)
+- Consultor v1 = **motor de regras determinístico** (~12 regras + score 0-100), sem LLM por usuário
+- /perguntas e /devolucoes: **integração real** (ML Questions API + Claims API)
+
+**Target features:**
+- Bloco A — Veracidade total: Phases 32+31+21 executadas, billing CFFE/CFONPN (ex-Phase 15), comissão real por anúncio (fim do LISTING_TYPE_RATES)
+- Bloco B — Zero mock: /perguntas, /devolucoes e feedback de /reputacao com APIs reais; /tv lendo sellers do DB
+- Bloco C — Multi-tenant hardening: RLS org-first em ml_product_costs, backfill órfãos, enforcement de quota, wizard de onboarding guiado
+- Bloco D — Monetização: Stripe checkout + webhooks + UI /planos + enforcement por tier
+- Bloco E — Consultor v1: engine de insights por regras + cards "O que fazer agora" + score de saúde
+- Bloco F — UX para leigos: glossário/tooltips em todo KPI, empty states acionáveis, mobile polish
+- Bloco G — QA end-to-end: simulação tenant novo do zero + auditoria de segurança + go-live
+
+**Spec completa:** `.planning/MILESTONE-v7-SAAS.md`
+
+---
+
+## Previous Milestone: v6.0 Dashboard de Vendas — KPIs de Marca
+
+**Goal:** KPIs e gráficos por marca (markup, custo operacional, faturamento por marca) com dados reais.
+
+**Resultado:** Concluído 2026-06-04 (Phases 16, 34-40). Brand charts funcionando com fallback de cache, pipeline de sync de orders corrigido, ads spend real.
+
+---
+
+## Previous Milestone: v5.0 Dashboard de Vendas — KPIs Reais
 
 **Goal:** O dashboard de Vendas exibe KPIs financeiros corretos — comissão e frete reais calculados de orders individuais, CFONPN visível, ticket médio sem cancelados, e billing mensal integrado com CFFE real.
 
@@ -110,7 +141,7 @@ A tabela `ml_tokens` relaciona loja ML → organização. A nova tabela `ml_tax_
 | Owner only para configuração fiscal | Dado sensível e consequente — não delegar a membros comuns | — Pending |
 
 ---
-*Last updated: 2026-05-14 após inicialização do projeto*
+*Last updated: 2026-06-12 — início do milestone v7.0 SaaS Operacional End-to-End*
 
 ## Evolution
 
