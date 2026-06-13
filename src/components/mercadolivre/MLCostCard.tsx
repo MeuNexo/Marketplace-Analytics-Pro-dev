@@ -30,8 +30,8 @@ interface MLCostCardProps {
   cmvMes: number | null;
   /** Impostos próprios do mês (regime fiscal) — null = sem config fiscal */
   impostosMes: number | null;
-  /** "billing" = valores reais da API ML | "estimado" = fallback de orders */
-  fonte: "billing" | "estimado";
+  /** "competencia" = ml_billing_daily mês-calendário 01–31 | "billing" = fatura mensal (ciclo 06→05) | "estimado" = fallback de orders */
+  fonte: "competencia" | "billing" | "estimado";
   loading?: boolean;
   /** Navega para o mês anterior */
   onPrevMonth?: () => void;
@@ -111,17 +111,20 @@ export function MLCostCard({
             </button>
             <span
               className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
-                fonte === "billing"
+                fonte === "competencia"
+                  ? "bg-emerald-500/15 text-emerald-400"
+                  : fonte === "billing"
                   ? "bg-blue-500/15 text-blue-400"
                   : "bg-amber-500/15 text-amber-400"
               }`}
             >
-              {fonte === "billing" ? "billing ML" : "estimado"}
+              {fonte === "competencia" ? "mês 01–31" : fonte === "billing" ? "fatura ML" : "estimado"}
             </span>
           </div>
         </div>
 
-        {/* Janela real da fatura ML — o ciclo de cobrança não é o mês-calendário */}
+        {/* No modo fatura mensal, o ciclo de cobrança não é o mês-calendário —
+            mostra a janela real. No modo competência (mês 01–31) não se aplica. */}
         {fonte === "billing" && faturaFrom && faturaTo && (
           <div className="px-4 pb-1 -mt-1 flex justify-end">
             <span className="text-[10px] text-muted-foreground tabular-nums">

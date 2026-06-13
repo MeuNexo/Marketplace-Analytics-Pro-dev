@@ -182,6 +182,7 @@ export function useMLSync(opts: UseMLSyncOptions) {
           // sincronizados mid-month ficam parciais até a fatura fechar.
           const now = startOfDay(new Date());
           const billingMonths = [format(now, "yyyy-MM"), format(subMonths(now, 1), "yyyy-MM")];
+          const currentMonth = format(now, "yyyy-MM");
           for (const mlUserId of capturedMLUserIds) {
             for (const periodMonth of billingMonths) {
               try {
@@ -191,6 +192,16 @@ export function useMLSync(opts: UseMLSyncOptions) {
               } catch (billingErr) {
                 console.warn("sync-ml-billing (non-fatal):", billingErr);
               }
+            }
+            // DRE mês-calendário exato (ml_billing_daily) — só o mês corrente, que
+            // muda a cada venda. É mais pesado (pagina movimentos), por isso fora
+            // do loop de meses. Mantém o card de competência fresco.
+            try {
+              await supabase.functions.invoke("sync-ml-billing", {
+                body: { ml_user_id: mlUserId, period_month: currentMonth, mode: "daily" },
+              });
+            } catch (dailyErr) {
+              console.warn("sync-ml-billing daily (non-fatal):", dailyErr);
             }
           }
 

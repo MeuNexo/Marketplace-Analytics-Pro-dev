@@ -18,7 +18,7 @@ import { useMLLastSync } from "@/hooks/useMLLastSync";
 import { useMLOrders } from "@/hooks/useMLOrders";
 import { useMLKPISummary } from "@/hooks/useMLKPISummary";
 import { useMLCostWaterfall } from "@/hooks/useMLCostWaterfall";
-import { useMLBillingWithSync, groupBillingCharges } from "@/hooks/useMLBilling";
+import { useMLBillingWithSync, useMLBillingDailyWithSync, groupBillingCharges } from "@/hooks/useMLBilling";
 import { useAutoRecalc } from "@/hooks/useAutoRecalc";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useMLOrdersByBrand } from "@/hooks/useMLOrdersByBrand";
@@ -172,6 +172,10 @@ export default function MercadoLivre() {
   }, [filterMonth]);
   const billingMonth = dreMonthOverride ?? filterMonth;
   const { data: billingData, syncing: billingSyncing } = useMLBillingWithSync(billingMonth);
+  // Fonte primária do DRE: ml_billing_daily (mês-calendário exato 01–31, sem o
+  // viés do ciclo de fechamento da fatura). Cai para billingData (fatura mensal)
+  // e depois para estimado de orders quando indisponível.
+  const { data: dailyBilling, syncing: dailySyncing } = useMLBillingDailyWithSync(billingMonth);
 
   // Waterfall do mês do filtro — quando billingMonth ≠ mês corrente precisamos de dados
   // de CMV/impostos/receita para o mês do filtro (não o mês corrente).
@@ -216,10 +220,10 @@ export default function MercadoLivre() {
   // receita R$0 com lucro negativo ao navegar entre meses
   const dreWaterfallLoading = filterMonthWaterfallLoading;
 
-  // Grupos de tarifas agrupados
+  // Grupos de tarifas — fonte primária daily (mês-calendário), senão fatura mensal
   const { groups: gruposTarifas, totalTarifas } = useMemo(
-    () => groupBillingCharges(billingData?.charges ?? []),
-    [billingData],
+    () => groupBillingCharges(dailyBilling?.charges ?? billingData?.charges ?? []),
+    [dailyBilling, billingData],
   );
 
   // Label do mês em pt-BR — ex.: "Junho/2026"
@@ -241,12 +245,14 @@ export default function MercadoLivre() {
     [adsDaily, billingMonthFrom, billingMonthTo],
   );
 
-  // fonte: "billing" quando há dados reais da ML Billing API, "estimado" quando fallback de orders
-  const dreFonte: "billing" | "estimado" = billingData ? "billing" : "estimado";
+  // fonte: "competencia" = ml_billing_daily (mês-calendário exato); "billing" =
+  // fatura mensal (ciclo 06→05); "estimado" = fallback de orders
+  const dreFonte: "competencia" | "billing" | "estimado" =
+    dailyBilling ? "competencia" : billingData ? "billing" : "estimado";
 
-  // Quando não há billing real, montar grupos estimados a partir de orders
+  // Quando não há billing real (daily nem mensal), grupos estimados de orders
   const gruposTarifasEfetivos = useMemo(() => {
-    if (billingData) return gruposTarifas;
+    if (dailyBilling || billingData) return gruposTarifas;
     // fallback: grupos estimados de orders (comissão=total_comissao, frete, ads)
     const comissao = dreWaterfall?.total_comissao ?? 0;
     const frete    = dreWaterfall?.total_frete    ?? 0;
@@ -260,7 +266,7 @@ export default function MercadoLivre() {
       { key: "difal",         label: "Impostos cobrados pelo ML (DIFAL)", amount: 0 },
       { key: "afiliados_outras", label: "Outras tarifas",          amount: 0        },
     ];
-  }, [billingData, gruposTarifas, dreWaterfall, adsSpendMes]);
+  }, [dailyBilling, billingData, gruposTarifas, dreWaterfall, adsSpendMes]);
 
   const totalTarifasEfetivo = useMemo(
     () => gruposTarifasEfetivos.reduce((s, g) => s + g.amount, 0),
@@ -681,7 +687,7 @@ export default function MercadoLivre() {
                   onPrevMonth={handleDrePrevMonth}
                   onNextMonth={handleDreNextMonth}
                   canGoNext={dreCanGoNext}
-                  syncing={billingSyncing}
+                  syncing={billingSyncing || dailySyncing}
                   faturaFrom={billingData?.invoiceFrom}
                   faturaTo={billingData?.invoiceTo}
                 />

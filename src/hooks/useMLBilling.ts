@@ -253,3 +253,117 @@ export function useMLBillingWithSync(periodMonth: string) {
 
   return { ...query, syncing };
 }
+
+// ── DRE mês-calendário exato (ml_billing_daily) ──────────────────────────────
+
+export interface DailyBillingResult {
+  /** Tarifas agregadas por tipo no mês-calendário (01–fim), mesmo shape de charges */
+  charges: Array<{ type: string; label: string; amount: number }>;
+  /** Último dia com dados no mês — limita comparações ao período coberto */
+  coverageTo: string | null;
+}
+
+const lastDayOfMonth = (periodMonth: string): string => {
+  const [y, m] = periodMonth.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m, 0)).getUTCDate(); // dia 0 do mês seguinte = último dia
+  return `${periodMonth}-${String(d).padStart(2, "0")}`;
+};
+
+/**
+ * Soma ml_billing_daily por tipo no range 01–fim do mês-calendário (competência
+ * = data de lançamento). É a fonte exata do DRE: tarifas dos dias 01–31 do mês,
+ * sem o viés do ciclo de fechamento da fatura (06→05). Retorna null sem dados.
+ */
+export function useMLBillingDaily(periodMonth: string) {
+  const { resolvedMLUserIds } = useMLStore();
+  const { currentOrg } = useOrganization();
+  const orgId = currentOrg?.id ?? null;
+
+  return useQuery<DailyBillingResult | null>({
+    queryKey: ["ml", "billing-daily", orgId, resolvedMLUserIds, periodMonth],
+    queryFn: async (): Promise<DailyBillingResult | null> => {
+      if (!orgId || resolvedMLUserIds.length === 0 || !periodMonth) return null;
+      const from = `${periodMonth}-01`;
+      const to = lastDayOfMonth(periodMonth);
+
+      // Pagina defensivamente (>1000 linhas em multi-loja) — PostgREST trunca em 1000
+      type Row = { charge_type: string; charge_label: string; amount: number; charge_date: string };
+      const rows: Row[] = [];
+      const PAGE = 1000;
+      for (let offset = 0; ; offset += PAGE) {
+        const { data, error } = await supabase
+          .from("ml_billing_daily")
+          .select("charge_type, charge_label, amount, charge_date")
+          .eq("organization_id", orgId)
+          .in("ml_user_id", resolvedMLUserIds)
+          .gte("charge_date", from)
+          .lte("charge_date", to)
+          .range(offset, offset + PAGE - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        rows.push(...(data as Row[]));
+        if (data.length < PAGE) break;
+      }
+      if (rows.length === 0) return null;
+
+      const byType = new Map<string, { type: string; label: string; amount: number }>();
+      let coverageTo: string | null = null;
+      for (const r of rows) {
+        const cur = byType.get(r.charge_type);
+        if (cur) cur.amount += Number(r.amount);
+        else byType.set(r.charge_type, { type: r.charge_type, label: r.charge_label ?? r.charge_type, amount: Number(r.amount) });
+        if (!coverageTo || r.charge_date > coverageTo) coverageTo = r.charge_date;
+      }
+      const charges = [...byType.values()].map((c) => ({ ...c, amount: Math.round(c.amount * 100) / 100 }));
+      return { charges, coverageTo };
+    },
+    enabled: !!orgId && resolvedMLUserIds.length > 0 && !!periodMonth,
+    staleTime: 30 * 60 * 1000,
+  });
+}
+
+/**
+ * useMLBillingDaily + sync on-demand (mode:"daily"): quando o mês não tem dados
+ * em ml_billing_daily, invoca a EF para sincronizar as duas faturas que tocam o
+ * mês-calendário. Uma tentativa por escopo+período; falha libera retry.
+ */
+export function useMLBillingDailyWithSync(periodMonth: string) {
+  const query = useMLBillingDaily(periodMonth);
+  const { resolvedMLUserIds } = useMLStore();
+  const [syncing, setSyncing] = useState(false);
+  const attempted = useRef<Set<string>>(new Set());
+  const { data, isLoading, refetch } = query;
+
+  useEffect(() => {
+    if (isLoading || data || !periodMonth || resolvedMLUserIds.length === 0) return;
+    const key = `${[...resolvedMLUserIds].sort().join("|")}::${periodMonth}`;
+    if (attempted.current.has(key)) return;
+    attempted.current.add(key);
+
+    let cancelled = false;
+    setSyncing(true);
+    Promise.allSettled(
+      resolvedMLUserIds.map((mlUserId) =>
+        supabase.functions.invoke("sync-ml-billing", {
+          body: { ml_user_id: mlUserId, period_month: periodMonth, mode: "daily" },
+        }),
+      ),
+    )
+      .then((results) => {
+        const anyFailure = results.some(
+          (r) => r.status === "rejected" || (r.status === "fulfilled" && r.value.error != null),
+        );
+        if (anyFailure) attempted.current.delete(key);
+        if (!cancelled) return refetch();
+      })
+      .finally(() => {
+        if (!cancelled) setSyncing(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoading, data, periodMonth, resolvedMLUserIds, refetch]);
+
+  return { ...query, syncing };
+}
