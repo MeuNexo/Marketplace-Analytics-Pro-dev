@@ -43,7 +43,14 @@ function json(body: unknown, status = 200) {
 // (T-42-06) cron passes Bearer service_role_key via vault — Pattern B.
 
 function requireServiceRole(req: Request): Response | null {
-  if (!SERVICE_KEY) return null;
+  // Fail CLOSED: if the service key env is missing, reject rather than allow
+  // unauthenticated access (a missing key must never bypass the guard).
+  if (!SERVICE_KEY) {
+    return new Response(JSON.stringify({ error: "Server misconfigured" }), {
+      status: 500,
+      headers: { ...CORS, "Content-Type": "application/json" },
+    });
+  }
   const auth = req.headers.get("authorization") ?? "";
   if (auth !== "Bearer " + SERVICE_KEY) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {

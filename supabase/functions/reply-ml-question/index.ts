@@ -88,14 +88,17 @@ serve(async (req) => {
     }
 
     // ── 4. Org membership check (T-42-05) ────────────────────────────────────
-    // User must belong to the org that owns the ml_token to prevent cross-org replies
-    if (tokenRow.organization_id) {
-      const { data: isMember } = await supabase.rpc("is_org_member", {
-        _user_id: userId,
-        _org_id:  tokenRow.organization_id,
-      });
-      if (!isMember) return jsonResponse({ error: "Forbidden" }, 403);
+    // User must belong to the org that owns the ml_token to prevent cross-org replies.
+    // Fail CLOSED: a token row without organization_id is unowned/ambiguous → deny
+    // (never skip the check, which would be a fail-open IDOR before the irreversible POST).
+    if (!tokenRow.organization_id) {
+      return jsonResponse({ error: "Forbidden" }, 403);
     }
+    const { data: isMember } = await supabase.rpc("is_org_member", {
+      _user_id: userId,
+      _org_id:  tokenRow.organization_id,
+    });
+    if (!isMember) return jsonResponse({ error: "Forbidden" }, 403);
 
     // ── 5. POST answer to ML API ──────────────────────────────────────────────
     // Do NOT log access_token (T-42-04)
