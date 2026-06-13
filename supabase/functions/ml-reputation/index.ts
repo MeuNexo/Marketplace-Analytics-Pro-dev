@@ -79,12 +79,43 @@ serve(async (req) => {
     const rep = userData.seller_reputation || null;
     const powerSeller = userData.power_seller_status || null;
 
-    console.log(`ml-reputation: user=${userId} store=${mlUserId} level=${rep?.level_id ?? "none"} power=${powerSeller}`);
+    // ── Fetch feedbacks (Opção A from 42-RESEARCH.md) ────────────────────────
+    // ML deprecated the public feedback endpoint (2023+). Try three URLs in sequence.
+    // NEVER throw if all fail — return feedbacks: [] (Pitfall 7, D-07).
+    // The hook derives the daily chart from these; [] renders an empty series (valid).
+    let feedbacks: any[] = [];
+    const fbUrls = [
+      `${ML_API}/users/${mlUserId}/feedbacks/received`,
+      `${ML_API}/users/${mlUserId}/feedbacks?as=seller`,
+      `${ML_API}/users/${mlUserId}/feedback?as=seller`,
+    ];
+    for (const fbUrl of fbUrls) {
+      try {
+        const fbRes = await fetch(fbUrl, {
+          headers: {
+            Authorization: `Bearer ${tokenRow.access_token}`,
+            Accept: "application/json",
+          },
+        });
+        if (fbRes.ok) {
+          const fbData = await fbRes.json();
+          // Response shape varies: feedbacks | feedback | results
+          feedbacks = fbData?.feedbacks ?? fbData?.feedback ?? fbData?.results ?? [];
+          break;
+        }
+        // Non-200: try next URL (all failures → feedbacks stays [])
+      } catch {
+        // Network error on this URL: try next
+      }
+    }
+
+    console.log(`ml-reputation: user=${userId} store=${mlUserId} level=${rep?.level_id ?? "none"} power=${powerSeller} feedbacks=${feedbacks.length}`);
 
     return jsonResponse({
       seller_reputation: rep,
       power_seller_status: powerSeller,
       nickname: userData.nickname,
+      feedbacks,
     });
   } catch (err) {
     console.error("ml-reputation error:", err);
