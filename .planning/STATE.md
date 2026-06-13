@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 43 context gathered
-last_updated: "2026-06-13T20:14:19.957Z"
-last_activity: 2026-06-13 -- Phase 42 marked complete
+stopped_at: Parado em checkpoint Task 4 (43-01) — aguardando apply_migration via MCP + aprovacao Wesley
+last_updated: "2026-06-13T20:26:22.252Z"
+last_activity: 2026-06-13 -- Phase 43 execution started
 progress:
   total_phases: 7
   completed_phases: 2
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 12
+  completed_plans: 9
   percent: 29
 ---
 
@@ -22,14 +22,14 @@ See: .planning/PROJECT.md
 
 **Milestone:** v7.0 — SaaS Operacional End-to-End
 **Core value:** Sistema 100% operacional e vendável como assinatura — dados verdadeiros em todas as páginas (zero mock), multi-tenant endurecido, monetização via Stripe ativa, onboarding guiado para lojista leigo, e Consultor v1 (motor de regras + score de saúde) como diferencial de venda.
-**Current focus:** Phase 42 — zero-mock
+**Current focus:** Phase 43 — multi-tenant-hardening
 
 ## Current Position
 
-Phase: 42 — COMPLETE
-Plan: 4 of 4
+Phase: 43 (multi-tenant-hardening) — EXECUTING
+Plan: 2 of 4
 Status: Ready to execute
-Last activity: 2026-06-13 -- Phase 42 marked complete
+Last activity: 2026-06-13 -- Phase 43 execution started
 
 ### Quick Tasks Completed
 
@@ -77,6 +77,7 @@ Last activity: 2026-06-13 -- Phase 42 marked complete
 | 41 | 4 | - | - |
 | Phase 42-zero-mock P01 | 30min | 3 tasks | 4 files |
 | Phase 42-zero-mock P04 | 3min | 1 tasks | 1 files |
+| Phase 43-multi-tenant-hardening P01 | 205 | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -101,6 +102,9 @@ Last activity: 2026-06-13 -- Phase 42 marked complete
 - [Phase ?]: DATA-06: /vendas e /financeiro confirmados usando useMLCostWaterfall como fonte unica — sem fix de codigo necessario
 - [Phase ?]: vault.secrets service_role_key deferred to plan 42-02: Wesley must insert SERVICE_ROLE_KEY before pg_cron migration is applied
 - [Phase ?]: 42-04: Sellers loaded from sellers table scoped to currentOrg.id filtered ML-connected via ml_tokens
+- [Phase ?]: RLS org-first usa is_org_member/get_org_role em ml_product_costs; user_id mantido como auditoria (D-10/D-11)
+- [Phase ?]: Backfill de orfaos via ml_tokens (nao organization_members) para evitar duplicacao multi-org (D-02)
+- [Phase ?]: ml_billing_monthly trocado de FOR ALL para FOR SELECT — viewer nao escreve billing (ME-06/D-15)
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -148,8 +152,8 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-13T19:51:40.987Z
-Stopped at: Phase 43 context gathered
+Last session: 2026-06-13T20:26:22.241Z
+Stopped at: Parado em checkpoint Task 4 (43-01) — aguardando apply_migration via MCP + aprovacao Wesley
 
 ### Sessão 2026-06-13 — Fechamento Phase 41
 

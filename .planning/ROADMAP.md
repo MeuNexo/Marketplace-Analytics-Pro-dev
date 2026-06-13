@@ -106,7 +106,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 
 **Wave 1**
 
-- [ ] 43-01-PLAN.md — TENANT-01 RLS org-first ml_product_costs + TENANT-02 backfill/orfaos + NOT NULL + ME-06 billing FOR SELECT + [BLOCKING] apply via MCP
+- [x] 43-01-PLAN.md — TENANT-01 RLS org-first ml_product_costs + TENANT-02 backfill/orfaos + NOT NULL + ME-06 billing FOR SELECT + [BLOCKING] apply via MCP
 - [ ] 43-02-PLAN.md — ME-04 token lookup determinístico + ME-05 guard is_org_member + TENANT-03 check_quota RPC + gate process-sync-job + cron Pattern B + [BLOCKING] apply/deploy
 
 **Wave 2** *(blocked on 43-01)*
@@ -193,7 +193,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 |-------|----------------|--------|-----------|
 | 41. Veracidade Total | 4/4 | Complete    | 2026-06-13 |
 | 42. Zero Mock | 4/4 | Complete   | 2026-06-13 |
-| 43. Multi-Tenant Hardening | 0/4 | Planned | - |
+| 43. Multi-Tenant Hardening | 1/4 | In Progress|  |
 | 44. Monetizacao Stripe | 0/? | Not started | - |
 | 45. Consultor v1 | 0/? | Not started | - |
 | 46. UX para Leigos | 0/? | Not started | - |
