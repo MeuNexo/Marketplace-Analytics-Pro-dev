@@ -152,7 +152,7 @@ Stopped at: Phase 41 completa. Próximo: `/gsd-plan-phase 42` (Zero Mock)
 **Pós-fechamento (mesma sessão, decisão Wesley — opção C):**
 
 - **Ciclo REAL da fatura ML da conta: dia 06 → dia 05 do mês seguinte** (não mês-calendário). Confirmado via /billing/periods: key 2026-06 = 06/mai–05/jun. O DRE mantém o espelho da fatura e exibe a janela real no card ("Tarifas da fatura ML: 06/05 → 05/06"). EF v7 grava resumo.invoice_from/invoice_to; período OPEN tem date_from anômalo (placeholder) → derivado de date_to. Backfill mar–jun feito. Commit 86314ee7.
-- Observação não investigada: amount da fatura key 2026-04 (111.501,00) diverge do nosso total_charges 2026-03 (113.742,18) em 2.241,18 — abr e mai batem exato. Checar se relevante na Phase 47 (QA).
+- ~~Observação não investigada~~ **RESOLVIDO (2026-06-13)**: a diferença de 2.241,18 na fatura key 2026-04 é o type **CSHIA = "Tarifa por disponibilidade antecipada de dinheiro em conta"** (antecipação de recebíveis MP): 2 lançamentos em março (08/03 R$1.097,11 + 16/03 R$1.144,07). CSHIA pertence ao **group MP**, não ML — o `amount` da listagem de periods (group=ML) o exclui; o `bill_includes.total_amount` do summary (nossa fonte) inclui a fatura completa (ML+MP). Nosso número (113.742,18) é o correto/oficial. CSHIA hoje cai no bucket "Outras tarifas" do DRE.
 
 **Aprendizados de domínio (manter):**
 
