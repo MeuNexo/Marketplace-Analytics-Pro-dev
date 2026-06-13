@@ -3,12 +3,12 @@ import { useMLStore } from "@/contexts/MLStoreContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  getMockReputationSummary,
   type ReputationSummary,
   type ReputationLevel,
+  type FeedbackEntry,
 } from "@/data/reputacaoMockData";
 
-export type { ReputationSummary, ReputationLevel };
+export type { ReputationSummary, ReputationLevel, FeedbackEntry };
 
 export interface MLReputationData {
   /** Raw ML API seller_reputation object */
@@ -30,8 +30,8 @@ export interface MLReputationData {
 
 export interface UseMLReputationResult {
   reputation: MLReputationData | null;
-  /** Fallback mock for pages that need ReputationSummary shape */
-  mockReputation: ReputationSummary;
+  /** Real feedback entries from ml-reputation EF (empty array before first fetch or when unavailable) */
+  feedbacks: FeedbackEntry[];
   loading: boolean;
   isRealData: boolean;
   refresh: () => Promise<void>;
@@ -70,10 +70,19 @@ function normalizeReputation(raw: any, powerSeller: string | null): MLReputation
   };
 }
 
+/**
+ * Normalizes a raw ML feedback entry's `fulfilled` field (Pitfall 3):
+ * fulfilled can be "positive" | "negative" | true | false | null
+ */
+function normalizeFulfilled(fulfilled: any): "positive" | "negative" {
+  return (fulfilled === "positive" || fulfilled === true) ? "positive" : "negative";
+}
+
 export function useMLReputation(): UseMLReputationResult {
   const { stores, selectedStore, loading: storeLoading } = useMLStore();
   const { user } = useAuth();
   const [reputation, setReputation] = useState<MLReputationData | null>(null);
+  const [feedbacks, setFeedbacks] = useState<FeedbackEntry[]>([]);
   const [isRealData, setIsRealData] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -84,11 +93,6 @@ export function useMLReputation(): UseMLReputationResult {
   }, [selectedStore, stores]);
 
   const connected = stores.length > 0;
-
-  const mockReputation = useMemo(
-    () => getMockReputationSummary(storeId ?? "default"),
-    [storeId]
-  );
 
   const fetchReputation = useCallback(async () => {
     if (!connected || !user || !storeId) return;
@@ -115,12 +119,26 @@ export function useMLReputation(): UseMLReputationResult {
       }
 
       const data = await res.json();
+
+      // Parse seller reputation
       if (data.seller_reputation) {
         setReputation(normalizeReputation(data.seller_reputation, data.power_seller_status));
         setIsRealData(true);
       }
+
+      // Parse feedbacks — treat missing or empty as [] (Pitfall 7: never throw)
+      const rawFeedbacks: any[] = Array.isArray(data.feedbacks) ? data.feedbacks : [];
+      setFeedbacks(rawFeedbacks.map((f: any): FeedbackEntry => ({
+        id: String(f.id ?? ""),
+        date: f.date_created ?? "",
+        rating: normalizeFulfilled(f.fulfilled),
+        comment: f.message ?? "",
+        item_title: f.item?.title ?? "",
+        fulfilled_by: f.fulfilled_by ?? "seller",
+      })));
     } catch (err) {
       console.warn("ml-reputation error:", err);
+      // On error keep feedbacks as [] — sparse/empty series is valid (D-07)
     } finally {
       setLoading(false);
     }
@@ -128,13 +146,14 @@ export function useMLReputation(): UseMLReputationResult {
 
   useEffect(() => {
     setReputation(null);
+    setFeedbacks([]);
     setIsRealData(false);
     fetchReputation();
   }, [fetchReputation]);
 
   return {
     reputation,
-    mockReputation,
+    feedbacks,
     loading: storeLoading || loading,
     isRealData,
     refresh: fetchReputation,
