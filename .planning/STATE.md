@@ -29,7 +29,21 @@ See: .planning/PROJECT.md
 Phase: 42
 Plan: Not started
 Status: Ready to execute
-Last activity: 2026-06-13
+Last activity: 2026-06-13 — quick task 260613-2p6 (DRE mês-calendário) concluída
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260613-2p6 | DRE mês-calendário exato (01–31) via ml_billing_daily | 2026-06-13 | feat(dre) | [260613-2p6](./quick/260613-2p6-dre-mes-calendario-exato-01-31-via-ml-bi/) |
+
+### DRE mês-calendário (quick 260613-2p6, 2026-06-13)
+
+- **Problema:** ciclo de fatura ML = dia 06→05 (não mês-calendário). Card do mês corrente mostrava ~7 dias de tarifa vs 30 de receita → lucro inflado (jun ~R$27k, real ~R$11k).
+- **Solução:** tabela `ml_billing_daily` (agregado por dia+tipo, competência = data de lançamento), EF v8 modo `daily` (pagina /details ML+MP **sequencial** — offset é instável sob concorrência), cascata daily→fatura mensal→estimado no card, badge "mês 01–31".
+- **Regra de reconciliação:** estornos B* só contam se a venda caiu na janela de consumo da fatura (ML exclui estornos de vendas antigas). Reconcilia 99,8%.
+- **Backfill mar–jun** validado vs faturas (±0,2–2%). **2026-05/consumo-abril subcontado −1,7%** (paginação offset instável no backfill pg_net) — EF corrige ao re-sincronizar; mês corrente OK.
+- **Pendente:** checkpoint visual Wesley (badge "mês 01–31", lucro junho ~R$11k).
 
 ### DATA-01 executado (2026-06-12, commit fc090c46)
 
