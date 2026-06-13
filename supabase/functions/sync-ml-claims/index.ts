@@ -234,15 +234,29 @@ async function syncUser(
     }
   }
 
-  if (allRows.length > 0) {
+  // Dedupe by claim_id within this user's batch: the ML claims search can return
+  // the same claim under both 'opened' and 'closed' iterations (or across pages),
+  // and Postgres ON CONFLICT DO UPDATE rejects a batch that touches the same
+  // conflict target row twice ("cannot affect row a second time"), which would
+  // silently drop the ENTIRE seller's upsert. Keep the last occurrence per claim_id.
+  const deduped = Array.from(
+    new Map(allRows.map((r) => [r.claim_id, r])).values(),
+  );
+
+  let upsertError: string | null = null;
+  if (deduped.length > 0) {
     const { error } = await sb
       .from("ml_claims")
-      .upsert(allRows, { onConflict: "organization_id,ml_user_id,claim_id" });
-    if (error) console.error("sync-ml-claims upsert ml_user_id=" + mlUserId + ":", error.message);
+      .upsert(deduped, { onConflict: "organization_id,ml_user_id,claim_id" });
+    if (error) {
+      upsertError = error.message;
+      console.error("sync-ml-claims upsert ml_user_id=" + mlUserId + ":", error.message);
+    }
   }
 
-  console.log("sync-ml-claims done ml_user_id=" + mlUserId + ": claims=" + allRows.length);
-  return { claims: allRows.length };
+  console.log("sync-ml-claims done ml_user_id=" + mlUserId + ": fetched=" + allRows.length + " upserted=" + (upsertError ? 0 : deduped.length));
+  // Report the count actually persisted (0 on error) so the caller/smoke is honest.
+  return { claims: upsertError ? 0 : deduped.length, error: upsertError };
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
