@@ -4,13 +4,13 @@ milestone: v7.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 42 context gathered
-last_updated: "2026-06-13T16:46:00.043Z"
+last_updated: "2026-06-13T16:52:06.596Z"
 last_activity: 2026-06-13 -- Phase 42 execution started
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 8
-  completed_plans: 6
+  completed_plans: 7
   percent: 14
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md
 ## Current Position
 
 Phase: 42 (zero-mock) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-06-13 -- Phase 42 execution started
 
@@ -76,6 +76,7 @@ Last activity: 2026-06-13 -- Phase 42 execution started
 | Phase 41-veracidade-total P03 | 15 | 3 tasks | 1 files |
 | 41 | 4 | - | - |
 | Phase 42-zero-mock P01 | 30min | 3 tasks | 4 files |
+| Phase 42-zero-mock P04 | 3min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -99,6 +100,7 @@ Last activity: 2026-06-13 -- Phase 42 execution started
 - [Phase ?]: DATA-05: guard columnView removido do commCache useEffect — comissao real populada para todos os itens filtrados
 - [Phase ?]: DATA-06: /vendas e /financeiro confirmados usando useMLCostWaterfall como fonte unica — sem fix de codigo necessario
 - [Phase ?]: vault.secrets service_role_key deferred to plan 42-02: Wesley must insert SERVICE_ROLE_KEY before pg_cron migration is applied
+- [Phase ?]: 42-04: Sellers loaded from sellers table scoped to currentOrg.id filtered ML-connected via ml_tokens
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -146,7 +148,7 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-13T16:46:00.032Z
+Last session: 2026-06-13T16:51:59.295Z
 Stopped at: Phase 42 context gathered
 
 ### Sessão 2026-06-13 — Fechamento Phase 41

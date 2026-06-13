@@ -26,7 +26,7 @@ Decisões fixadas por Wesley: Stripe | convite controlado | Consultor v1 por reg
 - [x] **MOCK-02**: Usuário responde pergunta do comprador direto pela UI de /perguntas (POST answer na API ML)
 - [x] **MOCK-03**: /devolucoes lista reclamações e devoluções reais (tabela `ml_claims` + EF de sync via ML Claims API)
 - [x] **MOCK-04**: /reputacao exibe feedback real da API ML — remoção de todos os `getMock*`
-- [ ] **MOCK-05**: /tv lê sellers da tabela `sellers` filtrada por `organization_id` (sem UUIDs hardcoded em TVModeVendas.tsx)
+- [x] **MOCK-05**: /tv lê sellers da tabela `sellers` filtrada por `organization_id` (sem UUIDs hardcoded em TVModeVendas.tsx)
 
 ### Bloco TENANT — Multi-tenant hardening
 
@@ -98,7 +98,7 @@ Regras iniciais candidatas: margem < alvo por produto; ROAS/ACoS fora da meta; T
 | MOCK-02 | Phase 42 | Complete |
 | MOCK-03 | Phase 42 | Complete |
 | MOCK-04 | Phase 42 | Complete |
-| MOCK-05 | Phase 42 | Pending |
+| MOCK-05 | Phase 42 | Complete |
 | TENANT-01 | Phase 43 | Pending |
 | TENANT-02 | Phase 43 | Pending |
 | TENANT-03 | Phase 43 | Pending |
