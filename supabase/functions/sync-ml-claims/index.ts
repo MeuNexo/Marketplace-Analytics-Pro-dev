@@ -187,18 +187,27 @@ async function syncUser(
 
   const allRows: Record<string, unknown>[] = [];
 
+  // Safety bound so the EF always finishes inside the 150s wall-clock limit:
+  // claims search returns newest-first, so once a full page falls outside the
+  // 90-day window the rest are older too — stop. MAX_PAGES is a hard backstop
+  // for accounts with very high recent-claim volume (cron re-runs every 30min).
+  const MAX_PAGES_PER_STATUS = 6;
   for (const statusFilter of ["opened", "closed"]) {
     let offset = 0;
-    while (true) {
+    let pages = 0;
+    while (pages < MAX_PAGES_PER_STATUS) {
       const result = await fetchClaimsPage(token, statusFilter, offset);
       if (!result) break; // Both URLs failed
 
       const { items, total } = result;
+      pages++;
+      let inWindow = 0;
 
       for (const c of items) {
         // D-03: client-side date filter — only include claims from last 90 days
         const dateCreated = (c.date_created ?? "").substring(0, 10);
         if (dateCreated && dateCreated < cutoffStr) continue;
+        inWindow++;
 
         allRows.push({
           organization_id: orgId,
@@ -217,7 +226,9 @@ async function syncUser(
       }
 
       offset += items.length;
-      if (items.length === 0 || offset >= total) break;
+      // Stop when: no more items, past the reported total, or an entire page is
+      // already older than the cutoff (newest-first → rest are older too).
+      if (items.length === 0 || offset >= total || inWindow === 0) break;
       // T-42-07: 200ms sleep between pages (ML rate limit)
       await new Promise(r => setTimeout(r, 200));
     }
