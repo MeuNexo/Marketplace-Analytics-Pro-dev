@@ -11,6 +11,9 @@ export interface MLBillingData {
   cfonpn: number;
   charges: Array<{ type: string; label: string; amount: number }>;
   resumo: { cffe: number; cfonpn: number; total_charges?: number; synced_at?: string };
+  /** Janela REAL da fatura ML (ciclo da conta, ex.: 06/mai → 05/jun) — YYYY-MM-DD */
+  invoiceFrom: string | null;
+  invoiceTo: string | null;
   synced_at: string;
 }
 
@@ -172,10 +175,21 @@ export function useMLBilling(periodMonth: string) {
         data.reduce((s, row) => s + Number((row.resumo as Record<string, unknown> | null)?.[key] ?? 0), 0);
       const syncedAts = data.map((row) => row.synced_at).filter(Boolean) as string[];
 
+      // Janela da fatura — multi-loja: união das janelas (min from, max to)
+      const strResumo = (key: string) =>
+        data
+          .map((row) => String((row.resumo as Record<string, unknown> | null)?.[key] ?? ""))
+          .filter(Boolean)
+          .sort();
+      const invoiceFroms = strResumo("invoice_from");
+      const invoiceTos   = strResumo("invoice_to");
+
       return {
         cffe:    sumResumo("cffe"),
         cfonpn:  sumResumo("cfonpn"),
         charges,
+        invoiceFrom: invoiceFroms[0] ?? null,
+        invoiceTo:   invoiceTos[invoiceTos.length - 1] ?? null,
         resumo: {
           cffe:          sumResumo("cffe"),
           cfonpn:        sumResumo("cfonpn"),

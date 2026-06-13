@@ -682,6 +682,8 @@ export default function MercadoLivre() {
                   onNextMonth={handleDreNextMonth}
                   canGoNext={dreCanGoNext}
                   syncing={billingSyncing}
+                  faturaFrom={billingData?.invoiceFrom}
+                  faturaTo={billingData?.invoiceTo}
                 />
                 <MLTopProducts products={effectiveProducts} marginMap={marginMap} />
               </div>

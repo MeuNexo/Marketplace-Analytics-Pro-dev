@@ -31,7 +31,13 @@ async function fetchBillingPeriod(
   token: string,
   sellerId: string,   // numeric ML seller ID (string)
   periodMonth: string, // YYYY-MM
-): Promise<{ cffe: number; cfonpn: number; charges: Array<{ type: string; label: string; amount: number }> } | null> {
+): Promise<{
+  cffe: number;
+  cfonpn: number;
+  charges: Array<{ type: string; label: string; amount: number }>;
+  invoiceFrom: string | null;
+  invoiceTo: string | null;
+} | null> {
   // Step 1: list periods for this seller
   const periodsResp = await fetch(
     `${ML_API}/billing/integration/monthly/periods?seller_id=${sellerId}&group=ML&document_type=BILL`,
@@ -69,6 +75,26 @@ async function fetchBillingPeriod(
   if (!period?.key) {
     console.error("billing/periods: no matching period for", periodMonth, "found keys:", periodList.map((p: any) => p.key));
     return null;
+  }
+
+  // Janela REAL da fatura (ciclo da conta — ex.: dia 06 → dia 05 do mês
+  // seguinte). Exibida no card para deixar explícito o descasamento com o
+  // mês-calendário da receita. Para período OPEN a ML retorna date_from
+  // anômalo (placeholder antigo) — quando a janela passa de 60 dias,
+  // deriva date_from = date_to − 1 mês + 1 dia.
+  const rawFrom = String(period.period?.date_from ?? "");
+  const rawTo   = String(period.period?.date_to ?? "");
+  let invoiceFrom: string | null = rawFrom || null;
+  const invoiceTo: string | null = rawTo || null;
+  if (rawFrom && rawTo) {
+    const fromMs = Date.parse(rawFrom);
+    const toMs   = Date.parse(rawTo);
+    if (Number.isFinite(fromMs) && Number.isFinite(toMs) && toMs - fromMs > 60 * 86_400_000) {
+      const d = new Date(toMs);
+      d.setUTCMonth(d.getUTCMonth() - 1);
+      d.setUTCDate(d.getUTCDate() + 1);
+      invoiceFrom = d.toISOString().slice(0, 10);
+    }
   }
 
   // Step 2: fetch summary/details for this period key
@@ -110,6 +136,8 @@ async function fetchBillingPeriod(
       label:  String(c.label ?? ""),
       amount: Number(c.amount ?? 0),
     })),
+    invoiceFrom,
+    invoiceTo,
   };
 }
 
@@ -238,6 +266,8 @@ serve(async (req) => {
             cffe:           billing.cffe,
             cfonpn:         billing.cfonpn,
             total_charges:  billing.charges.reduce((s, c) => s + c.amount, 0),
+            invoice_from:   billing.invoiceFrom,
+            invoice_to:     billing.invoiceTo,
             synced_at:      new Date().toISOString(),
           },
           synced_at: new Date().toISOString(),

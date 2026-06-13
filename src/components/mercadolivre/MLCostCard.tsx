@@ -9,6 +9,12 @@ const fmt = (v: number) =>
 const pct = (v: number, base: number) =>
   base > 0 ? `${((v / base) * 100).toFixed(1)}%` : "—";
 
+// "2026-05-06" → "06/05" (sem timezone — corte direto da string ISO)
+const fmtDayMonth = (iso: string) => {
+  const [, m, d] = iso.split("-");
+  return m && d ? `${d}/${m}` : iso;
+};
+
 // ── Tipos ──────────────────────────────────────────────────────────────────
 
 interface MLCostCardProps {
@@ -35,6 +41,9 @@ interface MLCostCardProps {
   canGoNext?: boolean;
   /** true enquanto sync on-demand do billing do mês está em andamento */
   syncing?: boolean;
+  /** Janela real da fatura ML (ciclo da conta) — YYYY-MM-DD, exibida quando fonte=billing */
+  faturaFrom?: string | null;
+  faturaTo?: string | null;
 }
 
 // ── Componente ─────────────────────────────────────────────────────────────
@@ -52,6 +61,8 @@ export function MLCostCard({
   onNextMonth,
   canGoNext = false,
   syncing = false,
+  faturaFrom,
+  faturaTo,
 }: MLCostCardProps) {
   // Lucro do mês = receita − total tarifas − CMV − impostos
   const lucro =
@@ -109,6 +120,15 @@ export function MLCostCard({
             </span>
           </div>
         </div>
+
+        {/* Janela real da fatura ML — o ciclo de cobrança não é o mês-calendário */}
+        {fonte === "billing" && faturaFrom && faturaTo && (
+          <div className="px-4 pb-1 -mt-1 flex justify-end">
+            <span className="text-[10px] text-muted-foreground tabular-nums">
+              Tarifas da fatura ML: {fmtDayMonth(faturaFrom)} → {fmtDayMonth(faturaTo)}
+            </span>
+          </div>
+        )}
 
         <CardContent className="px-4 pb-4">
           {loading ? (
