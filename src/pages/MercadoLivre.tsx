@@ -18,7 +18,7 @@ import { useMLLastSync } from "@/hooks/useMLLastSync";
 import { useMLOrders } from "@/hooks/useMLOrders";
 import { useMLKPISummary } from "@/hooks/useMLKPISummary";
 import { useMLCostWaterfall } from "@/hooks/useMLCostWaterfall";
-import { useMLBilling, groupBillingCharges } from "@/hooks/useMLBilling";
+import { useMLBillingWithSync, groupBillingCharges } from "@/hooks/useMLBilling";
 import { useAutoRecalc } from "@/hooks/useAutoRecalc";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useMLOrdersByBrand } from "@/hooks/useMLOrdersByBrand";
@@ -163,9 +163,15 @@ export default function MercadoLivre() {
   );
   const { data: monthlyCostWaterfall } = useMLCostWaterfall(monthlyFrom, monthlyTo);
 
-  // Billing real (CFFE/CFONPN) para o período selecionado (DATA-04)
-  const billingMonth = useMemo(() => currentFrom.substring(0, 7), [currentFrom]);
-  const { data: billingData } = useMLBilling(billingMonth);
+  // Billing real (CFFE/CFONPN) — mês do filtro, ou mês navegado via ‹ › no card (41-04)
+  const filterMonth = useMemo(() => currentFrom.substring(0, 7), [currentFrom]);
+  // Override de navegação manual do DRE — null segue o filtro; reset quando o filtro muda
+  const [dreMonthOverride, setDreMonthOverride] = useState<string | null>(null);
+  useEffect(() => {
+    setDreMonthOverride(null);
+  }, [filterMonth]);
+  const billingMonth = dreMonthOverride ?? filterMonth;
+  const { data: billingData, syncing: billingSyncing } = useMLBillingWithSync(billingMonth);
 
   // Waterfall do mês do filtro — quando billingMonth ≠ mês corrente precisamos de dados
   // de CMV/impostos/receita para o mês do filtro (não o mês corrente).
@@ -174,6 +180,22 @@ export default function MercadoLivre() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   }, []);
   const billingMonthIsCurrentMonth = billingMonth === currentCalendarMonth;
+
+  // Navegação de meses no card DRE (‹ Mês/Ano ›)
+  const shiftDreMonth = useCallback(
+    (delta: number) => {
+      const [y, m] = billingMonth.split("-").map(Number);
+      const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+      const next = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+      setDreMonthOverride(next === filterMonth ? null : next);
+    },
+    [billingMonth, filterMonth],
+  );
+  const dreCanGoNext = billingMonth < currentCalendarMonth;
+  const handleDrePrevMonth = useCallback(() => shiftDreMonth(-1), [shiftDreMonth]);
+  const handleDreNextMonth = useCallback(() => {
+    if (billingMonth < currentCalendarMonth) shiftDreMonth(1);
+  }, [billingMonth, currentCalendarMonth, shiftDreMonth]);
   // Primeiros/últimos dias do billingMonth — usados para instanciar waterfall do mês do filtro
   const billingMonthFrom = useMemo(() => `${billingMonth}-01`, [billingMonth]);
   const billingMonthTo = useMemo(() => {
@@ -654,6 +676,10 @@ export default function MercadoLivre() {
                   fonte={dreFonte}
                   adsSpendMes={adsSpendMes}
                   loading={costWaterfallLoading}
+                  onPrevMonth={handleDrePrevMonth}
+                  onNextMonth={handleDreNextMonth}
+                  canGoNext={dreCanGoNext}
+                  syncing={billingSyncing}
                 />
                 <MLTopProducts products={effectiveProducts} marginMap={marginMap} />
               </div>

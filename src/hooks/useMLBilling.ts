@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useMLStore } from "@/contexts/MLStoreContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
@@ -68,11 +69,18 @@ const BILLING_GROUP_MAP: Array<{ key: string; label: string; types: Set<string> 
 
 const OUTRAS_KEY = "outras";
 const OUTRAS_LABEL = "Outras tarifas";
+const CANCELAMENTOS_KEY = "cancelamentos";
+const CANCELAMENTOS_LABEL = "Cancelamentos de tarifas";
 
 /**
  * Agrupa cobranças de billing em grupos semânticos conforme plano 41-04.
  * Valores somados com sinal (estornos negativos subtraem).
- * Types não mapeados caem no bucket "Outras tarifas" — nunca dropados.
+ * Types B* (bonuses — BVVML, BFONPN, BFFE, BXDED...) são cancelamentos/estornos
+ * de tarifas, valores NEGATIVOS, agrupados em "Cancelamentos de tarifas" como
+ * última linha (igual à fatura ML). NÃO caem no bucket Outras.
+ * Demais types não mapeados caem em "Outras tarifas" — nunca dropados.
+ * totalTarifas = soma de TODOS os grupos incluindo cancelamentos (líquido,
+ * bate com total_amount oficial da fatura).
  */
 export function groupBillingCharges(
   charges: Array<{ type: string; label: string; amount: number }>,
@@ -81,8 +89,14 @@ export function groupBillingCharges(
   const accumulators: Record<string, number> = {};
   for (const g of BILLING_GROUP_MAP) accumulators[g.key] = 0;
   accumulators[OUTRAS_KEY] = 0;
+  accumulators[CANCELAMENTOS_KEY] = 0;
 
   for (const charge of charges) {
+    // Types B* = cancelamentos/estornos (bonuses) — capturados ANTES do fallback Outras
+    if (charge.type.startsWith("B")) {
+      accumulators[CANCELAMENTOS_KEY] += charge.amount;
+      continue;
+    }
     const group = BILLING_GROUP_MAP.find((g) => g.types.has(charge.type));
     if (group) {
       accumulators[group.key] += charge.amount;
@@ -112,6 +126,13 @@ export function groupBillingCharges(
   } else {
     groups.push({ key: OUTRAS_KEY, label: OUTRAS_LABEL, amount: accumulators[OUTRAS_KEY] });
   }
+
+  // Cancelamentos de tarifas — última linha, igual à fatura ML (valores negativos)
+  groups.push({
+    key: CANCELAMENTOS_KEY,
+    label: CANCELAMENTOS_LABEL,
+    amount: accumulators[CANCELAMENTOS_KEY],
+  });
 
   const totalTarifas = groups.reduce((sum, g) => sum + g.amount, 0);
 
@@ -161,4 +182,47 @@ export function useMLBilling(periodMonth: string) {
     enabled: !!orgId && resolvedMLUserIds.length > 0 && !!periodMonth,
     staleTime: 30 * 60 * 1000, // billing data changes at most once per day
   });
+}
+
+/**
+ * useMLBilling + sync on-demand: quando o mês navegado não tem dados em
+ * ml_billing_monthly, invoca a EF sync-ml-billing (user JWT) uma única vez
+ * por período e refaz a query. `syncing` permite feedback visual no card.
+ * Períodos sem fatura no ML (resposta billing:null) não são re-tentados.
+ */
+export function useMLBillingWithSync(periodMonth: string) {
+  const query = useMLBilling(periodMonth);
+  const { resolvedMLUserIds } = useMLStore();
+  const [syncing, setSyncing] = useState(false);
+  const attemptedMonths = useRef<Set<string>>(new Set());
+
+  const { data, isLoading, refetch } = query;
+
+  useEffect(() => {
+    if (isLoading || data || !periodMonth || resolvedMLUserIds.length === 0) return;
+    if (attemptedMonths.current.has(periodMonth)) return;
+    attemptedMonths.current.add(periodMonth);
+
+    let cancelled = false;
+    setSyncing(true);
+    Promise.allSettled(
+      resolvedMLUserIds.map((mlUserId) =>
+        supabase.functions.invoke("sync-ml-billing", {
+          body: { ml_user_id: mlUserId, period_month: periodMonth },
+        }),
+      ),
+    )
+      .then(() => {
+        if (!cancelled) return refetch();
+      })
+      .finally(() => {
+        if (!cancelled) setSyncing(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoading, data, periodMonth, resolvedMLUserIds, refetch]);
+
+  return { ...query, syncing };
 }

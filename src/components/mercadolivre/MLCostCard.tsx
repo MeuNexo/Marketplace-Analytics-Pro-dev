@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
-import { TrendingDown, TrendingUp } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, TrendingDown, TrendingUp } from "lucide-react";
 import type { BillingGroup } from "@/hooks/useMLBilling";
 
 const fmt = (v: number) =>
@@ -29,6 +29,14 @@ interface MLCostCardProps {
   loading?: boolean;
   /** Publicidade do mês (ads spend) — usado no fallback estimado */
   adsSpendMes?: number;
+  /** Navega para o mês anterior */
+  onPrevMonth?: () => void;
+  /** Navega para o mês seguinte (desabilitado além do mês corrente) */
+  onNextMonth?: () => void;
+  /** false quando o mês exibido é o mês corrente (não navega para frente) */
+  canGoNext?: boolean;
+  /** true enquanto sync on-demand do billing do mês está em andamento */
+  syncing?: boolean;
 }
 
 // ── Componente ─────────────────────────────────────────────────────────────
@@ -42,6 +50,10 @@ export function MLCostCard({
   impostosMes,
   fonte,
   loading,
+  onPrevMonth,
+  onNextMonth,
+  canGoNext = false,
+  syncing = false,
 }: MLCostCardProps) {
   // Lucro do mês = receita − total tarifas − CMV − impostos
   const lucro =
@@ -62,18 +74,42 @@ export function MLCostCard({
       <Card className="h-full relative overflow-hidden">
         {/* ── Cabeçalho ── */}
         <div className="px-4 pt-4 pb-2 flex items-center justify-between gap-2">
-          <span className="text-sm font-medium text-foreground">
-            DRE do Mês — {mesLabel}
-          </span>
-          <span
-            className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
-              fonte === "billing"
-                ? "bg-blue-500/15 text-blue-400"
-                : "bg-amber-500/15 text-amber-400"
-            }`}
-          >
-            {fonte === "billing" ? "billing ML" : "estimado"}
-          </span>
+          <span className="text-sm font-medium text-foreground">DRE do Mês</span>
+          <div className="flex items-center gap-1.5">
+            {syncing && (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+            )}
+            <button
+              type="button"
+              onClick={onPrevMonth}
+              disabled={!onPrevMonth || syncing}
+              aria-label="Mês anterior"
+              className="p-0.5 rounded hover:bg-muted/60 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="text-xs font-medium tabular-nums text-foreground min-w-[88px] text-center">
+              {mesLabel}
+            </span>
+            <button
+              type="button"
+              onClick={onNextMonth}
+              disabled={!onNextMonth || !canGoNext || syncing}
+              aria-label="Mês seguinte"
+              className="p-0.5 rounded hover:bg-muted/60 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <span
+              className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                fonte === "billing"
+                  ? "bg-blue-500/15 text-blue-400"
+                  : "bg-amber-500/15 text-amber-400"
+              }`}
+            >
+              {fonte === "billing" ? "billing ML" : "estimado"}
+            </span>
+          </div>
         </div>
 
         <CardContent className="px-4 pb-4">
