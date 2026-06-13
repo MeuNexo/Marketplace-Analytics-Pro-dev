@@ -1,6 +1,7 @@
-// ─── Types ────────────────────────────────────────────────────────────────────
-// Generator functions removed in Phase 42-zero-mock plan 03.
-// Type exports retained for consumers (useMLReputation, MLReputacao).
+// Reputation domain types.
+// Moved out of the former src/data/reputacaoMockData.ts in Phase 42 (Zero Mock):
+// the mock data generators were removed; only the type contracts remain, now in
+// a proper types module so no "*MockData" file lingers in the codebase.
 
 export type ReputationLevel = "green" | "light_green" | "yellow" | "orange" | "red";
 

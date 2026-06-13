@@ -6,7 +6,7 @@ import {
   type ReputationSummary,
   type ReputationLevel,
   type FeedbackEntry,
-} from "@/data/reputacaoMockData";
+} from "@/types/reputacao";
 
 export type { ReputationSummary, ReputationLevel, FeedbackEntry };
 

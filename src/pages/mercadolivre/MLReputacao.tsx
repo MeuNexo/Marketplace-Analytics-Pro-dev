@@ -21,7 +21,7 @@ import { useMLReputation } from "@/hooks/useMLReputation";
 import {
   type ReputationLevel,
   type FeedbackEntry,
-} from "@/data/reputacaoMockData";
+} from "@/types/reputacao";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
