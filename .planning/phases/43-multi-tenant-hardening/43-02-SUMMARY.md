@@ -244,3 +244,35 @@ Verificações:
 - [x] Migration cron NAO tem URL do projeto errado no SQL funcional: confirmado
 - [x] Commit 624f0fdf existe (Task 1)
 - [x] Commit e0fdce0e existe (Task 2)
+
+---
+
+## Estado da Task 3 (apply/deploy) — PARCIAL — handoff 2026-06-14
+
+**Auditoria MCP (ckcdevcxgvueywivefgx) antes do apply revelou:**
+- 2 orgs reais: Pé Vermeio + Thales (não só Pé Vermeio).
+- **Pé Vermeio estava em `free / interval=120`** (seed enterprise usou DO NOTHING) → gate check_quota bloquearia a operação real após 12 syncs/dia. Corrigido com migration de tiers.
+- cron `sync-process-job-every-5min` já apontava p/ projeto certo mas usava JWT legado (não projeto errado como a RESEARCH supôs) → corrigido p/ Pattern B. Nenhum job apontava p/ gionpsuunfkkzzjdubfy.
+- vault `service_role_key` presente (sb_secret_, 41 chars).
+
+**APLICADO via MCP apply_migration (3, todas success):**
+1. `20260614121500_set_existing_orgs_enterprise` (orgs → enterprise -1/-1)
+2. `20260614122000_tenant03_check_quota_rpc`
+3. `20260614122500_tenant03_fix_sync_cron_pattern_b`
+
+**PENDENTE (próxima sessão) — deploy de 5 EFs (Wesley faria via CLI, sessão encerrada antes):**
+```
+supabase functions deploy sync-ml-orders sync-ml-billing ml-reputation ml-inventory process-sync-job --project-ref ckcdevcxgvueywivefgx
+```
+verify_jwt a preservar: ml-reputation=true, ml-inventory=true; sync-ml-orders/sync-ml-billing/process-sync-job=false.
+Bloqueio: SUPABASE_ACCESS_TOKEN ausente no ambiente (classificador impede caça em arquivos de credencial).
+
+**Estado atual é SEGURO e consistente:**
+- Gate check_quota só ATIVA quando process-sync-job for deployada (v14 atual não tem gate). Até lá nada bloqueia.
+- Orgs já enterprise → mesmo após deploy, gate não bloqueia operação real.
+- Cron Pattern B já chama a v14 atual (funciona).
+
+**VALIDAÇÃO PÓS-DEPLOY (rodar quando EFs subirem):**
+1. Smoke process-sync-job: 401 sem auth + ok com service role (fila vazia).
+2. `SELECT public.check_quota('7f615df7-7bac-45e5-8a93-827fb9ddeec7');` → true (Pé Vermeio enterprise).
+3. list_edge_functions → versões novas das 5.
