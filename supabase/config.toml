@@ -79,3 +79,15 @@ verify_jwt = false
 
 [functions.tiny-oauth]
 verify_jwt = false
+
+# Phase 42 (Zero Mock) — new Edge Functions
+# sync EFs are cron-invoked with service_role_key (Pattern B from RESEARCH.md pg_cron auth)
+[functions.sync-ml-questions]
+verify_jwt = false
+
+[functions.sync-ml-claims]
+verify_jwt = false
+
+# reply EF is user-invoked with a user JWT (verify_jwt=true enforces Supabase auth)
+[functions.reply-ml-question]
+verify_jwt = true
