@@ -22,10 +22,10 @@ Decisões fixadas por Wesley: Stripe | convite controlado | Consultor v1 por reg
 
 ### Bloco MOCK — Zero dados simulados
 
-- [ ] **MOCK-01**: /perguntas lista perguntas reais do ML (tabela `ml_questions` + EF de sync via ML Questions API)
-- [ ] **MOCK-02**: Usuário responde pergunta do comprador direto pela UI de /perguntas (POST answer na API ML)
-- [ ] **MOCK-03**: /devolucoes lista reclamações e devoluções reais (tabela `ml_claims` + EF de sync via ML Claims API)
-- [ ] **MOCK-04**: /reputacao exibe feedback real da API ML — remoção de todos os `getMock*`
+- [x] **MOCK-01**: /perguntas lista perguntas reais do ML (tabela `ml_questions` + EF de sync via ML Questions API)
+- [x] **MOCK-02**: Usuário responde pergunta do comprador direto pela UI de /perguntas (POST answer na API ML)
+- [x] **MOCK-03**: /devolucoes lista reclamações e devoluções reais (tabela `ml_claims` + EF de sync via ML Claims API)
+- [x] **MOCK-04**: /reputacao exibe feedback real da API ML — remoção de todos os `getMock*`
 - [ ] **MOCK-05**: /tv lê sellers da tabela `sellers` filtrada por `organization_id` (sem UUIDs hardcoded em TVModeVendas.tsx)
 
 ### Bloco TENANT — Multi-tenant hardening
@@ -94,10 +94,10 @@ Regras iniciais candidatas: margem < alvo por produto; ROAS/ACoS fora da meta; T
 | DATA-04 | Phase 41 | Complete |
 | DATA-05 | Phase 41 | Complete |
 | DATA-06 | Phase 41 | Complete |
-| MOCK-01 | Phase 42 | Pending |
-| MOCK-02 | Phase 42 | Pending |
-| MOCK-03 | Phase 42 | Pending |
-| MOCK-04 | Phase 42 | Pending |
+| MOCK-01 | Phase 42 | Complete |
+| MOCK-02 | Phase 42 | Complete |
+| MOCK-03 | Phase 42 | Complete |
+| MOCK-04 | Phase 42 | Complete |
 | MOCK-05 | Phase 42 | Pending |
 | TENANT-01 | Phase 43 | Pending |
 | TENANT-02 | Phase 43 | Pending |
