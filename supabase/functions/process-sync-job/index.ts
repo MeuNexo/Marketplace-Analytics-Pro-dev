@@ -63,6 +63,31 @@ serve(async (req) => {
 
   // job is now status='running', started_at is set in the DB
 
+  // ── TENANT-03: Quota gate — check_quota RPC antes de despachar ────────────
+  // check_quota(_org_id) retorna true = dentro da quota, false = excedeu.
+  // enterprise (-1) nunca bloqueia. Se a org não tem plano (NULL) → true (D-04).
+  if (job.organization_id) {
+    const { data: withinQuota, error: quotaErr } = await sb.rpc("check_quota", {
+      _org_id: job.organization_id,
+    });
+
+    if (quotaErr) {
+      console.error(`process-sync-job quota check error org=${job.organization_id}:`, quotaErr.message);
+      // Erro no RPC não bloqueia o job — log e continua (fail-open para não travar orgs enterprise)
+    } else if (withinQuota === false) {
+      console.warn(`process-sync-job quota EXCEEDED org=${job.organization_id} job_type=${job.job_type} — skipping dispatch`);
+      await sb
+        .from("sync_jobs")
+        .update({
+          status:      "failed",
+          error_msg:   `quota exceeded for org ${job.organization_id} — sync blocked by check_quota`,
+          finished_at: new Date().toISOString(),
+        })
+        .eq("id", job.id);
+      return json({ ok: false, job_id: job.id, job_type: job.job_type, error: "quota_exceeded" }, 200);
+    }
+  }
+
   // ── Dispatch and update status ─────────────────────────────────────────────
   try {
     if (job.job_type === "orders") {
