@@ -9,7 +9,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 ## Phases
 
 - [x] **Phase 41: Veracidade Total** — KPIs de /vendas, /financeiro e /anuncios com fontes reais e consistentes (CMV, billing, comissao real) (completed 2026-06-12)
-- [ ] **Phase 42: Zero Mock** — /perguntas, /devolucoes, /reputacao e /tv lendo dados reais da API ML
+- [x] **Phase 42: Zero Mock** — /perguntas, /devolucoes, /reputacao e /tv lendo dados reais da API ML (completed 2026-06-13)
 - [ ] **Phase 43: Multi-Tenant Hardening** — RLS org-first, backfill de orfaos, quota enforcement, wizard de onboarding guiado
 - [ ] **Phase 44: Monetizacao Stripe** — Checkout + webhooks + /planos + enforcement de tier aplicado de verdade
 - [ ] **Phase 45: Consultor v1** — Engine de ~12 regras, card "O que fazer agora", painel de insights e score de saude 0-100
@@ -82,7 +82,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 
 **Wave 3** *(blocked on Wave 1 + Wave 2; 42-03 e 42-04 em paralelo — sem overlap de arquivos)*
 
-- [ ] 42-03-PLAN.md — Hooks useMLQuestions/useMLClaims + rewrite /perguntas (inline reply), /devolucoes (filtros), /reputacao (feedback real) + remocao de mocks
+- [x] 42-03-PLAN.md — Hooks useMLQuestions/useMLClaims + rewrite /perguntas (inline reply), /devolucoes (filtros), /reputacao (feedback real) + remocao de mocks
 - [x] 42-04-PLAN.md — TVModeVendas sellers dinamicos por organization_id (MOCK-05)
 
 **UI hint**: yes
@@ -178,7 +178,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 41. Veracidade Total | 4/4 | Complete    | 2026-06-13 |
-| 42. Zero Mock | 3/4 | In Progress|  |
+| 42. Zero Mock | 4/4 | Complete   | 2026-06-13 |
 | 43. Multi-Tenant Hardening | 0/? | Not started | - |
 | 44. Monetizacao Stripe | 0/? | Not started | - |
 | 45. Consultor v1 | 0/? | Not started | - |
