@@ -12,6 +12,17 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import React from "react";
+
+function createWrapper() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return function Wrapper({ children }: { children: React.ReactNode }) {
+    return React.createElement(QueryClientProvider, { client: queryClient }, children);
+  };
+}
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 
@@ -60,12 +71,11 @@ describe("useMLClaims — MOCK-03: real claims from ml_claims table", () => {
   it("MOCK-03: scopes query by organization_id", async () => {
     const { supabase } = await import("@/integrations/supabase/client");
 
-    const eqSpy = vi.spyOn(supabase as any, "eq");
-
-    renderHook(() => useMLClaims());
+    renderHook(() => useMLClaims(), { wrapper: createWrapper() });
 
     await waitFor(() => {
-      expect(eqSpy).toHaveBeenCalledWith("organization_id", "org-uuid-test-1234");
+      const eqCalls = (supabase.eq as ReturnType<typeof vi.fn>).mock.calls as Array<[string, unknown]>;
+      expect(eqCalls.some(([col, val]) => col === "organization_id" && val === "org-uuid-test-1234")).toBe(true);
     });
   });
 
@@ -78,24 +88,22 @@ describe("useMLClaims — MOCK-03: real claims from ml_claims table", () => {
       scopeKey: "all",
     });
 
-    const inSpy = vi.spyOn(supabase as any, "in");
-
-    renderHook(() => useMLClaims());
+    renderHook(() => useMLClaims(), { wrapper: createWrapper() });
 
     await waitFor(() => {
-      expect(inSpy).toHaveBeenCalledWith("ml_user_id", ["111", "222"]);
+      const inCalls = (supabase.in as ReturnType<typeof vi.fn>).mock.calls as Array<[string, unknown]>;
+      expect(inCalls.some(([col, val]) => col === "ml_user_id" && JSON.stringify(val) === JSON.stringify(["111", "222"]))).toBe(true);
     });
   });
 
   it("MOCK-03: orders by data_abertura descending (newest first)", async () => {
     const { supabase } = await import("@/integrations/supabase/client");
 
-    const orderSpy = vi.spyOn(supabase as any, "order");
-
-    renderHook(() => useMLClaims());
+    renderHook(() => useMLClaims(), { wrapper: createWrapper() });
 
     await waitFor(() => {
-      expect(orderSpy).toHaveBeenCalledWith("data_abertura", { ascending: false });
+      const orderCalls = (supabase.order as ReturnType<typeof vi.fn>).mock.calls as Array<[string, unknown]>;
+      expect(orderCalls.some(([col, opts]) => col === "data_abertura" && (opts as any)?.ascending === false)).toBe(true);
     });
   });
 
@@ -106,7 +114,7 @@ describe("useMLClaims — MOCK-03: real claims from ml_claims table", () => {
       currentOrg: null,
     });
 
-    const { result } = renderHook(() => useMLClaims());
+    const { result } = renderHook(() => useMLClaims(), { wrapper: createWrapper() });
     expect(result.current.isLoading).toBe(false);
     expect(result.current.data).toBeUndefined();
   });
@@ -119,36 +127,41 @@ describe("useMLClaims — MOCK-03: real claims from ml_claims table", () => {
       scopeKey: "empty",
     });
 
-    const { result } = renderHook(() => useMLClaims());
+    const { result } = renderHook(() => useMLClaims(), { wrapper: createWrapper() });
     expect(result.current.isLoading).toBe(false);
     expect(result.current.data).toBeUndefined();
   });
 });
 
 describe("useMLClaims — MOCK-03: status filter", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    // Reset context mocks to defaults (clearAllMocks doesn't reset mockReturnValue implementations)
+    const { useOrganization } = await import("@/contexts/OrganizationContext");
+    const { useMLStore } = await import("@/contexts/MLStoreContext");
+    (useOrganization as ReturnType<typeof vi.fn>).mockReturnValue({ currentOrg: { id: "org-uuid-test-1234" } });
+    (useMLStore as ReturnType<typeof vi.fn>).mockReturnValue({ resolvedMLUserIds: ["123456789"], scopeKey: "123456789" });
+  });
+
   it("applies optional status filter when provided (e.g. 'opened')", async () => {
     const { supabase } = await import("@/integrations/supabase/client");
 
-    const eqSpy = vi.spyOn(supabase as any, "eq");
-
-    renderHook(() => useMLClaims("opened"));
+    renderHook(() => useMLClaims("opened"), { wrapper: createWrapper() });
 
     await waitFor(() => {
-      expect(eqSpy).toHaveBeenCalledWith("status", "opened");
+      const eqCalls = (supabase.eq as ReturnType<typeof vi.fn>).mock.calls as Array<[string, unknown]>;
+      expect(eqCalls.some(([col, val]) => col === "status" && val === "opened")).toBe(true);
     });
   });
 
   it("does NOT add status filter when no status argument is provided", async () => {
     const { supabase } = await import("@/integrations/supabase/client");
 
-    const eqSpy = vi.spyOn(supabase as any, "eq");
-
-    renderHook(() => useMLClaims());
+    renderHook(() => useMLClaims(), { wrapper: createWrapper() });
 
     await waitFor(() => {
-      const statusCalls = (eqSpy.mock.calls as Array<[string, unknown]>).filter(
-        (args) => args[0] === "status"
-      );
+      const eqCalls = (supabase.eq as ReturnType<typeof vi.fn>).mock.calls as Array<[string, unknown]>;
+      const statusCalls = eqCalls.filter((args) => args[0] === "status");
       expect(statusCalls).toHaveLength(0);
     });
   });
@@ -173,6 +186,15 @@ describe("useMLClaims — MOCK-03: tipo filter (D-09 unified list)", () => {
 });
 
 describe("useMLClaims — MOCK-03: empty state before first cron run", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    // Reset context mocks to defaults
+    const { useOrganization } = await import("@/contexts/OrganizationContext");
+    const { useMLStore } = await import("@/contexts/MLStoreContext");
+    (useOrganization as ReturnType<typeof vi.fn>).mockReturnValue({ currentOrg: { id: "org-uuid-test-1234" } });
+    (useMLStore as ReturnType<typeof vi.fn>).mockReturnValue({ resolvedMLUserIds: ["123456789"], scopeKey: "123456789" });
+  });
+
   it("returns empty array (not undefined/null) when table is empty", async () => {
     const { supabase } = await import("@/integrations/supabase/client");
 
@@ -189,7 +211,7 @@ describe("useMLClaims — MOCK-03: empty state before first cron run", () => {
       limit: vi.fn().mockResolvedValue(mockChain),
     });
 
-    const { result } = renderHook(() => useMLClaims());
+    const { result } = renderHook(() => useMLClaims(), { wrapper: createWrapper() });
 
     await waitFor(() => {
       // data should be [] (empty array), not undefined/null
