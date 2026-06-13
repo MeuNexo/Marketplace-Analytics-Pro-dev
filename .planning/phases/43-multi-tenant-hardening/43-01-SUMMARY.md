@@ -239,3 +239,21 @@ Verificacoes:
 - [x] Hook atualizado: src/hooks/useMLProductCosts.ts
 - [x] Commit 9680825a existe (Task 2 — migrations)
 - [x] Commit 3e2584a0 existe (Task 3 — hook)
+
+---
+
+## Aplicação das migrations (Task 4 — concluída pelo orquestrador, 2026-06-14)
+
+**Auditoria pré-apply via MCP (ckcdevcxgvueywivefgx) corrigiu bugs da migration B:**
+- Estado real: `ml_product_costs` 604 órfãos/604; demais tabelas 0 órfãos; **2 orgs** (Pé Vermeio + Thales).
+- Migration B reescrita (commit 3aa0da5b): backfill de `ml_product_costs` via `user_id`→org (owner = Pé Vermeio), não pelo token global (atribuiria à org errada). Removidos `UPDATE` de `ml_targets` (sem coluna), `sellers`/`seller_stores` (sem `ml_user_id`).
+
+**Aplicadas via MCP apply_migration (ordem A→B→C), todas success:**
+1. `tenant01_ml_product_costs_rls_orgfirst`
+2. `tenant02_backfill_orphans_and_notnull`
+3. `me06_billing_for_select`
+
+**Validação pós-apply (pg_policies + counts):**
+- `ml_product_costs` policies: `mpc_select/insert/update/delete` (4 org-first; conflitantes removidas)
+- `ml_billing_monthly` policies: `org_member_billing_select:SELECT` apenas (ME-06 ✓)
+- `ml_product_costs`: 0 órfãos, 604 → Pé Vermeio, `organization_id` agora `NOT NULL`
