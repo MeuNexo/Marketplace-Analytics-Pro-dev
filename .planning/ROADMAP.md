@@ -70,7 +70,21 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
   4. /tv lê sellers da tabela sellers filtrada por organization_id — sem UUIDs hardcoded em TVModeVendas.tsx
   5. Zero badge "dados simulados" visivel em qualquer pagina do produto
 
-**Plans**: TBD
+**Plans**: 4 plans
+
+**Wave 1**
+
+- [ ] 42-01-PLAN.md — Migration ml_questions + ml_claims (RLS, indices) + config.toml + test scaffolds + [BLOCKING] apply tables + vault service_role_key check
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 42-02-PLAN.md — EFs sync-ml-questions / sync-ml-claims / reply-ml-question + ml-reputation feedbacks[] + pg_cron Pattern B + [BLOCKING] deploy/smoke
+
+**Wave 3** *(blocked on Wave 1 + Wave 2; 42-03 e 42-04 em paralelo — sem overlap de arquivos)*
+
+- [ ] 42-03-PLAN.md — Hooks useMLQuestions/useMLClaims + rewrite /perguntas (inline reply), /devolucoes (filtros), /reputacao (feedback real) + remocao de mocks
+- [ ] 42-04-PLAN.md — TVModeVendas sellers dinamicos por organization_id (MOCK-05)
+
 **UI hint**: yes
 
 ---
@@ -164,7 +178,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 41. Veracidade Total | 4/4 | Complete    | 2026-06-13 |
-| 42. Zero Mock | 0/? | Not started | - |
+| 42. Zero Mock | 0/4 | Planned | - |
 | 43. Multi-Tenant Hardening | 0/? | Not started | - |
 | 44. Monetizacao Stripe | 0/? | Not started | - |
 | 45. Consultor v1 | 0/? | Not started | - |
