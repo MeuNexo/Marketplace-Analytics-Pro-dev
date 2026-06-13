@@ -149,9 +149,15 @@ Stopped at: Phase 41 completa. Próximo: `/gsd-plan-phase 42` (Zero Mock)
 - REQUIREMENTS.md: DATA-01..06 marcados Complete; phase.complete OK
 - Checkpoint visual de Wesley sobre cancelamentos + navegação de meses: **pendente** (verificar card Custos em /vendas)
 
+**Pós-fechamento (mesma sessão, decisão Wesley — opção C):**
+
+- **Ciclo REAL da fatura ML da conta: dia 06 → dia 05 do mês seguinte** (não mês-calendário). Confirmado via /billing/periods: key 2026-06 = 06/mai–05/jun. O DRE mantém o espelho da fatura e exibe a janela real no card ("Tarifas da fatura ML: 06/05 → 05/06"). EF v7 grava resumo.invoice_from/invoice_to; período OPEN tem date_from anômalo (placeholder) → derivado de date_to. Backfill mar–jun feito. Commit 86314ee7.
+- Observação não investigada: amount da fatura key 2026-04 (111.501,00) diverge do nosso total_charges 2026-03 (113.742,18) em 2.241,18 — abr e mai batem exato. Checar se relevante na Phase 47 (QA).
+
 **Aprendizados de domínio (manter):**
 
 - Fatura ML = mês de fechamento; consumo N → fatura N+1 (chave period 2026-07 existe em 12/jun = fatura corrente)
+- Janela da fatura = ciclo da conta (06→05), varia por conta; receita do DRE é mês-calendário — descasamento de borda ~5 dias é explícito no card
 - Cancelamentos/estornos em bill_includes.bonuses (types B*), negativos; total_amount = charges + bonuses
 - Referência "abril" do Nexo na memória era fatura de abril = consumo de MARÇO (Nexo rotula por fatura)
 - Invocar EF programaticamente: net.http_get/post com token de ml_tokens (ML API direto); key sb_secret do cron ≠ SERVICE_ROLE_KEY env → 401 esperado na EF
