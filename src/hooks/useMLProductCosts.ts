@@ -30,13 +30,16 @@ export function useMLProductCosts() {
   const [loading, setLoading] = useState(false);
 
   const fetchAll = useCallback(async () => {
-    if (!user) return;
+    // D-11: ler por organization_id para que custos cadastrados por qualquer membro
+    // da org sejam visíveis para todos os demais membros. Antes filtrava por user_id,
+    // o que escondia custos inseridos por outro membro (mesmo dentro da mesma org).
+    if (!currentOrg) return;
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from("ml_product_costs")
         .select("item_id, cost, tax_rate, seller_sku")
-        .eq("user_id", user.id)
+        .eq("organization_id", currentOrg.id)
         .limit(10000);
       if (error) { console.warn("useMLProductCosts fetch error", error); return; }
       const map = new Map<string, ProductCost>();
@@ -56,7 +59,7 @@ export function useMLProductCosts() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [currentOrg]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
