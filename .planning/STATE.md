@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: milestone
 status: executing
-stopped_at: "Roadmap escrito (Phases 41–47, 27/27 requirements mapeados). Próximo: `/gsd-plan-phase 41`."
-last_updated: "2026-06-12T18:17:03.291Z"
-last_activity: 2026-06-12 -- Phase 41 execution started
+stopped_at: "Phase 41 COMPLETA (4/4 planos, review resolvido, verifier PASS). Próximo: `/gsd-plan-phase 42` (Zero Mock)."
+last_updated: "2026-06-13T00:25:00.000Z"
+last_activity: 2026-06-13
 progress:
   total_phases: 7
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  total_plans: 4
+  completed_plans: 4
   percent: 14
 ---
 
@@ -22,14 +22,14 @@ See: .planning/PROJECT.md
 
 **Milestone:** v7.0 — SaaS Operacional End-to-End
 **Core value:** Sistema 100% operacional e vendável como assinatura — dados verdadeiros em todas as páginas (zero mock), multi-tenant endurecido, monetização via Stripe ativa, onboarding guiado para lojista leigo, e Consultor v1 (motor de regras + score de saúde) como diferencial de venda.
-**Current focus:** Phase 41 — Veracidade Total
+**Current focus:** Phase 42 — Zero Mock (Phase 41 completa em 2026-06-13)
 
 ## Current Position
 
-Phase: 41 (Veracidade Total) — EXECUTING
-Plan: 2 of 3
+Phase: 42
+Plan: Not started
 Status: Ready to execute
-Last activity: 2026-06-12 -- Phase 41 execution started
+Last activity: 2026-06-13
 
 ### DATA-01 executado (2026-06-12, commit fc090c46)
 
@@ -44,7 +44,7 @@ Last activity: 2026-06-12 -- Phase 41 execution started
 
 **Velocity:**
 
-- Total plans completed: 0
+- Total plans completed: 4
 - Average duration: —
 - Total execution time: —
 
@@ -60,6 +60,7 @@ Last activity: 2026-06-12 -- Phase 41 execution started
 | 46. UX para Leigos | TBD | — | — |
 | 47. QA End-to-End + Go-Live | TBD | — | — |
 | Phase 41-veracidade-total P03 | 15 | 3 tasks | 1 files |
+| 41 | 4 | - | - |
 
 ## Accumulated Context
 
@@ -129,23 +130,27 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-12b — Execução Phase 41 (3/4 planos completos + 41-04 em andamento)
-Stopped at: **41-04 (DRE mensal) parcialmente entregue — retomar AQUI**
+Last session: 2026-06-13 — Phase 41 FECHADA (41-04 finalizado + review + verifier + complete)
+Stopped at: Phase 41 completa. Próximo: `/gsd-plan-phase 42` (Zero Mock)
 
-### PONTO EXATO DE CONTINUAÇÃO (2026-06-12, fim de sessão)
+### Sessão 2026-06-13 — Fechamento Phase 41
 
-**Feito na Phase 41:**
-- 41-01 ✅ (consolidação DATA-01/02/03, aprovado visual), 41-02 ✅ (billing CFFE/CFONPN, smoke produção OK), 41-03 ✅ (comissão real + auditoria, aprovado com ressalva)
-- 41-04 (DRE mensal, pedido mid-phase de Wesley): card refeito e APROVADO em estrutura (commits fdd9ecd7, 0e27e711) + **regra de domínio crítica implementada**: fatura ML é nomeada pelo mês de FECHAMENTO → consumo N = fatura N+1 (EF v3 deployada, commit 2a0dcc11; dados re-rotulados; jun CFONPN R$3.008,28 bate EXATO com print do Wesley)
+**41-04 finalizado:**
 
-**PENDENTE no 41-04 (próxima sessão, nesta ordem):**
-1. **Deploy EF v4**: index.ts local JÁ inclui bonuses (cancelamentos B*, commit 92ef99e6) mas v4 NÃO foi deployada — deploy via MCP deploy_edge_function (verify_jwt=false)
-2. **Re-sync 4 meses** com bonuses: mar/abr/mai/jun via net.http_get (padrão: token de ml_tokens, keys de fatura = consumo+1: 2026-04..2026-07) + upsert (cancelamentos jun = -674,87)
-3. **Frontend**: (a) grupo "Cancelamentos de tarifas" no groupBillingCharges (types B*, negativos, como no print ML); (b) **navegação de meses no card** (‹ Mês/Ano ›) com sync on-demand da EF para mês sem dados (user JWT funciona) + waterfall do mês selecionado
-4. Checkpoint visual Wesley → SUMMARY 41-04 → roadmap.update-plan-progress 41 41-04 complete
-5. **Fechar a fase**: code review (estava interrompido — spawnar gsd-code-reviewer com escopo dos 8 arquivos da fase incl. 41-04), gsd-verifier, phase.complete, PROJECT.md
+- EF sync-ml-billing v4 deployada (bonuses B* nos charges) → depois v6 com fix HI-01 (404 ≠ 401/429/5xx); smoke 401 OK
+- Re-sync mar–jun JÁ tinha sido feito no fim da sessão anterior (synced_at 18:54/19:50) — validado: cancelamentos jun -674,87 / mai -6.820,03 / abr -8.895,29 / mar -9.301,68; jun CFONPN 3.008,28 EXATO
+- Frontend: linha "Cancelamentos de tarifas" (última, líquido = total_amount da fatura) + navegação ‹ Mês/Ano › no card (dreMonthOverride, reset ao mudar filtro, canGoNext≤mês corrente) + useMLBillingWithSync (sync on-demand via user JWT, 1 tentativa por escopo+período, falha libera retry)
 
-**Aprendizados de domínio da sessão (NÃO perder):**
+**Fechamento:**
+
+- gsd-verifier: PASSED 12/12 (VERIFICATION.md)
+- Code review: 18 findings (1C/3H/6M/8L) em REVIEW.md — corrigidos na hora: CR-01 (merge multi-loja no useMLBilling), HI-01 (EF status branch), HI-02 (useMLSync re-sync mês anterior), HI-03 (MLAnuncios chunks de 5), ME-01 (loading DRE), ME-02/03 (attemptKey por escopo + retry), LO-07 (prop morta)
+- **Deferidos → Phase 43 (Multi-Tenant Hardening): ME-04/05/06** (ml_tokens lookup não-determinístico, enumeração ml_user_id, RLS viewer com INSERT/UPDATE/DELETE em billing). Lows no REVIEW.md.
+- REQUIREMENTS.md: DATA-01..06 marcados Complete; phase.complete OK
+- Checkpoint visual de Wesley sobre cancelamentos + navegação de meses: **pendente** (verificar card Custos em /vendas)
+
+**Aprendizados de domínio (manter):**
+
 - Fatura ML = mês de fechamento; consumo N → fatura N+1 (chave period 2026-07 existe em 12/jun = fatura corrente)
 - Cancelamentos/estornos em bill_includes.bonuses (types B*), negativos; total_amount = charges + bonuses
 - Referência "abril" do Nexo na memória era fatura de abril = consumo de MARÇO (Nexo rotula por fatura)

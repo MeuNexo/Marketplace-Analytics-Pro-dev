@@ -14,9 +14,9 @@ Decisões fixadas por Wesley: Stripe | convite controlado | Consultor v1 por reg
 ### Bloco DATA — Veracidade total dos números
 
 - [x] **DATA-01**: Card "Custos" em /vendas exibe CMV e Impostos não-nulos quando há configuração cadastrada — ✅ executado 2026-06-12 (migration 20260612120000, commit fc090c46; backend validado em produção, confirmação visual pendente)
-- [ ] **DATA-02**: Filtro "Hoje" em /vendas carrega os KPI cards via auto-recalc silencioso com skeleton — nunca "—" estático (executar plano pronto da Phase 31)
-- [ ] **DATA-03**: Lucro Bruto mensal calculado de fonte única (useMLCostWaterfall) sem pedidos cancelados (executar plano pronto da Phase 21)
-- [ ] **DATA-04**: Usuário vê CFFE real ("Frete ML") e linha "Parcelamento (CFONPN)" no breakdown de custos — tabela `ml_billing_monthly` + EF `sync-ml-billing` (ML `/billing/periods`) com indicador de fonte ("billing" vs "estimado")
+- [x] **DATA-02**: Filtro "Hoje" em /vendas carrega os KPI cards via auto-recalc silencioso com skeleton — nunca "—" estático (executar plano pronto da Phase 31)
+- [x] **DATA-03**: Lucro Bruto mensal calculado de fonte única (useMLCostWaterfall) sem pedidos cancelados (executar plano pronto da Phase 21)
+- [x] **DATA-04**: Usuário vê CFFE real ("Frete ML") e linha "Parcelamento (CFONPN)" no breakdown de custos — tabela `ml_billing_monthly` + EF `sync-ml-billing` (ML `/billing/periods`) com indicador de fonte ("billing" vs "estimado")
 - [x] **DATA-05**: Comissão em /anuncios vem da API real do ML (sale_fee/listing_prices) por anúncio — fim do `LISTING_TYPE_RATES` hardcoded
 - [x] **DATA-06**: KPIs de /vendas, /financeiro e /anuncios batem entre si (mesma fonte) — validados contra referência Nexo Abril/2026 (comissão R$39,2k, CFFE R$40k, CFONPN R$15,9k)
 
@@ -88,10 +88,10 @@ Regras iniciais candidatas: margem < alvo por produto; ROAS/ACoS fora da meta; T
 
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
-| DATA-01 | Phase 41 | Pending |
-| DATA-02 | Phase 41 | Pending |
-| DATA-03 | Phase 41 | Pending |
-| DATA-04 | Phase 41 | Pending |
+| DATA-01 | Phase 41 | Complete |
+| DATA-02 | Phase 41 | Complete |
+| DATA-03 | Phase 41 | Complete |
+| DATA-04 | Phase 41 | Complete |
 | DATA-05 | Phase 41 | Complete |
 | DATA-06 | Phase 41 | Complete |
 | MOCK-01 | Phase 42 | Pending |
