@@ -102,7 +102,21 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
   4. Owner novo passa por wizard de onboarding passo a passo (Conectar ML → Tiny opcional → Custos → Fiscal → Pronto) com progresso persistido entre sessoes
   5. Com 2 orgs em paralelo, dados de uma nao aparecem na outra — isolamento confirmado via teste manual
 
-**Plans**: TBD
+**Plans**: 4 plans
+
+**Wave 1**
+
+- [ ] 43-01-PLAN.md — TENANT-01 RLS org-first ml_product_costs + TENANT-02 backfill/orfaos + NOT NULL + ME-06 billing FOR SELECT + [BLOCKING] apply via MCP
+- [ ] 43-02-PLAN.md — ME-04 token lookup determinístico + ME-05 guard is_org_member + TENANT-03 check_quota RPC + gate process-sync-job + cron Pattern B + [BLOCKING] apply/deploy
+
+**Wave 2** *(blocked on 43-01)*
+
+- [ ] 43-03-PLAN.md — TENANT-04 wizard de onboarding (tabela onboarding_progress + hook + banner/wizard rhf+shadcn + wiring dashboard/AcceptInvite) + [BLOCKING] apply migration
+
+**Wave 3** *(blocked on 43-01, 43-02, 43-03)*
+
+- [ ] 43-04-PLAN.md — TENANT-05 teste de isolamento 2-org (ISOLATION-TEST.md + execucao RLS/ME-04/05/06/quota) [checkpoint]
+
 **UI hint**: yes
 
 ---
@@ -179,7 +193,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 |-------|----------------|--------|-----------|
 | 41. Veracidade Total | 4/4 | Complete    | 2026-06-13 |
 | 42. Zero Mock | 4/4 | Complete   | 2026-06-13 |
-| 43. Multi-Tenant Hardening | 0/? | Not started | - |
+| 43. Multi-Tenant Hardening | 0/4 | Planned | - |
 | 44. Monetizacao Stripe | 0/? | Not started | - |
 | 45. Consultor v1 | 0/? | Not started | - |
 | 46. UX para Leigos | 0/? | Not started | - |
