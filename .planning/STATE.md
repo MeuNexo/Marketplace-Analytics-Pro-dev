@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: milestone
 status: executing
-stopped_at: Parado em checkpoint Task 4 (43-01) — aguardando apply_migration via MCP + aprovacao Wesley
-last_updated: "2026-06-13T20:44:33.978Z"
+stopped_at: "Phase 43 Wave 1: 43-01 completo (migrations aplicadas); 43-02 parcial — 3 migrations aplicadas, deploy de 5 EFs pendente (sem SUPABASE_ACCESS_TOKEN)"
+last_updated: "2026-06-13T21:18:54.311Z"
 last_activity: 2026-06-13 -- Phase 43 execution started
 progress:
   total_phases: 7
@@ -152,8 +152,8 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-13T20:44:33.959Z
-Stopped at: Parado em checkpoint Task 4 (43-01) — aguardando apply_migration via MCP + aprovacao Wesley
+Last session: 2026-06-13T21:18:54.298Z
+Stopped at: Phase 43 Wave 1: 43-01 completo (migrations aplicadas); 43-02 parcial — 3 migrations aplicadas, deploy de 5 EFs pendente (sem SUPABASE_ACCESS_TOKEN)
 
 ### Sessão 2026-06-13 — Fechamento Phase 41
 
