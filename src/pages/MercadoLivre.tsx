@@ -205,13 +205,16 @@ export default function MercadoLivre() {
     return `${billingMonth}-${String(lastDay).padStart(2, "0")}`;
   }, [billingMonth]);
   // Waterfall específico do mês do filtro (ativado somente quando ≠ mês corrente)
-  const { data: filterMonthWaterfall } = useMLCostWaterfall(
+  const { data: filterMonthWaterfall, isLoading: filterMonthWaterfallLoading } = useMLCostWaterfall(
     billingMonthIsCurrentMonth ? monthlyFrom : billingMonthFrom,
     billingMonthIsCurrentMonth ? monthlyTo   : billingMonthTo,
   );
 
   // DRE: waterfall autoritativo para o mês exibido no card
   const dreWaterfall = billingMonthIsCurrentMonth ? monthlyCostWaterfall : filterMonthWaterfall;
+  // Loading do DRE acompanha o waterfall que alimenta o card — evita flash de
+  // receita R$0 com lucro negativo ao navegar entre meses
+  const dreWaterfallLoading = filterMonthWaterfallLoading;
 
   // Grupos de tarifas agrupados
   const { groups: gruposTarifas, totalTarifas } = useMemo(
@@ -674,8 +677,7 @@ export default function MercadoLivre() {
                   cmvMes={cmvMes}
                   impostosMes={impostosMes}
                   fonte={dreFonte}
-                  adsSpendMes={adsSpendMes}
-                  loading={costWaterfallLoading}
+                  loading={dreWaterfallLoading}
                   onPrevMonth={handleDrePrevMonth}
                   onNextMonth={handleDreNextMonth}
                   canGoNext={dreCanGoNext}

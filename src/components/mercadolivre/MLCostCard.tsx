@@ -27,8 +27,6 @@ interface MLCostCardProps {
   /** "billing" = valores reais da API ML | "estimado" = fallback de orders */
   fonte: "billing" | "estimado";
   loading?: boolean;
-  /** Publicidade do mês (ads spend) — usado no fallback estimado */
-  adsSpendMes?: number;
   /** Navega para o mês anterior */
   onPrevMonth?: () => void;
   /** Navega para o mês seguinte (desabilitado além do mês corrente) */

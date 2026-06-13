@@ -158,25 +158,31 @@ export function useMLBilling(periodMonth: string) {
         .select("*")
         .eq("organization_id", orgId)
         .in("ml_user_id", resolvedMLUserIds)
-        .eq("period_month", periodMonth)
-        .maybeSingle();
+        .eq("period_month", periodMonth);
 
       if (error) throw error;
-      if (!data) return null;
+      if (!data || data.length === 0) return null;
 
-      const resumo = (data.resumo ?? {}) as Record<string, unknown>;
+      // Uma row por loja/mês — escopo "todas as lojas" exige merge: charges
+      // concatenados, resumos somados, synced_at = mais antigo (pior caso).
+      const charges = data.flatMap(
+        (row) => (row.charges as Array<{ type: string; label: string; amount: number }>) ?? [],
+      );
+      const sumResumo = (key: string) =>
+        data.reduce((s, row) => s + Number((row.resumo as Record<string, unknown> | null)?.[key] ?? 0), 0);
+      const syncedAts = data.map((row) => row.synced_at).filter(Boolean) as string[];
 
       return {
-        cffe:      Number(resumo.cffe ?? 0),
-        cfonpn:    Number(resumo.cfonpn ?? 0),
-        charges:   (data.charges as Array<{ type: string; label: string; amount: number }>) ?? [],
+        cffe:    sumResumo("cffe"),
+        cfonpn:  sumResumo("cfonpn"),
+        charges,
         resumo: {
-          cffe:          Number(resumo.cffe ?? 0),
-          cfonpn:        Number(resumo.cfonpn ?? 0),
-          total_charges: resumo.total_charges != null ? Number(resumo.total_charges) : undefined,
-          synced_at:     resumo.synced_at != null ? String(resumo.synced_at) : undefined,
+          cffe:          sumResumo("cffe"),
+          cfonpn:        sumResumo("cfonpn"),
+          total_charges: sumResumo("total_charges"),
+          synced_at:     syncedAts.length > 0 ? syncedAts.sort()[0] : undefined,
         },
-        synced_at: data.synced_at ?? new Date().toISOString(),
+        synced_at: syncedAts.length > 0 ? syncedAts.sort()[0] : new Date().toISOString(),
       };
     },
     enabled: !!orgId && resolvedMLUserIds.length > 0 && !!periodMonth,
@@ -200,8 +206,10 @@ export function useMLBillingWithSync(periodMonth: string) {
 
   useEffect(() => {
     if (isLoading || data || !periodMonth || resolvedMLUserIds.length === 0) return;
-    if (attemptedMonths.current.has(periodMonth)) return;
-    attemptedMonths.current.add(periodMonth);
+    // Key inclui o escopo de lojas — trocar de loja re-habilita o sync do mês
+    const attemptKey = `${[...resolvedMLUserIds].sort().join("|")}::${periodMonth}`;
+    if (attemptedMonths.current.has(attemptKey)) return;
+    attemptedMonths.current.add(attemptKey);
 
     let cancelled = false;
     setSyncing(true);
@@ -212,7 +220,12 @@ export function useMLBillingWithSync(periodMonth: string) {
         }),
       ),
     )
-      .then(() => {
+      .then((results) => {
+        // Falha de invocação (rede/5xx) ≠ "mês sem fatura": libera retry futuro
+        const anyFailure = results.some(
+          (r) => r.status === "rejected" || (r.status === "fulfilled" && r.value.error != null),
+        );
+        if (anyFailure) attemptedMonths.current.delete(attemptKey);
         if (!cancelled) return refetch();
       })
       .finally(() => {

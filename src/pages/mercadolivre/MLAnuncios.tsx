@@ -821,25 +821,36 @@ export default function MLProdutos() {
     if (!filteredItemKey) return;
     const toFetch = filtered.filter(i => !commCache.has(i.id));
     if (toFetch.length === 0) return;
-    toFetch.forEach(async (item) => {
-      const costs = await fetchCosts({
-        price: item.price,
-        categoryId: item.category_id ?? undefined,
-        logisticType: item.logistic_type ?? undefined,
-      });
-      if (!costs.length) return;
-      const lt = item.listing_type_id ?? "";
-      // Tenta correspondência exata, depois parcial, depois usa o primeiro resultado
-      const match =
-        costs.find(c => c.listing_type_id === lt) ??
-        costs.find(c => lt.includes(c.listing_type_id) || c.listing_type_id.includes(lt)) ??
-        costs[0];
-      if (!match) return;
-      const amount = match.sale_fee_amount > 0
-        ? match.sale_fee_amount
-        : item.price * match.percentage_fee / 100;
-      setCommCache(prev => new Map(prev).set(item.id, { pct: match.percentage_fee, amount }));
-    });
+    // Processa em chunks de 5 com Promise.allSettled — sem isso, um catálogo
+    // grande dispara centenas de chamadas simultâneas à ML API (risco de 429
+    // degradando todo o token) a cada mudança de filtro.
+    let cancelled = false;
+    const CHUNK_SIZE = 5;
+    (async () => {
+      for (let i = 0; i < toFetch.length && !cancelled; i += CHUNK_SIZE) {
+        const chunk = toFetch.slice(i, i + CHUNK_SIZE);
+        await Promise.allSettled(chunk.map(async (item) => {
+          const costs = await fetchCosts({
+            price: item.price,
+            categoryId: item.category_id ?? undefined,
+            logisticType: item.logistic_type ?? undefined,
+          });
+          if (!costs.length || cancelled) return;
+          const lt = item.listing_type_id ?? "";
+          // Tenta correspondência exata, depois parcial, depois usa o primeiro resultado
+          const match =
+            costs.find(c => c.listing_type_id === lt) ??
+            costs.find(c => lt.includes(c.listing_type_id) || c.listing_type_id.includes(lt)) ??
+            costs[0];
+          if (!match) return;
+          const amount = match.sale_fee_amount > 0
+            ? match.sale_fee_amount
+            : item.price * match.percentage_fee / 100;
+          setCommCache(prev => new Map(prev).set(item.id, { pct: match.percentage_fee, amount }));
+        }));
+      }
+    })();
+    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredItemKey]);
 

@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useSyncExternalStore } from "react";
-import { format, startOfDay } from "date-fns";
+import { format, startOfDay, subMonths } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMLStore } from "@/contexts/MLStoreContext";
@@ -176,15 +176,21 @@ export function useMLSync(opts: UseMLSyncOptions) {
             }
           }
 
-          // Sync billing (CFFE/CFONPN) para o mês corrente — non-fatal, não aborta o sync principal
-          const currentPeriodMonth = format(startOfDay(new Date()), "yyyy-MM");
+          // Sync billing (CFFE/CFONPN) para o mês corrente E o anterior — non-fatal.
+          // O mês anterior precisa de re-sync mesmo já tendo row: a fatura dele só
+          // fecha no início do mês seguinte (consumo N → fatura N+1), então dados
+          // sincronizados mid-month ficam parciais até a fatura fechar.
+          const now = startOfDay(new Date());
+          const billingMonths = [format(now, "yyyy-MM"), format(subMonths(now, 1), "yyyy-MM")];
           for (const mlUserId of capturedMLUserIds) {
-            try {
-              await supabase.functions.invoke("sync-ml-billing", {
-                body: { ml_user_id: mlUserId, period_month: currentPeriodMonth },
-              });
-            } catch (billingErr) {
-              console.warn("sync-ml-billing (non-fatal):", billingErr);
+            for (const periodMonth of billingMonths) {
+              try {
+                await supabase.functions.invoke("sync-ml-billing", {
+                  body: { ml_user_id: mlUserId, period_month: periodMonth },
+                });
+              } catch (billingErr) {
+                console.warn("sync-ml-billing (non-fatal):", billingErr);
+              }
             }
           }
 

@@ -41,10 +41,13 @@ async function fetchBillingPeriod(
     },
   );
 
-  // 404 = seller without Full / without billing — return null (use orders frete as fallback)
+  // 404 = seller without Full / without billing — return null (use orders frete as fallback).
+  // 401/429/5xx são falhas reais e devem subir como erro (HTTP 500) para o
+  // cliente poder re-tentar — não podem virar "sem billing" silencioso.
   if (!periodsResp.ok) {
     console.error("billing/periods non-ok:", periodsResp.status);
-    return null;
+    if (periodsResp.status === 404) return null;
+    throw new Error(`billing/periods failed: ${periodsResp.status}`);
   }
 
   const periodsData = await periodsResp.json();
@@ -79,7 +82,8 @@ async function fetchBillingPeriod(
 
   if (!detailResp.ok) {
     console.error("billing/summary/details non-ok:", detailResp.status);
-    return null;
+    if (detailResp.status === 404) return null;
+    throw new Error(`billing/summary/details failed: ${detailResp.status}`);
   }
 
   const data = await detailResp.json();
