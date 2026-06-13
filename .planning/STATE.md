@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 42 Plan 01 Task 3 checkpoint:human-verify — apply migration + vault verification
-last_updated: "2026-06-14T00:00:00.000Z"
-last_activity: 2026-06-14 -- Phase 42-01 Tasks 1+2 committed; awaiting live DB apply at checkpoint
+stopped_at: Phase 42 context gathered
+last_updated: "2026-06-13T16:18:10.717Z"
+last_activity: 2026-06-13 -- Phase 42 execution started
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 8
-  completed_plans: 4
+  completed_plans: 5
   percent: 14
 ---
 
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md
 ## Current Position
 
 Phase: 42 (zero-mock) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 42
+Plan: 2 of 4
+Status: Ready to execute
 Last activity: 2026-06-13 -- Phase 42 execution started
 
 ### Quick Tasks Completed
@@ -75,6 +75,7 @@ Last activity: 2026-06-13 -- Phase 42 execution started
 | 47. QA End-to-End + Go-Live | TBD | — | — |
 | Phase 41-veracidade-total P03 | 15 | 3 tasks | 1 files |
 | 41 | 4 | - | - |
+| Phase 42-zero-mock P01 | 30min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -97,6 +98,7 @@ Last activity: 2026-06-13 -- Phase 42 execution started
 - /perguntas e /devolucoes: integração real (ML Questions API + Claims API — portar padrão do Nexo MCP)
 - [Phase ?]: DATA-05: guard columnView removido do commCache useEffect — comissao real populada para todos os itens filtrados
 - [Phase ?]: DATA-06: /vendas e /financeiro confirmados usando useMLCostWaterfall como fonte unica — sem fix de codigo necessario
+- [Phase ?]: vault.secrets service_role_key deferred to plan 42-02: Wesley must insert SERVICE_ROLE_KEY before pg_cron migration is applied
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -144,7 +146,7 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-13T15:31:19.198Z
+Last session: 2026-06-13T16:18:10.703Z
 Stopped at: Phase 42 context gathered
 
 ### Sessão 2026-06-13 — Fechamento Phase 41

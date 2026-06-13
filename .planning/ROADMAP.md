@@ -74,7 +74,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 
 **Wave 1**
 
-- [ ] 42-01-PLAN.md — Migration ml_questions + ml_claims (RLS, indices) + config.toml + test scaffolds + [BLOCKING] apply tables + vault service_role_key check
+- [x] 42-01-PLAN.md — Migration ml_questions + ml_claims (RLS, indices) + config.toml + test scaffolds + [BLOCKING] apply tables + vault service_role_key check
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -178,7 +178,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 41. Veracidade Total | 4/4 | Complete    | 2026-06-13 |
-| 42. Zero Mock | 0/4 | Planned | - |
+| 42. Zero Mock | 1/4 | In Progress|  |
 | 43. Multi-Tenant Hardening | 0/? | Not started | - |
 | 44. Monetizacao Stripe | 0/? | Not started | - |
 | 45. Consultor v1 | 0/? | Not started | - |
