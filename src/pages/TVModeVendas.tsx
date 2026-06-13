@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { DollarSign, ShoppingCart, Receipt, Eye, Percent, Maximize2, Settings2 } from "lucide-react";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { useAuth } from "@/contexts/AuthContext";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { supabase } from "@/integrations/supabase/client";
+import { generateInitials } from "@/types/seller";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
@@ -13,10 +15,7 @@ import {
 } from "recharts";
 import { format, subDays } from "date-fns";
 
-const SELLERS = [
-  { id: "8c57110c-77bc-4603-a959-01e965fbea3a", name: "Sandrini", initials: "SA", logo: "https://http2.mlstatic.com/D_NQ_NP_788484-MLA84290244651_052025-F.jpg" },
-  { id: "52a7ed04-0d06-4ef5-ae6c-4f3e08a12867", name: "Buy Clock", initials: "BC", logo: "https://http2.mlstatic.com/D_NQ_NP_943366-MLA91442251991_092025-F.jpg" },
-];
+interface SellerEntry { id: string; name: string; initials: string; logo: string | null; }
 
 const STORAGE_KEY_CYCLE = "tv_vendas_cycle_s";
 const STORAGE_KEY_REFRESH = "tv_vendas_refresh_min";
@@ -66,6 +65,7 @@ const MEDALS = ["🥇", "🥈", "🥉"];
 
 const TVModeVendas = () => {
   const { user } = useAuth();
+  const { currentOrg } = useOrganization();
 
   // Stable date strings — computed once on mount, not on every render
   const today = useMemo(() => format(new Date(), "yyyy-MM-dd"), []);
@@ -77,11 +77,64 @@ const TVModeVendas = () => {
   const [clock, setClock] = useState(new Date());
   const [cycleProgress, setCycleProgress] = useState(0);
 
+  const [sellers, setSellers] = useState<SellerEntry[]>([]);
   const [sellerCache, setSellerCache] = useState<Record<string, SellerData>>({});
   const [loading, setLoading] = useState(true);
 
-  const seller = SELLERS[sellerIdx];
-  const current = sellerCache[seller.id] ?? emptyData;
+  // Load org-scoped sellers from the sellers table, filtered to ML-connected only (D-11, D-12)
+  useEffect(() => {
+    if (!currentOrg?.id) return;
+    let cancelled = false;
+
+    (async () => {
+      // 1. Query sellers for this org, sorted alphabetically (D-12)
+      const { data: sellerRows } = await supabase
+        .from("sellers")
+        .select("id, name, initials, logo_url")
+        .eq("organization_id", currentOrg.id)
+        .eq("is_active", true)
+        .order("name");
+      if (!sellerRows || cancelled) return;
+
+      // 2. Filter to only sellers with an active ML token (D-11)
+      const sellerIds = sellerRows.map((s) => s.id);
+      if (sellerIds.length === 0) {
+        if (!cancelled) setSellers([]);
+        return;
+      }
+      const { data: tokenRows } = await supabase
+        .from("ml_tokens")
+        .select("seller_id")
+        .eq("organization_id", currentOrg.id)
+        .in("seller_id", sellerIds)
+        .not("access_token", "is", null);
+      if (cancelled) return;
+
+      const connectedIds = new Set((tokenRows ?? []).map((t) => t.seller_id));
+      if (!cancelled) {
+        setSellers(
+          sellerRows
+            .filter((s) => connectedIds.has(s.id))
+            .map((s) => ({
+              id: s.id,
+              name: s.name,
+              initials: s.initials ?? generateInitials(s.name),
+              logo: s.logo_url ?? null,
+            }))
+        );
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [currentOrg?.id]);
+
+  // Reset sellerIdx when the seller list changes (Pitfall 2 — RESEARCH.md)
+  useEffect(() => {
+    setSellerIdx(0);
+  }, [sellers.length]);
+
+  const seller = sellers[sellerIdx];
+  const current = seller ? (sellerCache[seller.id] ?? emptyData) : emptyData;
 
   useEffect(() => { localStorage.setItem(STORAGE_KEY_CYCLE, String(cycleSec)); }, [cycleSec]);
   useEffect(() => { localStorage.setItem(STORAGE_KEY_REFRESH, String(refreshMin)); }, [refreshMin]);
@@ -94,9 +147,9 @@ const TVModeVendas = () => {
 
   // Seller cycle
   useEffect(() => {
-    const i = setInterval(() => setSellerIdx((prev) => (prev + 1) % SELLERS.length), cycleSec * 1000);
+    const i = setInterval(() => setSellerIdx((prev) => (prev + 1) % Math.max(sellers.length, 1)), cycleSec * 1000);
     return () => clearInterval(i);
-  }, [cycleSec]);
+  }, [cycleSec, sellers.length]);
 
   // Progress bar — resets when seller changes
   useEffect(() => {
@@ -225,7 +278,7 @@ const TVModeVendas = () => {
     setLoading(true);
     try {
       const results = await Promise.all(
-        SELLERS.map(async (s) => ({ id: s.id, data: await fetchSellerData(s.id) }))
+        sellers.map(async (s) => ({ id: s.id, data: await fetchSellerData(s.id) }))
       );
       const cache: Record<string, SellerData> = {};
       for (const r of results) cache[r.id] = r.data;
@@ -235,19 +288,18 @@ const TVModeVendas = () => {
     } finally {
       setLoading(false);
     }
-  }, [user, fetchSellerData]);
+  }, [user, fetchSellerData, sellers]);
 
   // Stable ref — always points to the latest fetchAllSellers without triggering effect restarts
   const fetchRef = useRef(fetchAllSellers);
   useEffect(() => { fetchRef.current = fetchAllSellers; }, [fetchAllSellers]);
 
-  // Initial fetch — runs once when user becomes available, never re-runs due to function ref changes
-  const hasFetchedRef = useRef(false);
+  // Fetch data when sellers list loads or changes (covers initial load and org switch)
+  // Guard: only fetch when sellers are available and user is authenticated
   useEffect(() => {
-    if (!user || hasFetchedRef.current) return;
-    hasFetchedRef.current = true;
+    if (!user || sellers.length === 0) return;
     fetchRef.current();
-  }, [user]);
+  }, [user, sellers]); // re-fetch when seller list changes (org switch or initial load)
 
   // Refresh timer — only restarts when refreshMin changes, independent of function references
   useEffect(() => {
@@ -274,12 +326,34 @@ const TVModeVendas = () => {
   const totalProductRevenue = current.topProducts.reduce((s, p) => s + p.revenue, 0);
   const totalBrandRevenue   = current.brandData.reduce((s, b) => s + b.revenue, 0);
 
+  // Guard: sellers not yet loaded or no ML-connected seller exists
+  if (!seller) {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
+        <div className="text-center space-y-2">
+          <p className="text-lg font-medium text-muted-foreground">
+            {sellers.length === 0 && !loading ? "Nenhuma loja ML conectada" : "Carregando..."}
+          </p>
+          {sellers.length === 0 && !loading && (
+            <p className="text-sm text-muted-foreground">Conecte uma loja em Integrações para ativar o modo TV</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground p-6 flex flex-col gap-4 select-none">
       {/* Top bar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <img src={seller.logo} alt={seller.name} className="h-14 w-14 rounded-xl object-cover" />
+          {seller.logo ? (
+            <img src={seller.logo} alt={seller.name} className="h-14 w-14 rounded-xl object-cover" />
+          ) : (
+            <div className="h-14 w-14 rounded-xl bg-muted flex items-center justify-center text-lg font-bold text-muted-foreground">
+              {seller.initials}
+            </div>
+          )}
           <div>
             <h1 className="text-4xl font-bold leading-tight">{seller.name}</h1>
             <p className="text-sm text-muted-foreground">Hoje · Todas as lojas</p>
