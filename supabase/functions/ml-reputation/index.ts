@@ -41,12 +41,13 @@ serve(async (req) => {
     if (!mlUserIdParsed.success) return jsonResponse({ error: "ml_user_id required" }, 400);
     const mlUserId = mlUserIdParsed.data;
 
-    // Get access token (lookup by ml_user_id, then validate org membership)
+    // Get access token (ME-04: ORDER BY updated_at DESC — determinístico em multi-tenant)
     const { data: tokenRow, error: tokenErr } = await supabase
       .from("ml_tokens")
-      .select("access_token, organization_id")
+      .select("access_token, organization_id, updated_at")
       .eq("ml_user_id", mlUserId)
       .not("access_token", "is", null)
+      .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 

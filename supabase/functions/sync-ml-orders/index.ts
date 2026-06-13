@@ -436,12 +436,16 @@ serve(async (req) => {
 
     const { ml_user_id, date_from, date_to, seller_id } = parsed.data;
 
-    // ── Token lookup (same as mercado-libre-integration) ──────────────────────
+    // ── Token lookup (ME-04: ORDER BY determinístico + filtro por org quando conhecida) ──
+    // Sem ORDER BY, o lookup é não-determinístico em multi-tenant (dois orgs com mesmo ml_user_id).
+    // process-sync-job não envia organization_id no body; filtro por org é feito pós-lookup via
+    // is_org_member (skip para service role). ORDER BY updated_at DESC garante token mais recente.
     const { data: tokenRow, error: tokenErr } = await supabaseAdmin
       .from("ml_tokens")
-      .select("access_token, organization_id, seller_id")
+      .select("access_token, organization_id, seller_id, updated_at")
       .eq("ml_user_id", ml_user_id)
       .not("access_token", "is", null)
+      .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 

@@ -84,12 +84,13 @@ serve(async (req) => {
 
     const { ml_user_id } = parsed.data;
 
-    // Look up ML access_token from DB (lookup by ml_user_id, validate org membership)
+    // Look up ML access_token from DB (ME-04: ORDER BY updated_at DESC — determinístico em multi-tenant)
     const { data: tokenRow, error: tokenErr } = await supabaseAdmin
       .from("ml_tokens")
-      .select("access_token, organization_id")
+      .select("access_token, organization_id, updated_at")
       .eq("ml_user_id", ml_user_id)
       .not("access_token", "is", null)
+      .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 

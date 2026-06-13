@@ -230,9 +230,11 @@ serve(async (req) => {
     }
     const { ml_user_id, period_month, mode } = parsed.data;
 
+    // ME-04: ORDER BY updated_at DESC — determinístico em multi-tenant (token mais recente)
     const { data: tokenRow, error: tokenErr } = await supabaseAdmin
-      .from("ml_tokens").select("access_token, organization_id, seller_id")
-      .eq("ml_user_id", ml_user_id).not("access_token", "is", null).limit(1).maybeSingle();
+      .from("ml_tokens").select("access_token, organization_id, seller_id, updated_at")
+      .eq("ml_user_id", ml_user_id).not("access_token", "is", null)
+      .order("updated_at", { ascending: false }).limit(1).maybeSingle();
     if (tokenErr || !tokenRow?.access_token) {
       return new Response(JSON.stringify({ error: "No ML token found for this store" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
