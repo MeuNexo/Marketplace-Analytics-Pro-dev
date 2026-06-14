@@ -15,7 +15,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 - [x] **Phase 45: Consultor v1** — Engine de ~12 regras, card "O que fazer agora", painel de insights e score de saude 0-100 (completed 2026-06-14)
 - [ ] **Phase 46: UX para Leigos** — Glossario/tooltips em todo KPI, empty states acionaveis, mobile polish, consistencia visual
 - [ ] **Phase 47: QA End-to-End + Go-Live** — Simulacao tenant novo, auditoria de seguranca, tsc + build + smoke de deploy Vercel
-- [ ] **Phase 48: MCO com Ads** — Margem por produto considerando publicidade: margem operacional + margem pos-ads lado a lado, alerta separado "ads comendo a margem" (TACoS/ACoS por produto), MCO agregado da operacao. Atribuicao direta via ml_ads_products_cache (reconcilia 100% com total da conta)
+- [x] **Phase 48: MCO com Ads** — Margem por produto considerando publicidade: margem operacional + margem pos-ads lado a lado, alerta separado "ads comendo a margem" (TACoS/ACoS por produto), MCO agregado da operacao. Atribuicao direta via ml_ads_products_cache (reconcilia 100% com total da conta) (completed 2026-06-14)
 
 ---
 
@@ -239,7 +239,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 **Wave 2** *(blocked on 48-01; 48-02 e 48-03 em paralelo — sem overlap de arquivos)*
 
 - [x] 48-02-PLAN.md — EF consultor-insights: RULE ads_eating_margin per-item + upgrade ads_no_sale item-level + pilar Ads do score + [BLOCKING] deploy/smoke (MCO-04, MCO-05)
-- [ ] 48-03-PLAN.md — Frontend: hook useMLMarginWithAds + 2 colunas em /anuncios + linha Publicidade/MCO agregado no DRE + [checkpoint] visual (MCO-02, MCO-03)
+- [x] 48-03-PLAN.md — Frontend: hook useMLMarginWithAds + 2 colunas em /anuncios + linha Publicidade/MCO agregado no DRE + [checkpoint] visual (MCO-02, MCO-03) — aprovado Wesley 2026-06-14
 
 **UI hint**: yes
 
@@ -256,4 +256,4 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 | 45. Consultor v1 | 3/3 | Complete   | 2026-06-14 |
 | 46. UX para Leigos | 0/? | Not started | - |
 | 47. QA End-to-End + Go-Live | 0/? | Not started | - |
-| 48. MCO com Ads | 2/3 | In Progress|  |
+| 48. MCO com Ads | 3/3 | Complete | 2026-06-14 |

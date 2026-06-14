@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 48-02-PLAN.md (EF consultor-insights deployada + smoke PASS — 30 ads_eating, 9 ads_no_sale per-item)
-last_updated: "2026-06-14T20:00:23.469Z"
-last_activity: 2026-06-14 -- Phase 48 execution started
+stopped_at: Completed 48-03-PLAN.md (frontend MCO+ads aprovado Wesley — DRE sem duplicidade, /anuncios Mg.Op/Pós-Ads, fix truncamento RPC)
+last_updated: "2026-06-14T22:00:00.000Z"
+last_activity: 2026-06-14 -- Phase 48 completa (3/3 planos com SUMMARY)
 progress:
   total_phases: 8
   completed_phases: 4
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md
 
 ## Current Position
 
-Phase: 48 (mco-com-ads) — EXECUTING
+Phase: 48 (mco-com-ads) — COMPLETE (3/3 planos com SUMMARY)
 Plan: 3 of 3
-Status: Ready to execute
-Last activity: 2026-06-14 -- Phase 48 execution started
+Status: Complete
+Last activity: 2026-06-14 -- Phase 48 completa (3/3 planos com SUMMARY)
 
 ### Quick Tasks Completed
 
@@ -80,6 +80,7 @@ Last activity: 2026-06-14 -- Phase 48 execution started
 | Phase 43-multi-tenant-hardening P01 | 205 | 3 tasks | 4 files |
 | Phase 48-mco-com-ads P01 | 45min | 3 tasks | 3 files |
 | Phase 48-mco-com-ads P02 | 30min | 3 tasks | 1 files |
+| Phase 48-mco-com-ads P03 | ~3h | 2 tasks + 3 fixes + 1 checkpoint | 4 files |
 
 ## Accumulated Context
 
@@ -115,6 +116,9 @@ Last activity: 2026-06-14 -- Phase 48 execution started
 - [Phase ?]: ads_eating_margin é SEPARADO de margin_critical (D-07/MCO-04): produto com lucro operacional > 0 pode disparar ads_eating sem estar em margin_critical
 - [Phase ?]: RULE ads_no_sale mantém rule_key='ads_no_sale' ao migrar org→item-level (D-09/D-10): índice único (org,rule_key,ml_user_id_key) diferencia '' de item_id; org-level antigo auto-resolvido
 - [Phase ?]: Paginação .range() loop obrigatória em ml_ads_products_cache (~6000 linhas/30d): PostgREST trunca em 1000 linhas
+- [Phase 48-03]: DRE não adiciona linha extra de Publicidade — groupBillingCharges já categoriza PADS em 'Campanhas de publicidade'; linha extra causaria dupla contagem (Pitfall 7 mais profundo que documentado)
+- [Phase 48-03]: supabase.rpc() retorna set completo sem LIMIT; PostgREST select direto trunca em 1000 linhas — para conjuntos financeiros >1000 linhas/período, sempre usar RPC
+- [Phase 48-03]: MCO-02 e MCO-03 satisfeitos e aprovados por Wesley no preview Vercel (dados reais ckcdevcxgvueywivefgx)
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -162,8 +166,8 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-14T20:00:23.443Z
-Stopped at: Completed 48-02-PLAN.md (EF consultor-insights deployada + smoke PASS — 30 ads_eating, 9 ads_no_sale per-item)
+Last session: 2026-06-14T22:00:00.000Z
+Stopped at: Completed 48-03-PLAN.md (frontend MCO+ads aprovado Wesley — DRE sem duplicidade, /anuncios Mg.Op/Pós-Ads, fix truncamento RPC)
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
