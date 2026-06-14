@@ -761,7 +761,10 @@ export default function MLProdutos() {
   const filtered = useMemo(() => {
     return items
       .filter((item) => {
-        if (highlightIds !== null && !highlightIds.has(item.id)) return false;
+        // Filtro do Consultor (?items=): intenção explícita de ver ESTES produtos.
+        // Ignora os demais filtros (status, estoque, marca, busca) — senão itens
+        // pausados/sem estoque sinalizados (ex: prejuízo) somem da lista.
+        if (highlightIds !== null) return highlightIds.has(item.id);
         const matchesSearch =
           item.title.toLowerCase().includes(search.toLowerCase()) ||
           item.id.toLowerCase().includes(search.toLowerCase());

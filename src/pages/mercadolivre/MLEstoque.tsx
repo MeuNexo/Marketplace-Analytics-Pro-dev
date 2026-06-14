@@ -896,26 +896,30 @@ export default function MLEstoque() {
   const filteredItems = useMemo(() => {
     let result = [...items];
     if (highlightIds !== null) {
+      // Filtro do Consultor (?items=): mostra exatamente os itens sinalizados,
+      // ignorando os demais filtros (busca, sem-estoque, marca, cobertura,
+      // logística) — senão itens fora dos filtros padrão somem da lista.
       result = result.filter((i) => highlightIds.has(i.id));
-    }
-    const trimmedSearch = search.trim();
-    if (trimmedSearch) {
-      const q = trimmedSearch.toLowerCase();
-      result = result.filter(
-        (i) => i.title.toLowerCase().includes(q) || i.id.toLowerCase().includes(q) || (i.seller_custom_field ?? "").toLowerCase().includes(q)
-      );
-    } else if (hideOutOfStock) {
-      result = result.filter((i) => i.available_quantity > 0);
-    }
-    if (brandFilter !== "all") result = result.filter((i) => (i.brand || "") === brandFilter);
-    if (coverageFilter !== "all") {
-      result = result.filter((i) => {
-        const cd = coverageMap.get(i.id);
-        return cd?.coverage_class === coverageFilter;
-      });
-    }
-    if (logisticFilter !== "all") {
-      result = result.filter((i) => (i.logistic_type ?? "not_specified") === logisticFilter);
+    } else {
+      const trimmedSearch = search.trim();
+      if (trimmedSearch) {
+        const q = trimmedSearch.toLowerCase();
+        result = result.filter(
+          (i) => i.title.toLowerCase().includes(q) || i.id.toLowerCase().includes(q) || (i.seller_custom_field ?? "").toLowerCase().includes(q)
+        );
+      } else if (hideOutOfStock) {
+        result = result.filter((i) => i.available_quantity > 0);
+      }
+      if (brandFilter !== "all") result = result.filter((i) => (i.brand || "") === brandFilter);
+      if (coverageFilter !== "all") {
+        result = result.filter((i) => {
+          const cd = coverageMap.get(i.id);
+          return cd?.coverage_class === coverageFilter;
+        });
+      }
+      if (logisticFilter !== "all") {
+        result = result.filter((i) => (i.logistic_type ?? "not_specified") === logisticFilter);
+      }
     }
     result.sort((a, b) => {
       switch (sortBy) {
