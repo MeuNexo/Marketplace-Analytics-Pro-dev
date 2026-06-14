@@ -2,8 +2,12 @@
 -- RPC: get_margin_with_ads_by_product
 -- Retorna margem operacional + pós-ads por produto (item_id) na janela solicitada.
 -- FULL OUTER JOIN entre orders_side e ads_side para incluir itens ads-only (D-11).
--- SECURITY DEFINER + sem LIMIT: evita truncamento PostgREST de 1000 linhas (MCO-01).
--- Threat: T-48-01-01 — ambas as CTEs filtram por organization_id + ml_user_id.
+-- Sem LIMIT: evita truncamento PostgREST de 1000 linhas (MCO-01). (Truncamento é
+-- da camada REST, não depende de DEFINER/INVOKER — chamada via supabase.rpc() retorna o set.)
+-- SECURITY INVOKER (igual às RPCs base get_margin_by_product etc.): a RLS org-first de
+-- orders e ml_ads_products_cache (is_org_member, Phase 43) enforça o isolamento de tenant.
+-- Evita IDOR: caller só vê dados das orgs de que é membro, mesmo passando p_org_id arbitrário.
+-- Threat: T-48-01-01 — RLS via SECURITY INVOKER + filtro organization_id + ml_user_id.
 -- ──────────────────────────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.get_margin_with_ads_by_product(
   p_org_id   UUID,
@@ -34,7 +38,7 @@ RETURNS TABLE (
 )
 LANGUAGE sql
 STABLE
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = public
 AS $$
   WITH orders_side AS (
