@@ -645,8 +645,11 @@ export default function MercadoLivre() {
           <OnboardingBanner forceShow={!hasMLConnection || !onboardingComplete} />
 
           {/* Consultor v1 (Phase 45): card de saúde do negócio + top 3 insights.
-              Só visível quando onboarding completo (D-20 / critical_constraint). */}
-          {onboardingComplete && (
+              Visível quando a conta ML está conectada (pré-requisito real p/ ter
+              insights). Gate anterior em onboardingComplete escondia o card em orgs
+              já estabelecidas (ex: Pé Vermeio) cujo onboarding_progress persistido
+              não marca todos os passos, mesmo com ML/custos/fiscal presentes. */}
+          {connected && (
             <ConsultorCard
               insights={consultorInsights}
               score={consultorScore}
