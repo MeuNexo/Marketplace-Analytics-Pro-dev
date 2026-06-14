@@ -117,6 +117,186 @@ export type Database = {
           },
         ]
       }
+      consultor_config: {
+        Row: {
+          acos_alert_pct: number
+          ads_no_sale_days: number
+          claims_spike_pct: number
+          goal_risk_pct: number
+          margin_alert_pct: number
+          margin_critical_pct: number
+          organization_id: string
+          paused_ads_lookback_days: number
+          roas_min: number
+          stock_alert_days: number
+          stock_critical_days: number
+          tacos_alert_pct: number
+          ticket_drop_pct: number
+          updated_at: string
+        }
+        Insert: {
+          acos_alert_pct?: number
+          ads_no_sale_days?: number
+          claims_spike_pct?: number
+          goal_risk_pct?: number
+          margin_alert_pct?: number
+          margin_critical_pct?: number
+          organization_id: string
+          paused_ads_lookback_days?: number
+          roas_min?: number
+          stock_alert_days?: number
+          stock_critical_days?: number
+          tacos_alert_pct?: number
+          ticket_drop_pct?: number
+          updated_at?: string
+        }
+        Update: {
+          acos_alert_pct?: number
+          ads_no_sale_days?: number
+          claims_spike_pct?: number
+          goal_risk_pct?: number
+          margin_alert_pct?: number
+          margin_critical_pct?: number
+          organization_id?: string
+          paused_ads_lookback_days?: number
+          roas_min?: number
+          stock_alert_days?: number
+          stock_critical_days?: number
+          tacos_alert_pct?: number
+          ticket_drop_pct?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consultor_config_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      consultor_health_snapshots: {
+        Row: {
+          created_at: string
+          id: string
+          insights_critical: number
+          insights_total: number
+          organization_id: string
+          score: number
+          score_ads: number
+          score_completude: number
+          score_estoque: number
+          score_margin: number
+          score_reputacao: number
+          snapshot_month: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          insights_critical?: number
+          insights_total?: number
+          organization_id: string
+          score: number
+          score_ads?: number
+          score_completude?: number
+          score_estoque?: number
+          score_margin?: number
+          score_reputacao?: number
+          snapshot_month: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          insights_critical?: number
+          insights_total?: number
+          organization_id?: string
+          score?: number
+          score_ads?: number
+          score_completude?: number
+          score_estoque?: number
+          score_margin?: number
+          score_reputacao?: number
+          snapshot_month?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consultor_health_snapshots_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      insights: {
+        Row: {
+          action_href: string
+          action_label: string
+          body: string
+          category: string
+          created_at: string
+          dismissed_at: string | null
+          id: string
+          impact_brl: number | null
+          ml_user_id: string | null
+          ml_user_id_key: string
+          organization_id: string
+          resolved_at: string | null
+          rule_key: string
+          severity: string
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          action_href: string
+          action_label: string
+          body: string
+          category: string
+          created_at?: string
+          dismissed_at?: string | null
+          id?: string
+          impact_brl?: number | null
+          ml_user_id?: string | null
+          ml_user_id_key?: string
+          organization_id: string
+          resolved_at?: string | null
+          rule_key: string
+          severity: string
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          action_href?: string
+          action_label?: string
+          body?: string
+          category?: string
+          created_at?: string
+          dismissed_at?: string | null
+          id?: string
+          impact_brl?: number | null
+          ml_user_id?: string | null
+          ml_user_id_key?: string
+          organization_id?: string
+          resolved_at?: string | null
+          rule_key?: string
+          severity?: string
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "insights_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       member_route_permissions: {
         Row: {
           created_at: string
