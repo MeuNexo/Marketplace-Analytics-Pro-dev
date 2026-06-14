@@ -4,6 +4,7 @@ import {
   FileText,
   Layers,
   LayoutDashboard,
+  Lightbulb,
   Megaphone,
   MessageCircle,
   Package,
@@ -30,6 +31,7 @@ const apiSections: SidebarNavSection[] = [
         noSelfLink: true,
         children: [
           { icon: TrendingUp,  label: "Vendas",      path: "/"            },
+          { icon: Lightbulb,   label: "Consultor",   path: "/consultor"   },
           { icon: Megaphone,   label: "Publicidade", path: "/publicidade" },
           { icon: Receipt,     label: "Margem",      path: "/financeiro" },
         ],

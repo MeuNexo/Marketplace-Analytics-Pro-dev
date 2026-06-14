@@ -34,6 +34,7 @@ const MLPerguntas        = React.lazy(() => import("./pages/mercadolivre/MLPergu
 const MLMetas            = React.lazy(() => import("./pages/mercadolivre/MLMetas"));
 const MLPrecificacao     = React.lazy(() => import("./pages/mercadolivre/MLPrecificacao"));
 const MLFiscal           = React.lazy(() => import("./pages/mercadolivre/MLFiscal"));
+const MLConsultor        = React.lazy(() => import("./pages/mercadolivre/MLConsultor"));
 const TVModeVendas       = React.lazy(() => import("./pages/TVModeVendas"));
 const Sellers            = React.lazy(() => import("./pages/Sellers"));
 const Profile            = React.lazy(() => import("./pages/Profile"));
@@ -134,6 +135,7 @@ const App = () => (
                             <Route path="/sellers" element={<RoleRoute><Sellers /></RoleRoute>} />
                             <Route path="/integracoes" element={<RoleRoute><Integrations /></RoleRoute>} />
                             <Route path="/fiscal" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na página Fiscal"><MLFiscal /></ErrorBoundary></RoleRoute>} />
+                            <Route path="/consultor" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro no Consultor"><MLConsultor /></ErrorBoundary></RoleRoute>} />
                             <Route path="/organizacao" element={<RoleRoute><OrgSettings /></RoleRoute>} />
                             <Route path="/usuarios" element={<Navigate to="/organizacao" replace />} />
                             <Route path="/monitoramento" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro no Monitoramento"><AdminMonitoring /></ErrorBoundary></RoleRoute>} />
