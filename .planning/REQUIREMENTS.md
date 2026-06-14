@@ -32,9 +32,9 @@ Decisões fixadas por Wesley: Stripe | convite controlado | Consultor v1 por reg
 
 - [x] **TENANT-01**: RLS de `ml_product_costs` org-first — upserts via service role funcionam para qualquer org, sem dependência de `user_id = auth.uid()`
 - [x] **TENANT-02**: Dados órfãos (`organization_id` NULL) backfillados ou removidos em todas as tabelas de cache
-- [ ] **TENANT-03**: Sync consulta quota por `plan_tier` (`check_quota` RPC em dispatch/process) e bloqueia excedente
-- [ ] **TENANT-04**: Owner novo passa por wizard de onboarding guiado (Conectar ML → Tiny opcional → Custos → Fiscal → Pronto) com progresso persistido e CTA no dashboard vazio
-- [ ] **TENANT-05**: Teste de isolamento: 2 orgs em paralelo sem vazamento (RLS + caches + queries)
+- [x] **TENANT-03**: Sync consulta quota por `plan_tier` (`check_quota` RPC em dispatch/process) e bloqueia excedente
+- [x] **TENANT-04**: Owner novo passa por wizard de onboarding guiado (Conectar ML → Tiny opcional → Custos → Fiscal → Pronto) com progresso persistido e CTA no dashboard vazio
+- [x] **TENANT-05**: Teste de isolamento: 2 orgs em paralelo sem vazamento (RLS + caches + queries)
 
 ### Bloco PAY — Monetização (Stripe)
 
@@ -101,9 +101,9 @@ Regras iniciais candidatas: margem < alvo por produto; ROAS/ACoS fora da meta; T
 | MOCK-05 | Phase 42 | Complete |
 | TENANT-01 | Phase 43 | Complete |
 | TENANT-02 | Phase 43 | Complete |
-| TENANT-03 | Phase 43 | Pending |
-| TENANT-04 | Phase 43 | Pending |
-| TENANT-05 | Phase 43 | Pending |
+| TENANT-03 | Phase 43 | Complete |
+| TENANT-04 | Phase 43 | Complete |
+| TENANT-05 | Phase 43 | Complete |
 | PAY-01 | Phase 44 | Pending |
 | PAY-02 | Phase 44 | Pending |
 | PAY-03 | Phase 44 | Pending |

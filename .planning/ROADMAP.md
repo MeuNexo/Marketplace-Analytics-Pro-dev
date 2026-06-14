@@ -10,7 +10,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 
 - [x] **Phase 41: Veracidade Total** — KPIs de /vendas, /financeiro e /anuncios com fontes reais e consistentes (CMV, billing, comissao real) (completed 2026-06-12)
 - [x] **Phase 42: Zero Mock** — /perguntas, /devolucoes, /reputacao e /tv lendo dados reais da API ML (completed 2026-06-13)
-- [ ] **Phase 43: Multi-Tenant Hardening** — RLS org-first, backfill de orfaos, quota enforcement, wizard de onboarding guiado
+- [x] **Phase 43: Multi-Tenant Hardening** — RLS org-first, backfill de orfaos, quota enforcement, wizard de onboarding guiado (isolamento 2-org PASS; pendente code-review/verify-phase + checkpoint visual)
 - [ ] **Phase 44: Monetizacao Stripe** — Checkout + webhooks + /planos + enforcement de tier aplicado de verdade
 - [ ] **Phase 45: Consultor v1** — Engine de ~12 regras, card "O que fazer agora", painel de insights e score de saude 0-100
 - [ ] **Phase 46: UX para Leigos** — Glossario/tooltips em todo KPI, empty states acionaveis, mobile polish, consistencia visual
@@ -107,15 +107,15 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 **Wave 1**
 
 - [x] 43-01-PLAN.md — TENANT-01 RLS org-first ml_product_costs + TENANT-02 backfill/orfaos + NOT NULL + ME-06 billing FOR SELECT + [BLOCKING] apply via MCP
-- [ ] 43-02-PLAN.md — ME-04 token lookup determinístico + ME-05 guard is_org_member + TENANT-03 check_quota RPC + gate process-sync-job + cron Pattern B + [BLOCKING] apply/deploy
+- [x] 43-02-PLAN.md — ME-04 token lookup determinístico + ME-05 guard is_org_member + TENANT-03 check_quota RPC + gate process-sync-job + cron Pattern B + [BLOCKING] apply/deploy
 
 **Wave 2** *(blocked on 43-01)*
 
-- [ ] 43-03-PLAN.md — TENANT-04 wizard de onboarding (tabela onboarding_progress + hook + banner/wizard rhf+shadcn + wiring dashboard/AcceptInvite) + [BLOCKING] apply migration
+- [x] 43-03-PLAN.md — TENANT-04 wizard de onboarding (tabela onboarding_progress + hook + banner/wizard rhf+shadcn + wiring dashboard/AcceptInvite) + [BLOCKING] apply migration
 
 **Wave 3** *(blocked on 43-01, 43-02, 43-03)*
 
-- [ ] 43-04-PLAN.md — TENANT-05 teste de isolamento 2-org (ISOLATION-TEST.md + execucao RLS/ME-04/05/06/quota) [checkpoint]
+- [x] 43-04-PLAN.md — TENANT-05 teste de isolamento 2-org (ISOLATION-TEST.md + execucao RLS/ME-04/05/06/quota) — veredito PASS, 0 vazamentos cross-org
 
 **UI hint**: yes
 
@@ -193,7 +193,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 |-------|----------------|--------|-----------|
 | 41. Veracidade Total | 4/4 | Complete    | 2026-06-13 |
 | 42. Zero Mock | 4/4 | Complete   | 2026-06-13 |
-| 43. Multi-Tenant Hardening | 1/4 | In Progress|  |
+| 43. Multi-Tenant Hardening | 4/4 | Complete | Isolamento 2-org PASS; pendente verify-phase + checkpoint visual |
 | 44. Monetizacao Stripe | 0/? | Not started | - |
 | 45. Consultor v1 | 0/? | Not started | - |
 | 46. UX para Leigos | 0/? | Not started | - |

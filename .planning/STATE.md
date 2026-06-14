@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 43 Wave 2 COMPLETA: 43-03 onboarding (migration aplicada+validada, código commitado). Próximo: Wave 3 = 43-04 (teste isolamento 2-org). Pendente: checkpoint VISUAL Wesley do banner/wizard pós push->Vercel"
+stopped_at: "Phase 43 COMPLETA (4 plans: 43-01/02/03/04). 43-04 teste isolamento 2-org executado via MCP — veredito PASS, 0 vazamentos cross-org. Pendente (não-bloqueante): code-review/verify-phase + checkpoint VISUAL onboarding (banner/wizard) pós push->Vercel + push. ME-05 comportamental ao vivo pendente Wesley."
 last_updated: "2026-06-14"
-last_activity: 2026-06-14 -- 43-03 onboarding wizard concluído + migration aplicada
+last_activity: 2026-06-14 -- 43-04 teste de isolamento 2-org PASS (Phase 43 completa)
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 12
-  completed_plans: 12
-  percent: 36
+  completed_plans: 13
+  percent: 43
 ---
 
 # Project State
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md
 
 ## Current Position
 
-Phase: 43 (multi-tenant-hardening) — EXECUTING
-Plan: 4 of 4 (Waves 1 e 2 completas: 43-01, 43-02, 43-03)
-Status: Ready to execute Wave 3 (43-04 teste isolamento 2-org)
-Last activity: 2026-06-14 -- 43-03 onboarding wizard concluído + migration aplicada
+Phase: 43 (multi-tenant-hardening) — COMPLETA (4 de 4 plans)
+Plan: 4 of 4 (Waves 1, 2 e 3 completas: 43-01, 43-02, 43-03, 43-04)
+Status: Phase 43 completa. Pendente (não-bloqueante): code-review/verify-phase + checkpoint visual onboarding + push
+Last activity: 2026-06-14 -- 43-04 teste de isolamento 2-org PASS (TENANT-05 confirmado)
 
 ### Quick Tasks Completed
 
@@ -105,6 +105,9 @@ Last activity: 2026-06-14 -- 43-03 onboarding wizard concluído + migration apli
 - [Phase ?]: RLS org-first usa is_org_member/get_org_role em ml_product_costs; user_id mantido como auditoria (D-10/D-11)
 - [Phase ?]: Backfill de orfaos via ml_tokens (nao organization_members) para evitar duplicacao multi-org (D-02)
 - [Phase ?]: ml_billing_monthly trocado de FOR ALL para FOR SELECT — viewer nao escreve billing (ME-06/D-15)
+- [Phase 43-04]: TENANT-05 confirmado — teste de isolamento 2-org (Pé Vermeio + Thales) via MCP: 0 vazamentos cross-org em 15 tabelas scope-org; ME-04/05/06 e quota PASS. Veredito PASS, sem FAIL
+- [Phase 43-04]: Método de verificação de RLS = impersonação `SET LOCAL ROLE authenticated` + `set_config('request.jwt.claims',...,true)` em transação ROLLBACK (service_role bypassa RLS)
+- [Phase 43-04]: RESSALVA `ml_targets` sem `organization_id` (scope user_id/seller_id) — fora do loop por-org; verificação dedicada recomendada na code-review/verify-phase
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -152,8 +155,15 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-13T21:18:54.298Z
-Stopped at: Phase 43 Wave 1: 43-01 completo (migrations aplicadas); 43-02 parcial — 3 migrations aplicadas, deploy de 5 EFs pendente (sem SUPABASE_ACCESS_TOKEN)
+Last session: 2026-06-14
+Stopped at: Phase 43 COMPLETA — 43-04 teste de isolamento 2-org executado via MCP (veredito PASS, 0 vazamentos cross-org; ME-04/05/06 + quota confirmados). Pendente não-bloqueante: code-review/verify-phase + checkpoint visual onboarding + push; ME-05 comportamental ao vivo (Wesley)
+
+### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
+
+- **43-04 (Wave 3) COMPLETO** — ISOLATION-TEST.md (roteiro reproduzível 2-org) escrito (commit b8656049) + executado via MCP no `ckcdevcxgvueywivefgx` com as 2 orgs reais (Pé Vermeio `7f615df7-...` MLUID 1639558873 / Thales `e4150d57-...` MLUID 427063369) (resultados commit f3b383bf).
+- **Veredito PASS:** §2 RLS bidirecional 0 vazamentos em 15 tabelas scope-org; §4 ME-06 INSERT billing sob owner → ERROR 42501 (só FOR SELECT); §5 ME-05 guard is_org_member nas 3 EFs (código); §6 ME-04 ORDER BY updated_at nas 4 EFs (v20/v9/v10/v9); §7 TENANT-03 check_quota [t,t,t,f,f] limite=3 + enterprise sempre true.
+- **Pendentes não-bloqueantes:** ME-05 comportamental ao vivo (JWT de sessão no browser, Wesley); confirmação visual frontend por org; ressalva `ml_targets` (sem organization_id) → verificação dedicada na code-review/verify-phase.
+- **Aprendizado:** gsd-executor não tem MCP/deploy Supabase → Task 2 (checkpoint blocking) executada pelo orquestrador; executor só escreveu o roteiro (Task 1).
 
 ### Sessão 2026-06-13 — Fechamento Phase 41
 
