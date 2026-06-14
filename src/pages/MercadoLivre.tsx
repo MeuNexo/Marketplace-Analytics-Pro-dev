@@ -718,7 +718,6 @@ export default function MercadoLivre() {
                   totalTarifas={totalTarifasEfetivo}
                   cmvMes={cmvMes}
                   impostosMes={impostosMes}
-                  adsTotalMes={dreFonte !== "estimado" ? adsSpendMes : null}
                   fonte={dreFonte}
                   loading={dreWaterfallLoading}
                   onPrevMonth={handleDrePrevMonth}

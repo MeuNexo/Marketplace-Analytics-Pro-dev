@@ -30,8 +30,6 @@ interface MLCostCardProps {
   cmvMes: number | null;
   /** Impostos próprios do mês (regime fiscal) — null = sem config fiscal */
   impostosMes: number | null;
-  /** Gasto total de ads do mês (ml_ads_daily_cache). null = não exibir linha (fonte estimado já inclui em gruposTarifas). */
-  adsTotalMes?: number | null;
   /** "competencia" = ml_billing_daily mês-calendário 01–31 | "billing" = fatura mensal (ciclo 06→05) | "estimado" = fallback de orders */
   fonte: "competencia" | "billing" | "estimado";
   loading?: boolean;
@@ -57,7 +55,6 @@ export function MLCostCard({
   totalTarifas,
   cmvMes,
   impostosMes,
-  adsTotalMes = null,
   fonte,
   loading,
   onPrevMonth,
@@ -67,13 +64,12 @@ export function MLCostCard({
   faturaFrom,
   faturaTo,
 }: MLCostCardProps) {
-  // Lucro do mês = receita − total tarifas − CMV − impostos − publicidade (ads)
+  // Lucro do mês = receita − total tarifas − CMV − impostos
   const lucro =
     receitaMes
     - totalTarifas
     - (cmvMes ?? 0)
-    - (impostosMes ?? 0)
-    - (adsTotalMes ?? 0);
+    - (impostosMes ?? 0);
   const lucroPositivo = lucro >= 0;
   const margemPct = receitaMes > 0 ? ((lucro / receitaMes) * 100).toFixed(1) : "—";
 
@@ -244,24 +240,6 @@ export function MLCostCard({
                   )}
                 </div>
               </div>
-
-              {/* ── Publicidade (ads ML) ── */}
-              {adsTotalMes != null && adsTotalMes > 0 && (
-                <div className="flex items-center justify-between text-xs py-1">
-                  <span className="text-muted-foreground flex items-center gap-1">
-                    <span className="text-muted-foreground/50">(−)</span>
-                    Publicidade (ads ML)
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-muted-foreground tabular-nums w-10 text-right">
-                      {pct(adsTotalMes, receitaMes)}
-                    </span>
-                    <span className="font-semibold tabular-nums w-24 text-right text-foreground">
-                      {fmt(adsTotalMes)}
-                    </span>
-                  </div>
-                </div>
-              )}
 
               {/* ── Lucro do mês ── */}
               <div className="flex items-center justify-between text-xs pt-2.5 mt-1.5 border-t-2 border-border">
