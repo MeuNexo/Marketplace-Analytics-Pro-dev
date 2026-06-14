@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 43 Wave 1 COMPLETA: 43-01 + 43-02 (5 EFs deployadas via CLI, smoke OK). Próximo: Wave 2 = 43-03 (wizard onboarding)"
+stopped_at: "Phase 43 Wave 2 COMPLETA: 43-03 onboarding (migration aplicada+validada, código commitado). Próximo: Wave 3 = 43-04 (teste isolamento 2-org). Pendente: checkpoint VISUAL Wesley do banner/wizard pós push->Vercel"
 last_updated: "2026-06-14"
-last_activity: 2026-06-14 -- 43-02 deploy 5 EFs concluído + smoke validado
+last_activity: 2026-06-14 -- 43-03 onboarding wizard concluído + migration aplicada
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 12
-  completed_plans: 11
-  percent: 32
+  completed_plans: 12
+  percent: 36
 ---
 
 # Project State
@@ -27,9 +27,9 @@ See: .planning/PROJECT.md
 ## Current Position
 
 Phase: 43 (multi-tenant-hardening) — EXECUTING
-Plan: 3 of 4 (Wave 1 completa: 43-01 + 43-02 deployados)
-Status: Ready to execute Wave 2 (43-03 wizard onboarding)
-Last activity: 2026-06-14 -- 43-02 deploy 5 EFs concluído + smoke validado
+Plan: 4 of 4 (Waves 1 e 2 completas: 43-01, 43-02, 43-03)
+Status: Ready to execute Wave 3 (43-04 teste isolamento 2-org)
+Last activity: 2026-06-14 -- 43-03 onboarding wizard concluído + migration aplicada
 
 ### Quick Tasks Completed
 

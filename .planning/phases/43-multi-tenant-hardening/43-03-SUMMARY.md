@@ -9,7 +9,7 @@ requires:
   - phase: 43-01
     provides: "Helpers RLS org-first (is_org_member, get_org_role), enum org_role, RLS consolidada de caches"
 provides:
-  - "Tabela onboarding_progress (org-scoped) + RLS ob_select(member)/ob_write(owner) — MIGRATION ESCRITA, NÃO APLICADA (Task 4 checkpoint)"
+  - "Tabela onboarding_progress (org-scoped) + RLS ob_select(member)/ob_write(owner) — APLICADA EM PRODUÇÃO via MCP (ckcdevcxgvueywivefgx, 2026-06-14, aprovada por Wesley)"
   - "Hook useOnboardingProgress: lê persistido + auto-detecta passos pelo estado real (ml_tokens, ml_product_costs, ml_tax_config)"
   - "OnboardingWizard (rhf + shadcn Dialog/Progress) — 5 passos ML->Tiny(opcional)->Custos->Fiscal->Pronto, não-bloqueante"
   - "OnboardingBanner não-bloqueante no topo do dashboard com Progress + CTA"
@@ -125,8 +125,8 @@ None - sem configuração de serviço externo. **PORÉM:** a migration `20260614
 
 ## Next Phase Readiness
 - Frontend pronto: deploya via push -> Vercel.
-- **BLOQUEIO Task 4 (checkpoint blocking-human):** orquestrador deve aplicar a migration via MCP no `ckcdevcxgvueywivefgx` após aprovação de Wesley, validar via execute_sql (tabela + policies ob_select/ob_write), e apresentar checkpoint visual (banner no topo de "/", wizard com 5 passos, CTAs corretos, navegação não bloqueada).
-- Wave 3 (43-04, isolamento) pode prosseguir após o checkpoint.
+- **Task 4 (checkpoint blocking-human) — RESOLVIDA (2026-06-14):** Wesley aprovou; migration aplicada via MCP `apply_migration` no `ckcdevcxgvueywivefgx`. Auditoria pré-apply confirmou schema (organizations PK id uuid; is_org_member/get_org_role com ordem `(_user_id, _org_id)`; enum org_role tem 'owner'). Validado via execute_sql: tabela existe, RLS ativo, 5 colunas, policies ob_select+ob_write, check constraint OK. **Pendente apenas o checkpoint VISUAL** (Wesley verificar banner/wizard no frontend após push->Vercel).
+- Wave 3 (43-04, isolamento) liberada.
 
 ## Self-Check: PASSED
 
