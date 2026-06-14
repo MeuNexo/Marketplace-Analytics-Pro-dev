@@ -26,7 +26,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell, ComposedChart, Area, ReferenceLine,
 } from "recharts";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -881,6 +881,12 @@ export default function MLEstoque() {
   const [hideOutOfStock, setHideOutOfStock] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
+  const [searchParams, setSearchParams] = useSearchParams();
+  const highlightIds = useMemo(() => {
+    const raw = searchParams.get("items");
+    return raw ? new Set(raw.split(",").filter(Boolean)) : null;
+  }, [searchParams]);
+
   const brands = useMemo(() => {
     const set = new Set<string>();
     items.forEach((i) => { if (i.brand) set.add(i.brand); });
@@ -889,6 +895,9 @@ export default function MLEstoque() {
 
   const filteredItems = useMemo(() => {
     let result = [...items];
+    if (highlightIds !== null) {
+      result = result.filter((i) => highlightIds.has(i.id));
+    }
     const trimmedSearch = search.trim();
     if (trimmedSearch) {
       const q = trimmedSearch.toLowerCase();
@@ -927,7 +936,7 @@ export default function MLEstoque() {
       }
     });
     return result;
-  }, [items, search, brandFilter, coverageFilter, logisticFilter, sortBy, hideOutOfStock, coverageMap]);
+  }, [items, search, brandFilter, coverageFilter, logisticFilter, sortBy, hideOutOfStock, coverageMap, highlightIds]);
 
   // KPI stats derived from filtered items so cards react to active filters
   const filteredStats = useMemo(() => {
@@ -1168,6 +1177,21 @@ export default function MLEstoque() {
               </div>
             </div>
           </div>
+
+          {highlightIds !== null && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-accent/10 border-b border-accent/20 text-sm text-accent-foreground">
+              <ShieldAlert className="w-4 h-4 shrink-0 text-accent" />
+              <span>Mostrando {filteredItems.length} produto(s) sinalizado(s) pelo Consultor</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ml-auto h-6 px-2 text-xs"
+                onClick={() => setSearchParams((prev) => { const p = new URLSearchParams(prev); p.delete("items"); return p; })}
+              >
+                Limpar filtro
+              </Button>
+            </div>
+          )}
 
           <CardContent className="p-0">
             {filteredItems.length === 0 ? (
