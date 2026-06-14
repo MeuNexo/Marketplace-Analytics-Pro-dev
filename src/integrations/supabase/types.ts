@@ -120,6 +120,8 @@ export type Database = {
       consultor_config: {
         Row: {
           acos_alert_pct: number
+          ads_eating_alert_pct: number
+          ads_eating_critical_pct: number
           ads_no_sale_days: number
           claims_spike_pct: number
           goal_risk_pct: number
@@ -136,6 +138,8 @@ export type Database = {
         }
         Insert: {
           acos_alert_pct?: number
+          ads_eating_alert_pct?: number
+          ads_eating_critical_pct?: number
           ads_no_sale_days?: number
           claims_spike_pct?: number
           goal_risk_pct?: number
@@ -152,6 +156,8 @@ export type Database = {
         }
         Update: {
           acos_alert_pct?: number
+          ads_eating_alert_pct?: number
+          ads_eating_critical_pct?: number
           ads_no_sale_days?: number
           claims_spike_pct?: number
           goal_risk_pct?: number
@@ -1761,6 +1767,35 @@ export type Database = {
           row_count: number
           table_name: string
           total_size: string
+        }[]
+      }
+      get_margin_with_ads_by_product: {
+        Args: {
+          p_org_id: string
+          p_user_ids: string[]
+          p_from: string
+          p_to: string
+        }
+        Returns: {
+          item_id: string
+          titulo: string | null
+          sku: string | null
+          listing_type: string | null
+          receita: number
+          cmv: number
+          comissao: number
+          frete: number
+          impostos: number
+          lucro: number
+          lucro_pct: number | null
+          pedidos: number
+          unidades: number
+          has_cmv: boolean
+          ads_spend: number
+          ads_attributed_orders: number
+          lucro_pos_ads: number
+          lucro_pct_pos_ads: number | null
+          ads_no_sale: boolean
         }[]
       }
       get_cron_secret: { Args: never; Returns: string }
