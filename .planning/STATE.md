@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: milestone
-status: executing
-stopped_at: "Phase 43 COMPLETA. Phase 44 (Stripe) ADIADA por decisão Wesley 2026-06-14 — versão de teste não precisa de pagamento, dev faz Stripe depois (reativar antes da Phase 47). Pulando para Phase 45 (Consultor v1). Pendências 43 não-bloqueantes: code-review/verify-phase + checkpoint visual onboarding + push (4 commits docs-44 ahead)."
-last_updated: "2026-06-14"
-last_activity: 2026-06-14 -- Phase 44 adiada; iniciando planejamento da Phase 45 (Consultor v1)
+status: verifying
+stopped_at: Phase 45 context gathered
+last_updated: "2026-06-14T16:02:43.887Z"
+last_activity: 2026-06-14 -- 43-04 teste de isolamento 2-org PASS (TENANT-05 confirmado)
 progress:
   total_phases: 7
-  completed_phases: 2
-  total_plans: 12
-  completed_plans: 13
+  completed_phases: 3
+  total_plans: 15
+  completed_plans: 12
   percent: 43
 ---
 
@@ -155,8 +155,8 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-14
-Stopped at: Phase 43 COMPLETA — 43-04 teste de isolamento 2-org executado via MCP (veredito PASS, 0 vazamentos cross-org; ME-04/05/06 + quota confirmados). Pendente não-bloqueante: code-review/verify-phase + checkpoint visual onboarding + push; ME-05 comportamental ao vivo (Wesley)
+Last session: 2026-06-14T16:02:43.875Z
+Stopped at: Phase 45 context gathered
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
