@@ -226,9 +226,22 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
   4. Alerta separado por produto "ads comendo a margem" (TACoS/ACoS acima do limiar) — NAO mistura com o alerta de prejuizo operacional
   5. (a decidir no planejamento) ads_no_sale quebrado por produto (gasto com zero venda no item)
 
-**Open (resolver no discuss/plan)**: onde exibir exatamente (Consultor vs card Custos vs coluna /anuncios — possivelmente os tres); limiares do novo alerta; se mexe ou nao no Consultor v1; tratamento de produto com ads e zero venda.
+**Resolvido no discuss/plan (Wesley 2026-06-14)**: exibir nas 3 superficies (/anuncios coluna financeiro D-03, Consultor insight D-04, card Custos/DRE D-05); limiares pos-ads critico <= 0% / alerta <= 10% via consultor_config (D-06); estende o Consultor v1 (nova RULE ads_eating_margin + upgrade ads_no_sale item-level, D-08/D-09); ads_no_sale por produto no escopo (D-11, MCO-05).
 
-**Plans**: TBD
+**Requirements**: MCO-01, MCO-02, MCO-03, MCO-04, MCO-05
+
+**Plans**: 3 plans (2 waves)
+
+**Wave 1**
+
+- [ ] 48-01-PLAN.md — RPC get_margin_with_ads_by_product (FULL OUTER JOIN orders+ml_ads_products_cache, SECURITY DEFINER, sem truncamento) + colunas consultor_config + [BLOCKING] apply (MCO-01)
+
+**Wave 2** *(blocked on 48-01; 48-02 e 48-03 em paralelo — sem overlap de arquivos)*
+
+- [ ] 48-02-PLAN.md — EF consultor-insights: RULE ads_eating_margin per-item + upgrade ads_no_sale item-level + pilar Ads do score + [BLOCKING] deploy/smoke (MCO-04, MCO-05)
+- [ ] 48-03-PLAN.md — Frontend: hook useMLMarginWithAds + 2 colunas em /anuncios + linha Publicidade/MCO agregado no DRE + [checkpoint] visual (MCO-02, MCO-03)
+
+**UI hint**: yes
 
 ---
 
@@ -243,4 +256,4 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 | 45. Consultor v1 | 3/3 | Complete   | 2026-06-14 |
 | 46. UX para Leigos | 0/? | Not started | - |
 | 47. QA End-to-End + Go-Live | 0/? | Not started | - |
-| 48. MCO com Ads | 0/? | Not started | - |
+| 48. MCO com Ads | 0/3 | Planned | - |
