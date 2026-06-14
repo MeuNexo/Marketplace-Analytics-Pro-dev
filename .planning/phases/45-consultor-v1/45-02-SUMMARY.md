@@ -27,11 +27,11 @@ decisions:
 metrics:
   duration: "~20 min"
   completed: "2026-06-14"
-  tasks_completed: 3
+  tasks_completed: 4
   tasks_total: 4
-  files_created: 2
-  files_modified: 1
-status: partial (task 4 pending deploy via MCP orchestrator)
+  files_created: 3
+  files_modified: 2
+status: complete
 ---
 
 # Phase 45 Plan 02: Consultor Engine EF + pg_cron Summary
@@ -40,9 +40,23 @@ status: partial (task 4 pending deploy via MCP orchestrator)
 
 ---
 
-## Status: PARTIAL — Tasks 1-3 COMPLETE, Task 4 BLOCKED (deploy via MCP orchestrator)
+## Status: COMPLETE (4/4)
 
-Tasks 1, 2, and 3 executed and committed. Task 4 is a `checkpoint:human-action` that requires the orchestrator to deploy the EF and apply the cron migration via Supabase MCP.
+Tasks 1-3 (executor) + Task 4 [BLOCKING] (orquestrador via MCP) concluídas.
+
+### Task 4 — deploy + apply + smoke (orquestrador, aprovação Wesley 2026-06-14)
+
+1. **Auditoria de schema pré-deploy:** todas as 6 tabelas extras da EF (ml_ads_daily_cache, ml_claims, ml_questions, ml_targets, ml_tax_config, org_members) conferidas — colunas existem. Zero bugs de schema.
+2. **Fix de segurança pré-deploy (review automático de commit):** auth **fail-open** corrigido → fail-closed (commit f8518f39). Sem SUPABASE_SERVICE_ROLE_KEY a EF retorna 500 em vez de tratar como cron (era a classe do CR-01 da Phase 43).
+3. **Deploy:** EF `consultor-insights` **ACTIVE** (v1, verify_jwt=false) via `deploy_edge_function`.
+4. **Vault:** `service_role_key` (`sb_secret_`, len 41) presente → Pattern B OK.
+5. **Cron:** migration aplicada; `consultor-insights-daily` `30 8 * * *` active=true.
+6. **Smoke (mode=all_orgs via pg_net):** HTTP 200, 2 orgs. **Pé Vermeio: 8 insights, score 83** (margin88/ads100/estoque94/rep88/comp0) → **CONSUL-05 (≥5) atingido**. Thales: 7 insights, score 49.
+7. **Idempotência:** 2ª invocação → active permanece 8 (não 16), 0 duplicatas, snapshot = 1 linha.
+
+**8 regras dispararam p/ Pé Vermeio:** stock_critical(R$9.523), margin_critical(R$819), goal_at_risk(R$357.708), paused_with_sales(R$85.711), margin_alert(R$1.499), stock_alert, no_cost(38), claims_spike(+2400%).
+
+**Calibração futura (não-bloqueante):** `goal_at_risk` (R$357k — projeção de meta no início do mês extrapola) e `claims_spike` (+2400% — base baixa no mês anterior) têm impactos/percentuais inflados por artefato de estimativa do v1. Limiares ajustáveis em `consultor_config`.
 
 ---
 

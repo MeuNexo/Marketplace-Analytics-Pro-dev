@@ -166,7 +166,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 
 **Wave 1**
 
-- [ ] 45-01-PLAN.md — Fundação de dados: 3 tabelas (insights, consultor_config, consultor_health_snapshots) RLS org-first + RPCs do engine (margem/cobertura/sem-custo) + types.ts + [BLOCKING] apply via MCP
+- [x] 45-01-PLAN.md — Fundação de dados: 3 tabelas (insights, consultor_config, consultor_health_snapshots) RLS org-first + RPCs do engine (margem/cobertura/sem-custo) + types.ts + [BLOCKING] apply via MCP
 
 **Wave 2** *(blocked on 45-01)*
 
@@ -220,6 +220,6 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 | 42. Zero Mock | 4/4 | Complete   | 2026-06-13 |
 | 43. Multi-Tenant Hardening | 4/4 | Complete | Isolamento 2-org PASS; pendente verify-phase + checkpoint visual |
 | 44. Monetizacao Stripe | 0/? | Not started | - |
-| 45. Consultor v1 | 0/3 | Planned | - |
+| 45. Consultor v1 | 1/3 | In Progress|  |
 | 46. UX para Leigos | 0/? | Not started | - |
 | 47. QA End-to-End + Go-Live | 0/? | Not started | - |
