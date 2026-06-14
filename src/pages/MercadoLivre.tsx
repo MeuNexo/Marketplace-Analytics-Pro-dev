@@ -45,6 +45,8 @@ import { Switch } from "@/components/ui/switch";
 import { OnboardingBanner } from "@/components/onboarding/OnboardingBanner";
 import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
 import { useOnboardingProgress } from "@/hooks/useOnboardingProgress";
+import { ConsultorCard } from "@/components/mercadolivre/ConsultorCard";
+import { useConsultorInsights } from "@/hooks/useConsultorInsights";
 
 const currencyFmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -97,6 +99,9 @@ export default function MercadoLivre() {
   // ── Onboarding (TENANT-04 / D-07) — banner não-bloqueante no topo + wizard ──
   const { isComplete: onboardingComplete } = useOnboardingProgress();
   const [onboardingWizardOpen, setOnboardingWizardOpen] = useState(false);
+
+  // ── Consultor v1 (Phase 45) — card de saúde + top 3 insights ──
+  const { insights: consultorInsights, score: consultorScore, scoreDelta: consultorScoreDelta, scoreBand: consultorScoreBand, syncing: consultorSyncing, dismiss: consultorDismiss } = useConsultorInsights();
 
   // ── Filters ──
   const filters = useMLFilters();
@@ -638,6 +643,19 @@ export default function MercadoLivre() {
           {/* Banner de onboarding não-bloqueante (D-07): aparece quando onboarding
               incompleto OU ML não conectado. Fica acima do conteúdo, sem substituí-lo. */}
           <OnboardingBanner forceShow={!hasMLConnection || !onboardingComplete} />
+
+          {/* Consultor v1 (Phase 45): card de saúde do negócio + top 3 insights.
+              Só visível quando onboarding completo (D-20 / critical_constraint). */}
+          {onboardingComplete && (
+            <ConsultorCard
+              insights={consultorInsights}
+              score={consultorScore}
+              scoreDelta={consultorScoreDelta}
+              scoreBand={consultorScoreBand}
+              syncing={consultorSyncing}
+              onDismiss={consultorDismiss}
+            />
+          )}
 
           {isML && !effectiveLoading && connected && !hasData && (
             <Card className="border-dashed">
