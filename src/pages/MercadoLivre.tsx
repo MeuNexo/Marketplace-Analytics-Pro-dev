@@ -42,6 +42,9 @@ import { useDashboardLayout } from "@/hooks/useDashboardLayout";
 import { useMLProductMargins } from "@/hooks/useMLProductMargins";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
+import { OnboardingBanner } from "@/components/onboarding/OnboardingBanner";
+import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
+import { useOnboardingProgress } from "@/hooks/useOnboardingProgress";
 
 const currencyFmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -90,6 +93,10 @@ export default function MercadoLivre() {
   // ── Dashboard layout personalização ──
   const { widgets, toggleWidget, moveUp, moveDown, resetLayout, isVisible } = useDashboardLayout();
   const [layoutOpen, setLayoutOpen] = useState(false);
+
+  // ── Onboarding (TENANT-04 / D-07) — banner não-bloqueante no topo + wizard ──
+  const { isComplete: onboardingComplete } = useOnboardingProgress();
+  const [onboardingWizardOpen, setOnboardingWizardOpen] = useState(false);
 
   // ── Filters ──
   const filters = useMLFilters();
@@ -534,7 +541,11 @@ export default function MercadoLivre() {
             ? "Conecte sua conta do Mercado Livre para visualizar os dados desta loja."
             : `Conecte as ${mlStores.length} contas do Mercado Livre para visualizar os dados.`}
         </p>
-        <Button asChild><Link to="/integracoes">Ir para Integrações</Link></Button>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <Button onClick={() => setOnboardingWizardOpen(true)}>Começar configuração</Button>
+          <Button variant="outline" asChild><Link to="/integracoes">Ir para Integrações</Link></Button>
+        </div>
+        <OnboardingWizard open={onboardingWizardOpen} onOpenChange={setOnboardingWizardOpen} />
       </div>
     );
   }
@@ -624,6 +635,10 @@ export default function MercadoLivre() {
       </div>
 
       <div className="space-y-5 animate-fade-in">
+          {/* Banner de onboarding não-bloqueante (D-07): aparece quando onboarding
+              incompleto OU ML não conectado. Fica acima do conteúdo, sem substituí-lo. */}
+          <OnboardingBanner forceShow={!hasMLConnection || !onboardingComplete} />
+
           {isML && !effectiveLoading && connected && !hasData && (
             <Card className="border-dashed">
               <CardContent className="flex items-center gap-3 py-4">

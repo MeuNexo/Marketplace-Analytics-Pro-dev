@@ -88,6 +88,10 @@ export default function AcceptInvite() {
     await refreshOrgs();
     setStep("done");
     setSubmitting(false);
+    // TENANT-04 / D-07: owner novo é levado ao dashboard "/", onde o
+    // OnboardingBanner não-bloqueante aparece automaticamente quando o
+    // onboarding está incompleto (sem ML conectado). Nenhum route-guard
+    // bloqueante é criado — a navegação permanece livre.
     setTimeout(() => navigate("/"), 1500);
   };
 
