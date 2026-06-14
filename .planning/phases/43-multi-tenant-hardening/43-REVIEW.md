@@ -27,10 +27,24 @@ findings:
   warning: 7
   info: 5
   total: 15
-status: issues_found
+status: criticals_resolved
+resolved:
+  - CR-01 (2026-06-14): process-sync-job auth agora exige igualdade com SERVICE_KEY; re-deploy + smoke (bearer inválido→401, vault key→200, sem auth→401)
+  - CR-02 (2026-06-14): useMLProductCosts upsert/upsertBatch exigem currentOrg.id (sem ?? null); tsc+build limpos
+  - CR-03 (2026-06-14): quota gate fail-closed — em erro de RPC re-enfileira o job (pending) em vez de fail-open
+pending:
+  - 7 warnings + 5 info (não-bloqueantes) — backlog para Phase 44 / verify-phase
 ---
 
 # Phase 43: Code Review Report
+
+## Resolução dos críticos (2026-06-14)
+
+- **CR-01 RESOLVIDO** — `process-sync-job/index.ts`: guard `requireServiceRole` compara o Bearer com `SUPABASE_SERVICE_ROLE_KEY` por igualdade (antes aceitava qualquer Bearer >10 chars). Re-deploy v16 + smoke: sem auth→401, bearer inválido→401, vault service_role_key→200 (cron preservado, env==vault confirmado).
+- **CR-02 RESOLVIDO** — `useMLProductCosts.ts`: `upsert` e `upsertBatch` agora abortam quando `currentOrg?.id` é nulo e gravam `organization_id: currentOrg.id` (sem `?? null`), evitando violação de NOT NULL e linhas invisíveis à org. tsc/build limpos.
+- **CR-03 RESOLVIDO** — `process-sync-job/index.ts`: em erro do `check_quota` o gate passou a ser fail-closed — devolve o job à fila (`status=pending`, `started_at=null`) para retry no próximo tick, em vez de despachar (fail-open).
+
+Os 7 warnings e 5 info permanecem como backlog não-bloqueante (ver abaixo).
 
 **Reviewed:** 2026-06-14T12:24:42Z
 **Depth:** standard

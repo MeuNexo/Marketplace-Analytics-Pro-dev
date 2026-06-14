@@ -24,13 +24,19 @@ function json(body: unknown, status = 200) {
   });
 }
 
-// ── Auth guard: accepts any Bearer token (pg_cron anon key or service role key) ──
-// verify_jwt = false — Supabase does not validate the JWT.
-// We only block completely unauthenticated calls.
+// ── Auth guard: requires the exact service-role key ──────────────────────────
+// verify_jwt = false in config.toml — the Supabase gateway does not validate the
+// JWT (pg_cron Pattern B sends `Bearer <service_role_key>` from the vault). We
+// MUST therefore authenticate in-code: only a Bearer that matches our own
+// SUPABASE_SERVICE_ROLE_KEY may drain the queue. Length-then-equality keeps it
+// constant-ish and avoids matching arbitrary tokens (CR-01).
 
-function requireCronOrServiceRole(req: Request): Response | null {
+function requireServiceRole(req: Request): Response | null {
   const auth = req.headers.get("authorization") ?? "";
-  if (auth.startsWith("Bearer ") && auth.length > 10) return null;
+  const expected = `Bearer ${SERVICE_KEY}`;
+  if (SERVICE_KEY.length > 0 && auth.length === expected.length && auth === expected) {
+    return null;
+  }
 
   return new Response(JSON.stringify({ error: "Unauthorized" }), {
     status: 401,
@@ -44,7 +50,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   // Auth guard (must happen before claim to protect the queue)
-  const guard = requireCronOrServiceRole(req);
+  const guard = requireServiceRole(req);
   if (guard) return guard;
 
   const sb = createClient(SUPABASE_URL, SERVICE_KEY);
@@ -72,8 +78,16 @@ serve(async (req) => {
     });
 
     if (quotaErr) {
-      console.error(`process-sync-job quota check error org=${job.organization_id}:`, quotaErr.message);
-      // Erro no RPC não bloqueia o job — log e continua (fail-open para não travar orgs enterprise)
+      // CR-03: fail-CLOSED. Enterprise já é tratado dentro da própria RPC (short-circuit -1),
+      // então um fail-open aqui só serviria para BURLAR a quota de tiers limitados em falha
+      // transitória. Não despachamos; devolvemos o job à fila (pending) para retry no próximo
+      // tick do cron — não perde o job e não fura a quota.
+      console.error(`process-sync-job quota check error org=${job.organization_id} — requeue:`, quotaErr.message);
+      await sb
+        .from("sync_jobs")
+        .update({ status: "pending", started_at: null })
+        .eq("id", job.id);
+      return json({ ok: false, job_id: job.id, error: "quota_check_failed_requeued" }, 200);
     } else if (withinQuota === false) {
       console.warn(`process-sync-job quota EXCEEDED org=${job.organization_id} job_type=${job.job_type} — skipping dispatch`);
       await sb

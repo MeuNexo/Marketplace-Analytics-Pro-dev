@@ -70,6 +70,12 @@ export function useMLProductCosts() {
   const upsert = useCallback(
     async (item_id: string, cost: number | null, tax_rate: number | null) => {
       if (!user) return;
+      // CR-02: organization_id é NOT NULL e a RLS é org-first — gravar com org nula
+      // (ou ausente) faria o INSERT falhar ou tornaria a linha invisível à própria org.
+      if (!currentOrg?.id) {
+        console.warn("useMLProductCosts upsert ignorado — sem organização ativa");
+        return;
+      }
       setCosts((prev) => {
         const next = new Map(prev);
         next.set(item_id, {
@@ -83,7 +89,7 @@ export function useMLProductCosts() {
       const { error } = await supabase.from("ml_product_costs").upsert(
         {
           user_id:         user.id,
-          organization_id: currentOrg?.id ?? null,
+          organization_id: currentOrg.id,
           item_id,
           cost,
           tax_rate,
@@ -104,11 +110,16 @@ export function useMLProductCosts() {
   const upsertBatch = useCallback(
     async (rows: BatchCostRow[]): Promise<number> => {
       if (!user || rows.length === 0) return 0;
+      // CR-02: organization_id é NOT NULL + RLS org-first — sem org ativa, aborta
+      // explicitamente (em vez de gravar null e falhar/ocultar as linhas).
+      if (!currentOrg?.id) {
+        throw new Error("Sem organização ativa — não é possível salvar custos.");
+      }
 
       const now = new Date().toISOString();
       const payload = rows.map((r) => ({
         user_id:         user.id,
-        organization_id: currentOrg?.id ?? null,
+        organization_id: currentOrg.id,
         item_id:         r.item_id,
         cost:            r.cost,
         ...(r.seller_sku != null ? { seller_sku: r.seller_sku } : {}),
