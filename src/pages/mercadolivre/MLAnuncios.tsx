@@ -30,7 +30,7 @@ import {
   Pencil,
 } from "lucide-react";
 import * as XLSX from "xlsx";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -551,6 +551,12 @@ export default function MLProdutos() {
   const orgId = currentOrg?.id ?? null;
   const { data: taxMap } = useMLTaxConfig(resolvedMLUserIds, orgId ?? "");
   const showTaxBanner = !!taxMap && stores.some((s) => !taxMap.has(s.ml_user_id));
+  const [searchParams, setSearchParams] = useSearchParams();
+  const highlightIds = useMemo(() => {
+    const raw = searchParams.get("items");
+    return raw ? new Set(raw.split(",").filter(Boolean)) : null;
+  }, [searchParams]);
+
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [stockFilter, setStockFilter] = useState<StockFilter>("all");
@@ -755,6 +761,7 @@ export default function MLProdutos() {
   const filtered = useMemo(() => {
     return items
       .filter((item) => {
+        if (highlightIds !== null && !highlightIds.has(item.id)) return false;
         const matchesSearch =
           item.title.toLowerCase().includes(search.toLowerCase()) ||
           item.id.toLowerCase().includes(search.toLowerCase());
@@ -788,7 +795,7 @@ export default function MLProdutos() {
         if (sortBy === "title_desc") return b.title.localeCompare(a.title);
         return a.title.localeCompare(b.title);
       });
-  }, [items, search, statusFilter, stockFilter, sortBy, brandFilter, hideOutOfStock, logisticFilter, onlyDiscount, columnView, dealPriceCache]);
+  }, [items, search, statusFilter, stockFilter, sortBy, brandFilter, hideOutOfStock, logisticFilter, onlyDiscount, columnView, dealPriceCache, highlightIds]);
 
   // Lazy-fetch de preço real (current_price via suggestions API) para todos os itens
   // visíveis ao entrar na view "Preço" — cobre deal_ids E promoções do vendedor
@@ -1175,6 +1182,21 @@ export default function MLProdutos() {
               </div>
             </div>
           </div>
+
+          {highlightIds !== null && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-accent/10 border-b border-accent/20 text-sm text-accent-foreground">
+              <Lightbulb className="w-4 h-4 shrink-0 text-accent" />
+              <span>Mostrando {filtered.length} produto(s) sinalizado(s) pelo Consultor</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ml-auto h-6 px-2 text-xs"
+                onClick={() => setSearchParams((prev) => { const p = new URLSearchParams(prev); p.delete("items"); return p; })}
+              >
+                Limpar filtro
+              </Button>
+            </div>
+          )}
 
           <CardContent className="p-0">
             {loading && items.length === 0 ? (
