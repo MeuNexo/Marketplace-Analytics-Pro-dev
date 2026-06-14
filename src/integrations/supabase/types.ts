@@ -1039,6 +1039,38 @@ export type Database = {
           },
         ]
       }
+      onboarding_progress: {
+        Row: {
+          completed_at: string | null
+          completed_steps: string[]
+          current_step: string
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          completed_at?: string | null
+          completed_steps?: string[]
+          current_step?: string
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          completed_at?: string | null
+          completed_steps?: string[]
+          current_step?: string
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "onboarding_progress_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       orders: {
         Row: {
           cidade: string | null
