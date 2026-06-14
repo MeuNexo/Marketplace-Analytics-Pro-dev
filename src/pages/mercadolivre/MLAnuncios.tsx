@@ -37,6 +37,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useMLProductCosts } from "@/hooks/useMLProductCosts";
 import { useMLTaxConfig } from "@/hooks/useMLTaxConfig";
 import { useOrganization } from "@/contexts/OrganizationContext";
+import { useMLMarginWithAds } from "@/hooks/useMLMarginWithAds";
 import { ImportacaoCustos } from "@/components/mercadolivre/anuncios/ImportacaoCustos";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer,
@@ -661,6 +662,35 @@ export default function MLProdutos() {
 
   useEffect(() => { fetchRankingSales(); }, [fetchRankingSales]);
 
+  // ── Margem com Ads — range espelha exatamente o ranking ──────────────────
+  const { rankingFrom, rankingTo } = useMemo(() => {
+    const today = format(new Date(), "yyyy-MM-dd");
+    if (rankingRange) {
+      return {
+        rankingFrom: format(rankingRange.from, "yyyy-MM-dd"),
+        rankingTo:   format(rankingRange.to,   "yyyy-MM-dd"),
+      };
+    }
+    if (rankingPeriod === 0) {
+      return { rankingFrom: today, rankingTo: today };
+    }
+    if (rankingPeriod === TOTAL_PERIOD) {
+      // "Total" sem filtro de data → usar 365 dias como fallback seguro
+      return { rankingFrom: format(subDays(new Date(), 365), "yyyy-MM-dd"), rankingTo: today };
+    }
+    return {
+      rankingFrom: format(subDays(new Date(), rankingPeriod), "yyyy-MM-dd"),
+      rankingTo:   today,
+    };
+  }, [rankingRange, rankingPeriod]);
+
+  const { data: marginWithAds } = useMLMarginWithAds(rankingFrom, rankingTo);
+
+  const marginByItem = useMemo(
+    () => new Map((marginWithAds ?? []).map((m) => [m.item_id, m])),
+    [marginWithAds],
+  );
+
   // Deduplicate raw rows by (ml_user_id, date, item_id) before aggregating.
   // Guard against duplicate rows that arise when multiple members of the same
   // org sync the same store on the same day (unique constraint was previously
@@ -1244,6 +1274,26 @@ export default function MLProdutos() {
                           <TableHead className="text-xs text-right w-28">Comissão ML</TableHead>
                           <TableHead className="text-xs text-right w-28">Mg. Bruta</TableHead>
                           <TableHead className="text-xs text-right w-28">Mg. Líq.</TableHead>
+                          <TableHead className="text-xs text-right w-28">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="cursor-help border-b border-dashed border-muted-foreground/40">Mg. Op.</span>
+                              </TooltipTrigger>
+                              <TooltipContent className="text-xs max-w-[220px]">
+                                Margem operacional real (pedidos do período, sem publicidade). Fonte: RPC get_margin_with_ads_by_product.
+                              </TooltipContent>
+                            </Tooltip>
+                          </TableHead>
+                          <TableHead className="text-xs text-right w-28">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="cursor-help border-b border-dashed border-muted-foreground/40">Mg. Pós-Ads</span>
+                              </TooltipTrigger>
+                              <TooltipContent className="text-xs max-w-[220px]">
+                                Margem após dedução do gasto de publicidade do produto no período.
+                              </TooltipContent>
+                            </Tooltip>
+                          </TableHead>
                         </>
                       ) : (
                         <>
@@ -1398,6 +1448,28 @@ export default function MLProdutos() {
                                       ? <span className={`text-xs font-bold tabular-nums ${mgLiqColor}`}>{marginLiq.toFixed(1)}%</span>
                                       : <span className="text-xs text-muted-foreground/40">—</span>}
                                   </TableCell>
+                                  {/* Mg. Op. e Mg. Pós-Ads — dados reais de pedidos do período via RPC */}
+                                  {(() => {
+                                    const mads = marginByItem.get(item.id);
+                                    const mgOp    = mads?.lucro_pct;
+                                    const mgPosAds = mads?.lucro_pct_pos_ads;
+                                    const colorFor = (v: number | null | undefined) =>
+                                      v == null ? "" : v >= 0 ? "text-kpi-positive" : "text-kpi-negative";
+                                    return (
+                                      <>
+                                        <TableCell className="text-right">
+                                          {mgOp != null
+                                            ? <span className={`text-xs font-bold tabular-nums ${colorFor(mgOp)}`}>{mgOp.toFixed(1)}%</span>
+                                            : <span className="text-xs text-muted-foreground/40">—</span>}
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                          {mgPosAds != null
+                                            ? <span className={`text-xs font-bold tabular-nums ${colorFor(mgPosAds)}`}>{mgPosAds.toFixed(1)}%</span>
+                                            : <span className="text-xs text-muted-foreground/40">—</span>}
+                                        </TableCell>
+                                      </>
+                                    );
+                                  })()}
                                 </>
                               );
                             })() : (() => {
@@ -1460,7 +1532,7 @@ export default function MLProdutos() {
                           {/* Expanded variations sub-table */}
                           {item.has_variations && isExpanded && (
                             <TableRow key={`${item.id}-variations`}>
-                              <TableCell colSpan={columnView === "financeiro" ? 11 : 9} className="p-0 bg-muted/20 border-b">
+                              <TableCell colSpan={columnView === "financeiro" ? 13 : 9} className="p-0 bg-muted/20 border-b">
                                 <div className="px-10 py-3">
                                   <Table>
                                     <TableHeader>
