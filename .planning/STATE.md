@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 48 context gathered
-last_updated: "2026-06-14T19:28:26.606Z"
-last_activity: 2026-06-14 -- Phase 45 marked complete
+stopped_at: "48-01 checkpoint:human-action — aguardando apply das 2 migrations em ckcdevcxgvueywivefgx"
+last_updated: "2026-06-14T20:00:00Z"
+last_activity: 2026-06-14 -- Phase 48-01 tasks 1+2 commitadas; checkpoint apply migrations pendente
 progress:
   total_phases: 8
   completed_phases: 4
-  total_plans: 18
+  total_plans: 21
   completed_plans: 15
   percent: 50
 ---
@@ -22,14 +22,14 @@ See: .planning/PROJECT.md
 
 **Milestone:** v7.0 — SaaS Operacional End-to-End
 **Core value:** Sistema 100% operacional e vendável como assinatura — dados verdadeiros em todas as páginas (zero mock), multi-tenant endurecido, monetização via Stripe ativa, onboarding guiado para lojista leigo, e Consultor v1 (motor de regras + score de saúde) como diferencial de venda.
-**Current focus:** Phase 45 — consultor-v1
+**Current focus:** Phase 48 — mco-com-ads
 
 ## Current Position
 
-Phase: 45 — COMPLETE
+Phase: 48 (mco-com-ads) — EXECUTING
 Plan: 1 of 3
-Status: Ready to execute
-Last activity: 2026-06-14 -- Phase 45 marked complete
+Status: Executing Phase 48
+Last activity: 2026-06-14 -- Phase 48 execution started
 
 ### Quick Tasks Completed
 
