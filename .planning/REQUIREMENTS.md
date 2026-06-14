@@ -60,6 +60,16 @@ Regras iniciais candidatas: margem < alvo por produto; ROAS/ACoS fora da meta; T
 - [ ] **UX-03**: Tabelas de /anuncios, /pedidos e /financeiro sem overflow quebrado em mobile
 - [ ] **UX-04**: Consistência visual revisada (tokens kpi.positive/negative, espaçamentos, dark mode) nas páginas principais
 
+### Bloco MCO com Ads (Phase 48)
+
+- [ ] **MCO-01**: Fonte por produto de ads_spend/attributed_revenue por janela (RPC junta margem + ads por item_id sem truncamento PostgREST). Atribuição direta via `ml_ads_products_cache`
+- [ ] **MCO-02**: Margem por produto exibe margem operacional (sem ads) E margem pós-ads lado a lado
+- [ ] **MCO-03**: MCO agregado da operação (Σ margem de contribuição − ads total) visível
+- [ ] **MCO-04**: Alerta separado por produto "ads comendo a margem" (TACoS/ACoS acima do limiar), independente do alerta de prejuízo operacional
+- [ ] **MCO-05**: (a confirmar no plano) ads_no_sale por produto — gasto de ads com zero venda no item
+
+Decisão travada (Wesley 2026-06-14): modelo de 2 números (operacional + pós-ads), não 1 número combinado. "Prejuízo" fica na operacional.
+
 ### Bloco QA — Go-live
 
 - [ ] **QA-01**: Tenant novo via convite chega a dashboard com dados reais sem nenhum passo manual de super-admin além de criar org+convite
@@ -120,6 +130,11 @@ Regras iniciais candidatas: margem < alvo por produto; ROAS/ACoS fora da meta; T
 | QA-01 | Phase 47 | Pending |
 | QA-02 | Phase 47 | Pending |
 | QA-03 | Phase 47 | Pending |
+| MCO-01 | Phase 48 | Pending |
+| MCO-02 | Phase 48 | Pending |
+| MCO-03 | Phase 48 | Pending |
+| MCO-04 | Phase 48 | Pending |
+| MCO-05 | Phase 48 | Pending |
 
 ---
 *Criado: 2026-06-12 — milestone v7.0*

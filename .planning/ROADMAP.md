@@ -15,6 +15,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 - [x] **Phase 45: Consultor v1** — Engine de ~12 regras, card "O que fazer agora", painel de insights e score de saude 0-100 (completed 2026-06-14)
 - [ ] **Phase 46: UX para Leigos** — Glossario/tooltips em todo KPI, empty states acionaveis, mobile polish, consistencia visual
 - [ ] **Phase 47: QA End-to-End + Go-Live** — Simulacao tenant novo, auditoria de seguranca, tsc + build + smoke de deploy Vercel
+- [ ] **Phase 48: MCO com Ads** — Margem por produto considerando publicidade: margem operacional + margem pos-ads lado a lado, alerta separado "ads comendo a margem" (TACoS/ACoS por produto), MCO agregado da operacao. Atribuicao direta via ml_ads_products_cache (reconcilia 100% com total da conta)
 
 ---
 
@@ -212,6 +213,25 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 
 ---
 
+### Phase 48: MCO com Ads
+
+**Goal**: A margem por produto e o MCO da operacao consideram o gasto real de publicidade por anuncio, separando "unit economics ruim" de "ads comendo a margem"
+**Depends on**: Phase 41 (custos/margem reais), Phase 45 (Consultor — alertas)
+**Decisao travada (Wesley 2026-06-14)**: modelo de 2 numeros — margem operacional (sem ads) E margem pos-ads lado a lado; "prejuizo" permanece na operacional; novo alerta SEPARADO "ads comendo a margem" por produto (TACoS/ACoS alto). Atribuicao direta por item via `ml_ads_products_cache` (reconcilia 100% com `ml_ads_daily_cache` — sem rateio).
+**Success Criteria** (what must be TRUE):
+
+  1. Existe fonte por produto de ads_spend/attributed_revenue (RPC junta margem + ads por item_id, mesma janela), sem truncamento PostgREST
+  2. Margem por produto exibe margem operacional E margem pos-ads (ex: em /anuncios coluna financeira e/ou painel do Consultor)
+  3. MCO agregado da operacao = Σ margem de contribuicao − ads total, visivel (card Custos/DRE)
+  4. Alerta separado por produto "ads comendo a margem" (TACoS/ACoS acima do limiar) — NAO mistura com o alerta de prejuizo operacional
+  5. (a decidir no planejamento) ads_no_sale quebrado por produto (gasto com zero venda no item)
+
+**Open (resolver no discuss/plan)**: onde exibir exatamente (Consultor vs card Custos vs coluna /anuncios — possivelmente os tres); limiares do novo alerta; se mexe ou nao no Consultor v1; tratamento de produto com ads e zero venda.
+
+**Plans**: TBD
+
+---
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -223,3 +243,4 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 | 45. Consultor v1 | 3/3 | Complete   | 2026-06-14 |
 | 46. UX para Leigos | 0/? | Not started | - |
 | 47. QA End-to-End + Go-Live | 0/? | Not started | - |
+| 48. MCO com Ads | 0/? | Not started | - |
