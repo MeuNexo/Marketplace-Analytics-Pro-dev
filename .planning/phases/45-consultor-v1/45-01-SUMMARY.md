@@ -23,23 +23,22 @@ decisions:
 metrics:
   duration: "~4 min"
   completed: "2026-06-14"
-  tasks_completed: 3
+  tasks_completed: 4
   tasks_total: 4
-  files_created: 2
+  files_created: 3
   files_modified: 1
+status: complete
 ---
 
 # Phase 45 Plan 01: Consultor Tables + Engine RPCs Summary
 
-**One-liner:** Fundação de dados do Consultor v1 — 3 tabelas (insights, config, snapshots) com RLS org-first + 4 RPCs SECURITY DEFINER para o engine. Aguardando apply das migrations via MCP.
+**One-liner:** Fundação de dados do Consultor v1 — 3 tabelas (insights, config, snapshots) com RLS org-first + 4 RPCs SECURITY DEFINER para o engine. Aplicado e validado em produção.
 
 ---
 
-## Status: PARADO EM CHECKPOINT (Task 4 [BLOCKING])
+## Status: COMPLETE (4/4 tasks)
 
-Tasks 1-3 executadas e commitadas. Task 4 requer aplicação das migrations no banco `ckcdevcxgvueywivefgx` via MCP `apply_migration` — o executor não tem acesso ao Supabase MCP.
-
-**As migrations NÃO foram aplicadas ao banco.** O orquestrador deve aplicá-las via MCP.
+Tasks 1-3 (executor) + Task 4 [BLOCKING] (orquestrador via MCP) concluídas. Migrations aplicadas e validadas em `ckcdevcxgvueywivefgx`.
 
 ---
 
@@ -95,17 +94,20 @@ A coluna helper `ml_user_id_key text NOT NULL DEFAULT ''` foi escolhida sobre í
 
 ---
 
-## Task 4: BLOQUEADA — Aguarda Apply via MCP
+## Task 4: COMPLETA — Apply + auditoria (orquestrador via MCP)
 
-**O que deve ser aplicado:**
-1. `supabase/migrations/20260645000000_consultor_tables.sql` via `mcp__supabase__apply_migration` no projeto `ckcdevcxgvueywivefgx`
-2. `supabase/migrations/20260645010000_consultor_engine_rpcs.sql` via `mcp__supabase__apply_migration` no mesmo projeto
+**Aprovação Wesley:** "Sim, aplicar agora" (2026-06-14).
 
-**Validações pós-apply:**
-- `SELECT to_regclass('public.insights'), to_regclass('public.consultor_config'), to_regclass('public.consultor_health_snapshots');` → 3 não-nulos
-- `SELECT COUNT(*) FROM pg_proc WHERE proname LIKE 'get_consultor_%';` → ≥ 4
-- `SELECT indexname FROM pg_indexes WHERE tablename='insights';` → contém `insights_dedup_idx`
-- Verificar nomes de coluna reais de `orders`/`ml_inventory_cache`/`ml_product_daily_cache` contra as RPCs; se houver divergência, corrigir o .sql e reaplicar
+1. **Schema audit pré-apply** (execute_sql): todas as colunas das 4 RPCs conferidas contra o schema real. `is_org_member(_user_id,_org_id)→bool` e `get_org_role(_user_id,_org_id)→org_role` com ordem posicional correta; enum `org_role`=owner,admin,member,viewer. Zero divergências → apply autorizado.
+2. **Apply** das 2 migrations via `apply_migration`. Validado:
+   - 3 tabelas (`insights`, `consultor_config`, `consultor_health_snapshots`)
+   - 4 RPCs `get_consultor_*`
+   - índices: `insights_dedup_idx`, `insights_org_status_idx`, `snapshots_org_month_idx`
+   - RLS=true nas 3 tabelas; 5 policies
+3. **Smoke real** (org Pé Vermeio 7f615df7…): margin=98 produtos (**6 em prejuízo**), coverage=83 (**6 críticos ≤7d**), paused_with_sales=**50**, no_cost_count=**38** → CONSUL-05 (≥5 insights) folgado.
+4. **get_advisors (security) — BUG ENCONTRADO E CORRIGIDO:** as 4 RPCs SECURITY DEFINER estavam executáveis por `anon`/`authenticated` (default EXECUTE→PUBLIC do Postgres não revogado). Como recebem `p_org_id` arbitrário sem checar `is_org_member`, era **vazamento cross-org**. Fix: migration `20260645011000_consultor_rpcs_revoke_public_execute.sql` (REVOKE FROM PUBLIC, anon, authenticated) aplicada → ACL final `postgres | service_role`. Arquivo `20260645010000` também patchado (REVOKE antes do GRANT) p/ deploys futuros.
+
+**Desvio:** +1 migration não-planejada (`20260645011000`) — fix de segurança motivado pelo advisor, dentro do escopo "RPCs apenas service_role" do plano. Tightening puro, não afeta o engine (service_role).
 
 ---
 

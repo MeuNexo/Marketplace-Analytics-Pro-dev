@@ -104,6 +104,11 @@ AS $$
   HAVING SUM(o.receita_bruta) > 0
 $$;
 
+-- Postgres concede EXECUTE a PUBLIC por padrão; revoga antes do GRANT
+-- para que apenas service_role (engine) possa invocar (sem checagem de
+-- is_org_member, p_org_id é arbitrário → fechar vazamento cross-org).
+REVOKE EXECUTE ON FUNCTION public.get_consultor_margin_by_product(uuid, text[], date, date)
+  FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_consultor_margin_by_product(uuid, text[], date, date)
   TO service_role;
 
@@ -177,6 +182,8 @@ AS $$
   LEFT JOIN sales s USING (item_id)
 $$;
 
+REVOKE EXECUTE ON FUNCTION public.get_consultor_coverage(uuid, date)
+  FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_consultor_coverage(uuid, date)
   TO service_role;
 
@@ -230,6 +237,8 @@ AS $$
   HAVING SUM(s.qty_sold) > 0
 $$;
 
+REVOKE EXECUTE ON FUNCTION public.get_consultor_paused_with_sales(uuid, date)
+  FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_consultor_paused_with_sales(uuid, date)
   TO service_role;
 
@@ -272,5 +281,7 @@ AS $$
     AND c.item_id IS NULL
 $$;
 
+REVOKE EXECUTE ON FUNCTION public.get_consultor_no_cost_count(uuid)
+  FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_consultor_no_cost_count(uuid)
   TO service_role;
