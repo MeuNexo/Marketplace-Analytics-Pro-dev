@@ -339,44 +339,71 @@ async function runConsultorForOrg(
   }
 
   // ────────────────────────────────────────────────────────────────────────────
-  // RULE 3: ads_no_sale — spend > 0 AND attributed_orders = 0 in last N days
-  // Uses ml_ads_daily_cache (org-level, Pitfall 5: no campaign date column)
+  // RULE 3: ads_no_sale — spend > 0 AND attributed_orders = 0 por PRODUTO (MCO-05)
+  // Upgrade: org-level (ml_ads_daily_cache) → item-level (ml_ads_products_cache)
+  // D-10: substituir, não complementar. rule_key permanece "ads_no_sale" para
+  // auto-resolver insights históricos org-level (ml_user_id_key="") via auto-resolver.
+  // O índice único (organization_id, rule_key, ml_user_id_key) diferencia:
+  //   - org-level antigo: ml_user_id_key=""  (será resolvido — não mais gerado)
+  //   - item-level novo:  ml_user_id_key=item_id (gerado por produto)
+  // Pitfall 6: ml_ads_products_cache pode ter ~6000 linhas/30 dias → paginação .range()
   // ────────────────────────────────────────────────────────────────────────────
 
   const adsNoSaleDays = cfg.ads_no_sale_days;
   const adsNoSaleFrom = new Date(now.getTime() - adsNoSaleDays * 86400000).toISOString().slice(0, 10);
 
-  const { data: adsNoSaleRows } = await sb
-    .from("ml_ads_daily_cache")
-    .select("spend, attributed_orders")
-    .eq("organization_id", orgId)
-    .gte("date", adsNoSaleFrom)
-    .lte("date", today);
+  // Paginar ml_ads_products_cache para evitar truncamento PostgREST (1000 linhas)
+  type AdsProductRow = { item_id: string; spend: number; attributed_orders: number; title: string | null };
+  const allAdsProductRows: AdsProductRow[] = [];
+  let apsOffset = 0;
+  const PAGE = 1000;
+  while (true) {
+    const { data: page } = await sb
+      .from("ml_ads_products_cache")
+      .select("item_id, spend, attributed_orders, title")
+      .eq("organization_id", orgId)
+      .gte("date", adsNoSaleFrom)
+      .lte("date", today)
+      .range(apsOffset, apsOffset + PAGE - 1);
+    const rows = (page ?? []) as AdsProductRow[];
+    allAdsProductRows.push(...rows);
+    if (rows.length < PAGE) break;
+    apsOffset += PAGE;
+  }
 
-  if (adsNoSaleRows && adsNoSaleRows.length > 0) {
-    const totalSpend = (adsNoSaleRows as Array<{ spend: number; attributed_orders: number }>)
-      .reduce((s, r) => s + (r.spend ?? 0), 0);
-    const totalOrders = (adsNoSaleRows as Array<{ spend: number; attributed_orders: number }>)
-      .reduce((s, r) => s + (r.attributed_orders ?? 0), 0);
+  if (allAdsProductRows.length > 0) {
+    // Agregar no cliente por item_id
+    const itemMap = new Map<string, { spend: number; attributed_orders: number; title: string }>();
+    for (const r of allAdsProductRows) {
+      const cur = itemMap.get(r.item_id) ?? { spend: 0, attributed_orders: 0, title: r.title ?? r.item_id };
+      cur.spend += r.spend ?? 0;
+      cur.attributed_orders += r.attributed_orders ?? 0;
+      if (!cur.title && (r.title ?? "")) cur.title = r.title ?? r.item_id;
+      itemMap.set(r.item_id, cur);
+    }
 
-    if (totalSpend > 0 && totalOrders === 0) {
-      const monthlyImpact = totalSpend * (30 / adsNoSaleDays);
+    // Filtrar itens com gasto > 0 e zero vendas atribuídas
+    const noSaleItems = [...itemMap.entries()].filter(([, v]) => v.spend > 0 && v.attributed_orders === 0);
+
+    if (noSaleItems.length > 0) {
       activeRuleKeys.push("ads_no_sale");
-      candidates.push({
-        organization_id: orgId,
-        ml_user_id: null,
-        ml_user_id_key: "",
-        rule_key: "ads_no_sale",
-        category: "Ads",
-        severity: "high",
-        title: `Publicidade com gasto e zero vendas (últimos ${adsNoSaleDays}d)`,
-        body: `Você gastou R$ ${fmt(totalSpend)} em publicidade nos últimos ${adsNoSaleDays} dias sem nenhuma venda atribuída (avaliado no nível da conta). Revise suas campanhas.`,
-        action_label: "Ver publicidade",
-        action_href: "/publicidade",
-        impact_brl: Math.round(monthlyImpact),
-        status: "active",
-        updated_at: nowIso,
-      });
+      for (const [itemId, agg] of noSaleItems) {
+        candidates.push({
+          organization_id: orgId,
+          ml_user_id: null,
+          ml_user_id_key: itemId,
+          rule_key: "ads_no_sale",
+          category: "Ads",
+          severity: "high",
+          title: "Publicidade sem venda no produto",
+          body: `O produto ${agg.title || itemId} gastou R$ ${fmt(agg.spend)} em publicidade nos últimos ${adsNoSaleDays} dias sem nenhuma venda atribuída. Revise as campanhas deste item.`,
+          action_label: "Ver anúncio",
+          action_href: "/anuncios?items=" + itemId,
+          impact_brl: Math.round(agg.spend),
+          status: "active",
+          updated_at: nowIso,
+        });
+      }
     }
   }
 
@@ -874,7 +901,13 @@ async function runConsultorForOrg(
       const tacosVal = (totalSpendAds / totalRevAds) * 100;
       const tacosOver15 = Math.max(0, tacosVal - cfg.tacos_alert_pct);
       const hasCampanhaSemVenda = activeRuleKeys.includes("ads_no_sale");
-      notaAds = clamp(Math.round(100 - tacosOver15 * 5 - (hasCampanhaSemVenda ? 20 : 0)));
+      const hasErosaoAds = activeRuleKeys.includes("ads_eating_margin");
+      notaAds = clamp(Math.round(
+        100
+        - tacosOver15 * 5
+        - (hasCampanhaSemVenda ? 20 : 0)
+        - (hasErosaoAds ? 15 : 0)
+      ));
     }
   }
 
