@@ -47,7 +47,16 @@ function json(body: unknown, status = 200) {
 
 async function authenticate(req: Request): Promise<{ error: Response } | { userId: string | null }> {
   const svcKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  if (!svcKey) return { userId: null }; // dev local — skip guard
+  // Fail CLOSED: se a service role key não estiver no ambiente, NÃO tratar o
+  // chamador como cron (isso seria auth bypass / fail-open — classe do CR-01
+  // da Phase 43). Sem a chave o servidor está mal configurado → 500, nunca
+  // libera modo all_orgs.
+  if (!svcKey) {
+    return { error: new Response(JSON.stringify({ error: "Server misconfigured" }), {
+      status: 500,
+      headers: { ...CORS, "Content-Type": "application/json" },
+    }) };
+  }
 
   const auth = req.headers.get("authorization") ?? "";
 
