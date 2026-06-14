@@ -91,3 +91,9 @@ verify_jwt = false
 # reply EF is user-invoked with a user JWT (verify_jwt=true enforces Supabase auth)
 [functions.reply-ml-question]
 verify_jwt = true
+
+# Phase 45 (Consultor v1) — auth dual: service_role (cron Pattern B) + user JWT (on-demand).
+# verify_jwt=false because the cron sends sb_secret_ key (not a JWT).
+# Auth is enforced internally in authenticate(): service_role | valid user JWT | 401.
+[functions.consultor-insights]
+verify_jwt = false
