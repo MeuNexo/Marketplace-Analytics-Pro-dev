@@ -1280,7 +1280,7 @@ export default function MLProdutos() {
                                 <span className="cursor-help border-b border-dashed border-muted-foreground/40">Mg. Op.</span>
                               </TooltipTrigger>
                               <TooltipContent className="text-xs max-w-[220px]">
-                                Margem operacional real (pedidos do período, sem publicidade). Fonte: RPC get_margin_with_ads_by_product.
+                                Margem com base nas vendas reais do período selecionado
                               </TooltipContent>
                             </Tooltip>
                           </TableHead>
@@ -1290,7 +1290,7 @@ export default function MLProdutos() {
                                 <span className="cursor-help border-b border-dashed border-muted-foreground/40">Mg. Pós-Ads</span>
                               </TooltipTrigger>
                               <TooltipContent className="text-xs max-w-[220px]">
-                                Margem após dedução do gasto de publicidade do produto no período.
+                                Margem após descontar o gasto de publicidade atribuído (vendas reais do período)
                               </TooltipContent>
                             </Tooltip>
                           </TableHead>
@@ -1451,21 +1451,40 @@ export default function MLProdutos() {
                                   {/* Mg. Op. e Mg. Pós-Ads — dados reais de pedidos do período via RPC */}
                                   {(() => {
                                     const mads = marginByItem.get(item.id);
-                                    const mgOp    = mads?.lucro_pct;
+                                    const mgOp     = mads?.lucro_pct;
                                     const mgPosAds = mads?.lucro_pct_pos_ads;
                                     const colorFor = (v: number | null | undefined) =>
                                       v == null ? "" : v >= 0 ? "text-kpi-positive" : "text-kpi-negative";
+                                    const semVendas = mads === undefined;
                                     return (
                                       <>
                                         <TableCell className="text-right">
-                                          {mgOp != null
-                                            ? <span className={`text-xs font-bold tabular-nums ${colorFor(mgOp)}`}>{mgOp.toFixed(1)}%</span>
-                                            : <span className="text-xs text-muted-foreground/40">—</span>}
+                                          {semVendas || mgOp == null ? (
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <span className="text-xs text-muted-foreground/40 cursor-help">—</span>
+                                              </TooltipTrigger>
+                                              <TooltipContent className="text-xs max-w-[220px]">
+                                                Sem vendas no período selecionado
+                                              </TooltipContent>
+                                            </Tooltip>
+                                          ) : (
+                                            <span className={`text-xs font-bold tabular-nums ${colorFor(mgOp)}`}>{mgOp!.toFixed(1)}%</span>
+                                          )}
                                         </TableCell>
                                         <TableCell className="text-right">
-                                          {mgPosAds != null
-                                            ? <span className={`text-xs font-bold tabular-nums ${colorFor(mgPosAds)}`}>{mgPosAds.toFixed(1)}%</span>
-                                            : <span className="text-xs text-muted-foreground/40">—</span>}
+                                          {semVendas || mgPosAds == null ? (
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <span className="text-xs text-muted-foreground/40 cursor-help">—</span>
+                                              </TooltipTrigger>
+                                              <TooltipContent className="text-xs max-w-[220px]">
+                                                Sem vendas no período selecionado
+                                              </TooltipContent>
+                                            </Tooltip>
+                                          ) : (
+                                            <span className={`text-xs font-bold tabular-nums ${colorFor(mgPosAds)}`}>{mgPosAds!.toFixed(1)}%</span>
+                                          )}
                                         </TableCell>
                                       </>
                                     );
