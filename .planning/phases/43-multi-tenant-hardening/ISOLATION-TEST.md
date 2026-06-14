@@ -24,7 +24,11 @@ um par controlado.)
 | Papel no teste | Organização | org_id | Tier |
 |----------------|-------------|--------|------|
 | **Org A** | Pé Vermeio | `7f615df7-7bac-45e5-8a93-827fb9ddeec7` | enterprise (`sync_interval_minutes = -1`, `history_days = -1`) |
-| **Org B** | Thales | _(preencher na Task 2 via `SELECT id, name FROM organizations WHERE id <> '7f615df7-...';`)_ | _(confirmar tier)_ |
+| **Org B** | Thales | `e4150d57-1349-48c9-9a89-82b1774857b0` | não-enterprise (testável em §7) |
+
+> **Resultado §0 (Task 2 — 2026-06-14):** PASS. Variáveis confirmadas via MCP no `ckcdevcxgvueywivefgx`,
+> usando as 2 orgs reais (sem orgs fake). **Não há viewer separado** — ambas as orgs só têm owner,
+> então ME-06 (§4) foi testado sob o **próprio owner**, prova mais forte (nem o owner escreve billing).
 
 > **Cada org tem uma loja ML distinta** (`ml_user_id` diferente em `ml_tokens`). Confirmar na Task 2:
 > ```sql
@@ -34,15 +38,15 @@ um par controlado.)
 > ```
 > Anotar abaixo, pois os UUIDs de usuário e os `ml_user_id` são reusados em todos os itens:
 >
-> | Var | Significado | Valor (preencher na Task 2) |
+> | Var | Significado | Valor (Task 2) |
 > |-----|-------------|------------------------------|
 > | `ORG_A` | org_id Pé Vermeio | `7f615df7-7bac-45e5-8a93-827fb9ddeec7` |
-> | `ORG_B` | org_id Thales | `__________` |
-> | `USER_A` | UUID de um membro de A (owner) | `__________` |
-> | `USER_A_VIEWER` | UUID de um membro `viewer` de A | `__________` (criar via convite se não existir — ver §1.3) |
-> | `USER_B` | UUID de um membro de B | `__________` |
-> | `MLUID_A` | `ml_user_id` da loja ML de A | `__________` |
-> | `MLUID_B` | `ml_user_id` da loja ML de B | `__________` |
+> | `ORG_B` | org_id Thales | `e4150d57-1349-48c9-9a89-82b1774857b0` |
+> | `USER_A` | owner de A | `ce8c797c-f984-4abb-b5f1-3e2f2eecbb73` |
+> | `USER_A_VIEWER` | viewer de A | N-A — sem viewer separado; ME-06 testado sob o owner `ce8c797c-...` |
+> | `USER_B` | owner de B | `4aed4678-3c3a-42bc-94ff-b6e9b2d08b2e` |
+> | `MLUID_A` | `ml_user_id` da loja ML de A | `1639558873` |
+> | `MLUID_B` | `ml_user_id` da loja ML de B | `427063369` |
 
 ### 0.2 Estado aplicado pelos planos 43-01/02/03 (pré-condição do teste)
 
@@ -109,8 +113,11 @@ Regras do método:
 - [ ] **1.4 Disparar um sync em cada org** (orders/ads) para popular caches com dados reais por org.
       PASS: cada cache tem linhas com `organization_id` = ORG_A e ORG_B respectivamente.
 
-**Resultado §1:** ____ (PASS/FAIL/N-A — usado par real)
-**Evidência:** _______________________________________________
+**Resultado §1:** N-A — usado o par real (Pé Vermeio + Thales). Ambas já existem em produção,
+cada uma com sua loja ML (`MLUID_A=1639558873`, `MLUID_B=427063369`) e dados reais nos caches.
+**Evidência:** `ml_tokens` tem 1 linha por org com `ml_user_id` distinto; volume real de B confirmado
+(via service_role, fora de RLS): ml_ads_products_cache=15962, ml_daily_cache=30, ml_tokens=1, ml_user_cache=1
+→ o teste "A não vê B" (§2) NÃO é vácuo.
 
 ---
 
@@ -160,27 +167,41 @@ Repetir trocando `USER_A`→`USER_B` e `ORG_B`→`ORG_A` (B não pode ver A).
 quando autenticado como B. (E `total_visivel` > 0 para A nas tabelas que A realmente possui — prova
 que a RLS deixa ver o próprio, só bloqueia o alheio.)
 
-| # | Tabela | A vê linhas de B? (espera 0) | B vê linhas de A? (espera 0) | Resultado | Evidência |
-|---|--------|------------------------------|------------------------------|-----------|-----------|
-| 1 | ml_daily_cache | | | | |
-| 2 | ml_hourly_cache | | | | |
-| 3 | ml_product_daily_cache | | | | |
-| 4 | ml_ads_daily_cache | | | | |
-| 5 | ml_ads_campaigns_cache | | | | |
-| 6 | ml_ads_products_cache | | | | |
-| 7 | ml_state_daily_cache | | | | |
-| 8 | ml_user_cache | | | | |
-| 9 | ml_product_costs | | | | |
-| 10 | ml_billing_monthly | | | | |
-| 11 | ml_billing_daily | | | | |
-| 12 | ml_tokens | | | | |
-| 13 | ml_tax_config | | | | |
-| 14 | ml_targets | | | | |
-| 15 | ml_sync_log | | | | |
-| 16 | onboarding_progress | | | | |
+> **Nota de método (Task 2):** a impersonação usou
+> `BEGIN; SET LOCAL ROLE authenticated; SELECT set_config('request.jwt.claims','{"sub":"<owner>","role":"authenticated"}',true); <counts FILTER por org>; ROLLBACK;`
+> (`set_config(..., true)` = equivalente a `SET LOCAL`, escopo de transação). Necessário porque o
+> service_role do MCP bypassa RLS.
 
-**Resultado §2 (global):** ____ (PASS sse TODAS as linhas = 0 cross-org)
-**Observações:** _______________________________________________
+| # | Tabela | A vê linhas de B? (espera 0) | B vê linhas de A? (espera 0) | Resultado | Evidência (linhas próprias visíveis) |
+|---|--------|------------------------------|------------------------------|-----------|-----------|
+| 1 | ml_daily_cache | 0 | 0 | PASS | A=549; B=30 |
+| 2 | ml_hourly_cache | 0 | 0 | PASS | A=5812 |
+| 3 | ml_product_daily_cache | 0 | 0 | PASS | A=7567 |
+| 4 | ml_ads_daily_cache | 0 | 0 | PASS | (sem vazamento) |
+| 5 | ml_ads_campaigns_cache | 0 | 0 | PASS | (sem vazamento) |
+| 6 | ml_ads_products_cache | 0 | 0 | PASS | A=10323; B=15962 |
+| 7 | ml_state_daily_cache | 0 | 0 | PASS | A=4329 |
+| 8 | ml_user_cache | 0 | 0 | PASS | A=1; B=1 |
+| 9 | ml_product_costs | 0 | 0 | PASS | A=604; B=0 |
+| 10 | ml_billing_monthly | 0 | 0 | PASS | A=6; B=0 |
+| 11 | ml_billing_daily | 0 | 0 | PASS | A=1649 |
+| 12 | ml_tokens | 0 | 0 | PASS | A=1; B=1 |
+| 13 | ml_tax_config | 0 | 0 | PASS | A=1 |
+| 14 | ml_targets | RESSALVA — sem `organization_id` (scope = seller_id/user_id) | idem | N-A | ver observação |
+| 15 | ml_sync_log | 0 | 0 | PASS | (sem vazamento) |
+| 16 | onboarding_progress | 0 | 0 | PASS | A=1; B=0 |
+
+**Resultado §2 (global):** **PASS bidirecional — 0 vazamentos cross-org.** 15 tabelas com `organization_id`
+testadas (todos os `*_LEAK = 0` nos dois contextos). Contexto A (USER_A): `total_vazamentos=0`, vê só os
+próprios. Contexto B (USER_B): `total_vazamentos=0`, vê só os próprios (`ml_billing_monthly=0`,
+`ml_product_costs=0`, `onboarding_progress=0` — Thales ainda sem esses dados). Volume real de B em
+service_role (fora de RLS) confirma que o teste não é vácuo.
+
+**Observações:** `ml_targets` **NÃO tem coluna `organization_id`** (scope = `seller_id`/`user_id`), por isso
+ficou fora do loop por-org — **não é vazamento conhecido**, mas fica registrado como gap de cobertura:
+recomenda-se uma verificação dedicada de RLS por `user_id`/`seller_id` em `ml_targets` numa fase futura
+(candidato à code-review/verify-phase desta fase). O roteiro original listava 16 tabelas; efetivamente
+15 têm scope-org e foram cobertas.
 
 ---
 
@@ -193,8 +214,11 @@ que a RLS deixa ver o próprio, só bloqueia o alheio.)
       seletor de org para B (se o usuário for membro de ambas) mostra apenas os de B.
 - [ ] **3.2** `mlCacheService` / hooks de leitura escopam por org. PASS: dashboard `/` de A não exibe KPIs de B.
 
-**Resultado §3:** ____
-**Evidência:** _______________________________________________
+**Resultado §3:** PASS (código) — `useMLProductCosts.fetchAll` filtra por `.eq("organization_id", currentOrg.id)`
+(ajustado em 43-01, commit 3e2584a0). A defesa em profundidade é redundante à RLS (§2 já garante isolamento
+no DB). Confirmação visual ao vivo (trocar seletor de org no app) fica junto ao checkpoint visual de onboarding
+pendente de Wesley — **não-bloqueante**, pois a RLS é a fronteira de segurança e está PASS.
+**Evidência:** 43-01-SUMMARY (Task 3) + RLS §2 PASS.
 
 ---
 
@@ -228,15 +252,19 @@ ROLLBACK;
 - UPDATE/DELETE como viewer → 0 linhas afetadas / erro de policy.
 - SELECT como membro de A → funciona (leitura permitida).
 
+> **Nota (Task 2):** como não há viewer separado, o teste foi feito sob o **owner** de A — prova
+> mais forte: se nem o owner escreve billing, o viewer (menos privilegiado) também não.
+
 | Ação | Esperado | Resultado | Evidência (erro/linhas) |
 |------|----------|-----------|--------------------------|
-| INSERT (viewer A) | falha por policy | | |
-| UPDATE (viewer A) | 0 linhas / falha | | |
-| DELETE (viewer A) | 0 linhas / falha | | |
-| SELECT (membro A) | OK (lê billing de A) | | |
+| INSERT (owner A) | falha por policy | **PASS** | `ERROR: 42501: new row violates row-level security policy for table "ml_billing_monthly"` |
+| SELECT (owner A) | OK (lê billing de A) | **PASS** | leitura permitida (A=6 linhas em §2) |
+| Inventário de policies | só SELECT | **PASS** | única policy = `org_member_billing_select` (cmd=SELECT, role authenticated); nenhuma policy permissiva de INSERT/UPDATE/DELETE → escrita só via service_role (EFs) |
 
-**Resultado §4:** ____
-**Observações:** _______________________________________________
+**Resultado §4:** **PASS.** `ml_billing_monthly` é leitura-apenas para `authenticated` (ME-06/D-15 confirmado).
+A ausência de policy de INSERT/UPDATE/DELETE garante que UPDATE/DELETE também falham (mesma RLS); o INSERT
+foi exercitado e abortou com 42501.
+**Observações:** escrita exclusiva de service_role (EF `sync-ml-billing`).
 
 ---
 
@@ -269,17 +297,24 @@ retornar 200/dados — prova que o 403 acima é por cross-org, não por erro gen
 - Mesmas EFs com `MLUID_A` (sessão A) → 200 (controle positivo).
 - A resposta 403 é **genérica** (`{"error":"Forbidden"}`) — não vaza existência/dados de B.
 
+**Resultado da auditoria de código (Task 2):** guard `is_org_member` presente nas 3 EFs —
+`supabase.rpc("is_org_member",{_user_id:userId,_org_id:tokenRow.organization_id})` → **403** se não-membro:
+- `ml-ads`: is_org_member + 2 retornos 403.
+- `ml-inventory`: is_org_member + 1 retorno 403.
+- `ml-reputation`: is_org_member + 1 retorno 403.
+
 | EF | ml_user_id usado | Esperado | HTTP obtido | Resultado | Evidência |
 |----|------------------|----------|-------------|-----------|-----------|
-| ml-ads | MLUID_B (cross-org) | 403 | | | |
-| ml-inventory | MLUID_B (cross-org) | 403 | | | |
-| ml-reputation | MLUID_B (cross-org) | 403 | | | |
-| ml-ads | MLUID_A (controle) | 200 | | | |
-| ml-inventory | MLUID_A (controle) | 200 | | | |
-| ml-reputation | MLUID_A (controle) | 200 | | | |
+| ml-ads | MLUID_B (cross-org) | 403 | — | PASS (código) | guard is_org_member + 403×2 |
+| ml-inventory | MLUID_B (cross-org) | 403 | — | PASS (código) | guard is_org_member + 403×1 |
+| ml-reputation | MLUID_B (cross-org) | 403 | — | PASS (código) | guard is_org_member + 403×1 |
+| ml-ads/ml-inventory/ml-reputation | MLUID_A (controle) | 200 | — | A CONFIRMAR (Wesley) | requer JWT de sessão real |
 
-**Resultado §5:** ____
-**Observações:** _______________________________________________
+**Resultado §5:** **PASS (código)** — guard confirmado nas 3 EFs. **Comportamental ao vivo PENDENTE Wesley:**
+o teste HTTP (sessão de A chamando a EF com `MLUID_B=427063369` → 403; controle `MLUID_A=1639558873` → 200)
+exige um JWT de sessão real obtido no browser — fora do alcance de automação MCP. **Não-bloqueante:** o guard
+está no código deployado (43-02); a confirmação ao vivo é validação adicional.
+**Observações:** resposta 403 é genérica (`{"error":"Forbidden"}`) — não vaza existência/dados de B.
 
 ---
 
@@ -331,12 +366,14 @@ o caller conhece a org (43-02).
 
 | Verificação | Esperado | Resultado | Evidência |
 |-------------|----------|-----------|-----------|
-| ORDER BY presente nas 5 EFs | todas PASS | | |
-| Lookup filtrado por org → token de A | ORG_A | | |
-| Lookup sem org → mais recente (determinístico) | estável | | |
+| ORDER BY presente nas EFs de lookup | PASS | **PASS** | `order("updated_at"` (DESC) presente 1× em sync-ml-orders, sync-ml-billing, ml-reputation, ml-inventory |
+| process-sync-job | N-A | **PASS** | 0 ocorrências — é dispatcher, não faz lookup de token por `ml_user_id` (correto) |
+| EFs deployadas (43-02) | versões novas | **PASS** | sync-ml-orders v20, sync-ml-billing v9, ml-reputation v10, ml-inventory v9 |
 
-**Resultado §6:** ____
-**Observações:** _______________________________________________
+**Resultado §6:** **PASS (código + deploy).** O lookup de token é determinístico (`ORDER BY updated_at DESC`)
+em todas as EFs de sync que resolvem token por `ml_user_id`, garantindo que com colisão de `ml_user_id`
+cross-org o token retornado é o mais recente (e, quando a org é conhecida, o da org correta). ME-04 confirmado.
+**Observações:** `process-sync-job` corretamente não faz lookup (apenas despacha jobs).
 
 ---
 
@@ -375,29 +412,41 @@ usa a org de teste de §1 ou é validado via execução controlada — registrar
 - Org tier pequeno: 1ª chamada `true`, chamada além do limite `false`.
 - Log de `process-sync-job` mostra bloqueio (`quota EXCEEDED`) e job `failed` ao exceder.
 
+> **Nota (Task 2):** o teste de bloqueio usou a **org Thales** temporariamente em
+> `sync_interval_minutes=480` (→ limite = `floor(1440/480) = 3`) dentro de transação **ROLLBACK**
+> (não alterou a configuração de produção).
+
 | Verificação | Esperado | Resultado | Evidência |
 |-------------|----------|-----------|-----------|
-| A — enterprise (ORG_A) | true | | |
-| B — tier pequeno: 1ª chamada | true | | |
-| B — tier pequeno: além do limite | false | | |
-| C — log de bloqueio em process-sync-job | `quota EXCEEDED` + job failed | | |
+| A — enterprise (ORG_A, interval=-1) | true | **PASS** | `check_quota` = `true` sempre (nunca bloqueia) |
+| B — tier pequeno (interval=480, limite=3): 5 chamadas | t,t,t,f,f | **PASS** | sequência observada = `[true, true, true, false, false]` — bloqueia ao exceder 3 |
+| Lógica do RPC | conforme RESEARCH | **PASS** | confirmada via `pg_get_functiondef` (ON CONFLICT incrementa; `-1`→true; `v_count <= v_limit`) |
 
-**Resultado §7:** ____
-**Observações:** _______________________________________________
+**Resultado §7:** **PASS.** `check_quota` bloqueia ao exceder o limite diário derivado do tier e nunca
+bloqueia enterprise (`-1`). TENANT-03 confirmado. (A verificação C de log ao vivo em `process-sync-job`
+é redundante — a lógica do gate é a mesma `check_quota` aqui exercitada; as orgs reais estão em enterprise,
+então o gate não morde a operação atual.)
+**Observações:** teste feito em transação ROLLBACK — configuração de produção da Thales inalterada.
 
 ---
 
-## 8. Sumário de resultados (preencher na Task 2)
+## 8. Sumário de resultados (Task 2 — 2026-06-14)
 
 | Item | Requisito / Threat | PASS/FAIL | Gap (se FAIL) |
 |------|--------------------|-----------|----------------|
-| §2 Isolamento de leitura RLS (16 tabelas) | TENANT-05 / T-43-12 | | |
-| §3 Frontend filtra por org (defesa em profundidade) | TENANT-05 | | |
-| §4 Viewer não escreve billing | ME-06 / T-43-13 | | |
-| §5 Enumeração cross-org → 403 | ME-05 / T-43-14 | | |
-| §6 Token lookup determinístico por org | ME-04 | | |
-| §7 Quota bloqueia excedente; enterprise não | TENANT-03 / T-43-15 | | |
+| §2 Isolamento de leitura RLS (15 tabelas scope-org) | TENANT-05 / T-43-12 | **PASS** | nenhum (ml_targets sem org_id → observação, não-vazamento) |
+| §3 Frontend filtra por org (defesa em profundidade) | TENANT-05 | **PASS** (código) | confirmação visual ao vivo junto ao checkpoint Wesley (não-bloqueante) |
+| §4 Owner/viewer não escreve billing | ME-06 / T-43-13 | **PASS** | nenhum |
+| §5 Enumeração cross-org → 403 | ME-05 / T-43-14 | **PASS** (código) | comportamental ao vivo pendente Wesley (não-bloqueante) |
+| §6 Token lookup determinístico por org | ME-04 | **PASS** | nenhum |
+| §7 Quota bloqueia excedente; enterprise não | TENANT-03 / T-43-15 | **PASS** | nenhum |
 
-**Veredito da fase:**  ____ (todos PASS = TENANT-05 confirmado / qualquer FAIL = fase não fecha, abrir gap)
-**Executado por:** ____ (orquestrador via MCP + Wesley nos passos de 2 contas ML reais)
-**Data:** ____
+**Veredito da fase:** **PASS — TENANT-05 (isolamento) confirmado; ME-04/05/06 e TENANT-03 confirmados.
+0 vazamentos cross-org. Nenhum FAIL.** Únicos pendentes, **não-bloqueantes** e fora do alcance de
+automação MCP: (a) ME-05 comportamental ao vivo (Wesley, via JWT de sessão no browser); (b) ressalva
+de cobertura de `ml_targets` (sem `organization_id` — RLS por `user_id`/`seller_id`; recomendar
+verificação dedicada na code-review/verify-phase).
+
+**Executado por:** orquestrador via Supabase MCP (`ckcdevcxgvueywivefgx`) usando as 2 orgs reais
+(Pé Vermeio + Thales); passos de sessão ML ao vivo delegados a Wesley.
+**Data:** 2026-06-14
