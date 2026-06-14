@@ -11,7 +11,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 - [x] **Phase 41: Veracidade Total** — KPIs de /vendas, /financeiro e /anuncios com fontes reais e consistentes (CMV, billing, comissao real) (completed 2026-06-12)
 - [x] **Phase 42: Zero Mock** — /perguntas, /devolucoes, /reputacao e /tv lendo dados reais da API ML (completed 2026-06-13)
 - [x] **Phase 43: Multi-Tenant Hardening** — RLS org-first, backfill de orfaos, quota enforcement, wizard de onboarding guiado (isolamento 2-org PASS; pendente code-review/verify-phase + checkpoint visual)
-- [ ] **Phase 44: Monetizacao Stripe** — Checkout + webhooks + /planos + enforcement de tier aplicado de verdade
+- [~] **Phase 44: Monetizacao Stripe** — ADIADA (decisão Wesley 2026-06-14): versão de teste do dashboard não precisa de pagamento; integração Stripe (checkout/webhooks/secrets) fica para o desenvolvedor depois. Planos já existem (44-01/02/03-PLAN.md). Reativar antes da Phase 47 (go-live depende de PAY-*).
 - [ ] **Phase 45: Consultor v1** — Engine de ~12 regras, card "O que fazer agora", painel de insights e score de saude 0-100
 - [ ] **Phase 46: UX para Leigos** — Glossario/tooltips em todo KPI, empty states acionaveis, mobile polish, consistencia visual
 - [ ] **Phase 47: QA End-to-End + Go-Live** — Simulacao tenant novo, auditoria de seguranca, tsc + build + smoke de deploy Vercel
