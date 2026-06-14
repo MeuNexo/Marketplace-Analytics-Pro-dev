@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: milestone
 status: executing
-stopped_at: "48-01 checkpoint:human-action — aguardando apply das 2 migrations em ckcdevcxgvueywivefgx"
-last_updated: "2026-06-14T20:00:00Z"
-last_activity: 2026-06-14 -- Phase 48-01 tasks 1+2 commitadas; checkpoint apply migrations pendente
+stopped_at: Completed 48-01-PLAN.md (RPC margem+ads aplicada, IDOR fix, smoke PASS)
+last_updated: "2026-06-14T19:45:33.767Z"
+last_activity: 2026-06-14 -- Phase 48 execution started
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 21
-  completed_plans: 15
+  completed_plans: 16
   percent: 50
 ---
 
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md
 ## Current Position
 
 Phase: 48 (mco-com-ads) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 48
+Plan: 2 of 3
+Status: Ready to execute
 Last activity: 2026-06-14 -- Phase 48 execution started
 
 ### Quick Tasks Completed
@@ -78,6 +78,7 @@ Last activity: 2026-06-14 -- Phase 48 execution started
 | Phase 42-zero-mock P01 | 30min | 3 tasks | 4 files |
 | Phase 42-zero-mock P04 | 3min | 1 tasks | 1 files |
 | Phase 43-multi-tenant-hardening P01 | 205 | 3 tasks | 4 files |
+| Phase 48-mco-com-ads P01 | 45min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -108,6 +109,8 @@ Last activity: 2026-06-14 -- Phase 48 execution started
 - [Phase 43-04]: TENANT-05 confirmado — teste de isolamento 2-org (Pé Vermeio + Thales) via MCP: 0 vazamentos cross-org em 15 tabelas scope-org; ME-04/05/06 e quota PASS. Veredito PASS, sem FAIL
 - [Phase 43-04]: Método de verificação de RLS = impersonação `SET LOCAL ROLE authenticated` + `set_config('request.jwt.claims',...,true)` em transação ROLLBACK (service_role bypassa RLS)
 - [Phase 43-04]: RESSALVA `ml_targets` sem `organization_id` (scope user_id/seller_id) — fora do loop por-org; verificação dedicada recomendada na code-review/verify-phase
+- [Phase ?]: SECURITY INVOKER (não DEFINER) para RPCs de margem: RLS org-first de orders/ml_ads_products_cache enforça isolamento de tenant; DEFINER era IDOR CRITICAL (bypass RLS com p_org_id alheio)
+- [Phase ?]: PostgREST trunca em 1000 linhas apenas no endpoint REST; supabase.rpc() retorna set completo — sem LIMIT na RPC é suficiente para MCO-01
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -155,8 +158,8 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-14T19:01:10.451Z
-Stopped at: Phase 48 context gathered
+Last session: 2026-06-14T19:45:33.743Z
+Stopped at: Completed 48-01-PLAN.md (RPC margem+ads aplicada, IDOR fix, smoke PASS)
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 

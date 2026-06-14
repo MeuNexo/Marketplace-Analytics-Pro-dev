@@ -234,7 +234,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 
 **Wave 1**
 
-- [ ] 48-01-PLAN.md — RPC get_margin_with_ads_by_product (FULL OUTER JOIN orders+ml_ads_products_cache, SECURITY DEFINER, sem truncamento) + colunas consultor_config + [BLOCKING] apply (MCO-01)
+- [x] 48-01-PLAN.md — RPC get_margin_with_ads_by_product (FULL OUTER JOIN orders+ml_ads_products_cache, SECURITY DEFINER, sem truncamento) + colunas consultor_config + [BLOCKING] apply (MCO-01)
 
 **Wave 2** *(blocked on 48-01; 48-02 e 48-03 em paralelo — sem overlap de arquivos)*
 
@@ -256,4 +256,4 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 | 45. Consultor v1 | 3/3 | Complete   | 2026-06-14 |
 | 46. UX para Leigos | 0/? | Not started | - |
 | 47. QA End-to-End + Go-Live | 0/? | Not started | - |
-| 48. MCO com Ads | 0/3 | Planned | - |
+| 48. MCO com Ads | 1/3 | In Progress|  |
