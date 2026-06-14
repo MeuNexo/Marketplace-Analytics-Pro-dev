@@ -65,7 +65,7 @@ Endurecer segurança multi-tenant nas Edge Functions (ME-04: lookup determiníst
 |---|------|--------|--------|
 | 1 | ME-04 token lookup ORDER BY + ME-05 is_org_member audit em 4 EFs | COMPLETO | 624f0fdf |
 | 2 | RPC check_quota + gate process-sync-job + migration cron Pattern B | COMPLETO | e0fdce0e |
-| 3 | [BLOCKING] Aplicar migrations via MCP + deploy EFs | AGUARDANDO CHECKPOINT | — |
+| 3 | Aplicar migrations via MCP + deploy 5 EFs (CLI) + smoke | COMPLETO | deploy 2026-06-14 |
 
 ## Task 1 — ME-04 e ME-05 (audit por EF)
 
@@ -247,7 +247,16 @@ Verificações:
 
 ---
 
-## Estado da Task 3 (apply/deploy) — PARCIAL — handoff 2026-06-14
+## Estado da Task 3 (apply/deploy) — COMPLETO — 2026-06-14
+
+**DEPLOY DAS 5 EFs CONCLUÍDO (CLI, project-ref ckcdevcxgvueywivefgx):**
+- sync-ml-orders v19→v20 (verify_jwt=false), sync-ml-billing v8→v9 (false), process-sync-job v14→v15 (false), ml-reputation v9→v10 (true), ml-inventory v8→v9 (true). verify_jwt preservado em todas.
+- Smoke pós-deploy: process-sync-job sem auth → **401** ✅; `check_quota('7f615df7-7bac-45e5-8a93-827fb9ddeec7')` → **true** ✅ (Pé Vermeio enterprise não bloqueia); cron `sync-process-job-every-5min` confirmado apontando p/ ckcdevcxgvueywivefgx.
+- Gate check_quota agora ATIVO em produção (v15). Orgs reais já em enterprise → não bloqueia operação real.
+
+---
+
+### Handoff original (PARCIAL — 2026-06-14, antes do deploy)
 
 **Auditoria MCP (ckcdevcxgvueywivefgx) antes do apply revelou:**
 - 2 orgs reais: Pé Vermeio + Thales (não só Pé Vermeio).

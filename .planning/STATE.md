@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 43 Wave 1: 43-01 completo (migrations aplicadas); 43-02 parcial — 3 migrations aplicadas, deploy de 5 EFs pendente (sem SUPABASE_ACCESS_TOKEN)"
-last_updated: "2026-06-13T21:18:54.311Z"
-last_activity: 2026-06-13 -- Phase 43 execution started
+stopped_at: "Phase 43 Wave 1 COMPLETA: 43-01 + 43-02 (5 EFs deployadas via CLI, smoke OK). Próximo: Wave 2 = 43-03 (wizard onboarding)"
+last_updated: "2026-06-14"
+last_activity: 2026-06-14 -- 43-02 deploy 5 EFs concluído + smoke validado
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 12
-  completed_plans: 10
-  percent: 29
+  completed_plans: 11
+  percent: 32
 ---
 
 # Project State
@@ -27,9 +27,9 @@ See: .planning/PROJECT.md
 ## Current Position
 
 Phase: 43 (multi-tenant-hardening) — EXECUTING
-Plan: 2 of 4
-Status: Ready to execute
-Last activity: 2026-06-13 -- Phase 43 execution started
+Plan: 3 of 4 (Wave 1 completa: 43-01 + 43-02 deployados)
+Status: Ready to execute Wave 2 (43-03 wizard onboarding)
+Last activity: 2026-06-14 -- 43-02 deploy 5 EFs concluído + smoke validado
 
 ### Quick Tasks Completed
 
