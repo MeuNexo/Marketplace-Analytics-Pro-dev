@@ -133,7 +133,19 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
   3. Pagina /planos exibe plano atual, estado de pagamento e permite upgrade/downgrade via Stripe Customer Portal
   4. Limites do tier (history_days, sync_interval_minutes) aplicados de verdade — org no tier free nao acessa historico do tier pro
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+**Wave 1**
+
+- [ ] 44-01-PLAN.md — DB foundation: subscriptions/billing_events + tier_prices + apply_subscription_tier RPC + history_days enforcement (org_history_floor) + types.ts; decisao tier limits/A4 + [BLOCKING] apply via MCP
+
+**Wave 2** *(blocked on 44-01)*
+
+- [ ] 44-02-PLAN.md — EFs stripe-checkout (verify_jwt=true, owner) + stripe-webhook (verify_jwt=false, HMAC) + config.toml + [BLOCKING] Stripe Dashboard/secrets/deploy/webhook
+
+**Wave 3** *(blocked on 44-01 + 44-02)*
+
+- [ ] 44-03-PLAN.md — useSubscription hook + /planos page (owner-only) + route + mlCacheService dateFrom clamp (PAY-04 client) + [checkpoint] verificacao E2E
 
 ---
 
