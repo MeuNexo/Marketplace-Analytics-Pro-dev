@@ -91,6 +91,8 @@ interface ConsultorConfig {
   claims_spike_pct: number;
   goal_risk_pct: number;
   paused_ads_lookback_days: number;
+  ads_eating_critical_pct: number;
+  ads_eating_alert_pct: number;
 }
 
 const DEFAULT_CONFIG: ConsultorConfig = {
@@ -106,6 +108,8 @@ const DEFAULT_CONFIG: ConsultorConfig = {
   claims_spike_pct: 20,
   goal_risk_pct: 10,
   paused_ads_lookback_days: 30,
+  ads_eating_critical_pct: 0,
+  ads_eating_alert_pct: 10,
 };
 
 // ── Insight candidate type ─────────────────────────────────────────────────────
@@ -245,6 +249,92 @@ async function runConsultorForOrg(
         status: "active",
         updated_at: nowIso,
       });
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // RULE ads_eating_margin: lucro operacional > 0 mas pós-ads ≤ limiar (MCO-04)
+  // Separado de margin_critical (D-07): operacional pode ser positivo, ads zera a margem.
+  // Usa mesma janela que RULE 1/2 (30 dias) e a RPC get_margin_with_ads_by_product (48-01).
+  // Per-item: ml_user_id_key = item_id (Pitfall 3: não confundir com org-level).
+  // ────────────────────────────────────────────────────────────────────────────
+
+  const adsEatingCriticalPct = cfg.ads_eating_critical_pct ?? 0;
+  const adsEatingAlertPct    = cfg.ads_eating_alert_pct ?? 10;
+
+  const { data: marginWithAdsRows } = await sb.rpc("get_margin_with_ads_by_product", {
+    p_org_id: orgId,
+    p_user_ids: mlUserIds,
+    p_from: marginFrom,
+    p_to: marginTo,
+  });
+
+  if (marginWithAdsRows && (marginWithAdsRows as unknown[]).length > 0) {
+    type MWARow = {
+      item_id: string;
+      receita: number;
+      lucro: number;
+      lucro_pct: number | null;
+      ads_spend: number;
+      lucro_pos_ads: number;
+      lucro_pct_pos_ads: number | null;
+    };
+    const mwaRows = marginWithAdsRows as MWARow[];
+
+    // Crítico: operacional positivo, mas pós-ads ≤ adsEatingCriticalPct (default 0%)
+    const criticalAdsItems = mwaRows.filter(
+      r => r.lucro > 0 && r.lucro_pct_pos_ads !== null && r.lucro_pct_pos_ads <= adsEatingCriticalPct
+    );
+
+    // Alerta: operacional positivo, pós-ads > crítico e ≤ adsEatingAlertPct (default 10%)
+    const alertAdsItems = mwaRows.filter(
+      r => r.lucro > 0 && r.lucro_pct_pos_ads !== null
+        && r.lucro_pct_pos_ads > adsEatingCriticalPct
+        && r.lucro_pct_pos_ads <= adsEatingAlertPct
+    );
+
+    const allEatingItems = [...criticalAdsItems, ...alertAdsItems];
+    if (allEatingItems.length > 0) {
+      // push a chave apenas uma vez por execução (o score usa includes, não count)
+      activeRuleKeys.push("ads_eating_margin");
+
+      for (const item of criticalAdsItems) {
+        const erosao = item.lucro - item.lucro_pos_ads;
+        candidates.push({
+          organization_id: orgId,
+          ml_user_id: null,
+          ml_user_id_key: item.item_id,
+          rule_key: "ads_eating_margin",
+          category: "Ads",
+          severity: "critical",
+          title: "Publicidade zerando o lucro do produto",
+          body: `O produto tem lucro operacional de ${(item.lucro_pct ?? 0).toFixed(1)}%, mas a publicidade está consumindo R$ ${fmt(erosao)} — a margem cai de ${(item.lucro_pct ?? 0).toFixed(1)}% para ${(item.lucro_pct_pos_ads ?? 0).toFixed(1)}%.`,
+          action_label: "Ver anúncio",
+          action_href: "/anuncios?items=" + item.item_id,
+          impact_brl: Math.round(erosao),
+          status: "active",
+          updated_at: nowIso,
+        });
+      }
+
+      for (const item of alertAdsItems) {
+        const erosao = item.lucro - item.lucro_pos_ads;
+        candidates.push({
+          organization_id: orgId,
+          ml_user_id: null,
+          ml_user_id_key: item.item_id,
+          rule_key: "ads_eating_margin",
+          category: "Ads",
+          severity: "high",
+          title: "Publicidade reduzindo muito a margem do produto",
+          body: `O produto tem lucro operacional de ${(item.lucro_pct ?? 0).toFixed(1)}%, mas a publicidade está consumindo R$ ${fmt(erosao)} — a margem cai de ${(item.lucro_pct ?? 0).toFixed(1)}% para ${(item.lucro_pct_pos_ads ?? 0).toFixed(1)}% (abaixo da meta de ${adsEatingAlertPct}%).`,
+          action_label: "Ver anúncio",
+          action_href: "/anuncios?items=" + item.item_id,
+          impact_brl: Math.round(erosao),
+          status: "active",
+          updated_at: nowIso,
+        });
+      }
     }
   }
 
