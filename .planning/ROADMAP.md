@@ -162,7 +162,20 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
   4. Score de saude do negocio (0-100) visivel — composto por margem, ads, estoque, reputacao e completude de configuracao
   5. Org Pé Vermeio gera ≥5 insights reais e acionaveis no primeiro run do engine
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+**Wave 1**
+
+- [ ] 45-01-PLAN.md — Fundação de dados: 3 tabelas (insights, consultor_config, consultor_health_snapshots) RLS org-first + RPCs do engine (margem/cobertura/sem-custo) + types.ts + [BLOCKING] apply via MCP
+
+**Wave 2** *(blocked on 45-01)*
+
+- [ ] 45-02-PLAN.md — EF consultor-insights (12 regras + score 0-100 ponderado + upsert/auto-resolve + snapshot + auth dual) + pg_cron Pattern B + config.toml + [BLOCKING] deploy/apply/smoke (CONSUL-05 ≥5 insights)
+
+**Wave 3** *(blocked on 45-01 + 45-02)*
+
+- [ ] 45-03-PLAN.md — UI: hook useConsultorInsights + ConsultorCard no topo de /vendas + página /consultor (rota+sidebar+routeMeta) + deep-links + dismiss + [checkpoint] visual Wesley
+
 **UI hint**: yes
 
 ---
@@ -207,6 +220,6 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 | 42. Zero Mock | 4/4 | Complete   | 2026-06-13 |
 | 43. Multi-Tenant Hardening | 4/4 | Complete | Isolamento 2-org PASS; pendente verify-phase + checkpoint visual |
 | 44. Monetizacao Stripe | 0/? | Not started | - |
-| 45. Consultor v1 | 0/? | Not started | - |
+| 45. Consultor v1 | 0/3 | Planned | - |
 | 46. UX para Leigos | 0/? | Not started | - |
 | 47. QA End-to-End + Go-Live | 0/? | Not started | - |

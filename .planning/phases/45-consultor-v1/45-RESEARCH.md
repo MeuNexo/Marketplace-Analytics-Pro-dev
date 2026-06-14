@@ -1012,20 +1012,19 @@ Nyquist validation ativa (workflow.nyquist_validation não está como false em c
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Reputação em tabela própria?**
    - O que sabemos: `ml-reputation` EF chama a API ML diretamente; não cacheia em banco próprio
-   - O que não está claro: se há alguma tabela cacheada de reputação criada em phases anteriores
-   - Recomendação: planner verifica via MCP `list_tables` antes de finalizar o pilar Reputação
+   - **RESOLVED:** não existe tabela de reputação cacheada. v1 usa **proxy via `ml_claims`** (taxa de cancelamentos) para a nota do pilar Reputação — sem chamada síncrona à API ML. Implementado em 45-02 Task 2.
 
 2. **`ml_daily_cache` tem coluna `approved_revenue` ou similar?**
    - `useMLAdsDerivedMetrics.ts` usa `approved_revenue` — confirmar nome exato
-   - Recomendação: planner verifica schema via MCP antes de codificar a regra TACoS
+   - **RESOLVED:** `ml_daily_cache.approved_revenue` é scoped por `user_id` (não `organization_id`). Como o engine roda por org → usar **`orders.receita_bruta`** para TACoS/meta/ticket. Documentado em 45-01 Task 2.
 
 3. **Supabase index único funcional com COALESCE é suportado?**
    - PostgreSQL suporta; Supabase/pg 14+ também. Mas algumas versões têm limitações.
-   - Recomendação: alternativa é usar coluna `ml_user_id_key text NOT NULL DEFAULT ''` (preenchida pelo engine) e UNIQUE constraint normal.
+   - **RESOLVED:** usar coluna helper **`ml_user_id_key text NOT NULL DEFAULT ''`** (preenchida pelo engine) + UNIQUE constraint normal `(organization_id, rule_key, ml_user_id_key)` — mais robusto que índice funcional. Implementado em 45-01 Task 1.
 
 ---
 
