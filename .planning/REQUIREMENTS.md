@@ -45,11 +45,11 @@ Decisões fixadas por Wesley: Stripe | convite controlado | Consultor v1 por reg
 
 ### Bloco CONSUL — Consultor v1 (motor de regras)
 
-- [ ] **CONSUL-01**: Engine de insights roda por org (EF + cron) avaliando ~12 regras e gravando em tabela `insights` (severidade, categoria, ação recomendada, impacto estimado em R$)
-- [ ] **CONSUL-02**: Card "O que fazer agora" no topo de /vendas com os top insights acionáveis
-- [ ] **CONSUL-03**: Painel de insights com explicação leiga por insight ("por que isso importa", "como resolver")
-- [ ] **CONSUL-04**: Score de saúde do negócio (0-100) composto por margem, ads, estoque, reputação e completude de configuração
-- [ ] **CONSUL-05**: Org Pé Vermeio gera ≥5 insights reais e acionáveis no primeiro run
+- [x] **CONSUL-01**: Engine de insights roda por org (EF + cron) avaliando ~12 regras e gravando em tabela `insights` (severidade, categoria, ação recomendada, impacto estimado em R$)
+- [x] **CONSUL-02**: Card "O que fazer agora" no topo de /vendas com os top insights acionáveis
+- [x] **CONSUL-03**: Painel de insights com explicação leiga por insight ("por que isso importa", "como resolver")
+- [x] **CONSUL-04**: Score de saúde do negócio (0-100) composto por margem, ads, estoque, reputação e completude de configuração
+- [x] **CONSUL-05**: Org Pé Vermeio gera ≥5 insights reais e acionáveis no primeiro run
 
 Regras iniciais candidatas: margem < alvo por produto; ROAS/ACoS fora da meta; TACoS subindo; ruptura/cobertura crítica; produto sem custo cadastrado; sem regime fiscal; ticket médio caindo; cancelamentos acima da média; anúncio pausado com histórico de venda; campanha gastando sem venda; meta do mês em risco (projeção); pergunta sem resposta > 24h.
 
@@ -108,11 +108,11 @@ Regras iniciais candidatas: margem < alvo por produto; ROAS/ACoS fora da meta; T
 | PAY-02 | Phase 44 | Pending |
 | PAY-03 | Phase 44 | Pending |
 | PAY-04 | Phase 44 | Pending |
-| CONSUL-01 | Phase 45 | Pending |
-| CONSUL-02 | Phase 45 | Pending |
-| CONSUL-03 | Phase 45 | Pending |
-| CONSUL-04 | Phase 45 | Pending |
-| CONSUL-05 | Phase 45 | Pending |
+| CONSUL-01 | Phase 45 | Complete |
+| CONSUL-02 | Phase 45 | Complete |
+| CONSUL-03 | Phase 45 | Complete |
+| CONSUL-04 | Phase 45 | Complete |
+| CONSUL-05 | Phase 45 | Complete |
 | UX-01 | Phase 46 | Pending |
 | UX-02 | Phase 46 | Pending |
 | UX-03 | Phase 46 | Pending |

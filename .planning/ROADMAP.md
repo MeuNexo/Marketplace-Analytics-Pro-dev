@@ -12,7 +12,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 - [x] **Phase 42: Zero Mock** — /perguntas, /devolucoes, /reputacao e /tv lendo dados reais da API ML (completed 2026-06-13)
 - [x] **Phase 43: Multi-Tenant Hardening** — RLS org-first, backfill de orfaos, quota enforcement, wizard de onboarding guiado (isolamento 2-org PASS; pendente code-review/verify-phase + checkpoint visual)
 - [~] **Phase 44: Monetizacao Stripe** — ADIADA (decisão Wesley 2026-06-14): versão de teste do dashboard não precisa de pagamento; integração Stripe (checkout/webhooks/secrets) fica para o desenvolvedor depois. Planos já existem (44-01/02/03-PLAN.md). Reativar antes da Phase 47 (go-live depende de PAY-*).
-- [ ] **Phase 45: Consultor v1** — Engine de ~12 regras, card "O que fazer agora", painel de insights e score de saude 0-100
+- [x] **Phase 45: Consultor v1** — Engine de ~12 regras, card "O que fazer agora", painel de insights e score de saude 0-100 (completed 2026-06-14)
 - [ ] **Phase 46: UX para Leigos** — Glossario/tooltips em todo KPI, empty states acionaveis, mobile polish, consistencia visual
 - [ ] **Phase 47: QA End-to-End + Go-Live** — Simulacao tenant novo, auditoria de seguranca, tsc + build + smoke de deploy Vercel
 
@@ -170,11 +170,11 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 
 **Wave 2** *(blocked on 45-01)*
 
-- [ ] 45-02-PLAN.md — EF consultor-insights (12 regras + score 0-100 ponderado + upsert/auto-resolve + snapshot + auth dual) + pg_cron Pattern B + config.toml + [BLOCKING] deploy/apply/smoke (CONSUL-05 ≥5 insights)
+- [x] 45-02-PLAN.md — EF consultor-insights (12 regras + score 0-100 ponderado + upsert/auto-resolve + snapshot + auth dual) + pg_cron Pattern B + config.toml + [BLOCKING] deploy/apply/smoke (CONSUL-05 ≥5 insights)
 
 **Wave 3** *(blocked on 45-01 + 45-02)*
 
-- [ ] 45-03-PLAN.md — UI: hook useConsultorInsights + ConsultorCard no topo de /vendas + página /consultor (rota+sidebar+routeMeta) + deep-links + dismiss + [checkpoint] visual Wesley
+- [x] 45-03-PLAN.md — UI: hook useConsultorInsights + ConsultorCard no topo de /vendas + página /consultor (rota+sidebar+routeMeta) + deep-links + dismiss + [checkpoint] visual Wesley
 
 **UI hint**: yes
 
@@ -220,6 +220,6 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 | 42. Zero Mock | 4/4 | Complete   | 2026-06-13 |
 | 43. Multi-Tenant Hardening | 4/4 | Complete | Isolamento 2-org PASS; pendente verify-phase + checkpoint visual |
 | 44. Monetizacao Stripe | 0/? | Not started | - |
-| 45. Consultor v1 | 1/3 | In Progress|  |
+| 45. Consultor v1 | 3/3 | Complete   | 2026-06-14 |
 | 46. UX para Leigos | 0/? | Not started | - |
 | 47. QA End-to-End + Go-Live | 0/? | Not started | - |

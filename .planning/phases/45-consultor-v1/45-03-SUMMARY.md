@@ -29,11 +29,11 @@ decisions:
 metrics:
   duration: "~4 min"
   completed: "2026-06-14"
-  tasks_completed: 3
+  tasks_completed: 4
   tasks_total: 4
   files_created: 3
   files_modified: 4
-status: checkpoint-pending (Task 4 = visual verification by Wesley)
+status: complete
 ---
 
 # Phase 45 Plan 03: Consultor v1 UI Summary
@@ -42,9 +42,19 @@ status: checkpoint-pending (Task 4 = visual verification by Wesley)
 
 ---
 
-## Status: TASKS 1-3 COMPLETE — awaiting visual checkpoint (Task 4)
+## Status: COMPLETE (4/4) — checkpoint visual aprovado por Wesley (2026-06-14)
 
-Tasks 1-3 executed and committed. `npx tsc --noEmit` and `npm run build` both clean. Task 4 is `type="checkpoint:human-verify"` — requires visual confirmation by Wesley before marking complete.
+Tasks 1-3 + Task 4 (visual) concluídas. Wesley confirmou: card aparece em /vendas, /consultor lista os 8 insights, deep-links filtram as páginas-destino.
+
+### Ajustes pós-checkpoint (3 fixes durante a verificação visual)
+1. **Card não aparecia p/ Pé Vermeio** — gate `onboardingComplete` resolvia false (onboarding_progress só tinha 'tiny'). Trocado p/ `connected` (ML conectado). Commit 7c41a004.
+2. **Deep-links agora filtram a página-destino** (decisão Wesley: opção B). EF passou a gravar `action_href=/anuncios|/estoque?items=<item_ids>` p/ 5 regras (margin_critical/alert, stock_critical/alert, paused_with_sales); /anuncios e /estoque leem `?items=` e filtram + banner "Limpar filtro". Commits 51e55c25/fc607667/dba81430 + EF redeploy.
+3. **Filtro ?items= ignorava itens pausados/sem-estoque** — 5 dos 6 "em prejuízo" estavam paused/qty0 e os filtros padrão os escondiam. Com `?items=` presente, as páginas agora mostram exatamente o conjunto sinalizado, ignorando status/estoque/marca/busca. Commit 78cddfdb.
+
+### Pendências não-bloqueantes (backlog)
+- `no_cost` (38 produtos) ainda sem `?items=` (a RPC só devolve contagem) — deep-link vai p/ /precificacao genérico.
+- Calibração de limiares: `goal_at_risk` (impacto inflado por projeção início de mês) e `claims_spike` (+2400% por base baixa). Ajustáveis em `consultor_config`.
+- **MCO com Ads** (nova fase): incluir gasto de publicidade por produto na margem — viabilidade confirmada (ml_ads_products_cache reconcilia 100% com total da conta).
 
 ---
 
