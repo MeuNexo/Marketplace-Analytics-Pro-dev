@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 48-01-PLAN.md (RPC margem+ads aplicada, IDOR fix, smoke PASS)
-last_updated: "2026-06-14T19:45:33.767Z"
+stopped_at: Completed 48-02-PLAN.md (EF consultor-insights deployada + smoke PASS — 30 ads_eating, 9 ads_no_sale per-item)
+last_updated: "2026-06-14T20:00:23.469Z"
 last_activity: 2026-06-14 -- Phase 48 execution started
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 21
-  completed_plans: 16
+  completed_plans: 17
   percent: 50
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md
 ## Current Position
 
 Phase: 48 (mco-com-ads) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-06-14 -- Phase 48 execution started
 
@@ -79,6 +79,7 @@ Last activity: 2026-06-14 -- Phase 48 execution started
 | Phase 42-zero-mock P04 | 3min | 1 tasks | 1 files |
 | Phase 43-multi-tenant-hardening P01 | 205 | 3 tasks | 4 files |
 | Phase 48-mco-com-ads P01 | 45min | 3 tasks | 3 files |
+| Phase 48-mco-com-ads P02 | 30min | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -111,6 +112,9 @@ Last activity: 2026-06-14 -- Phase 48 execution started
 - [Phase 43-04]: RESSALVA `ml_targets` sem `organization_id` (scope user_id/seller_id) — fora do loop por-org; verificação dedicada recomendada na code-review/verify-phase
 - [Phase ?]: SECURITY INVOKER (não DEFINER) para RPCs de margem: RLS org-first de orders/ml_ads_products_cache enforça isolamento de tenant; DEFINER era IDOR CRITICAL (bypass RLS com p_org_id alheio)
 - [Phase ?]: PostgREST trunca em 1000 linhas apenas no endpoint REST; supabase.rpc() retorna set completo — sem LIMIT na RPC é suficiente para MCO-01
+- [Phase ?]: ads_eating_margin é SEPARADO de margin_critical (D-07/MCO-04): produto com lucro operacional > 0 pode disparar ads_eating sem estar em margin_critical
+- [Phase ?]: RULE ads_no_sale mantém rule_key='ads_no_sale' ao migrar org→item-level (D-09/D-10): índice único (org,rule_key,ml_user_id_key) diferencia '' de item_id; org-level antigo auto-resolvido
+- [Phase ?]: Paginação .range() loop obrigatória em ml_ads_products_cache (~6000 linhas/30d): PostgREST trunca em 1000 linhas
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -158,8 +162,8 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-14T19:45:33.743Z
-Stopped at: Completed 48-01-PLAN.md (RPC margem+ads aplicada, IDOR fix, smoke PASS)
+Last session: 2026-06-14T20:00:23.443Z
+Stopped at: Completed 48-02-PLAN.md (EF consultor-insights deployada + smoke PASS — 30 ads_eating, 9 ads_no_sale per-item)
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 

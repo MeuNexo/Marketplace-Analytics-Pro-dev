@@ -65,8 +65,8 @@ Regras iniciais candidatas: margem < alvo por produto; ROAS/ACoS fora da meta; T
 - [x] **MCO-01**: Fonte por produto de ads_spend/attributed_revenue por janela (RPC junta margem + ads por item_id sem truncamento PostgREST). Atribuição direta via `ml_ads_products_cache`
 - [ ] **MCO-02**: Margem por produto exibe margem operacional (sem ads) E margem pós-ads lado a lado
 - [ ] **MCO-03**: MCO agregado da operação (Σ margem de contribuição − ads total) visível
-- [ ] **MCO-04**: Alerta separado por produto "ads comendo a margem" (TACoS/ACoS acima do limiar), independente do alerta de prejuízo operacional
-- [ ] **MCO-05**: (a confirmar no plano) ads_no_sale por produto — gasto de ads com zero venda no item
+- [x] **MCO-04**: Alerta separado por produto "ads comendo a margem" (TACoS/ACoS acima do limiar), independente do alerta de prejuízo operacional
+- [x] **MCO-05**: (a confirmar no plano) ads_no_sale por produto — gasto de ads com zero venda no item
 
 Decisão travada (Wesley 2026-06-14): modelo de 2 números (operacional + pós-ads), não 1 número combinado. "Prejuízo" fica na operacional.
 
@@ -133,8 +133,8 @@ Decisão travada (Wesley 2026-06-14): modelo de 2 números (operacional + pós-a
 | MCO-01 | Phase 48 | Complete |
 | MCO-02 | Phase 48 | Pending |
 | MCO-03 | Phase 48 | Pending |
-| MCO-04 | Phase 48 | Pending |
-| MCO-05 | Phase 48 | Pending |
+| MCO-04 | Phase 48 | Complete |
+| MCO-05 | Phase 48 | Complete |
 
 ---
 *Criado: 2026-06-12 — milestone v7.0*
