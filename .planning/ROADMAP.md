@@ -193,13 +193,14 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
   3. Tabelas de /anuncios, /pedidos e /financeiro renderizam sem overflow quebrado em viewport mobile (320–768px)
   4. Consistencia visual revisada nas paginas principais (tokens kpi.positive/negative, espacamentos, dark mode sem elementos quebrados)
 
-**Plans**: 4 plans em 3 waves
+**Plans**: 5 plans em 3 waves
 
 Plans:
 - [ ] 46-01-primitivos-compartilhados-PLAN.md — Glossário central + KPICard hover+tap (Popover) + componente EmptyState (Wave 1)
-- [ ] 46-02-glossario-e-empty-states-componentes-PLAN.md — Wiring glossário no MLKPIGrid + migração de empty states (analytics/estoque) (Wave 2)
+- [ ] 46-02-glossario-e-empty-states-componentes-PLAN.md — Glossário no MLKPIGrid + empty states em analytics/estoque (Wave 2)
 - [ ] 46-03-tabelas-mobile-e-tokens-PLAN.md — Tabelas→cards mobile + glossário + EmptyState + tokens kpi em /anuncios, /pedidos, /financeiro (Wave 2)
-- [ ] 46-04-checkpoint-visual-PLAN.md — Checkpoint Wesley: redação do glossário + look/dark mode das 6 páginas (Wave 3)
+- [ ] 46-05-cobertura-kpi-e-precificacao-PLAN.md — Cobertura UX-01 nos sites de KPICard fora do radar + auditoria UX-04 de /precificacao (Wave 2)
+- [ ] 46-04-checkpoint-visual-PLAN.md — Enumeração de cobertura + checkpoint Wesley: redação do glossário + dark mode das 6 páginas (Wave 3)
 
 **UI hint**: yes
 
