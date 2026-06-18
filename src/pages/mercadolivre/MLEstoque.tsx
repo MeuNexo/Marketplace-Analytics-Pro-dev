@@ -27,6 +27,7 @@ import {
   LineChart, Line, PieChart, Pie, Cell, ComposedChart, Area, ReferenceLine,
 } from "recharts";
 import { Link, useSearchParams } from "react-router-dom";
+import { EmptyState } from "@/components/ui/empty-state";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -970,15 +971,13 @@ export default function MLEstoque() {
 
   if (!isConnected) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
-        <Plug className="w-12 h-12 text-muted-foreground opacity-50" />
-        <p className="text-muted-foreground text-sm max-w-xs">
-          Conecte sua conta do Mercado Livre para visualizar o estoque.
-        </p>
-        <Button asChild variant="default" size="sm">
-          <Link to="/integrations">Ir para Integrações</Link>
-        </Button>
-      </div>
+      <EmptyState
+        icon={Plug}
+        title="Mercado Livre não conectado"
+        description="Conecte sua conta para visualizar o estoque em tempo real."
+        actionLabel="Ir para Integrações"
+        actionHref="/integracoes"
+      />
     );
   }
 
