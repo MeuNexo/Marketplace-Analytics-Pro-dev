@@ -47,15 +47,27 @@ const CustomTooltip = ({ active, payload, label }: any) => {
     <div className="rounded-lg border border-border bg-card p-3 shadow-lg text-xs space-y-1.5 min-w-[200px]">
       <p className="font-semibold text-foreground mb-2">{label}</p>
 
-      {/* Saldo projetado — linha principal */}
+      {/* Saldo projetado confirmado — linha principal */}
       <div className="flex items-center justify-between gap-4">
-        <span className="text-muted-foreground">Saldo projetado:</span>
+        <span className="text-muted-foreground">Saldo (confirmado):</span>
         <span
           className={`font-semibold tabular-nums ${
             point.accumulated_balance < 0 ? "text-kpi-negative" : "text-kpi-positive"
           }`}
         >
           {currFmt(point.accumulated_balance)}
+        </span>
+      </div>
+
+      {/* Saldo projetado pela média de 15 dias */}
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-muted-foreground">Saldo (média 15d):</span>
+        <span
+          className={`font-semibold tabular-nums ${
+            point.accumulated_balance_sma < 0 ? "text-kpi-negative" : "text-kpi-neutral"
+          }`}
+        >
+          {currFmt(point.accumulated_balance_sma)}
         </span>
       </div>
 
@@ -181,9 +193,10 @@ export function CashFlowChart({ data, isLoading = false }: CashFlowChartProps) {
             <Legend
               wrapperStyle={{ fontSize: "12px", paddingTop: "8px" }}
               formatter={(value) => {
-                if (value === "daily_income")       return "Entradas do dia";
-                if (value === "daily_expense")      return "Saídas do dia";
-                if (value === "accumulated_balance") return "Saldo projetado";
+                if (value === "daily_income")            return "Entradas do dia";
+                if (value === "daily_expense")           return "Saídas do dia";
+                if (value === "accumulated_balance")     return "Saldo projetado (confirmado)";
+                if (value === "accumulated_balance_sma") return "Projeção média 15d";
                 return value;
               }}
             />
@@ -218,13 +231,25 @@ export function CashFlowChart({ data, isLoading = false }: CashFlowChartProps) {
               radius={[2, 2, 0, 0]}
             />
 
-            {/* LINHA PRINCIPAL — Saldo projetado */}
+            {/* LINHA PRINCIPAL — Saldo projetado confirmado */}
             <Line
               type="monotone"
               dataKey="accumulated_balance"
               name="accumulated_balance"
               stroke="hsl(var(--kpi-neutral))"
               strokeWidth={2.5}
+              dot={false}
+              connectNulls
+            />
+
+            {/* LINHA SECUNDÁRIA — Projeção pela média de 15 dias */}
+            <Line
+              type="monotone"
+              dataKey="accumulated_balance_sma"
+              name="accumulated_balance_sma"
+              stroke="hsl(var(--kpi-positive))"
+              strokeWidth={2}
+              strokeDasharray="5 4"
               dot={false}
               connectNulls
             />

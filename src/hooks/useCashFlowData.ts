@@ -21,12 +21,16 @@ export interface CashFlowDataPoint {
   daily_expense: number;
   daily_balance: number;
   /**
-   * Saldo projetado acumulado retornado diretamente pelo RPC get_cashflow.
-   * Parte do initial_balance configurado pelo lojista e acumula entradas-saídas.
-   * É a ÚNICA linha plotada no gráfico.
+   * Saldo projetado acumulado (CONFIRMADO) retornado pelo RPC get_cashflow.
+   * Parte do initial_balance e acumula entradas confirmadas (MP) - saídas.
    */
   accumulated_balance: number;
-  /** true se saldo projetado neste dia for negativo */
+  /**
+   * Saldo projetado acumulado pela MÉDIA de recebimento dos últimos 15 dias
+   * (orders.receita_liquida/15 por dia) - saídas reais. Cenário "se mantiver a média".
+   */
+  accumulated_balance_sma: number;
+  /** true se saldo projetado CONFIRMADO neste dia for negativo */
   isNegative: boolean;
 }
 
@@ -58,12 +62,14 @@ export function useCashFlowData(startDate: string, endDate: string) {
         daily_expense: number;
         daily_balance: number;
         accumulated_balance: number;
+        accumulated_balance_sma: number;
       }> = (rpcSeries ?? []).map((r: any) => ({
-        date:                String(r.date ?? "").substring(0, 10),
-        daily_income:        Number(r.daily_income        ?? 0),
-        daily_expense:       Number(r.daily_expense       ?? 0),
-        daily_balance:       Number(r.daily_balance       ?? 0),
-        accumulated_balance: Number(r.accumulated_balance ?? 0),
+        date:                    String(r.date ?? "").substring(0, 10),
+        daily_income:            Number(r.daily_income            ?? 0),
+        daily_expense:           Number(r.daily_expense           ?? 0),
+        daily_balance:           Number(r.daily_balance           ?? 0),
+        accumulated_balance:     Number(r.accumulated_balance     ?? 0),
+        accumulated_balance_sma: Number(r.accumulated_balance_sma ?? 0),
       }));
 
       return rows.map((row) => {
@@ -75,6 +81,7 @@ export function useCashFlowData(startDate: string, endDate: string) {
           daily_expense:      row.daily_expense,
           daily_balance:      row.daily_balance,
           accumulated_balance: row.accumulated_balance,
+          accumulated_balance_sma: row.accumulated_balance_sma,
           isNegative:         row.accumulated_balance < 0,
         };
       });
