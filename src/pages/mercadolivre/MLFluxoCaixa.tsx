@@ -2,7 +2,7 @@
 // MLFluxoCaixa — /fluxo-de-caixa
 // Modelo futuro-only (2026-06-18):
 //   - 3 cards: Caixa Hoje, Projeção Futura, Capacidade de Compra
-//   - Gráfico: Como meu dinheiro vai evoluir? (90 dias à frente)
+//   - Gráfico: Como meu dinheiro vai evoluir? (120 dias à frente)
 //   - Botão "Ajustar saldo de hoje" (owner only) → Dialog c/ upsert financial_settings
 // CASH-04
 // ============================================================================
@@ -36,7 +36,7 @@ import { toast } from "sonner";
 
 // ─── Constante ────────────────────────────────────────────────────────────────
 
-const FUTURE_DAYS = 90; // dias de projeção à frente
+const FUTURE_DAYS = 120; // dias de projeção à frente (alinhado ao horizonte do card de projeção)
 
 // ─── Empty state ───────────────────────────────────────────────────────────────
 

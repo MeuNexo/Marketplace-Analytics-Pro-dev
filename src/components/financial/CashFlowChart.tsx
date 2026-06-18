@@ -206,14 +206,14 @@ export function CashFlowChart({ data, isLoading = false }: CashFlowChartProps) {
             <Bar
               dataKey="daily_income"
               name="daily_income"
-              fill="var(--kpi-positive)"
+              fill="hsl(var(--kpi-positive))"
               opacity={0.25}
               radius={[2, 2, 0, 0]}
             />
             <Bar
               dataKey="daily_expense"
               name="daily_expense"
-              fill="var(--kpi-negative)"
+              fill="hsl(var(--kpi-negative))"
               opacity={0.25}
               radius={[2, 2, 0, 0]}
             />
@@ -223,7 +223,7 @@ export function CashFlowChart({ data, isLoading = false }: CashFlowChartProps) {
               type="monotone"
               dataKey="accumulated_balance"
               name="accumulated_balance"
-              stroke="var(--kpi-neutral)"
+              stroke="hsl(var(--kpi-neutral))"
               strokeWidth={2.5}
               dot={false}
               connectNulls
