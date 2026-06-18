@@ -1,26 +1,42 @@
 // ============================================================================
 // MLFluxoCaixa — /fluxo-de-caixa
-// Página: header + 3 cards (Caixa Hoje, Projeção Futura, Capacidade de Compra)
-//         + gráfico "Como meu dinheiro vai evoluir?" (120 dias à frente)
+// Modelo futuro-only (2026-06-18):
+//   - 3 cards: Caixa Hoje, Projeção Futura, Capacidade de Compra
+//   - Gráfico: Como meu dinheiro vai evoluir? (90 dias à frente)
+//   - Botão "Ajustar saldo de hoje" (owner only) → Dialog c/ upsert financial_settings
 // CASH-04
 // ============================================================================
 
-import { useMemo } from "react";
-import { format, addDays, subDays } from "date-fns";
-import { Banknote } from "lucide-react";
+import { useMemo, useState } from "react";
+import { format, addDays } from "date-fns";
+import { Banknote, Settings2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { TodayBalanceCard } from "@/components/financial/TodayBalanceCard";
 import { ProjectedBalanceCard } from "@/components/financial/ProjectedBalanceCard";
 import { CapacityCard } from "@/components/financial/CapacityCard";
 import { CashFlowChart } from "@/components/financial/CashFlowChart";
 import { useCashFlowData } from "@/hooks/useCashFlowData";
+import { useFinancialSettings } from "@/hooks/useFinancialSettings";
 import { useOrganization } from "@/contexts/OrganizationContext";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Constante ────────────────────────────────────────────────────────────────
 
-const HISTORY_DAYS = 90;  // dias históricos mostrados antes de hoje
-const FUTURE_DAYS  = 120; // dias de projeção à frente
+const FUTURE_DAYS = 90; // dias de projeção à frente
 
 // ─── Empty state ───────────────────────────────────────────────────────────────
 
@@ -39,27 +55,135 @@ function CashFlowEmptyState() {
   );
 }
 
+// ─── Dialog de ajuste de saldo inicial ────────────────────────────────────────
+
+interface AdjustBalanceDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  currentBalance: number;
+  orgId: string;
+}
+
+function AdjustBalanceDialog({
+  open,
+  onOpenChange,
+  currentBalance,
+  orgId,
+}: AdjustBalanceDialogProps) {
+  const queryClient = useQueryClient();
+  const [value, setValue] = useState<string>(String(currentBalance));
+  const [saving, setSaving] = useState(false);
+
+  // Sincronizar valor quando o dialog abre com saldo atual
+  const handleOpenChange = (isOpen: boolean) => {
+    if (isOpen) setValue(String(currentBalance));
+    onOpenChange(isOpen);
+  };
+
+  const handleSave = async () => {
+    const parsed = parseFloat(value.replace(",", "."));
+    if (isNaN(parsed)) {
+      toast.error("Digite um valor numérico válido.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from("financial_settings")
+        .upsert(
+          { organization_id: orgId, initial_balance: parsed },
+          { onConflict: "organization_id" }
+        );
+
+      if (error) throw error;
+
+      // Invalidar queries de fluxo de caixa para recalcular cards e gráfico
+      await queryClient.invalidateQueries({ queryKey: ["financial_settings", orgId] });
+      await queryClient.invalidateQueries({ queryKey: ["cashflow"] });
+      await queryClient.invalidateQueries({ queryKey: ["today_balance"] });
+      await queryClient.invalidateQueries({ queryKey: ["projected_balance"] });
+
+      toast.success("Saldo de hoje atualizado com sucesso.");
+      onOpenChange(false);
+    } catch (err: any) {
+      toast.error(`Erro ao salvar: ${err?.message ?? "Tente novamente."}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Ajustar saldo de hoje</DialogTitle>
+          <DialogDescription>
+            Informe quanto você tem disponível no caixa agora. Este valor é o ponto de
+            partida da projeção — não é atualizado automaticamente.
+            <br />
+            <span className="text-xs text-muted-foreground mt-1 block">
+              Dica: atualize manualmente quando quiser calibrar a projeção com o
+              saldo real do banco.
+            </span>
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 py-2">
+          <Label htmlFor="initial-balance">Quanto você tem de caixa hoje? (R$)</Label>
+          <Input
+            id="initial-balance"
+            type="number"
+            min={0}
+            step={0.01}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="Ex: 15000"
+            className="tabular-nums"
+          />
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={saving}
+          >
+            Cancelar
+          </Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? "Salvando…" : "Salvar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Página ────────────────────────────────────────────────────────────────────
 
 export default function MLFluxoCaixa() {
   const { currentOrg } = useOrganization();
+  const isOwner = currentOrg?.role === "owner";
 
-  // Período: 90 dias de histórico → hoje → 120 dias de projeção
+  const [adjustOpen, setAdjustOpen] = useState(false);
+
+  const { data: financialSettings } = useFinancialSettings();
+
+  // Período: hoje → hoje + 90 dias (futuro-only)
   const { startDate, endDate } = useMemo(() => {
     const today = new Date();
     return {
-      startDate: format(subDays(today, HISTORY_DAYS), "yyyy-MM-dd"),
-      endDate:   format(addDays(today, FUTURE_DAYS),  "yyyy-MM-dd"),
+      startDate: format(today, "yyyy-MM-dd"),
+      endDate:   format(addDays(today, FUTURE_DAYS), "yyyy-MM-dd"),
     };
   }, []);
 
-  // Série para o gráfico (real + projetada)
   const { data: cashFlowData, isLoading: chartLoading } = useCashFlowData(
     startDate,
     endDate,
   );
 
-  // Loading state da página inteira (antes de ter org)
   const isPageLoading = !currentOrg;
 
   if (isPageLoading) {
@@ -79,7 +203,7 @@ export default function MLFluxoCaixa() {
   const hasData =
     cashFlowData &&
     cashFlowData.length > 0 &&
-    cashFlowData.some((p) => p.daily_income > 0 || p.daily_expense > 0);
+    cashFlowData.some((p) => p.daily_income > 0 || p.daily_expense > 0 || p.accumulated_balance !== 0);
 
   return (
     <div className="space-y-6">
@@ -89,11 +213,28 @@ export default function MLFluxoCaixa() {
         <MLPageHeader title="Fluxo de Caixa" />
       </div>
 
-      {/* ── Grid 3 cards ── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <TodayBalanceCard />
-        <ProjectedBalanceCard />
-        <CapacityCard />
+      {/* ── Grid 3 cards + botão Ajustar saldo ── */}
+      <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <TodayBalanceCard />
+          <ProjectedBalanceCard />
+          <CapacityCard />
+        </div>
+
+        {/* Botão owner-only para ajustar saldo inicial */}
+        {isOwner && (
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setAdjustOpen(true)}
+              className="gap-1.5 text-xs"
+            >
+              <Settings2 className="w-3.5 h-3.5" />
+              Ajustar saldo de hoje
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* ── Gráfico: Como meu dinheiro vai evoluir? ── */}
@@ -103,6 +244,16 @@ export default function MLFluxoCaixa() {
         <CashFlowChart data={cashFlowData} isLoading={false} />
       ) : (
         <CashFlowEmptyState />
+      )}
+
+      {/* ── Dialog de ajuste de saldo (owner only) ── */}
+      {isOwner && currentOrg && (
+        <AdjustBalanceDialog
+          open={adjustOpen}
+          onOpenChange={setAdjustOpen}
+          currentBalance={financialSettings?.initial_balance ?? 0}
+          orgId={currentOrg.id}
+        />
       )}
 
     </div>
