@@ -4,14 +4,14 @@ milestone: v7.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 46-02-PLAN.md
-last_updated: "2026-06-18T00:35:28.083Z"
-last_activity: 2026-06-17 -- Phase 46 execution started
+last_updated: "2026-06-18T18:30:20.324Z"
+last_activity: 2026-06-18 -- Phase 49 execution started
 progress:
-  total_phases: 8
+  total_phases: 9
   completed_phases: 5
-  total_plans: 26
-  completed_plans: 22
-  percent: 63
+  total_plans: 31
+  completed_plans: 23
+  percent: 56
 ---
 
 # Project State
@@ -22,14 +22,14 @@ See: .planning/PROJECT.md
 
 **Milestone:** v7.0 — SaaS Operacional End-to-End
 **Core value:** Sistema 100% operacional e vendável como assinatura — dados verdadeiros em todas as páginas (zero mock), multi-tenant endurecido, monetização via Stripe ativa, onboarding guiado para lojista leigo, e Consultor v1 (motor de regras + score de saúde) como diferencial de venda.
-**Current focus:** Phase 46 — ux-para-leigos
+**Current focus:** Phase 49 — fluxo-de-caixa-caixa-real
 
 ## Current Position
 
-Phase: 46 (ux-para-leigos) — EXECUTING
-Plan: 5 of 5
+Phase: 49 (fluxo-de-caixa-caixa-real) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-06-17 -- Phase 46 execution started
+Last activity: 2026-06-18 -- Phase 49 execution started
 
 ### Quick Tasks Completed
 
@@ -85,6 +85,7 @@ Last activity: 2026-06-17 -- Phase 46 execution started
 | Phase 46 P02 | 213 | 3 tasks | 5 files |
 | Phase 46 P03 | 90 | 2 tasks | 3 files |
 | Phase 46-ux-para-leigos P05 | 8min | 2 tasks | 6 files |
+| Phase 49-fluxo-de-caixa-caixa-real P01 | 45m | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -129,6 +130,8 @@ Last activity: 2026-06-17 -- Phase 46 execution started
 - [Phase ?]: MLEstoque NotConnected CTA uses /integracoes (correct Portuguese route)
 - [Phase ?]: Sub-tables kept overflow-x-auto scroll — secondary analytical views with column-comparison needs; primary CRUD tables upgraded to stacked cards
 - [Phase ?]: Recharts SVG fill/stroke hex values preserved untouched — SVG attributes bypass Tailwind token system
+- [Phase ?]: cash_outflows com schema Tiny criada no 49-01 compartilhada por 49-05
+- [Phase ?]: release_date e outflow_date como DATE não timestamptz para cálculo de caixa por dia
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -176,7 +179,7 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-18T00:35:28.063Z
+Last session: 2026-06-18T18:30:06.749Z
 Stopped at: Completed 46-02-PLAN.md
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)

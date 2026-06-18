@@ -259,7 +259,7 @@ Plans:
 
 **Goal**: O lojista acessa uma pagina dedicada de Fluxo de Caixa (sob o grupo de menu "Operacoes") e enxerga, com dados REAIS de caixa, como seu dinheiro vai evoluir no tempo (saldo real + projecao) e responde 3 perguntas: "quanto tenho hoje?", "quanto vou ter?" e "posso comprar mais estoque?"
 **Depends on**: Phase 41 (dados/custos reais), Phase 43 (RLS multi-tenant org-first)
-**Decisao travada (Wesley 2026-06-18)**: (1) FONTE = CAIXA REAL — entradas = liberacoes reais do Mercado Pago; saidas = despesas / ordens de compra; NAO derivar de vendas nem usar lancamento manual como fonte primaria. (2) LOCALIZACAO = nova pagina sob novo grupo de menu "Operacoes" (criar o agrupamento); NAO mexer no /financeiro atual (DRE de competencia/margem, conceito diferente). (3) MVP = grafico de evolucao + 3 cards (Caixa Hoje, Projecao Futura pessimista/realista, Capacidade de Compra). Demais cards do nexointeligence (despesas, valor em estoque, estoque parado, DRE sintetico, previsao de receita) = fase posterior.
+**Decisao travada (Wesley 2026-06-18)**: (1) FONTE = CAIXA REAL — entradas = liberacoes reais do Mercado Pago; saidas = contas a pagar do Tiny ERP (integracao /contas-pagar via EF sync-tiny-payables, decisao atualizada Wesley 2026-06-18); NAO derivar de vendas nem usar lancamento manual. (2) LOCALIZACAO = nova pagina sob novo grupo de menu "Operacoes" (criar o agrupamento); NAO mexer no /financeiro atual (DRE de competencia/margem, conceito diferente). (3) MVP = grafico de evolucao + 3 cards (Caixa Hoje, Projecao Futura pessimista/realista, Capacidade de Compra). Demais cards do nexointeligence (despesas, valor em estoque, estoque parado, DRE sintetico, previsao de receita) = fase posterior.
 **Referencia**: SaaS antigo nexointeligence (clonado em /tmp/nexointeligence) — grafico src/components/financial/CashFlowChart.tsx (Recharts ComposedChart, 2 linhas real/projetado, RPC get_financial_cashflow, 120 dias); cards TodayBalanceCard/ProjectedBalanceCard/CapacityCard; tabelas-fonte transactions + financial_settings (initial_balance, operational_cost_rate=0.22, safety_margin=10000) + sales_history. Logica de projecao: SMA de vendas dos ultimos 15 dias x (1 - custo_operacional), ativa apos o dia 8. MCP da API ML p/ liberacoes Mercado Pago: https://developers.mercadolivre.com.br/pt_br/server-mcp
 **Success Criteria** (what must be TRUE):
 
@@ -274,11 +274,12 @@ Plans:
 
 **Pontos que exigem aprovacao do Wesley** (sinalizar nos planos): deploy de Edge Function nova, migrations em producao (ckcdevcxgvueywivefgx), e checkpoint visual no preview Vercel antes de qualquer merge para main/producao.
 
-**Plans**: 4 plans em 4 waves
+**Plans**: 5 plans em 4 waves
 
-**Wave 1 — Backend de ingestao de caixa real**
+**Wave 1 — Backend de ingestao de caixa real** *(2 planos paralelos; 49-05 deploya apos a tabela do 49-01)*
 
-- [ ] 49-01-PLAN.md — Tabelas (financial_settings/cash_inflows/cash_outflows + RLS) + EF sync-mp-releases (liberacoes MP) + pg_cron Pattern B + [BLOCKING] decisao CASH-02/apply/deploy/smoke (CASH-01, CASH-02, CASH-06)
+- [x] 49-01-PLAN.md — Tabelas (financial_settings/cash_inflows/cash_outflows com schema Tiny + RLS) + EF sync-mp-releases (ENTRADAS = liberacoes MP) + pg_cron Pattern B + [BLOCKING] apply/deploy/smoke (CASH-01, CASH-02, CASH-06)
+- [ ] 49-05-PLAN.md — EF sync-tiny-payables (SAIDAS = contas a pagar do Tiny /contas-pagar -> cash_outflows, multi-tenant, idempotente) + pg_cron Pattern B 6h + [BLOCKING] deploy/smoke (depends_on 49-01) (CASH-02)
 
 **Wave 2 — RPCs de fluxo de caixa** *(blocked on 49-01)*
 
@@ -308,4 +309,4 @@ Plans:
 | 46. UX para Leigos | 4/5 | In Progress|  |
 | 47. QA End-to-End + Go-Live | 0/? | Not started | - |
 | 48. MCO com Ads | 3/3 | Complete | 2026-06-14 |
-| 49. Fluxo de Caixa (Caixa Real) | 0/4 | Planned | - |
+| 49. Fluxo de Caixa (Caixa Real) | 1/5 | In Progress|  |
