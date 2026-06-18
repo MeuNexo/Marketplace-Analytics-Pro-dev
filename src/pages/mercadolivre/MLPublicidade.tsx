@@ -3,6 +3,12 @@ import {
   ComposedChart, Area, Bar, Line, XAxis, YAxis, CartesianGrid,
   Tooltip as RechartsTooltip, ResponsiveContainer,
 } from "recharts";
+import { KPI_GLOSSARY } from "@/lib/kpi-glossary";
+
+const tip = (key: keyof typeof KPI_GLOSSARY) => {
+  const e = KPI_GLOSSARY[key];
+  return e.example ? `${e.definition} ${e.example}` : e.definition;
+};
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
@@ -362,6 +368,7 @@ export default function MLAnuncios() {
           variant="minimal"
           size="compact"
           iconClassName="bg-orange-500/10 text-orange-500"
+          tooltip={tip("publicidade")}
         />
         <KPICard
           title="ROAS Global"
@@ -370,6 +377,7 @@ export default function MLAnuncios() {
           variant={currentSummary.avg_roas >= 4 ? "success" : currentSummary.avg_roas >= 2.5 ? "warning" : "minimal"}
           size="compact"
           iconClassName={currentSummary.avg_roas >= 4 ? "bg-emerald-500/10 text-emerald-500" : "bg-amber-500/10 text-amber-500"}
+          tooltip={tip("roas")}
         />
         <KPICard
           title="ACoS Global"
@@ -378,6 +386,7 @@ export default function MLAnuncios() {
           variant="minimal"
           size="compact"
           iconClassName="bg-purple-500/10 text-purple-500"
+          tooltip={tip("acos")}
         />
         <KPICard
           title="TACoS Global"
@@ -386,6 +395,7 @@ export default function MLAnuncios() {
           variant={globalDerived.tacos_global != null && globalDerived.tacos_global < 8 ? "success" : "minimal"}
           size="compact"
           iconClassName={globalDerived.tacos_global != null && globalDerived.tacos_global < 8 ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"}
+          tooltip={tip("tacos")}
         />
         <KPICard
           title="Impressões"

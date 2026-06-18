@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { KPI_GLOSSARY } from "@/lib/kpi-glossary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +14,11 @@ import {
 } from "recharts";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+const tip = (key: keyof typeof KPI_GLOSSARY) => {
+  const e = KPI_GLOSSARY[key];
+  return e.example ? `${e.definition} ${e.example}` : e.definition;
+};
 
 const currencyFmt = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
@@ -117,6 +123,7 @@ function TabHorario() {
           variant="minimal"
           iconClassName="bg-[hsl(270,70%,50%)]/10 text-[hsl(270,70%,50%)]"
           size="compact"
+          tooltip={tip("pedidos")}
         />
         <KPICard
           title="Receita total"
@@ -125,6 +132,7 @@ function TabHorario() {
           variant="minimal"
           iconClassName="bg-success/10 text-success"
           size="compact"
+          tooltip={tip("receita_total")}
         />
       </div>
 
@@ -251,6 +259,7 @@ function TabTicket() {
             variant="minimal"
             iconClassName="bg-accent/10 text-accent"
             size="compact"
+            tooltip={tip("ticket_medio")}
           />
           <KPICard
             title="Melhor dia"
@@ -546,6 +555,7 @@ function TabFunil() {
           variant="minimal"
           iconClassName="bg-success/10 text-success"
           size="compact"
+          tooltip={tip("conversao")}
         />
         <KPICard
           title="Ticket médio"
@@ -554,6 +564,7 @@ function TabFunil() {
           variant="minimal"
           iconClassName="bg-[hsl(25,95%,53%)]/10 text-[hsl(25,95%,53%)]"
           size="compact"
+          tooltip={tip("ticket_medio")}
         />
       </div>
 
