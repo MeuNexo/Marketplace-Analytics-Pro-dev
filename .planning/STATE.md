@@ -4,13 +4,13 @@ milestone: v7.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 46-02-PLAN.md
-last_updated: "2026-06-18T00:13:21.666Z"
+last_updated: "2026-06-18T00:28:07.840Z"
 last_activity: 2026-06-17 -- Phase 46 execution started
 progress:
   total_phases: 8
   completed_phases: 5
   total_plans: 26
-  completed_plans: 20
+  completed_plans: 21
   percent: 63
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md
 ## Current Position
 
 Phase: 46 (ux-para-leigos) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-06-17 -- Phase 46 execution started
 
@@ -83,6 +83,7 @@ Last activity: 2026-06-17 -- Phase 46 execution started
 | Phase 48-mco-com-ads P03 | ~3h | 2 tasks + 3 fixes + 1 checkpoint | 4 files |
 | Phase 46-ux-para-leigos P01 | 4min | 3 tasks | 3 files |
 | Phase 46 P02 | 213 | 3 tasks | 5 files |
+| Phase 46 P03 | 90 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -125,6 +126,8 @@ Last activity: 2026-06-17 -- Phase 46 execution started
 - [Phase 46]: KPICard tooltip prop stays string (not GlossaryKey) — component stays generic; consumers do glossary lookup
 - [Phase ?]: tip(key) helper defined in MLKPIGrid typed by keyof typeof KPI_GLOSSARY — tsc enforces valid glossary keys at compile time
 - [Phase ?]: MLEstoque NotConnected CTA uses /integracoes (correct Portuguese route)
+- [Phase ?]: Sub-tables kept overflow-x-auto scroll — secondary analytical views with column-comparison needs; primary CRUD tables upgraded to stacked cards
+- [Phase ?]: Recharts SVG fill/stroke hex values preserved untouched — SVG attributes bypass Tailwind token system
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -172,7 +175,7 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-18T00:13:21.655Z
+Last session: 2026-06-18T00:27:58.605Z
 Stopped at: Completed 46-02-PLAN.md
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
