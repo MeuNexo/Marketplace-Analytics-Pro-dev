@@ -43,6 +43,13 @@ Dado que `orders` (ML) está ~98% sem `custo_unit` e `ml_product_costs` (Tiny) t
 3. **Fix `recalc-order-costs`** — adicionar resolução por `orders.sku → ml_sku_cost_map.ml_sku → cost` ANTES dos fallbacks atuais (que continuam para o legado). Assim `custo_unit` passa a popular pela ponte correta.
 4. **Backfill** — após o sync popular o mapa, re-rodar `recalc-order-costs` (modo backfill) sobre orders com `custo_unit IS NULL`. CMV/DRE/markup voltam a ter cobertura.
 
+## Validação ao vivo (parcial, 2026-06-18) — API v3
+Probe read-only (EF temporária `probe-tiny-map`, depois NEUTRALIZADA) contra a conta ml_user_id 1639558873:
+- `Developer-Id` (= `TINY_APP_ID`, 60 chars) É enviável e aceito (HTTP 200).
+- `GET /produtos/{id}` (v3) retorna `precoCusto`/`precoCustoMedio` (ex 162.57) e tem campo `kit` (vazio p/ não-kits), `variacoes`, `produtoPai` — **mas NÃO retorna `mapeamentos`** (isso é da API v2). Logo, no v3 o vínculo ML↔Tiny NÃO está no detalhe do produto.
+- **Pendente:** descobrir o endpoint v3 do mapeamento de anúncios (candidatos /anuncios, /mapeamentos, /produtos/{id}/mapeamentos não confirmados — o probe foi interrompido pela guarda de segurança antes de testá-los) OU usar a API v2 `produto.obter` (que tem `mapeamentos[]` com Developer-Id). Decisão de implementação a confirmar com acesso ao Swagger v3 + Wesley.
+- **Guardrail:** deploy de EF ad-hoc não-autenticada lendo tokens Tiny em produção foi (corretamente) bloqueado. Implementação real deve ser EF autenticada/revisada, não probe overnight.
+
 ## Riscos / decisões em aberto
 - **Deploy de Edge Function** exige `SUPABASE_ACCESS_TOKEN` (historicamente bloqueado nesta conta — ver memória). Sem token, o sync/recalc não sobe.
 - **Developer-Id**: precisa validar que o app Tiny da Pé Vermeio tem um Developer-Id habilitado para o array `mapeamentos`.
