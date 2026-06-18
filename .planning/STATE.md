@@ -36,6 +36,7 @@ Last activity: 2026-06-18 -- Phase 49 execution started
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260613-2p6 | DRE mês-calendário exato (01–31) via ml_billing_daily | 2026-06-13 | feat(dre) | [260613-2p6](./quick/260613-2p6-dre-mes-calendario-exato-01-31-via-ml-bi/) |
+| 260618-sum | Fluxo de caixa: RPCs consideram contas a pagar de QUALQUER status (paid+pending), futuro-only | 2026-06-18 | 5652ebfa | [260618-sum](./quick/260618-sum-corrigir-rpcs-de-fluxo-de-caixa-consider/) |
 
 ### DRE mês-calendário (quick 260613-2p6, 2026-06-13)
 
