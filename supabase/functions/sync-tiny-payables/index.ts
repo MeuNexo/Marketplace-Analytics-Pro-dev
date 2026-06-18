@@ -165,35 +165,32 @@ async function fetchPayables(
   dateTo: string,
   mlUserId: string,
 ): Promise<TinyPayable[]> {
-  let page = 1;
+  let offset = 0;
   const allItems: TinyPayable[] = [];
 
   while (true) {
-    // CRÍTICO: NÃO adicionar parâmetro "situacao" aqui (A5 do RESEARCH)
-    // O Tiny v3 rejeita/ignora o enum — filtrar client-side após normalização.
+    // Tiny v3 /contas-pagar pagina por OFFSET — o param `pagina` é IGNORADO
+    // (validado em prod: pagina=2 retornava os mesmos 100 itens → loop).
+    // CRÍTICO: NÃO enviar "situacao" (A5 do RESEARCH) — filtrar client-side.
     const data = await tinyGet(token, "/contas-pagar", {
-      dataVencimentoInicial: dateFrom,
-      dataVencimentoFinal:   dateTo,
-      pagina:                String(page),
-      limit:                 "100",
+      offset: String(offset),
+      limit:  "100",
     });
 
-    // A API Tiny v3 pode retornar: { itens: [...] } | { data: [...] } | array direto
+    // A API Tiny v3 retorna: { itens: [...], paginacao: { total } }
     // deno-lint-ignore no-explicit-any
     const itens: any[] = Array.isArray(data) ? data : (data?.itens ?? data?.data ?? []);
+    const total: number = data?.paginacao?.total ?? data?.total ?? 0;
 
-    // Log do status da 1ª chamada (smoke — premissa A3)
-    if (page === 1) {
-      console.log(`[sync-tiny-payables] ml_user_id=${mlUserId} página 1: ${itens.length} itens recebidos do Tiny`);
+    if (offset === 0) {
+      console.log(`[sync-tiny-payables] ml_user_id=${mlUserId}: total=${total} contas a pagar no Tiny`);
     }
 
     if (!itens.length) break;
     allItems.push(...itens);
 
-    // Parar se retornou menos de 100 (última página)
-    if (itens.length < 100) break;
-
-    page++;
+    offset += itens.length;
+    if (itens.length < 100 || offset >= total) break;
     await sleep(PAGE_SLEEP_MS);
   }
 
