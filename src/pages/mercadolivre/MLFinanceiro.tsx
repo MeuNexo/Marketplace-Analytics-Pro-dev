@@ -23,6 +23,9 @@ import {
   Search,
   Megaphone,
 } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { KPI_GLOSSARY } from "@/lib/kpi-glossary";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -87,20 +90,22 @@ const StackedTooltip = ({ active, payload, label }: any) => {
 
 function NotConnected() {
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        <Plug className="w-16 h-16 text-muted-foreground/40" />
-        <h2 className="text-xl font-semibold">Mercado Livre não conectado</h2>
-        <p className="text-muted-foreground text-sm">
-          Conecte sua conta para visualizar a análise financeira.
-        </p>
-        <Button asChild>
-          <Link to="/integracoes">Ir para Integrações</Link>
-        </Button>
-      </div>
-    </div>
+    <EmptyState
+      icon={Plug}
+      title="Mercado Livre não conectado"
+      description="Conecte sua conta para visualizar a análise financeira da sua loja."
+      actionLabel="Ir para Integrações"
+      actionHref="/integracoes"
+    />
   );
 }
+
+// ─── Glossary tip helper ──────────────────────────────────────────────────────
+
+const tip = (key: keyof typeof KPI_GLOSSARY) => {
+  const e = KPI_GLOSSARY[key];
+  return e.example ? `${e.definition} ${e.example}` : e.definition;
+};
 
 // ─── Pagination helper ────────────────────────────────────────────────────────
 
@@ -113,6 +118,7 @@ export default function MLFinanceiro() {
   const { currentOrg } = useOrganization();
   const queryClient = useQueryClient();
   const connected = stores.length > 0;
+  const isMobile = useIsMobile();
 
   // ── Período
   const filters = useMLFilters(30);
@@ -344,7 +350,7 @@ export default function MLFinanceiro() {
       </div>
 
       {/* ── KPI Row — 8 cards ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-4 lg:grid-cols-8 gap-3">
         <KPICard
           title="Receita Bruta"
           value={currFmt(kpiReceita)}
@@ -352,6 +358,7 @@ export default function MLFinanceiro() {
           variant="minimal"
           size="compact"
           iconClassName="bg-blue-500/10 text-blue-500"
+          tooltip={tip("receita_bruta")}
         />
         <KPICard
           title="CMV"
@@ -360,6 +367,7 @@ export default function MLFinanceiro() {
           variant="minimal"
           size="compact"
           iconClassName="bg-slate-500/10 text-slate-500"
+          tooltip={tip("cmv")}
         />
         <KPICard
           title="Comissão ML"
@@ -368,6 +376,7 @@ export default function MLFinanceiro() {
           variant="minimal"
           size="compact"
           iconClassName="bg-orange-500/10 text-orange-500"
+          tooltip={tip("comissao_ml")}
         />
         <KPICard
           title="Frete"
@@ -376,6 +385,7 @@ export default function MLFinanceiro() {
           variant="minimal"
           size="compact"
           iconClassName="bg-sky-500/10 text-sky-500"
+          tooltip={tip("cffe")}
         />
         <KPICard
           title="Impostos"
@@ -384,6 +394,7 @@ export default function MLFinanceiro() {
           variant="minimal"
           size="compact"
           iconClassName="bg-purple-500/10 text-purple-500"
+          tooltip={tip("impostos")}
         />
         <KPICard
           title="Publicidade"
@@ -392,6 +403,7 @@ export default function MLFinanceiro() {
           variant="minimal"
           size="compact"
           iconClassName="bg-rose-500/10 text-rose-500"
+          tooltip={tip("publicidade")}
         />
         <KPICard
           title="Lucro Bruto"
@@ -404,6 +416,7 @@ export default function MLFinanceiro() {
               ? "bg-emerald-500/10 text-emerald-500"
               : "bg-red-500/10 text-red-500"
           }
+          tooltip={tip("lucro_bruto")}
         />
         <KPICard
           title="Lucro Bruto %"
@@ -426,6 +439,7 @@ export default function MLFinanceiro() {
               ? "bg-amber-500/10 text-amber-500"
               : "bg-red-500/10 text-red-500"
           }
+          tooltip={tip("margem_bruta")}
         />
       </div>
 
@@ -734,7 +748,36 @@ export default function MLFinanceiro() {
                 Sincronize os pedidos ou ajuste o período.
               </p>
             </div>
+          ) : isMobile ? (
+            /* ── Mobile: stacked cards (D-06) ── */
+            <div className="space-y-2 p-2">
+              {pagedProducts.map((p) => (
+                <div key={p.item_id} className="rounded-lg border border-border bg-card p-3 space-y-1.5">
+                  <p className="text-xs font-medium line-clamp-2">{p.titulo}</p>
+                  {p.sku && <p className="text-[11px] font-mono text-muted-foreground">{p.sku}</p>}
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                    {([
+                      ["Receita",  currFmt(p.receita)],
+                      ["Comissão", currFmt(p.comissao)],
+                      ["Frete",    currFmt(p.frete)],
+                      ["Lucro R$", currFmt(p.lucro)],
+                      ["Lucro %",  p.lucro_pct != null ? pctFmt(p.lucro_pct) : "—"],
+                    ] as [string, string][]).map(([label, val]) => (
+                      <div key={label}>
+                        <span className="text-muted-foreground">{label} </span>
+                        <span className={`font-mono tabular-nums ${
+                          (label === "Lucro R$" || label === "Lucro %")
+                            ? p.lucro >= 0 ? "text-kpi-positive" : "text-kpi-negative"
+                            : ""
+                        }`}>{val}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : (
+            /* ── Desktop: table (D-07) ── */
             <>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -805,7 +848,7 @@ export default function MLFinanceiro() {
                         </td>
                         <td
                           className={`px-3 py-2.5 tabular-nums text-xs whitespace-nowrap font-semibold ${
-                            p.lucro >= 0 ? "text-emerald-600" : "text-red-600"
+                            p.lucro >= 0 ? "text-kpi-positive" : "text-kpi-negative"
                           }`}
                         >
                           {currFmt(p.lucro)}
@@ -813,9 +856,9 @@ export default function MLFinanceiro() {
                         <td
                           className={`px-3 py-2.5 tabular-nums text-xs whitespace-nowrap ${
                             (p.lucro_pct ?? 0) >= 15
-                              ? "text-emerald-600 font-semibold"
+                              ? "text-kpi-positive font-semibold"
                               : (p.lucro_pct ?? 0) < 0
-                              ? "text-red-600"
+                              ? "text-kpi-negative"
                               : ""
                           }`}
                         >
@@ -948,7 +991,7 @@ export default function MLFinanceiro() {
                         </td>
                         <td
                           className={`px-3 py-2.5 tabular-nums text-xs whitespace-nowrap font-semibold ${
-                            b.lucro >= 0 ? "text-emerald-600" : "text-red-600"
+                            b.lucro >= 0 ? "text-kpi-positive" : "text-kpi-negative"
                           }`}
                         >
                           {currFmt(b.lucro)}
@@ -956,9 +999,9 @@ export default function MLFinanceiro() {
                         <td
                           className={`px-3 py-2.5 pr-5 tabular-nums text-xs whitespace-nowrap ${
                             (b.lucro_pct ?? 0) >= 15
-                              ? "text-emerald-600 font-semibold"
+                              ? "text-kpi-positive font-semibold"
                               : (b.lucro_pct ?? 0) < 0
-                              ? "text-red-600"
+                              ? "text-kpi-negative"
                               : ""
                           }`}
                         >
@@ -1020,7 +1063,7 @@ export default function MLFinanceiro() {
                         </td>
                         <td
                           className={`px-3 py-2.5 tabular-nums text-xs whitespace-nowrap font-semibold ${
-                            e.lucro >= 0 ? "text-emerald-600" : "text-red-600"
+                            e.lucro >= 0 ? "text-kpi-positive" : "text-kpi-negative"
                           }`}
                         >
                           {currFmt(e.lucro)}
@@ -1028,7 +1071,7 @@ export default function MLFinanceiro() {
                         <td
                           className={`px-3 py-2.5 pr-5 tabular-nums text-xs whitespace-nowrap ${
                             (e.lucro_pct ?? 0) >= 15
-                              ? "text-emerald-600 font-semibold"
+                              ? "text-kpi-positive font-semibold"
                               : ""
                           }`}
                         >
