@@ -97,3 +97,9 @@ verify_jwt = true
 # Auth is enforced internally in authenticate(): service_role | valid user JWT | 401.
 [functions.consultor-insights]
 verify_jwt = false
+
+# Phase 49 (Fluxo de Caixa) — EFs de ingestão de caixa real.
+# verify_jwt=false: disparadas por pg_cron (Pattern B) com service_role_key (sb_secret_).
+# Auth interna via requireServiceRole(): Bearer service_role_key | 401.
+[functions.sync-mp-releases]
+verify_jwt = false
