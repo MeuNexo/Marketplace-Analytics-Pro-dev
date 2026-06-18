@@ -16,6 +16,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 - [ ] **Phase 46: UX para Leigos** — Glossario/tooltips em todo KPI, empty states acionaveis, mobile polish, consistencia visual
 - [ ] **Phase 47: QA End-to-End + Go-Live** — Simulacao tenant novo, auditoria de seguranca, tsc + build + smoke de deploy Vercel
 - [x] **Phase 48: MCO com Ads** — Margem por produto considerando publicidade: margem operacional + margem pos-ads lado a lado, alerta separado "ads comendo a margem" (TACoS/ACoS por produto), MCO agregado da operacao. Atribuicao direta via ml_ads_products_cache (reconcilia 100% com total da conta) (completed 2026-06-14)
+- [ ] **Phase 49: Fluxo de Caixa (Caixa Real)** — Nova pagina em "Operacoes" com o grafico "Como meu dinheiro vai evoluir?" (saldo real + projecao) e 3 cards (Caixa Hoje, Projecao Futura, Capacidade de Compra), alimentados por caixa REAL: entradas = liberacoes Mercado Pago, saidas = despesas/OCs. Portado do antigo SaaS nexointeligence
 
 ---
 
@@ -254,6 +255,47 @@ Plans:
 
 ---
 
+### Phase 49: Fluxo de Caixa (Caixa Real)
+
+**Goal**: O lojista acessa uma pagina dedicada de Fluxo de Caixa (sob o grupo de menu "Operacoes") e enxerga, com dados REAIS de caixa, como seu dinheiro vai evoluir no tempo (saldo real + projecao) e responde 3 perguntas: "quanto tenho hoje?", "quanto vou ter?" e "posso comprar mais estoque?"
+**Depends on**: Phase 41 (dados/custos reais), Phase 43 (RLS multi-tenant org-first)
+**Decisao travada (Wesley 2026-06-18)**: (1) FONTE = CAIXA REAL — entradas = liberacoes reais do Mercado Pago; saidas = despesas / ordens de compra; NAO derivar de vendas nem usar lancamento manual como fonte primaria. (2) LOCALIZACAO = nova pagina sob novo grupo de menu "Operacoes" (criar o agrupamento); NAO mexer no /financeiro atual (DRE de competencia/margem, conceito diferente). (3) MVP = grafico de evolucao + 3 cards (Caixa Hoje, Projecao Futura pessimista/realista, Capacidade de Compra). Demais cards do nexointeligence (despesas, valor em estoque, estoque parado, DRE sintetico, previsao de receita) = fase posterior.
+**Referencia**: SaaS antigo nexointeligence (clonado em /tmp/nexointeligence) — grafico src/components/financial/CashFlowChart.tsx (Recharts ComposedChart, 2 linhas real/projetado, RPC get_financial_cashflow, 120 dias); cards TodayBalanceCard/ProjectedBalanceCard/CapacityCard; tabelas-fonte transactions + financial_settings (initial_balance, operational_cost_rate=0.22, safety_margin=10000) + sales_history. Logica de projecao: SMA de vendas dos ultimos 15 dias x (1 - custo_operacional), ativa apos o dia 8. MCP da API ML p/ liberacoes Mercado Pago: https://developers.mercadolivre.com.br/pt_br/server-mcp
+**Success Criteria** (what must be TRUE):
+
+  1. Existe ingestao de caixa REAL multi-tenant: entradas = liberacoes do Mercado Pago (nova EF + tabela, padrao das EFs sync-* existentes) e saidas = despesas/OCs (tabela), ambas escopadas por organization_id com RLS
+  2. RPC de fluxo de caixa SECURITY INVOKER (nao DEFINER+param — evita IDOR) retorna saldo diario acumulado REAL + projecao (SMA de vendas x (1 - custo operacional), ativa apos dia 8), sem truncamento PostgREST e respeitando boundary de data timestamptz (.lt nextDay, nao .lte string)
+  3. Nova pagina /fluxo-de-caixa sob grupo de menu "Operacoes" no shell, com guard de rota (RoleRoute) e isolamento por org
+  4. Grafico "Como meu dinheiro vai evoluir?" (ComposedChart, linha real pessimista + linha projetada realista) com periodo, tooltip com breakdown e alerta visual de saldo negativo
+  5. 3 cards com dado real: Caixa Hoje (saldo inicial + entradas - saidas do dia), Projecao Futura (pessimista vs realista + data critica de saldo < 0), Capacidade de Compra (saldo projetado - margem de seguranca; "posso comprar mais estoque?")
+  6. Parametros configuraveis por org (financial_settings): saldo inicial, taxa de custo operacional, margem de seguranca
+
+**Requirements**: CASH-01, CASH-02, CASH-03, CASH-04, CASH-05, CASH-06
+
+**Pontos que exigem aprovacao do Wesley** (sinalizar nos planos): deploy de Edge Function nova, migrations em producao (ckcdevcxgvueywivefgx), e checkpoint visual no preview Vercel antes de qualquer merge para main/producao.
+
+**Plans**: 4 plans em 4 waves
+
+**Wave 1 — Backend de ingestao de caixa real**
+
+- [ ] 49-01-PLAN.md — Tabelas (financial_settings/cash_inflows/cash_outflows + RLS) + EF sync-mp-releases (liberacoes MP) + pg_cron Pattern B + [BLOCKING] decisao CASH-02/apply/deploy/smoke (CASH-01, CASH-02, CASH-06)
+
+**Wave 2 — RPCs de fluxo de caixa** *(blocked on 49-01)*
+
+- [ ] 49-02-PLAN.md — get_cashflow + get_daily_balance + get_projected_balance_summary (SECURITY INVOKER, SMA via orders por org, sem truncamento) + REVOKE/GRANT + [BLOCKING] apply (CASH-03)
+
+**Wave 3 — Frontend: hooks + grafico** *(blocked on 49-02)*
+
+- [ ] 49-03-PLAN.md — 5 hooks (useFinancialSettings/useCashFlowData/useTodayBalance/useProjectedBalance/useFinancialHealth) + CashFlowChart (ComposedChart 2 linhas + alerta saldo<0) (CASH-04, CASH-05, CASH-06)
+
+**Wave 4 — Frontend: pagina + cards + nav** *(blocked on 49-03)*
+
+- [ ] 49-04-PLAN.md — 3 cards (Caixa Hoje/Projecao Futura/Capacidade) + pagina MLFluxoCaixa + sidebar Operacoes/rota/roleAccess/routeMeta + [checkpoint] visual Wesley no preview Vercel (CASH-04, CASH-05)
+
+**UI hint**: yes
+
+---
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -266,3 +308,4 @@ Plans:
 | 46. UX para Leigos | 4/5 | In Progress|  |
 | 47. QA End-to-End + Go-Live | 0/? | Not started | - |
 | 48. MCO com Ads | 3/3 | Complete | 2026-06-14 |
+| 49. Fluxo de Caixa (Caixa Real) | 0/4 | Planned | - |
