@@ -99,8 +99,8 @@ export function BrandMarkupChart({ data, topBrands, loading }: BrandMarkupChartP
                 dataKey={brand}
                 stroke={BRAND_COLORS[i % BRAND_COLORS.length]}
                 strokeWidth={2}
-                dot={false}
-                connectNulls={false}
+                dot={{ r: 2 }}
+                connectNulls={true}
               />
             ))}
           </LineChart>
