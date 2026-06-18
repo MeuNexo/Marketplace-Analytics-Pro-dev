@@ -1,8 +1,8 @@
-import { TrendingUp, TrendingDown, Minus, Info } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, HelpCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 type CardVariant = "default" | "success" | "warning" | "danger" | "info" | "neutral" | "purple" | "orange" | "minimal";
 
@@ -66,6 +66,7 @@ export function KPICard({
   const displayValue = value;
 
   const styles = variantStyles[variant];
+  const [tooltipOpen, setTooltipOpen] = useState(false);
 
   if (loading) {
     return (
@@ -92,16 +93,29 @@ export function KPICard({
           )}>
             {title}
             {tooltip && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className="w-3.5 h-3.5 text-muted-foreground/60 cursor-help" />
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[220px] text-xs">
-                    {tooltip}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <Popover open={tooltipOpen} onOpenChange={setTooltipOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Ver definição"
+                    className="inline-flex w-3.5 h-3.5 items-center justify-center text-muted-foreground/50 hover:text-muted-foreground transition-colors focus:outline-none"
+                    onMouseEnter={() => setTooltipOpen(true)}
+                    onMouseLeave={() => setTooltipOpen(false)}
+                    onClick={(e) => { e.stopPropagation(); setTooltipOpen(v => !v); }}
+                  >
+                    <HelpCircle className="w-3.5 h-3.5" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  side="top"
+                  align="start"
+                  sideOffset={6}
+                  className="w-auto max-w-[240px] px-3 py-2 text-xs"
+                  onOpenAutoFocus={(e) => e.preventDefault()}
+                >
+                  {tooltip}
+                </PopoverContent>
+              </Popover>
             )}
           </span>
           <p className={cn(
