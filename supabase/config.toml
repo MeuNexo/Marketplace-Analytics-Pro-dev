@@ -103,3 +103,9 @@ verify_jwt = false
 # Auth interna via requireServiceRole(): Bearer service_role_key | 401.
 [functions.sync-mp-releases]
 verify_jwt = false
+
+# Phase 49 (CASH-02) — Saídas de caixa: contas a pagar Tiny → cash_outflows.
+# verify_jwt=false: disparada por pg_cron a cada 6h (Pattern B, vault service_role_key).
+# Auth interna via requireServiceRole(): Bearer service_role_key | 401.
+[functions.sync-tiny-payables]
+verify_jwt = false
