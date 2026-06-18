@@ -6,8 +6,9 @@ import {
 } from "recharts";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Target, LineChart as LineChartIcon, PieChart as PieChartIcon } from "lucide-react";
+import { Target, LineChart as LineChartIcon, PieChart as PieChartIcon, Megaphone } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import type {
@@ -106,10 +107,13 @@ export function PublicidadeRelatorios({
   // ─── Empty state ──────────────────────────────────────────────────────
   if (currDaily.length === 0 && campaigns.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[40vh] gap-3 text-center text-muted-foreground">
-        <Target className="w-10 h-10 opacity-30" />
-        <p className="text-sm">Sem dados de publicidade para o período selecionado.</p>
-      </div>
+      <EmptyState
+        icon={Megaphone}
+        title="Sem dados de publicidade"
+        description="Não há campanha ativa ou dados de ads no período. Ative uma campanha no Gerenciador de Ads do ML."
+        actionLabel="Ir para Publicidade"
+        actionHref="/publicidade"
+      />
     );
   }
 
