@@ -1,4 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { KPI_GLOSSARY } from "@/lib/kpi-glossary";
+import { EmptyState } from "@/components/ui/empty-state";
 import { STORE_BADGE_COLORS } from "@/config/storeColors";
 import { useMLInventory } from "@/contexts/MLInventoryContext";
 import type { ProductVariation } from "@/contexts/MLInventoryContext";
@@ -45,6 +48,12 @@ import {
 } from "recharts";
 
 const TOTAL_PERIOD = -1; // sentinel: no date filter → use ML API's sold_quantity
+
+// ─── Glossary tip helper ──────────────────────────────────────────────────────
+const tip = (key: keyof typeof KPI_GLOSSARY) => {
+  const e = KPI_GLOSSARY[key];
+  return e.example ? `${e.definition} ${e.example}` : e.definition;
+};
 
 const RANKING_QUICK_RANGES = [
   { label: "Total",   value: TOTAL_PERIOD },
@@ -380,7 +389,7 @@ function PriceDetailSheet({
                   <p className="text-[11px] text-muted-foreground font-medium">Seu Preço Atual</p>
                   <p className="text-lg font-bold tabular-nums mt-1">{fmt(suggestion.current_price)}</p>
                   {suggestion.percent_difference !== 0 && (
-                    <p className={`text-[11px] mt-0.5 font-medium ${suggestion.percent_difference > 0 ? "text-destructive" : "text-emerald-600"}`}>
+                    <p className={`text-[11px] mt-0.5 font-medium ${suggestion.percent_difference > 0 ? "text-destructive" : "text-kpi-positive"}`}>
                       {suggestion.percent_difference > 0 ? "+" : ""}{suggestion.percent_difference.toFixed(1)}% vs mercado
                     </p>
                   )}
@@ -389,7 +398,7 @@ function PriceDetailSheet({
                   <p className="text-[11px] text-muted-foreground font-medium">Sugerido ML</p>
                   {suggestion.suggested_price != null ? (
                     <>
-                      <p className="text-lg font-bold tabular-nums mt-1 text-emerald-700">{fmt(suggestion.suggested_price)}</p>
+                      <p className="text-lg font-bold tabular-nums mt-1 text-kpi-positive">{fmt(suggestion.suggested_price)}</p>
                       <p className="text-[11px] text-muted-foreground mt-0.5">Recomendação ML</p>
                     </>
                   ) : (
@@ -514,7 +523,7 @@ function PriceDetailSheet({
                               <td className="px-4 py-2.5 text-right tabular-nums font-medium text-xs">{fmt(entry.preco)}</td>
                               <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground text-xs">{entry.vendas > 0 ? entry.vendas : "—"}</td>
                               <td className="px-4 py-2.5 text-right">
-                                <span className={`text-xs font-medium tabular-nums ${diff < 0 ? "text-emerald-600" : diff > 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                                <span className={`text-xs font-medium tabular-nums ${diff < 0 ? "text-kpi-positive" : diff > 0 ? "text-destructive" : "text-muted-foreground"}`}>
                                   {diff > 0 ? "+" : ""}{diff.toFixed(1)}%
                                 </span>
                               </td>
@@ -550,6 +559,7 @@ export default function MLProdutos() {
   const { selectedStore, stores, sellerId, resolvedMLUserIds, scopeKey } = useMLStore();
   const { currentOrg } = useOrganization();
   const orgId = currentOrg?.id ?? null;
+  const isMobile = useIsMobile();
   const { data: taxMap } = useMLTaxConfig(resolvedMLUserIds, orgId ?? "");
   const showTaxBanner = !!taxMap && stores.some((s) => !taxMap.has(s.ml_user_id));
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1102,10 +1112,10 @@ export default function MLProdutos() {
             ))
           ) : (
             <>
-              <KPICard title="Total de Anúncios" value={String(filtered.length)} icon={<ShoppingBag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-accent/10 text-accent" />
-              <KPICard title="Ticket Médio" value={currencyFmt(filteredKPIs.avgPrice)} icon={<Tag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(25,95%,53%)]/10 text-[hsl(25,95%,53%)]" />
-              <KPICard title="Unidades Vendidas" value={String(filteredKPIs.totalSold)} icon={<TrendingUp className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(270,70%,50%)]/10 text-[hsl(270,70%,50%)]" />
-              <KPICard title="Receita Potencial" value={filteredKPIs.totalRevenuePotential.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0, maximumFractionDigits: 0 })} icon={<DollarSign className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-success/10 text-success" />
+              <KPICard title="Total de Anúncios" value={String(filtered.length)} icon={<ShoppingBag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-accent/10 text-accent" tooltip="Quantidade de anúncios que correspondem ao filtro atual." />
+              <KPICard title="Ticket Médio" value={currencyFmt(filteredKPIs.avgPrice)} icon={<Tag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(25,95%,53%)]/10 text-[hsl(25,95%,53%)]" tooltip={tip("ticket_medio")} />
+              <KPICard title="Unidades Vendidas" value={String(filteredKPIs.totalSold)} icon={<TrendingUp className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(270,70%,50%)]/10 text-[hsl(270,70%,50%)]" tooltip={tip("unidades_vendidas")} />
+              <KPICard title="Receita Potencial" value={filteredKPIs.totalRevenuePotential.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0, maximumFractionDigits: 0 })} icon={<DollarSign className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-success/10 text-success" tooltip="Receita potencial dos anúncios filtrados com base no preço atual e estoque disponível." />
             </>
           )}
         </div>
@@ -1238,11 +1248,53 @@ export default function MLProdutos() {
                 <p className="text-sm">Carregando anúncios...</p>
               </div>
             ) : filtered.length === 0 ? (
-              <div className="p-8 text-center text-muted-foreground">
-                <ShoppingBag className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                <p className="text-sm">{search || stockFilter !== "all" || statusFilter !== "all" ? "Nenhum produto encontrado" : "Nenhum produto ativo"}</p>
+              <EmptyState
+                icon={ShoppingBag}
+                title={search || stockFilter !== "all" || statusFilter !== "all" ? "Nenhum produto encontrado" : "Nenhum produto ativo"}
+                description={search || stockFilter !== "all" || statusFilter !== "all"
+                  ? "Nenhum anúncio corresponde ao filtro atual. Tente limpar os filtros."
+                  : "Você não tem anúncios ativos no Mercado Livre."}
+                size="compact"
+              />
+            ) : isMobile ? (
+              /* ── Mobile: stacked cards (D-06) ── */
+              <div className="space-y-2 p-2">
+                {filtered.map((item) => {
+                  const productCost = costFor(item.id, item.seller_sku ?? null);
+                  const cost = productCost?.cost ?? null;
+                  const commRate = getCommissionRate(item.listing_type_id);
+                  const commission = item.price * commRate;
+                  const marginBruta = cost != null && item.price > 0
+                    ? ((item.price - cost) / item.price) * 100 : null;
+                  const marginLiq = cost != null && item.price > 0
+                    ? ((item.price - cost - commission) / item.price) * 100 : null;
+                  const mads = marginByItem.get(item.id);
+                  const mgOp = mads?.lucro_pct;
+                  return (
+                    <div key={item.id} className="rounded-lg border border-border bg-card p-3 space-y-1.5">
+                      <p className="text-xs font-medium line-clamp-2">{item.title}</p>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                        {([
+                          ["Preço",   currencyFmt(item.price)],
+                          ["Estoque", String(item.available_quantity)],
+                          ...(columnView === "financeiro" ? [
+                            ["Mg. Bruta", marginBruta != null ? `${marginBruta.toFixed(1)}%` : "—"],
+                            ["Mg. Líq.",  marginLiq   != null ? `${marginLiq.toFixed(1)}%`   : "—"],
+                            ["Mg. Op.",   mgOp        != null ? `${mgOp.toFixed(1)}%`         : "—"],
+                          ] as [string, string][] : []),
+                        ] as [string, string][]).map(([label, val]) => (
+                          <div key={label}>
+                            <span className="text-muted-foreground">{label} </span>
+                            <span className="font-mono tabular-nums">{val}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
+              /* ── Desktop: shadcn Table (D-07) ── */
               <div className="max-h-[600px] overflow-auto">
                 <Table>
                   <TableHeader className="sticky top-0 bg-card z-10">
@@ -1867,9 +1919,9 @@ export default function MLProdutos() {
           <TabsContent value="ranking" className="mt-0 space-y-4">
             {/* KPIs */}
             <div className="grid grid-cols-3 gap-3">
-              <KPICard title="Unidades Vendidas" value={String(rankingKPIs.totalUnits)} icon={<TrendingUp className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-accent/10 text-accent" />
-              <KPICard title="Receita Total" value={currencyFmt(rankingKPIs.totalRev)} icon={<DollarSign className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-success/10 text-success" />
-              <KPICard title="Ticket Médio" value={currencyFmt(rankingKPIs.avgTicket)} icon={<Tag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(25,95%,53%)]/10 text-[hsl(25,95%,53%)]" />
+              <KPICard title="Unidades Vendidas" value={String(rankingKPIs.totalUnits)} icon={<TrendingUp className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-accent/10 text-accent" tooltip={tip("unidades_vendidas")} />
+              <KPICard title="Receita Total" value={currencyFmt(rankingKPIs.totalRev)} icon={<DollarSign className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-success/10 text-success" tooltip={tip("receita_total")} />
+              <KPICard title="Ticket Médio" value={currencyFmt(rankingKPIs.avgTicket)} icon={<Tag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(25,95%,53%)]/10 text-[hsl(25,95%,53%)]" tooltip={tip("ticket_medio")} />
             </div>
 
             <Card>
@@ -1963,10 +2015,10 @@ export default function MLProdutos() {
               const topSold = [...brandData].sort((a, b) => b.qty - a.qty)[0];
               return (
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                  <KPICard title="Maior Receita" value={topRevenue.brand} subtitle={currencyFmt(topRevenue.revenue)} icon={<DollarSign className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-success/10 text-success" />
-                  <KPICard title="Maior Ticket Médio" value={topTicket?.brand ?? "—"} subtitle={topTicket ? currencyFmt(topTicket.avgTicket) : "—"} icon={<Tag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(25,95%,53%)]/10 text-[hsl(25,95%,53%)]" />
-                  <KPICard title="Mais Vendida (un.)" value={topSold.brand} subtitle={`${topSold.qty} unidades`} icon={<TrendingUp className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-accent/10 text-accent" />
-                  <KPICard title="Mais Anúncios" value={topAds.brand} subtitle={`${topAds.ads} anúncios`} icon={<ShoppingBag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(270,70%,50%)]/10 text-[hsl(270,70%,50%)]" />
+                  <KPICard title="Maior Receita" value={topRevenue.brand} subtitle={currencyFmt(topRevenue.revenue)} icon={<DollarSign className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-success/10 text-success" tooltip={tip("receita_total")} />
+                  <KPICard title="Maior Ticket Médio" value={topTicket?.brand ?? "—"} subtitle={topTicket ? currencyFmt(topTicket.avgTicket) : "—"} icon={<Tag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(25,95%,53%)]/10 text-[hsl(25,95%,53%)]" tooltip={tip("ticket_medio")} />
+                  <KPICard title="Mais Vendida (un.)" value={topSold.brand} subtitle={`${topSold.qty} unidades`} icon={<TrendingUp className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-accent/10 text-accent" tooltip={tip("unidades_vendidas")} />
+                  <KPICard title="Mais Anúncios" value={topAds.brand} subtitle={`${topAds.ads} anúncios`} icon={<ShoppingBag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(270,70%,50%)]/10 text-[hsl(270,70%,50%)]" tooltip="Marca com maior número de anúncios ativos no catálogo." />
                 </div>
               );
             })()}
@@ -2095,10 +2147,10 @@ export default function MLProdutos() {
           <TabsContent value="abc" className="mt-0 space-y-4">
             {/* Summary KPIs */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <KPICard title="Total de Anúncios" value={String(abcSummary.total)} icon={<ShoppingBag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-accent/10 text-accent" />
-              <KPICard title="Curva A" value={String(abcSummary.A.count)} subtitle={`${abcSummary.A.pct.toFixed(1)}% · ${currencyFmt(abcSummary.A.revenue)}`} icon={<TrendingUp className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-success/10 text-success" />
-              <KPICard title="Curva B" value={String(abcSummary.B.count)} subtitle={`${abcSummary.B.pct.toFixed(1)}% · ${currencyFmt(abcSummary.B.revenue)}`} icon={<Package className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(25,95%,53%)]/10 text-[hsl(25,95%,53%)]" />
-              <KPICard title="Curva C" value={String(abcSummary.C.count)} subtitle={`${abcSummary.C.pct.toFixed(1)}% · ${currencyFmt(abcSummary.C.revenue)}`} icon={<Tag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(270,70%,50%)]/10 text-[hsl(270,70%,50%)]" />
+              <KPICard title="Total de Anúncios" value={String(abcSummary.total)} icon={<ShoppingBag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-accent/10 text-accent" tooltip="Total de anúncios ativos analisados na Curva ABC." />
+              <KPICard title="Curva A" value={String(abcSummary.A.count)} subtitle={`${abcSummary.A.pct.toFixed(1)}% · ${currencyFmt(abcSummary.A.revenue)}`} icon={<TrendingUp className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-success/10 text-success" tooltip="Anúncios de alta performance: respondem por ~80% da receita total (Curva A)." />
+              <KPICard title="Curva B" value={String(abcSummary.B.count)} subtitle={`${abcSummary.B.pct.toFixed(1)}% · ${currencyFmt(abcSummary.B.revenue)}`} icon={<Package className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(25,95%,53%)]/10 text-[hsl(25,95%,53%)]" tooltip="Anúncios de média performance: contribuem com ~15% da receita (Curva B)." />
+              <KPICard title="Curva C" value={String(abcSummary.C.count)} subtitle={`${abcSummary.C.pct.toFixed(1)}% · ${currencyFmt(abcSummary.C.revenue)}`} icon={<Tag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(270,70%,50%)]/10 text-[hsl(270,70%,50%)]" tooltip="Anúncios de baixa performance: respondem pelo restante (~5%) da receita (Curva C)." />
             </div>
 
             {/* ABC Chart */}
