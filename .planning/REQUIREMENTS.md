@@ -58,7 +58,7 @@ Regras iniciais candidatas: margem < alvo por produto; ROAS/ACoS fora da meta; T
 - [x] **UX-01**: Todo KPI tem tooltip/glossário em linguagem leiga (ex.: "CFFE = o frete que o ML te cobra")
 - [x] **UX-02**: Toda página tem empty state que orienta ação ("o que fazer para ter dados aqui")
 - [ ] **UX-03**: Tabelas de /anuncios, /pedidos e /financeiro sem overflow quebrado em mobile
-- [ ] **UX-04**: Consistência visual revisada (tokens kpi.positive/negative, espaçamentos, dark mode) nas páginas principais
+- [x] **UX-04**: Consistência visual revisada (tokens kpi.positive/negative, espaçamentos, dark mode) nas páginas principais
 
 ### Bloco MCO com Ads (Phase 48)
 
@@ -126,7 +126,7 @@ Decisão travada (Wesley 2026-06-14): modelo de 2 números (operacional + pós-a
 | UX-01 | Phase 46 | Complete |
 | UX-02 | Phase 46 | Complete |
 | UX-03 | Phase 46 | Pending |
-| UX-04 | Phase 46 | Pending |
+| UX-04 | Phase 46 | Complete |
 | QA-01 | Phase 47 | Pending |
 | QA-02 | Phase 47 | Pending |
 | QA-03 | Phase 47 | Pending |
