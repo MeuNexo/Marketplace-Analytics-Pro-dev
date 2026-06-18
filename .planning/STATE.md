@@ -29,7 +29,7 @@ See: .planning/PROJECT.md
 Phase: 49 (fluxo-de-caixa-caixa-real) — EXECUTING
 Plan: 4 of 5
 Status: Ready to execute
-Last activity: 2026-06-18 -- Phase 49 execution started
+Last activity: 2026-06-18 -- Phase 49: bugs do gráfico corrigidos + RPCs qualquer status + 2ª linha média 15d. AGUARDA validação de dados do Wesley (ver 49-VALIDACAO-PENDENTE.md)
 
 ### Quick Tasks Completed
 
@@ -37,6 +37,7 @@ Last activity: 2026-06-18 -- Phase 49 execution started
 |---|-------------|------|--------|-----------|
 | 260613-2p6 | DRE mês-calendário exato (01–31) via ml_billing_daily | 2026-06-13 | feat(dre) | [260613-2p6](./quick/260613-2p6-dre-mes-calendario-exato-01-31-via-ml-bi/) |
 | 260618-sum | Fluxo de caixa: RPCs consideram contas a pagar de QUALQUER status (paid+pending), futuro-only | 2026-06-18 | 5652ebfa | [260618-sum](./quick/260618-sum-corrigir-rpcs-de-fluxo-de-caixa-consider/) |
+| 260618-sma | Fluxo de caixa: 2ª linha de projeção (média 15d via orders) — AGUARDA validação Wesley | 2026-06-18 | fe19611d | [260618-sma](./quick/260618-sma-segunda-linha-projecao-media-15d/) |
 
 ### DRE mês-calendário (quick 260613-2p6, 2026-06-13)
 
