@@ -3,10 +3,17 @@
  * Ingere liberações reais do Mercado Pago para todas as orgs ativas.
  *
  * DOIS MODOS de janela temporal:
- *   (a) Histórica  (days_back=30):  money_release_status="released" — saldo real passado
- *   (b) Futura     (days_ahead=45): status approved/authorized/in_process/in_mediation — projeção
+ *   (a) Histórica  (days_back=30):  saldo real passado (releases realizados/agendados)
+ *   (b) Futura     (days_ahead=45): projeção de entradas (só quando days_ahead > 0)
  *
- * Token: mesmo access_token de ml_tokens (OAuth ML serve para ML + MP na mesma conta).
+ * PERF (corrigido 2026-06-18): o endpoint /v1/payments/search JÁ retorna
+ * transaction_details.net_received_amount, money_release_date, status e
+ * transaction_amount em cada result — NÃO é preciso buscar /v1/payments/{id}
+ * individualmente. Processa e faz UPSERT incremental POR PÁGINA (100), evitando
+ * estourar o tempo-limite da edge function e tornando o progresso durável.
+ *
+ * Token: mesmo access_token de ml_tokens (OAuth ML serve para ML + MP na mesma conta —
+ * validado em produção: /v1/payments/search retornou 200 com o token ML da Pé Vermeio).
  * Upsert idempotente por (organization_id, payment_id).
  * Disparada por pg_cron (Pattern B) diariamente às 07:00 UTC.
  *
@@ -14,7 +21,6 @@
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
 const SUPABASE_URL = (Deno.env.get("SUPABASE_URL") ?? "").trim();
 const SERVICE_KEY  = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
@@ -35,21 +41,7 @@ function json(body: unknown, status = 200) {
   });
 }
 
-// ── Zod schema para validação do payment retornado pela API MP ────────────────
-
-const MpPaymentSchema = z.object({
-  id:               z.number().or(z.string()),
-  status:           z.string(),
-  transaction_amount:    z.number().nullable().optional(),
-  payment_method_id:     z.string().nullable().optional(),
-  description:           z.string().nullable().optional(),
-  money_release_date:    z.string().nullable().optional(),
-  transaction_details:   z.object({
-    net_received_amount: z.number().nullable().optional(),
-  }).nullable().optional(),
-}).passthrough();
-
-// ── Auth guard: apenas service role pode invocar ──────────────────────────────
+const VALID_STATUSES = ["approved", "authorized", "in_process", "in_mediation", "refunded"];
 
 function requireServiceRole(req: Request): Response | null {
   if (!SERVICE_KEY) return null;
@@ -62,8 +54,6 @@ function requireServiceRole(req: Request): Response | null {
   }
   return null;
 }
-
-// ── Helpers de token ML (mesmo padrão de sync-ads) ───────────────────────────
 
 async function getAccessToken(sb: ReturnType<typeof createClient>, mlUserId: string): Promise<string> {
   const { data: row } = await sb
@@ -110,8 +100,6 @@ async function getAccessToken(sb: ReturnType<typeof createClient>, mlUserId: str
   return data.access_token;
 }
 
-// ── MP API fetch com retry 429 e tratamento de 401 ───────────────────────────
-
 async function mpGet(
   url: string,
   token: string,
@@ -120,16 +108,13 @@ async function mpGet(
   retried = false,
 ): Promise<any> {
   for (let i = 0; i < 3; i++) {
-    const res = await fetch(url, {
-      headers: { Authorization: "Bearer " + token },
-    });
+    const res = await fetch(url, { headers: { Authorization: "Bearer " + token } });
     if (res.ok) return res.json();
 
     if (res.status === 401 && !retried) {
-      // Token pode ter expirado — forçar refresh e tentar 1x mais
-      console.warn("sync-mp-releases: 401 para ml_user_id=" + mlUserId + " url=" + url.split("?")[0] + " — tentando refresh");
+      console.warn("sync-mp-releases: 401 para ml_user_id=" + mlUserId + " — tentando refresh");
       const newToken = await getAccessToken(sb, mlUserId);
-      return mpGet(url, newToken, sb, mlUserId, /* retried= */ true);
+      return mpGet(url, newToken, sb, mlUserId, true);
     }
 
     if (res.status === 429) {
@@ -148,80 +133,7 @@ async function mpGet(
   throw new Error("MP retries exhausted: " + url.split("?")[0]);
 }
 
-// ── Paginação dos payments de uma janela temporal ─────────────────────────────
-
-interface PaymentWindow {
-  beginDate: string;  // ISO com offset: 2026-05-19T00:00:00.000-03:00
-  endDate:   string;  // ISO com offset: 2026-06-18T23:59:59.000-03:00
-  mode:      "historical" | "future";
-}
-
-async function fetchPaymentsWindow(
-  token: string,
-  sb: ReturnType<typeof createClient>,
-  mlUserId: string,
-  win: PaymentWindow,
-): Promise<any[]> {
-  const results: any[] = [];
-  let offset = 0;
-
-  while (true) {
-    const qs = new URLSearchParams({
-      sort:         "money_release_date",
-      criteria:     "asc",
-      range:        "money_release_date",
-      begin_date:   win.beginDate,
-      end_date:     win.endDate,
-      limit:        "100",
-      offset:       String(offset),
-    });
-
-    const data = await mpGet(
-      MP_API + "/v1/payments/search?" + qs.toString(),
-      token,
-      sb,
-      mlUserId,
-    );
-
-    const pageResults: any[] = data?.results ?? [];
-    const total: number      = data?.paging?.total ?? 0;
-
-    // Log do status da primeira chamada (smoke de escopo OAuth — Questão Aberta 1 / A1)
-    if (offset === 0) {
-      console.log(
-        "sync-mp-releases: primeira chamada MP para ml_user_id=" + mlUserId +
-        " mode=" + win.mode +
-        " total=" + total +
-        " begin=" + win.beginDate.substring(0, 10) +
-        " end=" + win.endDate.substring(0, 10),
-      );
-    }
-
-    results.push(...pageResults);
-    offset += pageResults.length;
-
-    if (pageResults.length < 100 || offset >= total) break;
-    await new Promise(r => setTimeout(r, 300)); // rate limit gentil
-  }
-
-  return results;
-}
-
-// ── Buscar detalhes de um payment individual ──────────────────────────────────
-
-async function fetchPaymentDetail(
-  paymentId: string,
-  token: string,
-  sb: ReturnType<typeof createClient>,
-  mlUserId: string,
-): Promise<any> {
-  return mpGet(MP_API + "/v1/payments/" + paymentId, token, sb, mlUserId);
-}
-
-// ── Normalizar datas para ISO com offset BRT (-03:00) ────────────────────────
-
 function toBrtIso(dateStr: string, time: "start" | "end"): string {
-  // Gera string no formato exigido pelo endpoint MP: YYYY-MM-DDThh:mm:ss.000-03:00
   const t = time === "start" ? "T00:00:00.000-03:00" : "T23:59:59.000-03:00";
   return dateStr + t;
 }
@@ -236,7 +148,88 @@ function addDays(dateStr: string, days: number): string {
   return d.toISOString().substring(0, 10);
 }
 
-// ── Sincronização por org/seller ──────────────────────────────────────────────
+interface PaymentWindow {
+  beginDate: string;
+  endDate:   string;
+  mode:      "historical" | "future";
+}
+
+// Pagina o /search e faz UPSERT incremental por página (sem fetch de detalhe individual).
+async function processWindow(
+  sb: ReturnType<typeof createClient>,
+  mlUserId: string,
+  orgId: string,
+  token: string,
+  win: PaymentWindow,
+): Promise<number> {
+  let offset = 0;
+  let upserted = 0;
+
+  while (true) {
+    const qs = new URLSearchParams({
+      sort:       "money_release_date",
+      criteria:   "asc",
+      range:      "money_release_date",
+      begin_date: win.beginDate,
+      end_date:   win.endDate,
+      limit:      "100",
+      offset:     String(offset),
+    });
+
+    const data = await mpGet(MP_API + "/v1/payments/search?" + qs.toString(), token, sb, mlUserId);
+    const pageResults: any[] = data?.results ?? [];
+    const total: number      = data?.paging?.total ?? 0;
+
+    if (offset === 0) {
+      console.log(
+        "sync-mp-releases: 1a chamada MP ml_user_id=" + mlUserId +
+        " mode=" + win.mode + " total=" + total +
+        " begin=" + win.beginDate.substring(0, 10) + " end=" + win.endDate.substring(0, 10),
+      );
+    }
+
+    const syncedAt = new Date().toISOString();
+    const rows: any[] = [];
+
+    for (const p of pageResults) {
+      const status = String(p?.status ?? "").toLowerCase();
+      if (!VALID_STATUSES.includes(status)) continue;
+
+      const releaseDate = String(p?.money_release_date ?? "").substring(0, 10);
+      if (!releaseDate) continue;
+
+      let net = Number(p?.transaction_details?.net_received_amount ?? 0);
+      if (status === "refunded") net = -Math.abs(net);
+
+      rows.push({
+        organization_id: orgId,
+        ml_user_id:      Number(mlUserId),
+        payment_id:      String(p.id),
+        release_date:    releaseDate,
+        net_amount:      net,
+        gross_amount:    p?.transaction_amount ?? null,
+        status_mp:       p?.status ?? null,
+        payment_method:  p?.payment_method_id ?? null,
+        description:     p?.description ?? null,
+        synced_at:       syncedAt,
+      });
+    }
+
+    if (rows.length > 0) {
+      const { error } = await sb
+        .from("cash_inflows")
+        .upsert(rows, { onConflict: "organization_id,payment_id" });
+      if (error) throw new Error("cash_inflows upsert org=" + orgId + ": " + error.message);
+      upserted += rows.length;
+    }
+
+    offset += pageResults.length;
+    if (pageResults.length < 100 || offset >= total) break;
+    await new Promise(r => setTimeout(r, 150)); // rate limit gentil entre páginas
+  }
+
+  return upserted;
+}
 
 async function syncOrg(
   sb: ReturnType<typeof createClient>,
@@ -254,137 +247,35 @@ async function syncOrg(
   }
 
   const today = todayStr();
+  let upserted = 0;
 
-  // Janela (a) Histórica: hoje-N até hoje; capturar releases realizados
-  const historicalWin: PaymentWindow = {
-    beginDate: toBrtIso(addDays(today, -daysBack), "start"),
-    endDate:   toBrtIso(today, "end"),
-    mode:      "historical",
-  };
-
-  // Janela (b) Futura: amanhã até hoje+daysAhead; capturar projeções
-  const futureWin: PaymentWindow = {
-    beginDate: toBrtIso(addDays(today, 1), "start"),
-    endDate:   toBrtIso(addDays(today, daysAhead), "end"),
-    mode:      "future",
-  };
-
-  // Buscar ambas as janelas (histórica primeiro, depois futura)
-  let allPayments: any[] = [];
+  // (a) Histórica: hoje-N até hoje
   try {
-    const historical = await fetchPaymentsWindow(token, sb, mlUserId, historicalWin);
-    allPayments.push(...historical);
+    upserted += await processWindow(sb, mlUserId, orgId, token, {
+      beginDate: toBrtIso(addDays(today, -daysBack), "start"),
+      endDate:   toBrtIso(today, "end"),
+      mode:      "historical",
+    });
   } catch (e: any) {
     console.warn("sync-mp-releases: erro janela histórica ml_user_id=" + mlUserId + ": " + e.message);
   }
 
-  try {
-    const future = await fetchPaymentsWindow(token, sb, mlUserId, futureWin);
-    allPayments.push(...future);
-  } catch (e: any) {
-    console.warn("sync-mp-releases: erro janela futura ml_user_id=" + mlUserId + ": " + e.message);
-  }
-
-  if (allPayments.length === 0) {
-    console.log("sync-mp-releases: 0 payments para ml_user_id=" + mlUserId);
-    return { org_id: orgId, upserted: 0 };
-  }
-
-  // Deduplicar por payment_id antes de buscar detalhes (evita double-fetch)
-  const seen = new Set<string>();
-  const uniquePayments = allPayments.filter(p => {
-    const pid = String(p.id);
-    if (seen.has(pid)) return false;
-    seen.add(pid);
-    return true;
-  });
-
-  // Buscar detalhes individuais para net_received_amount + campos extras
-  const rows: {
-    organization_id:  string;
-    ml_user_id:       number;
-    payment_id:       string;
-    release_date:     string;
-    net_amount:       number;
-    gross_amount:     number | null;
-    status_mp:        string | null;
-    payment_method:   string | null;
-    description:      string | null;
-    synced_at:        string;
-  }[] = [];
-
-  const syncedAt = new Date().toISOString();
-
-  for (const p of uniquePayments) {
-    // Filtrar por status relevante (histórico: aprovados/mediação/estorno; futuro: confirmados)
-    const status: string = (p.status ?? "").toLowerCase();
-    const validStatuses = ["approved", "authorized", "in_process", "in_mediation", "refunded"];
-    if (!validStatuses.includes(status)) continue;
-
-    let detail: any;
+  // (b) Futura: amanhã até hoje+daysAhead (só quando daysAhead > 0)
+  if (daysAhead > 0) {
     try {
-      detail = await fetchPaymentDetail(String(p.id), token, sb, mlUserId);
+      upserted += await processWindow(sb, mlUserId, orgId, token, {
+        beginDate: toBrtIso(addDays(today, 1), "start"),
+        endDate:   toBrtIso(addDays(today, daysAhead), "end"),
+        mode:      "future",
+      });
     } catch (e: any) {
-      console.warn("sync-mp-releases: erro detalhe payment=" + p.id + ": " + e.message);
-      continue;
+      console.warn("sync-mp-releases: erro janela futura ml_user_id=" + mlUserId + ": " + e.message);
     }
-
-    // Validar estrutura via Zod
-    const parsed = MpPaymentSchema.safeParse(detail);
-    if (!parsed.success) {
-      console.warn("sync-mp-releases: payment=" + p.id + " schema inválido, pulando");
-      continue;
-    }
-    const d = parsed.data;
-
-    const releaseDate = (d.money_release_date ?? "").substring(0, 10);
-    if (!releaseDate) {
-      console.warn("sync-mp-releases: payment=" + p.id + " sem money_release_date, pulando");
-      continue;
-    }
-
-    let netReceived = Number(d.transaction_details?.net_received_amount ?? 0);
-
-    // Estornos: net_amount negativo
-    if (status === "refunded") {
-      netReceived = -Math.abs(netReceived);
-    }
-
-    rows.push({
-      organization_id: orgId,
-      ml_user_id:      Number(mlUserId),
-      payment_id:      String(d.id),
-      release_date:    releaseDate,
-      net_amount:      netReceived,
-      gross_amount:    d.transaction_amount ?? null,
-      status_mp:       d.status ?? null,
-      payment_method:  d.payment_method_id ?? null,
-      description:     d.description ?? null,
-      synced_at:       syncedAt,
-    });
-
-    // Rate limit gentil: 1 req/200ms para detalhes
-    await new Promise(r => setTimeout(r, 200));
   }
 
-  if (rows.length === 0) {
-    return { org_id: orgId, upserted: 0 };
-  }
-
-  // Upsert idempotente — onConflict por (organization_id, payment_id)
-  const { error: upsertErr } = await sb
-    .from("cash_inflows")
-    .upsert(rows, { onConflict: "organization_id,payment_id" });
-
-  if (upsertErr) {
-    throw new Error("cash_inflows upsert error org=" + orgId + ": " + upsertErr.message);
-  }
-
-  console.log("sync-mp-releases: org=" + orgId + " ml_user_id=" + mlUserId + " upserted=" + rows.length);
-  return { org_id: orgId, upserted: rows.length };
+  console.log("sync-mp-releases: org=" + orgId + " ml_user_id=" + mlUserId + " upserted=" + upserted);
+  return { org_id: orgId, upserted };
 }
-
-// ── Main handler ──────────────────────────────────────────────────────────────
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -401,7 +292,6 @@ serve(async (req) => {
     const daysBack  = Number(body.days_back  ?? 30);
     const daysAhead = Number(body.days_ahead ?? 45);
 
-    // Buscar todos os ml_user_ids com refresh_token ativo (usuários ativos)
     const { data: tokenRows, error: tokErr } = await sb
       .from("ml_tokens")
       .select("ml_user_id,organization_id,seller_id")
