@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: milestone
-status: completed
+status: executing
 stopped_at: Phase 46 context gathered
-last_updated: "2026-06-17T23:23:21.162Z"
-last_activity: 2026-06-14 -- Phase 48 completa (3/3 planos com SUMMARY)
+last_updated: "2026-06-18T00:05:52.691Z"
+last_activity: 2026-06-17 -- Phase 46 execution started
 progress:
   total_phases: 8
   completed_phases: 5
-  total_plans: 21
-  completed_plans: 18
+  total_plans: 26
+  completed_plans: 19
   percent: 63
 ---
 
@@ -22,14 +22,14 @@ See: .planning/PROJECT.md
 
 **Milestone:** v7.0 — SaaS Operacional End-to-End
 **Core value:** Sistema 100% operacional e vendável como assinatura — dados verdadeiros em todas as páginas (zero mock), multi-tenant endurecido, monetização via Stripe ativa, onboarding guiado para lojista leigo, e Consultor v1 (motor de regras + score de saúde) como diferencial de venda.
-**Current focus:** Phase 48 — mco-com-ads
+**Current focus:** Phase 46 — ux-para-leigos
 
 ## Current Position
 
-Phase: 48 (mco-com-ads) — COMPLETE (3/3 planos com SUMMARY)
-Plan: 3 of 3
-Status: Complete
-Last activity: 2026-06-14 -- Phase 48 completa (3/3 planos com SUMMARY)
+Phase: 46 (ux-para-leigos) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
+Last activity: 2026-06-17 -- Phase 46 execution started
 
 ### Quick Tasks Completed
 
@@ -81,6 +81,7 @@ Last activity: 2026-06-14 -- Phase 48 completa (3/3 planos com SUMMARY)
 | Phase 48-mco-com-ads P01 | 45min | 3 tasks | 3 files |
 | Phase 48-mco-com-ads P02 | 30min | 3 tasks | 1 files |
 | Phase 48-mco-com-ads P03 | ~3h | 2 tasks + 3 fixes + 1 checkpoint | 4 files |
+| Phase 46-ux-para-leigos P01 | 4min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -119,6 +120,8 @@ Last activity: 2026-06-14 -- Phase 48 completa (3/3 planos com SUMMARY)
 - [Phase 48-03]: DRE não adiciona linha extra de Publicidade — groupBillingCharges já categoriza PADS em 'Campanhas de publicidade'; linha extra causaria dupla contagem (Pitfall 7 mais profundo que documentado)
 - [Phase 48-03]: supabase.rpc() retorna set completo sem LIMIT; PostgREST select direto trunca em 1000 linhas — para conjuntos financeiros >1000 linhas/período, sempre usar RPC
 - [Phase 48-03]: MCO-02 e MCO-03 satisfeitos e aprovados por Wesley no preview Vercel (dados reais ckcdevcxgvueywivefgx)
+- [Phase 46]: Popover over Tooltip for KPICard: Radix Tooltip does not fire on touch; Popover with controlled open state is reliable on iOS/Android
+- [Phase 46]: KPICard tooltip prop stays string (not GlossaryKey) — component stays generic; consumers do glossary lookup
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -166,7 +169,7 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-17T23:23:21.151Z
+Last session: 2026-06-18T00:05:52.682Z
 Stopped at: Phase 46 context gathered
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)

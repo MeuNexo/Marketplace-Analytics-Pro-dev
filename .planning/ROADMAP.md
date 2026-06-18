@@ -196,7 +196,8 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 **Plans**: 5 plans em 3 waves
 
 Plans:
-- [ ] 46-01-primitivos-compartilhados-PLAN.md — Glossário central + KPICard hover+tap (Popover) + componente EmptyState (Wave 1)
+
+- [x] 46-01-primitivos-compartilhados-PLAN.md — Glossário central + KPICard hover+tap (Popover) + componente EmptyState (Wave 1)
 - [ ] 46-02-glossario-e-empty-states-componentes-PLAN.md — Glossário no MLKPIGrid + empty states em analytics/estoque (Wave 2)
 - [ ] 46-03-tabelas-mobile-e-tokens-PLAN.md — Tabelas→cards mobile + glossário + EmptyState + tokens kpi em /anuncios, /pedidos, /financeiro (Wave 2)
 - [ ] 46-05-cobertura-kpi-e-precificacao-PLAN.md — Cobertura UX-01 nos sites de KPICard fora do radar + auditoria UX-04 de /precificacao (Wave 2)
@@ -262,6 +263,6 @@ Plans:
 | 43. Multi-Tenant Hardening | 4/4 | Complete | Isolamento 2-org PASS; pendente verify-phase + checkpoint visual |
 | 44. Monetizacao Stripe | 0/? | Not started | - |
 | 45. Consultor v1 | 3/3 | Complete   | 2026-06-14 |
-| 46. UX para Leigos | 0/? | Not started | - |
+| 46. UX para Leigos | 1/5 | In Progress|  |
 | 47. QA End-to-End + Go-Live | 0/? | Not started | - |
 | 48. MCO com Ads | 3/3 | Complete | 2026-06-14 |
