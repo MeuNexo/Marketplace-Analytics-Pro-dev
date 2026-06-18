@@ -75,8 +75,8 @@ Decisão travada (Wesley 2026-06-14): modelo de 2 números (operacional + pós-a
 - [x] **CASH-01**: Ingestão de caixa REAL multi-tenant — entradas = liberações do Mercado Pago (nova EF + tabela, padrão das EFs `sync-*`), escopada por `organization_id` com RLS
 - [x] **CASH-02**: Saídas de caixa — despesas / ordens de compra em tabela própria, escopada por `organization_id` com RLS (fonte inicial a definir no plano: OC Tiny e/ou lançamento)
 - [ ] **CASH-03**: RPC de fluxo de caixa `SECURITY INVOKER` retorna saldo diário acumulado real + projeção (SMA de vendas dos últimos 15d × (1 − custo operacional), ativa após dia 8), sem truncamento PostgREST, boundary de data timestamptz correto (`.lt` nextDay)
-- [ ] **CASH-04**: Nova página `/fluxo-de-caixa` sob grupo de menu "Operações" no shell, com guard de rota e isolamento por org; gráfico "Como meu dinheiro vai evoluir?" (ComposedChart, linha real + linha projetada, alerta de saldo negativo)
-- [ ] **CASH-05**: 3 cards com dado real — Caixa Hoje, Projeção Futura (pessimista/realista + data crítica), Capacidade de Compra ("posso comprar mais estoque?" = saldo projetado − margem de segurança)
+- [x] **CASH-04**: Nova página `/fluxo-de-caixa` sob grupo de menu "Operações" no shell, com guard de rota e isolamento por org; gráfico "Como meu dinheiro vai evoluir?" (ComposedChart, linha real + linha projetada, alerta de saldo negativo)
+- [x] **CASH-05**: 3 cards com dado real — Caixa Hoje, Projeção Futura (pessimista/realista + data crítica), Capacidade de Compra ("posso comprar mais estoque?" = saldo projetado − margem de segurança)
 - [x] **CASH-06**: Parâmetros por org configuráveis (`financial_settings`): saldo inicial, taxa de custo operacional, margem de segurança
 
 Decisão travada (Wesley 2026-06-18): fonte = caixa REAL (liberações MP + despesas), não derivado de vendas; nova página em "Operações" (não mexer no /financeiro de competência); MVP = gráfico + 3 cards. Portado do nexointeligence.
@@ -149,8 +149,8 @@ Decisão travada (Wesley 2026-06-18): fonte = caixa REAL (liberações MP + desp
 | CASH-01 | Phase 49 | Complete |
 | CASH-02 | Phase 49 | Complete |
 | CASH-03 | Phase 49 | Pending |
-| CASH-04 | Phase 49 | Pending |
-| CASH-05 | Phase 49 | Pending |
+| CASH-04 | Phase 49 | Complete |
+| CASH-05 | Phase 49 | Complete |
 | CASH-06 | Phase 49 | Complete |
 
 ---

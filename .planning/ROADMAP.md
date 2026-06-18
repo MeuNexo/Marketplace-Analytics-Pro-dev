@@ -16,7 +16,7 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 - [ ] **Phase 46: UX para Leigos** — Glossario/tooltips em todo KPI, empty states acionaveis, mobile polish, consistencia visual
 - [ ] **Phase 47: QA End-to-End + Go-Live** — Simulacao tenant novo, auditoria de seguranca, tsc + build + smoke de deploy Vercel
 - [x] **Phase 48: MCO com Ads** — Margem por produto considerando publicidade: margem operacional + margem pos-ads lado a lado, alerta separado "ads comendo a margem" (TACoS/ACoS por produto), MCO agregado da operacao. Atribuicao direta via ml_ads_products_cache (reconcilia 100% com total da conta) (completed 2026-06-14)
-- [ ] **Phase 49: Fluxo de Caixa (Caixa Real)** — Nova pagina em "Operacoes" com o grafico "Como meu dinheiro vai evoluir?" (saldo real + projecao) e 3 cards (Caixa Hoje, Projecao Futura, Capacidade de Compra), alimentados por caixa REAL: entradas = liberacoes Mercado Pago, saidas = despesas/OCs. Portado do antigo SaaS nexointeligence
+- [x] **Phase 49: Fluxo de Caixa (Caixa Real)** — Nova pagina em "Operacoes" com o grafico "Como meu dinheiro vai evoluir?" (saldo real + projecao) e 3 cards (Caixa Hoje, Projecao Futura, Capacidade de Compra), alimentados por caixa REAL: entradas = liberacoes Mercado Pago, saidas = despesas/OCs. Portado do antigo SaaS nexointeligence (completed 2026-06-18)
 
 ---
 
@@ -279,19 +279,19 @@ Plans:
 **Wave 1 — Backend de ingestao de caixa real** *(2 planos paralelos; 49-05 deploya apos a tabela do 49-01)*
 
 - [x] 49-01-PLAN.md — Tabelas (financial_settings/cash_inflows/cash_outflows com schema Tiny + RLS) + EF sync-mp-releases (ENTRADAS = liberacoes MP) + pg_cron Pattern B + [BLOCKING] apply/deploy/smoke (CASH-01, CASH-02, CASH-06)
-- [ ] 49-05-PLAN.md — EF sync-tiny-payables (SAIDAS = contas a pagar do Tiny /contas-pagar -> cash_outflows, multi-tenant, idempotente) + pg_cron Pattern B 6h + [BLOCKING] deploy/smoke (depends_on 49-01) (CASH-02)
+- [x] 49-05-PLAN.md — EF sync-tiny-payables (SAIDAS = contas a pagar do Tiny /contas-pagar -> cash_outflows, multi-tenant, idempotente) + pg_cron Pattern B 6h + [BLOCKING] deploy/smoke (depends_on 49-01) (CASH-02)
 
 **Wave 2 — RPCs de fluxo de caixa** *(blocked on 49-01)*
 
-- [ ] 49-02-PLAN.md — get_cashflow + get_daily_balance + get_projected_balance_summary (SECURITY INVOKER, SMA via orders por org, sem truncamento) + REVOKE/GRANT + [BLOCKING] apply (CASH-03)
+- [x] 49-02-PLAN.md — get_cashflow + get_daily_balance + get_projected_balance_summary (SECURITY INVOKER, SMA via orders por org, sem truncamento) + REVOKE/GRANT + [BLOCKING] apply (CASH-03)
 
 **Wave 3 — Frontend: hooks + grafico** *(blocked on 49-02)*
 
-- [ ] 49-03-PLAN.md — 5 hooks (useFinancialSettings/useCashFlowData/useTodayBalance/useProjectedBalance/useFinancialHealth) + CashFlowChart (ComposedChart 2 linhas + alerta saldo<0) (CASH-04, CASH-05, CASH-06)
+- [x] 49-03-PLAN.md — 5 hooks (useFinancialSettings/useCashFlowData/useTodayBalance/useProjectedBalance/useFinancialHealth) + CashFlowChart (ComposedChart 2 linhas + alerta saldo<0) (CASH-04, CASH-05, CASH-06)
 
 **Wave 4 — Frontend: pagina + cards + nav** *(blocked on 49-03)*
 
-- [ ] 49-04-PLAN.md — 3 cards (Caixa Hoje/Projecao Futura/Capacidade) + pagina MLFluxoCaixa + sidebar Operacoes/rota/roleAccess/routeMeta + [checkpoint] visual Wesley no preview Vercel (CASH-04, CASH-05)
+- [x] 49-04-PLAN.md — 3 cards (Caixa Hoje/Projecao Futura/Capacidade) + pagina MLFluxoCaixa + sidebar Operacoes/rota/roleAccess/routeMeta + [checkpoint] visual Wesley no preview Vercel (CASH-04, CASH-05)
 
 **UI hint**: yes
 
@@ -309,4 +309,4 @@ Plans:
 | 46. UX para Leigos | 4/5 | In Progress|  |
 | 47. QA End-to-End + Go-Live | 0/? | Not started | - |
 | 48. MCO com Ads | 3/3 | Complete | 2026-06-14 |
-| 49. Fluxo de Caixa (Caixa Real) | 1/5 | In Progress|  |
+| 49. Fluxo de Caixa (Caixa Real) | 5/5 | Complete   | 2026-06-18 |
