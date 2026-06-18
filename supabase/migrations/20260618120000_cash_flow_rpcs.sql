@@ -316,8 +316,8 @@ BEGIN
   FROM public.orders o
   WHERE o.organization_id = p_org_id
     AND o.status IN ('paid', 'shipped', 'delivered')
-    AND o.data_pedido >= (v_today - INTERVAL '15 days')
-    AND o.data_pedido <  (v_today::TIMESTAMPTZ + INTERVAL '1 day');
+    AND o.data_pedido::timestamptz >= (v_today - INTERVAL '15 days')
+    AND o.data_pedido::timestamptz <  (v_today::TIMESTAMPTZ + INTERVAL '1 day');
 
   -- SMA líquida: descontar taxa de custo operacional
   v_daily_sma_net := v_daily_sma * (1.0 - v_cost_rate);
