@@ -131,7 +131,8 @@ export const KPI_GLOSSARY: Record<GlossaryKey, GlossaryEntry> = {
   lucro_bruto: {
     term: "Lucro Bruto",
     definition:
-      "Receita menos todos os custos: produto, frete, comissão, imposto e publicidade.",
+      "O que sobra da receita depois de descontar só o custo do produto (CMV) — antes das taxas do ML, impostos e publicidade.",
+    example: "Ex: vendeu R$100 e o produto custou R$30 → Lucro Bruto R$70.",
   },
   publicidade: {
     term: "Publicidade",
