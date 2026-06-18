@@ -15,6 +15,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { SellerMarketplaceBar } from "./SellerMarketplaceBar";
 import { OrganizationSwitcher } from "./OrganizationSwitcher";
+import { ThemeToggle } from "./ThemeToggle";
 
 interface HeaderProps {
   title: string;
@@ -127,6 +128,8 @@ export function Header({ title, subtitle, showSellerSwitcher = true, showSellerM
             </DropdownMenuContent>
           </DropdownMenu>
         )}
+
+        <ThemeToggle />
 
         <Button variant="ghost" size="icon" className="relative rounded-xl hover:bg-secondary/50">
           <Bell className="h-5 w-5 text-muted-foreground" />
