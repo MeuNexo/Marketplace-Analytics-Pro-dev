@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMLStore } from "@/contexts/MLStoreContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { supabase } from "@/integrations/supabase/client";
+import { nextDayUTC } from "@/lib/dateRange";
 
 export const BRAND_COLORS = [
   "hsl(217, 70%, 50%)",
@@ -73,7 +74,8 @@ export function useMLOrdersByBrand(from: string, to: string) {
         .eq("organization_id", orgId)
         .in("ml_user_id", resolvedMLUserIds)
         .gte("data_pedido", from)
-        .lte("data_pedido", to)
+        // data_pedido é timestamptz; .lt(nextDay) inclui o dia `to` inteiro (equivale a ::date <= to)
+        .lt("data_pedido", nextDayUTC(to))
         .in("status", ["paid", "shipped", "delivered"]);
 
       if (error) throw error;
