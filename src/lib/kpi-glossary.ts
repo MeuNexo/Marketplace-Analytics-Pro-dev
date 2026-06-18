@@ -25,7 +25,8 @@ export type GlossaryKey =
   | "margem_bruta"
   | "margem_liquida"
   | "margem_operacional"
-  | "margem_pos_ads";
+  | "margem_pos_ads"
+  | "mco";
 
 export interface GlossaryEntry {
   /** Rótulo técnico exibido no KPI (ex: "CFFE"). */
@@ -186,5 +187,12 @@ export const KPI_GLOSSARY: Record<GlossaryKey, GlossaryEntry> = {
     term: "Mg. Pós-Ads",
     definition:
       "Margem após descontar o gasto de publicidade atribuído ao produto.",
+  },
+  mco: {
+    term: "MCO",
+    definition:
+      "O que sobra da receita do período depois de descontar o custo do produto, as taxas do Mercado Livre, a publicidade e os impostos.",
+    example:
+      "Receita − CMV − Custo Operacional − Impostos = MCO",
   },
 };
