@@ -286,7 +286,7 @@ export function SimuladorPrecificacao() {
 
   // ── UI helpers ────────────────────────────────────────────────────────────────
   const tier = marginTier(result.margemPct);
-  const tierColor = tier === "good" ? "text-emerald-600" : tier === "warn" ? "text-amber-600" : "text-destructive";
+  const tierColor = tier === "good" ? "text-kpi-positive" : tier === "warn" ? "text-amber-600" : "text-destructive";
   const tierBg = tier === "good" ? "bg-emerald-500/10 border-emerald-500/30" : tier === "warn" ? "bg-amber-500/10 border-amber-500/30" : "bg-destructive/10 border-destructive/30";
 
   if (!connected) {
@@ -706,7 +706,7 @@ export function SimuladorPrecificacao() {
                 <span className="text-muted-foreground flex items-center gap-1">
                   <Wallet className="w-3 h-3" /> Ponto de equilíbrio
                 </span>
-                <span className={`font-semibold tabular-nums ${result.receitaBruta >= result.breakEven ? "text-emerald-600" : "text-destructive"}`}>
+                <span className={`font-semibold tabular-nums ${result.receitaBruta >= result.breakEven ? "text-kpi-positive" : "text-destructive"}`}>
                   {formatBRL(result.breakEven)}
                 </span>
               </div>

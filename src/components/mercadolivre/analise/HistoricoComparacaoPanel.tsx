@@ -20,7 +20,7 @@ function priceDiff(a: number, b: number, kind: "currency" | "percent"): DiffResu
     kind === "currency"
       ? `${sign} ${formatBRL(abs)}`
       : `${sign} ${abs.toFixed(2).replace(".", ",")}%`;
-  const className = d > 0 ? "text-emerald-600" : "text-red-600";
+  const className = d > 0 ? "text-kpi-positive" : "text-kpi-negative";
   return { label: formatted, className };
 }
 
