@@ -192,6 +192,12 @@ async function processWindow(
     const rows: any[] = [];
 
     for (const p of pageResults) {
+      // Só VENDAS reais do Mercado Livre (decisão Wesley 2026-06-18): a venda tem
+      // order.type === 'mercadolibre' (mesmo paga via pix/bank_transfer/account_money).
+      // Exclui aportes/transferências (cofrinho/rendimento do MP, PSP_TRANSFER) que
+      // vêm como regular_payment mas sem order de marketplace — NÃO são receita.
+      if (String(p?.order?.type ?? "") !== "mercadolibre") continue;
+
       const status = String(p?.status ?? "").toLowerCase();
       if (!VALID_STATUSES.includes(status)) continue;
 
