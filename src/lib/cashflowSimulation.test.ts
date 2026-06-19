@@ -57,6 +57,20 @@ describe("simulateCashflow", () => {
     expect(verdict.menorSaldo).toBe(Math.min(...SMA)); // 15000
     expect(verdict.valeIdx).toBe(4);
     expect(verdict.status).toBe("saudavel"); // 15000 >= 10000
+    expect(verdict.criticalDate).toBe(null); // nunca abaixo da margem
+  });
+
+  it("criticalDate (1º cruzamento da margem) ≠ valeDate (ponto mais fundo)", () => {
+    const base = makeBase();
+    // gastoExtra=3000/dia: cenario = SMA[i] - 3000*(i+1).
+    //   idx3 (22/06)=6000 → 1º dia < margem 10000 (criticalDate)
+    //   idx6 (25/06)=-2000 → menor saldo (valeDate), bem depois do 1º cruzamento.
+    const { verdict } = simulateCashflow(base, params({ gastoExtra: 3000 }));
+
+    expect(verdict.status).toBe("risco");
+    expect(verdict.criticalDate).toBe("2026-06-22"); // 1º cruzamento
+    expect(verdict.valeDate).toBe("2026-06-25"); // vale
+    expect(verdict.criticalDate).not.toBe(verdict.valeDate);
   });
 
   it("gastoExtra empurra menorSaldo abaixo da margem → status risco + necessidadeReceitaDia > 0", () => {

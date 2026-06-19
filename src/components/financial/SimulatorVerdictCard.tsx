@@ -23,7 +23,10 @@ function toDdMM(fullDate: string): string {
 
 export function SimulatorVerdictCard({ verdict }: SimulatorVerdictCardProps) {
   const isSaudavel = verdict.status === "saudavel";
-  const dataCritica = toDdMM(verdict.valeDate);
+  // "Fica abaixo da margem" = primeiro cruzamento (criticalDate).
+  // "Menor saldo em" = ponto mais fundo (valeDate). São datas diferentes.
+  const dataAbaixo = toDdMM(verdict.criticalDate ?? "");
+  const dataVale = toDdMM(verdict.valeDate);
 
   // Edge §7: sem simulação ativa, o card reflete o cenário projetado atual
   // (baseline) — não esconder. Apenas adiciona um rótulo neutro.
@@ -68,7 +71,7 @@ export function SimulatorVerdictCard({ verdict }: SimulatorVerdictCardProps) {
           ) : (
             <>
               Caixa fica abaixo da margem em{" "}
-              <span className="font-semibold text-kpi-negative">{dataCritica}</span>.
+              <span className="font-semibold text-kpi-negative">{dataAbaixo}</span>.
               Precisa de{" "}
               <span className="font-semibold text-kpi-negative">
                 +{formatCurrency(verdict.necessidadeReceitaDia)}/dia
@@ -90,11 +93,11 @@ export function SimulatorVerdictCard({ verdict }: SimulatorVerdictCardProps) {
               {formatCurrency(verdict.menorSaldo)}
             </span>
           </div>
-          {dataCritica && (
+          {dataVale && (
             <div className="flex items-center gap-1.5">
               <span className="text-muted-foreground">em</span>
               <span className="font-medium tabular-nums text-foreground">
-                {dataCritica}
+                {dataVale}
               </span>
             </div>
           )}

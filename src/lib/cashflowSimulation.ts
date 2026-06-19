@@ -38,6 +38,8 @@ export interface SimVerdict {
   valeIdx: number;
   diasAteVale: number;
   valeDate: string;
+  /** Primeiro dia (fullDate) em que o saldo cruza ABAIXO da margem; null se nunca. */
+  criticalDate: string | null;
   status: "saudavel" | "risco";
   folgaGastoDia: number;
   necessidadeReceitaDia: number;
@@ -70,6 +72,7 @@ export function simulateCashflow(
         valeIdx: 0,
         diasAteVale: 1,
         valeDate: "",
+        criticalDate: null,
         status: 0 >= margem ? "saudavel" : "risco",
         folgaGastoDia: 0,
         necessidadeReceitaDia: 0,
@@ -95,13 +98,19 @@ export function simulateCashflow(
     };
   });
 
-  // Veredito: menor saldo (argmin) ao longo do horizonte.
+  // Veredito: menor saldo (argmin = ponto mais fundo) + primeiro cruzamento da
+  // margem (criticalDate = quando o caixa FICA abaixo da margem pela 1ª vez).
+  // São coisas diferentes: o vale pode ser muito depois do 1º cruzamento.
   let valeIdx = 0;
   let menorSaldo = series[0].cenario;
-  for (let i = 1; i < series.length; i++) {
-    if (series[i].cenario < menorSaldo) {
+  let criticalDate: string | null = null;
+  for (let i = 0; i < series.length; i++) {
+    if (series[i].cenario < menorSaldo || i === 0) {
       menorSaldo = series[i].cenario;
       valeIdx = i;
+    }
+    if (criticalDate === null && series[i].cenario < margem) {
+      criticalDate = series[i].fullDate;
     }
   }
 
@@ -118,6 +127,7 @@ export function simulateCashflow(
       valeIdx,
       diasAteVale,
       valeDate,
+      criticalDate,
       status,
       folgaGastoDia,
       necessidadeReceitaDia,
