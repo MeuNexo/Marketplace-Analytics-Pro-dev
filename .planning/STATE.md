@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 46-02-PLAN.md
-last_updated: "2026-06-19T02:15:00.000Z"
-last_activity: 2026-06-19 -- Phase 49 (Fluxo de Caixa) validada + Phase 50 (Simulador) verifier PASSED 6/6; aprovação visual Wesley OK. Ambas em preview, pendente merge p/ prod.
+stopped_at: Phase 51 planned + verified (3 plans, 3 waves)
+last_updated: "2026-06-19T18:27:25.402Z"
+last_activity: 2026-06-19 -- Phase 51 execution started
 progress:
-  total_phases: 10
+  total_phases: 11
   completed_phases: 8
-  total_plans: 39
-  completed_plans: 35
-  percent: 80
+  total_plans: 37
+  completed_plans: 33
+  percent: 73
 ---
 
 # Project State
@@ -22,14 +22,15 @@ See: .planning/PROJECT.md
 
 **Milestone:** v7.0 — SaaS Operacional End-to-End
 **Core value:** Sistema 100% operacional e vendável como assinatura — dados verdadeiros em todas as páginas (zero mock), multi-tenant endurecido, monetização via Stripe ativa, onboarding guiado para lojista leigo, e Consultor v1 (motor de regras + score de saúde) como diferencial de venda.
-**Current focus:** Phase 50 — simulador-de-cenarios-de-caixa (CONCLUÍDA, em preview)
+**Current focus:** Phase 51 — painel-de-tesouraria-fluxo-de-caixa
 
 ## Current Position
 
-Phase: 50 (simulador-de-cenarios-de-caixa-e-se) — COMPLETE (verifier PASSED 6/6 + aprovação visual Wesley)
+Phase: 51 (painel-de-tesouraria-fluxo-de-caixa) — EXECUTING
+Plan: 2 of 3
 Phase: 49 (fluxo-de-caixa-caixa-real) — COMPLETE (dados validados centavo a centavo + timezone BRT corrigido + aprovação visual)
-Status: Ambas em preview (branch preview/phase-50-simulador-caixa). PENDENTE: merge p/ main/prod.
-Last activity: 2026-06-19 -- Phase 50 (Simulador "E se...?") fechada: módulo puro 7 testes + 3ª linha + veredito folga/status + Tabs. 2 fixes pós-checkpoint: criticalDate (1º cruzamento da margem) + timezone BRT (card/RPCs usavam UTC). Wesley aprovou.
+Status: Ready to execute
+Last activity: 2026-06-19 -- Phase 51 execution started
 
 ### Quick Tasks Completed
 
@@ -91,6 +92,7 @@ Last activity: 2026-06-19 -- Phase 50 (Simulador "E se...?") fechada: módulo pu
 | Phase 49-fluxo-de-caixa-caixa-real P01 | 45m | 3 tasks | 4 files |
 | Phase 49-fluxo-de-caixa-caixa-real P03 | 15min | 2 tasks | 6 files |
 | Phase 49 P04 | 20 | 2 tasks | 8 files |
+| Phase 51-painel-de-tesouraria-fluxo-de-caixa P03 | 25min | 4 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -137,6 +139,7 @@ Last activity: 2026-06-19 -- Phase 50 (Simulador "E se...?") fechada: módulo pu
 - [Phase ?]: Recharts SVG fill/stroke hex values preserved untouched — SVG attributes bypass Tailwind token system
 - [Phase ?]: cash_outflows com schema Tiny criada no 49-01 compartilhada por 49-05
 - [Phase ?]: release_date e outflow_date como DATE não timestamptz para cálculo de caixa por dia
+- [Phase ?]: Mantido como média das saídas dos últimos 3 meses para diferenciar de Saída Real (30d)
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -184,8 +187,8 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-18T19:45:47.404Z
-Stopped at: Completed 46-02-PLAN.md
+Last session: 2026-06-19T18:27:04.447Z
+Stopped at: Phase 51 planned + verified (3 plans, 3 waves)
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
