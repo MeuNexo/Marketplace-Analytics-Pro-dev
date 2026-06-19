@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: milestone
 status: "Ambas em preview (branch preview/phase-50-simulador-caixa). PENDENTE: merge p/ main/prod."
-stopped_at: Phase 51 context gathered
-last_updated: "2026-06-19T17:23:02.040Z"
+stopped_at: Phase 51 planned + verified (3 plans, 3 waves)
+last_updated: "2026-06-19T17:49:35.786Z"
 last_activity: "2026-06-19 -- Phase 50 (Simulador "E se...?") fechada: módulo puro 7 testes + 3ª linha + veredito folga/status + Tabs. 2 fixes pós-checkpoint: criticalDate (1º cruzamento da margem) + timezone BRT (card/RPCs usavam UTC). Wesley aprovou."
 progress:
   total_phases: 11
   completed_phases: 7
-  total_plans: 34
+  total_plans: 37
   completed_plans: 30
   percent: 64
 ---
@@ -184,8 +184,8 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-19T17:23:02.012Z
-Stopped at: Phase 51 context gathered
+Last session: 2026-06-19T17:49:35.764Z
+Stopped at: Phase 51 planned + verified (3 plans, 3 waves)
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
