@@ -29,7 +29,7 @@ See: .planning/PROJECT.md
 Phase: 49 (fluxo-de-caixa-caixa-real) — EXECUTING
 Plan: 4 of 5
 Status: Ready to execute
-Last activity: 2026-06-19 -- Completed quick task 260619-02b: base da linha média 15d = bruta−comissão−frete + rótulo piso ~30d (validação de dados Phase 49 feita com prod)
+Last activity: 2026-06-19 -- Phase 49: DADOS VALIDADOS (a-pagar R$1.046.875,01 banco = Wesley EXATO; saldo R$6.997 disponível confirmado, sem dupla contagem; vendas ~2% vs ML; a-liberar MP ~96%). Ajustes visuais: saldo verde / projeção âmbar / R$0 cinza / barras removidas. Falta só aprovação visual final.
 
 ### Quick Tasks Completed
 
