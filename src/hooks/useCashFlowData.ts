@@ -26,8 +26,10 @@ export interface CashFlowDataPoint {
    */
   accumulated_balance: number;
   /**
-   * Saldo projetado acumulado pela MÉDIA de recebimento dos últimos 15 dias
-   * (orders.receita_liquida/15 por dia) - saídas reais. Cenário "se mantiver a média".
+   * Saldo projetado acumulado pela MÉDIA de recebimento dos últimos 15 dias.
+   * Base = (receita_bruta − comissao − frete)/15 por dia − saídas reais. Mesma base do net
+   * que o MP libera (sem descontar imposto/CMV, que já saem pelas contas a pagar do Tiny),
+   * para ficar comparável à linha confirmada e sem dupla-contagem. Cenário "se mantiver a média".
    */
   accumulated_balance_sma: number;
   /** true se saldo projetado CONFIRMADO neste dia for negativo */

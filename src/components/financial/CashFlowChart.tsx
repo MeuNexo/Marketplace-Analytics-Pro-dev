@@ -49,7 +49,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
       {/* Saldo projetado confirmado — linha principal */}
       <div className="flex items-center justify-between gap-4">
-        <span className="text-muted-foreground">Saldo (confirmado):</span>
+        <span className="text-muted-foreground">Saldo (piso ~30d):</span>
         <span
           className={`font-semibold tabular-nums ${
             point.accumulated_balance < 0 ? "text-kpi-negative" : "text-kpi-positive"
@@ -58,6 +58,9 @@ const CustomTooltip = ({ active, payload, label }: any) => {
           {currFmt(point.accumulated_balance)}
         </span>
       </div>
+      <p className="text-[10px] text-muted-foreground -mt-0.5">
+        só entradas já liberadas pelo MP (~30d)
+      </p>
 
       {/* Saldo projetado pela média de 15 dias */}
       <div className="flex items-center justify-between gap-4">
@@ -146,7 +149,8 @@ export function CashFlowChart({ data, isLoading = false }: CashFlowChartProps) {
           <div>
             <p className="text-sm font-medium">Como meu dinheiro vai evoluir?</p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Linha = saldo projetado dia a dia &nbsp;|&nbsp; Barras = entradas e saídas diárias
+              Linha cheia = piso confirmado (só liberações já agendadas pelo MP, ~30d) &nbsp;|&nbsp;
+              Linha tracejada = projeção pela média de vendas dos últimos 15 dias
             </p>
           </div>
 
@@ -195,8 +199,8 @@ export function CashFlowChart({ data, isLoading = false }: CashFlowChartProps) {
               formatter={(value) => {
                 if (value === "daily_income")            return "Entradas do dia";
                 if (value === "daily_expense")           return "Saídas do dia";
-                if (value === "accumulated_balance")     return "Saldo projetado (confirmado)";
-                if (value === "accumulated_balance_sma") return "Projeção média 15d";
+                if (value === "accumulated_balance")     return "Saldo confirmado (piso ~30d)";
+                if (value === "accumulated_balance_sma") return "Projeção média de vendas 15d";
                 return value;
               }}
             />
