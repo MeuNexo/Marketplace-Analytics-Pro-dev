@@ -25,10 +25,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
-import { TodayBalanceCard } from "@/components/financial/TodayBalanceCard";
-import { ProjectedBalanceCard } from "@/components/financial/ProjectedBalanceCard";
-import { CapacityCard } from "@/components/financial/CapacityCard";
 import { CashFlowChart } from "@/components/financial/CashFlowChart";
+import { TreasuryPanel } from "@/components/financial/TreasuryPanel";
+import { CostCompositionChart } from "@/components/financial/CostCompositionChart";
+import { SupplierExposureChart } from "@/components/financial/SupplierExposureChart";
 import { CashFlowSimulator } from "@/components/financial/CashFlowSimulator";
 import { useCashFlowData } from "@/hooks/useCashFlowData";
 import { useFinancialSettings } from "@/hooks/useFinancialSettings";
@@ -224,13 +224,9 @@ export default function MLFluxoCaixa() {
 
         {/* ── Aba Caixa Real (conteúdo atual INTOCADO) ── */}
         <TabsContent value="real" className="space-y-6 mt-0">
-          {/* ── Grid 3 cards + botão Ajustar saldo ── */}
+          {/* ── Painel de Tesouraria (12 KPIs) + botão Ajustar saldo ── */}
           <div className="flex flex-col gap-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <TodayBalanceCard />
-              <ProjectedBalanceCard />
-              <CapacityCard />
-            </div>
+            <TreasuryPanel />
 
             {/* Botão owner-only para ajustar saldo inicial */}
             {isOwner && (
@@ -256,6 +252,12 @@ export default function MLFluxoCaixa() {
           ) : (
             <CashFlowEmptyState />
           )}
+
+          {/* ── Composição de Custos e Exposição por Fornecedor ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <CostCompositionChart />
+            <SupplierExposureChart />
+          </div>
         </TabsContent>
 
         {/* ── Aba Simulador ("E se...?") ── */}
