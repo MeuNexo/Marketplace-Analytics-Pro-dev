@@ -4,14 +4,14 @@ milestone: v7.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 51 planned + verified (3 plans, 3 waves)
-last_updated: "2026-06-19T17:51:41.630Z"
+last_updated: "2026-06-19T18:27:25.402Z"
 last_activity: 2026-06-19 -- Phase 51 execution started
 progress:
   total_phases: 11
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 37
-  completed_plans: 30
-  percent: 64
+  completed_plans: 33
+  percent: 73
 ---
 
 # Project State
@@ -27,9 +27,9 @@ See: .planning/PROJECT.md
 ## Current Position
 
 Phase: 51 (painel-de-tesouraria-fluxo-de-caixa) — EXECUTING
-Plan: 1 of 3
+Plan: 2 of 3
 Phase: 49 (fluxo-de-caixa-caixa-real) — COMPLETE (dados validados centavo a centavo + timezone BRT corrigido + aprovação visual)
-Status: Executing Phase 51
+Status: Ready to execute
 Last activity: 2026-06-19 -- Phase 51 execution started
 
 ### Quick Tasks Completed
@@ -92,6 +92,7 @@ Last activity: 2026-06-19 -- Phase 51 execution started
 | Phase 49-fluxo-de-caixa-caixa-real P01 | 45m | 3 tasks | 4 files |
 | Phase 49-fluxo-de-caixa-caixa-real P03 | 15min | 2 tasks | 6 files |
 | Phase 49 P04 | 20 | 2 tasks | 8 files |
+| Phase 51-painel-de-tesouraria-fluxo-de-caixa P03 | 25min | 4 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -138,6 +139,7 @@ Last activity: 2026-06-19 -- Phase 51 execution started
 - [Phase ?]: Recharts SVG fill/stroke hex values preserved untouched — SVG attributes bypass Tailwind token system
 - [Phase ?]: cash_outflows com schema Tiny criada no 49-01 compartilhada por 49-05
 - [Phase ?]: release_date e outflow_date como DATE não timestamptz para cálculo de caixa por dia
+- [Phase ?]: Mantido como média das saídas dos últimos 3 meses para diferenciar de Saída Real (30d)
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -185,7 +187,7 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-19T17:49:35.764Z
+Last session: 2026-06-19T18:27:04.447Z
 Stopped at: Phase 51 planned + verified (3 plans, 3 waves)
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)

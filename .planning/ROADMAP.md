@@ -355,11 +355,11 @@ Plans:
 
 **Wave 2 — Hooks** *(blocked on 51-01)*
 
-- [ ] 51-02-PLAN.md — 3 hooks (useTreasuryPanel/useCostByMonth/useSupplierExposure) + useFinancialSettings estendido com alert_threshold (TESO-01, TESO-02, TESO-03)
+- [x] 51-02-PLAN.md — 3 hooks (useTreasuryPanel/useCostByMonth/useSupplierExposure) + useFinancialSettings estendido com alert_threshold (TESO-01, TESO-02, TESO-03)
 
 **Wave 3 — UI + wiring** *(blocked on 51-01 + 51-02)*
 
-- [ ] 51-03-PLAN.md — TreasuryPanel (12 KPIs/3 faixas) + CostCompositionChart + SupplierExposureChart + wiring MLFluxoCaixa (remove 3 cards, preserva Simulador) + [checkpoint] visual Wesley (TESO-01, TESO-02, TESO-05)
+- [x] 51-03-PLAN.md — TreasuryPanel (12 KPIs/3 faixas) + CostCompositionChart + SupplierExposureChart + wiring MLFluxoCaixa (remove 3 cards, preserva Simulador) + [checkpoint] visual Wesley (TESO-01, TESO-02, TESO-05)
 
 **UI hint**: yes
 
@@ -379,4 +379,4 @@ Plans:
 | 48. MCO com Ads | 3/3 | Complete | 2026-06-14 |
 | 49. Fluxo de Caixa (Caixa Real) | 5/5 | Complete   | 2026-06-18 |
 | 50. Simulador de Cenarios de Caixa | 0/3 | Not started | - |
-| 51. Painel de Tesouraria | 1/3 | In Progress|  |
+| 51. Painel de Tesouraria | 3/3 | Complete   | 2026-06-19 |
