@@ -22,6 +22,10 @@ import { AlertTriangle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { CashFlowDataPoint } from "@/hooks/useCashFlowData";
+import type { SimPoint } from "@/lib/cashflowSimulation";
+
+/** Ponto do chart com o campo opcional `cenario` mesclado da série simulada. */
+type ChartPoint = CashFlowDataPoint & { cenario?: number };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -40,7 +44,8 @@ const tickFmt = (v: number) => {
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
 
-  const point: CashFlowDataPoint = payload[0]?.payload ?? {};
+  const point: ChartPoint = payload[0]?.payload ?? {};
+  const hasCenario = typeof point.cenario === "number";
 
   return (
     <div className="rounded-lg border border-border bg-card p-3 shadow-lg text-xs space-y-1.5 min-w-[200px]">
@@ -89,6 +94,16 @@ const CustomTooltip = ({ active, payload, label }: any) => {
           {currFmt(point.accumulated_balance_sma)}
         </span>
       </div>
+
+      {/* Cenário simulado (azul) — só quando há série simulada mesclada */}
+      {hasCenario && (
+        <div className="flex items-center justify-between gap-6">
+          <span className="font-semibold text-kpi-neutral">Cenário simulado:</span>
+          <span className="font-semibold tabular-nums text-kpi-neutral">
+            {currFmt(point.cenario as number)}
+          </span>
+        </div>
+      )}
     </div>
   );
 };
@@ -99,11 +114,22 @@ interface CashFlowChartProps {
   /** Série diária retornada por useCashFlowData — accumulated_balance já é saldo projetado */
   data: CashFlowDataPoint[] | undefined;
   isLoading?: boolean;
+  /**
+   * Série simulada OPCIONAL (Simulador "E se...?"). Quando ausente/vazia, o
+   * gráfico renderiza idêntico ao uso atual (aba Caixa Real é 100% retrocompatível).
+   * Quando presente, adiciona uma 3ª linha tracejada azul "Cenário simulado",
+   * mesclando o campo `cenario` por `fullDate`.
+   */
+  simulatedSeries?: SimPoint[];
 }
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
-export function CashFlowChart({ data, isLoading = false }: CashFlowChartProps) {
+export function CashFlowChart({
+  data,
+  isLoading = false,
+  simulatedSeries,
+}: CashFlowChartProps) {
   if (isLoading) {
     return (
       <Card>
@@ -139,6 +165,20 @@ export function CashFlowChart({ data, isLoading = false }: CashFlowChartProps) {
   const tickInterval =
     data.length <= 30 ? 2 : data.length <= 60 ? 7 : Math.floor(data.length / 10);
 
+  // ─── Merge da série simulada (retrocompatível) ────────────────────────────
+  // Sem a prop (ausente/vazia) → reusa `data` SEM cópia → render idêntico ao
+  // uso atual (SIM-04). Com a prop → mescla `cenario` por `fullDate`.
+  const hasSimulated = !!simulatedSeries && simulatedSeries.length > 0;
+  const chartData: ChartPoint[] = hasSimulated
+    ? (() => {
+        const byDate = new Map(simulatedSeries.map((s) => [s.fullDate, s.cenario]));
+        return data.map((p) => {
+          const cenario = byDate.get(p.fullDate);
+          return cenario === undefined ? p : { ...p, cenario };
+        });
+      })()
+    : data;
+
   return (
     <Card>
       <div className="px-4 pt-4 pb-2">
@@ -164,7 +204,7 @@ export function CashFlowChart({ data, isLoading = false }: CashFlowChartProps) {
       <CardContent className="px-4 pb-4 pt-0">
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart
-            data={data}
+            data={chartData}
             margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
           >
             <CartesianGrid
@@ -196,6 +236,7 @@ export function CashFlowChart({ data, isLoading = false }: CashFlowChartProps) {
               formatter={(value) => {
                 if (value === "accumulated_balance")     return "Saldo confirmado (piso ~30d)";
                 if (value === "accumulated_balance_sma") return "Projeção média de vendas 15d";
+                if (value === "cenario")                 return "Cenário simulado";
                 return value;
               }}
             />
@@ -238,6 +279,22 @@ export function CashFlowChart({ data, isLoading = false }: CashFlowChartProps) {
               dot={false}
               connectNulls
             />
+
+            {/* 3ª LINHA — Cenário simulado (azul tracejado). Só renderiza quando
+                `simulatedSeries` é passada (Simulador). Tracejado distinto do
+                âmbar (2 6) e cor via hsl(var(--kpi-neutral)) — regra CLAUDE.md. */}
+            {hasSimulated && (
+              <Line
+                type="monotone"
+                dataKey="cenario"
+                name="cenario"
+                stroke="hsl(var(--kpi-neutral))"
+                strokeWidth={2}
+                strokeDasharray="2 6"
+                dot={false}
+                connectNulls
+              />
+            )}
           </ComposedChart>
         </ResponsiveContainer>
       </CardContent>
