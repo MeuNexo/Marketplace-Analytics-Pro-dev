@@ -29,7 +29,7 @@ See: .planning/PROJECT.md
 Phase: 49 (fluxo-de-caixa-caixa-real) — EXECUTING
 Plan: 4 of 5
 Status: Ready to execute
-Last activity: 2026-06-18 -- Phase 49: bugs do gráfico corrigidos + RPCs qualquer status + 2ª linha média 15d. AGUARDA validação de dados do Wesley (ver 49-VALIDACAO-PENDENTE.md)
+Last activity: 2026-06-19 -- Completed quick task 260619-02b: base da linha média 15d = bruta−comissão−frete + rótulo piso ~30d (validação de dados Phase 49 feita com prod)
 
 ### Quick Tasks Completed
 
@@ -38,6 +38,7 @@ Last activity: 2026-06-18 -- Phase 49: bugs do gráfico corrigidos + RPCs qualqu
 | 260613-2p6 | DRE mês-calendário exato (01–31) via ml_billing_daily | 2026-06-13 | feat(dre) | [260613-2p6](./quick/260613-2p6-dre-mes-calendario-exato-01-31-via-ml-bi/) |
 | 260618-sum | Fluxo de caixa: RPCs consideram contas a pagar de QUALQUER status (paid+pending), futuro-only | 2026-06-18 | 5652ebfa | [260618-sum](./quick/260618-sum-corrigir-rpcs-de-fluxo-de-caixa-consider/) |
 | 260618-sma | Fluxo de caixa: 2ª linha de projeção (média 15d via orders) — AGUARDA validação Wesley | 2026-06-18 | fe19611d | [260618-sma](./quick/260618-sma-segunda-linha-projecao-media-15d/) |
+| 260619-02b | Fluxo de caixa: base da média 15d = bruta−comissão−frete (sem dupla imposto) + rótulo piso ~30d | 2026-06-19 | ddf946c8 | [260619-02b](./quick/260619-02b-trocar-base-da-linha-de-projecao-media-1/) |
 
 ### DRE mês-calendário (quick 260613-2p6, 2026-06-13)
 
