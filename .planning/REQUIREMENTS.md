@@ -55,10 +55,10 @@ Regras iniciais candidatas: margem < alvo por produto; ROAS/ACoS fora da meta; T
 
 ### Bloco UX — Compreensível para lojista leigo
 
-- [ ] **UX-01**: Todo KPI tem tooltip/glossário em linguagem leiga (ex.: "CFFE = o frete que o ML te cobra")
-- [ ] **UX-02**: Toda página tem empty state que orienta ação ("o que fazer para ter dados aqui")
+- [x] **UX-01**: Todo KPI tem tooltip/glossário em linguagem leiga (ex.: "CFFE = o frete que o ML te cobra")
+- [x] **UX-02**: Toda página tem empty state que orienta ação ("o que fazer para ter dados aqui")
 - [ ] **UX-03**: Tabelas de /anuncios, /pedidos e /financeiro sem overflow quebrado em mobile
-- [ ] **UX-04**: Consistência visual revisada (tokens kpi.positive/negative, espaçamentos, dark mode) nas páginas principais
+- [x] **UX-04**: Consistência visual revisada (tokens kpi.positive/negative, espaçamentos, dark mode) nas páginas principais
 
 ### Bloco MCO com Ads (Phase 48)
 
@@ -69,6 +69,27 @@ Regras iniciais candidatas: margem < alvo por produto; ROAS/ACoS fora da meta; T
 - [x] **MCO-05**: (a confirmar no plano) ads_no_sale por produto — gasto de ads com zero venda no item
 
 Decisão travada (Wesley 2026-06-14): modelo de 2 números (operacional + pós-ads), não 1 número combinado. "Prejuízo" fica na operacional.
+
+### Bloco CASH — Fluxo de Caixa (Caixa Real) (Phase 49)
+
+- [x] **CASH-01**: Ingestão de caixa REAL multi-tenant — entradas = liberações do Mercado Pago (nova EF + tabela, padrão das EFs `sync-*`), escopada por `organization_id` com RLS
+- [x] **CASH-02**: Saídas de caixa — despesas / ordens de compra em tabela própria, escopada por `organization_id` com RLS (fonte inicial a definir no plano: OC Tiny e/ou lançamento)
+- [ ] **CASH-03**: RPC de fluxo de caixa `SECURITY INVOKER` retorna saldo diário acumulado real + projeção (SMA de vendas dos últimos 15d × (1 − custo operacional), ativa após dia 8), sem truncamento PostgREST, boundary de data timestamptz correto (`.lt` nextDay)
+- [x] **CASH-04**: Nova página `/fluxo-de-caixa` sob grupo de menu "Operações" no shell, com guard de rota e isolamento por org; gráfico "Como meu dinheiro vai evoluir?" (ComposedChart, linha real + linha projetada, alerta de saldo negativo)
+- [x] **CASH-05**: 3 cards com dado real — Caixa Hoje, Projeção Futura (pessimista/realista + data crítica), Capacidade de Compra ("posso comprar mais estoque?" = saldo projetado − margem de segurança)
+- [x] **CASH-06**: Parâmetros por org configuráveis (`financial_settings`): saldo inicial, taxa de custo operacional, margem de segurança
+
+Decisão travada (Wesley 2026-06-18): fonte = caixa REAL (liberações MP + despesas), não derivado de vendas; nova página em "Operações" (não mexer no /financeiro de competência); MVP = gráfico + 3 cards. Portado do nexointeligence.
+
+### Bloco SIM — Simulador de Cenários "E se...?" (Phase 50)
+
+- [ ] **SIM-01**: Módulo puro testável `src/lib/cashflowSimulation.ts` calcula série simulada + veredito (folga/necessidade/status) a partir do baseline (`get_cashflow`) + deltas (recebimento/gasto extra) + eventos pontuais; testes vitest cobrindo sem-simulação, gasto→risco, recebimento→folga, evento entrada/saída na data certa
+- [ ] **SIM-02**: Aba "Simulador" na página `MLFluxoCaixa` (Tabs shadcn "Caixa Real" | "Simulador"); aba Caixa Real intocada
+- [ ] **SIM-03**: Controles — slider recebimento extra/dia (−5k..+5k), slider gasto extra/dia (0..+10k), até 2 eventos pontuais (valor/data/tipo), botão Limpar
+- [ ] **SIM-04**: `CashFlowChart` estendido com prop opcional `simulatedSeries` (3ª linha tracejada azul "Cenário simulado"), 100% compatível com o uso atual
+- [ ] **SIM-05**: Painel de veredito (`SimulatorVerdictCard`): selo Saudável/Risco + frase de folga/necessidade + menor saldo e data crítica; sem backend novo, estado só de sessão
+
+Decisão travada (Wesley 2026-06-19): modelo híbrido (sliders de média delta + eventos pontuais); veredito folga+status; aba no Fluxo de Caixa; sem persistência; cálculo 100% frontend reusando get_cashflow (zero migration/RPC/tabela). Spec: docs/superpowers/specs/2026-06-19-simulador-fluxo-caixa-design.md
 
 ### Bloco QA — Go-live
 
@@ -123,10 +144,10 @@ Decisão travada (Wesley 2026-06-14): modelo de 2 números (operacional + pós-a
 | CONSUL-03 | Phase 45 | Complete |
 | CONSUL-04 | Phase 45 | Complete |
 | CONSUL-05 | Phase 45 | Complete |
-| UX-01 | Phase 46 | Pending |
-| UX-02 | Phase 46 | Pending |
+| UX-01 | Phase 46 | Complete |
+| UX-02 | Phase 46 | Complete |
 | UX-03 | Phase 46 | Pending |
-| UX-04 | Phase 46 | Pending |
+| UX-04 | Phase 46 | Complete |
 | QA-01 | Phase 47 | Pending |
 | QA-02 | Phase 47 | Pending |
 | QA-03 | Phase 47 | Pending |
@@ -135,6 +156,17 @@ Decisão travada (Wesley 2026-06-14): modelo de 2 números (operacional + pós-a
 | MCO-03 | Phase 48 | Pending |
 | MCO-04 | Phase 48 | Complete |
 | MCO-05 | Phase 48 | Complete |
+| CASH-01 | Phase 49 | Complete |
+| CASH-02 | Phase 49 | Complete |
+| CASH-03 | Phase 49 | Complete |
+| CASH-04 | Phase 49 | Complete |
+| CASH-05 | Phase 49 | Complete |
+| CASH-06 | Phase 49 | Complete |
+| SIM-01 | Phase 50 | Complete |
+| SIM-02 | Phase 50 | Complete |
+| SIM-03 | Phase 50 | Complete |
+| SIM-04 | Phase 50 | Complete |
+| SIM-05 | Phase 50 | Complete |
 
 ---
 *Criado: 2026-06-12 — milestone v7.0*

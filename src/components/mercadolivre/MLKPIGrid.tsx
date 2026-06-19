@@ -1,6 +1,12 @@
 import { KPICard } from "@/components/dashboard/KPICard";
 import { DollarSign, ShoppingCart, Tag, Eye, Percent, TrendingUp, Wallet, Users, Package, Receipt } from "lucide-react";
 import type { MLKPISummary } from "@/hooks/useMLKPISummary";
+import { KPI_GLOSSARY } from "@/lib/kpi-glossary";
+
+const tip = (key: keyof typeof KPI_GLOSSARY): string => {
+  const e = KPI_GLOSSARY[key];
+  return e.example ? `${e.definition} ${e.example}` : e.definition;
+};
 
 const currencyFmt = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -83,6 +89,7 @@ export function MLKPIGrid({
         loading={loading}
         refreshing={refreshing}
         delta={metrics && previousMetrics ? calcDelta(metrics.total_revenue, previousMetrics.total_revenue) : undefined}
+        tooltip={tip("receita_total")}
       />
       <KPICard
         title="Pedidos"
@@ -93,6 +100,7 @@ export function MLKPIGrid({
         loading={loading}
         refreshing={refreshing}
         delta={metrics && previousMetrics ? calcDelta(metrics.total_orders, previousMetrics.total_orders) : undefined}
+        tooltip={tip("pedidos")}
       />
       <KPICard
         title="Ticket Médio"
@@ -112,6 +120,7 @@ export function MLKPIGrid({
         loading={loading}
         refreshing={refreshing}
         delta={metrics && previousMetrics ? calcDelta(metrics.avg_ticket, previousMetrics.avg_ticket) : undefined}
+        tooltip={tip("ticket_medio")}
       />
       <KPICard
         title="Visitas"
@@ -122,6 +131,7 @@ export function MLKPIGrid({
         loading={loading}
         refreshing={refreshing}
         delta={metrics && previousMetrics ? calcDelta(metrics.unique_visits, previousMetrics.unique_visits) : undefined}
+        tooltip={tip("visitas")}
       />
       <KPICard
         title="Conversão"
@@ -132,6 +142,7 @@ export function MLKPIGrid({
         loading={loading}
         refreshing={refreshing}
         delta={metrics && previousMetrics ? calcDelta(metrics.conversion_rate, previousMetrics.conversion_rate) : undefined}
+        tooltip={tip("conversao")}
       />
       <KPICard
         title="Compradores"
@@ -142,7 +153,7 @@ export function MLKPIGrid({
         loading={loading}
         refreshing={refreshing}
         delta={metrics && previousMetrics ? calcDelta(metrics.unique_buyers, previousMetrics.unique_buyers) : undefined}
-        tooltip="Compradores únicos no período selecionado."
+        tooltip={tip("compradores")}
       />
       <KPICard
         title="Unidades Vendidas"
@@ -153,6 +164,7 @@ export function MLKPIGrid({
         loading={loading}
         refreshing={refreshing}
         delta={metrics && previousMetrics ? calcDelta(metrics.units_sold, previousMetrics.units_sold) : undefined}
+        tooltip={tip("unidades_vendidas")}
       />
       <KPICard
         title="Markup das Vendas"
@@ -167,7 +179,7 @@ export function MLKPIGrid({
         iconClassName="bg-emerald-500/10 text-emerald-500"
         loading={summaryLoading}
         refreshing={refreshing}
-        tooltip="Receita bruta total dividida pelo custo total dos produtos vendidos (custo_unit × quantidade). Requer custo cadastrado em Anúncios."
+        tooltip={tip("markup")}
       />
       <KPICard
         title="Custo Operacional"
@@ -178,7 +190,7 @@ export function MLKPIGrid({
         iconClassName="bg-orange-500/10 text-orange-500"
         loading={summaryLoading}
         refreshing={refreshing}
-        tooltip="Frete + Comissão ML + Publicidade (ads) no período selecionado."
+        tooltip={tip("custo_operacional")}
       />
       <KPICard
         title="Impostos"
@@ -189,7 +201,7 @@ export function MLKPIGrid({
         iconClassName="bg-red-500/10 text-red-500"
         loading={summaryLoading}
         refreshing={refreshing}
-        tooltip="Total de impostos calculados no período (regime tributário configurado em Organização)."
+        tooltip={tip("impostos")}
       />
     </div>
   );

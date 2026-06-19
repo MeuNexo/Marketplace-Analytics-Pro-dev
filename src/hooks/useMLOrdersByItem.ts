@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { OrderRecord } from "@/lib/analysis/types";
+import { nextDayUTC } from "@/lib/dateRange";
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
 
@@ -58,7 +59,8 @@ export function useMLOrdersByItem(): UseMLOrdersByItemResult {
             .eq("ml_user_id", mlUserId)
             .eq("item_id", itemId)
             .gte("data_pedido", dateFrom)
-            .lte("data_pedido", dateTo)
+            // data_pedido é timestamptz; .lt(nextDay) inclui o dia `dateTo` inteiro (equivale a ::date <= dateTo)
+            .lt("data_pedido", nextDayUTC(dateTo))
             .in("status", ["paid", "shipped", "delivered"])
             .not("preco_unit", "is", null)
             .gt("preco_unit", 0)

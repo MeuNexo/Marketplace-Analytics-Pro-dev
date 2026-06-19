@@ -16,6 +16,8 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 - [ ] **Phase 46: UX para Leigos** — Glossario/tooltips em todo KPI, empty states acionaveis, mobile polish, consistencia visual
 - [ ] **Phase 47: QA End-to-End + Go-Live** — Simulacao tenant novo, auditoria de seguranca, tsc + build + smoke de deploy Vercel
 - [x] **Phase 48: MCO com Ads** — Margem por produto considerando publicidade: margem operacional + margem pos-ads lado a lado, alerta separado "ads comendo a margem" (TACoS/ACoS por produto), MCO agregado da operacao. Atribuicao direta via ml_ads_products_cache (reconcilia 100% com total da conta) (completed 2026-06-14)
+- [x] **Phase 49: Fluxo de Caixa (Caixa Real)** — Nova pagina em "Operacoes" com o grafico "Como meu dinheiro vai evoluir?" (saldo real + projecao) e 3 cards (Caixa Hoje, Projecao Futura, Capacidade de Compra), alimentados por caixa REAL: entradas = liberacoes Mercado Pago, saidas = despesas/OCs. Portado do antigo SaaS nexointeligence. Dados validados centavo a centavo vs planilha DFC do Wesley + timezone BRT corrigido (completed 2026-06-19)
+- [x] **Phase 50: Simulador de Cenarios ("E se...?")** — Aba "Simulador" no Fluxo de Caixa: sliders de recebimento/gasto extra/dia + ate 2 eventos pontuais + veredito folga/status ("posso gastar mais ou preciso receber mais?"). Modulo puro testavel + 3a linha no grafico. Calculo 100% frontend, zero backend. Verifier PASSED 6/6 (completed 2026-06-19)
 
 ---
 
@@ -193,7 +195,16 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
   3. Tabelas de /anuncios, /pedidos e /financeiro renderizam sem overflow quebrado em viewport mobile (320–768px)
   4. Consistencia visual revisada nas paginas principais (tokens kpi.positive/negative, espacamentos, dark mode sem elementos quebrados)
 
-**Plans**: TBD
+**Plans**: 5 plans em 3 waves
+
+Plans:
+
+- [x] 46-01-primitivos-compartilhados-PLAN.md — Glossário central + KPICard hover+tap (Popover) + componente EmptyState (Wave 1)
+- [x] 46-02-glossario-e-empty-states-componentes-PLAN.md — Glossário no MLKPIGrid + empty states em analytics/estoque (Wave 2)
+- [x] 46-03-tabelas-mobile-e-tokens-PLAN.md — Tabelas→cards mobile + glossário + EmptyState + tokens kpi em /anuncios, /pedidos, /financeiro (Wave 2)
+- [x] 46-05-cobertura-kpi-e-precificacao-PLAN.md — Cobertura UX-01 nos sites de KPICard fora do radar + auditoria UX-04 de /precificacao (Wave 2)
+- [ ] 46-04-checkpoint-visual-PLAN.md — Enumeração de cobertura + checkpoint Wesley: redação do glossário + dark mode das 6 páginas (Wave 3)
+
 **UI hint**: yes
 
 ---
@@ -245,6 +256,75 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 
 ---
 
+### Phase 49: Fluxo de Caixa (Caixa Real)
+
+**Goal**: O lojista acessa uma pagina dedicada de Fluxo de Caixa (sob o grupo de menu "Operacoes") e enxerga, com dados REAIS de caixa, como seu dinheiro vai evoluir no tempo (saldo real + projecao) e responde 3 perguntas: "quanto tenho hoje?", "quanto vou ter?" e "posso comprar mais estoque?"
+**Depends on**: Phase 41 (dados/custos reais), Phase 43 (RLS multi-tenant org-first)
+**Decisao travada (Wesley 2026-06-18)**: (1) FONTE = CAIXA REAL — entradas = liberacoes reais do Mercado Pago; saidas = contas a pagar do Tiny ERP (integracao /contas-pagar via EF sync-tiny-payables, decisao atualizada Wesley 2026-06-18); NAO derivar de vendas nem usar lancamento manual. (2) LOCALIZACAO = nova pagina sob novo grupo de menu "Operacoes" (criar o agrupamento); NAO mexer no /financeiro atual (DRE de competencia/margem, conceito diferente). (3) MVP = grafico de evolucao + 3 cards (Caixa Hoje, Projecao Futura pessimista/realista, Capacidade de Compra). Demais cards do nexointeligence (despesas, valor em estoque, estoque parado, DRE sintetico, previsao de receita) = fase posterior.
+**Referencia**: SaaS antigo nexointeligence (clonado em /tmp/nexointeligence) — grafico src/components/financial/CashFlowChart.tsx (Recharts ComposedChart, 2 linhas real/projetado, RPC get_financial_cashflow, 120 dias); cards TodayBalanceCard/ProjectedBalanceCard/CapacityCard; tabelas-fonte transactions + financial_settings (initial_balance, operational_cost_rate=0.22, safety_margin=10000) + sales_history. Logica de projecao: SMA de vendas dos ultimos 15 dias x (1 - custo_operacional), ativa apos o dia 8. MCP da API ML p/ liberacoes Mercado Pago: https://developers.mercadolivre.com.br/pt_br/server-mcp
+**Success Criteria** (what must be TRUE):
+
+  1. Existe ingestao de caixa REAL multi-tenant: entradas = liberacoes do Mercado Pago (nova EF + tabela, padrao das EFs sync-* existentes) e saidas = despesas/OCs (tabela), ambas escopadas por organization_id com RLS
+  2. RPC de fluxo de caixa SECURITY INVOKER (nao DEFINER+param — evita IDOR) retorna saldo diario acumulado REAL + projecao (SMA de vendas x (1 - custo operacional), ativa apos dia 8), sem truncamento PostgREST e respeitando boundary de data timestamptz (.lt nextDay, nao .lte string)
+  3. Nova pagina /fluxo-de-caixa sob grupo de menu "Operacoes" no shell, com guard de rota (RoleRoute) e isolamento por org
+  4. Grafico "Como meu dinheiro vai evoluir?" (ComposedChart, linha real pessimista + linha projetada realista) com periodo, tooltip com breakdown e alerta visual de saldo negativo
+  5. 3 cards com dado real: Caixa Hoje (saldo inicial + entradas - saidas do dia), Projecao Futura (pessimista vs realista + data critica de saldo < 0), Capacidade de Compra (saldo projetado - margem de seguranca; "posso comprar mais estoque?")
+  6. Parametros configuraveis por org (financial_settings): saldo inicial, taxa de custo operacional, margem de seguranca
+
+**Requirements**: CASH-01, CASH-02, CASH-03, CASH-04, CASH-05, CASH-06
+
+**Pontos que exigem aprovacao do Wesley** (sinalizar nos planos): deploy de Edge Function nova, migrations em producao (ckcdevcxgvueywivefgx), e checkpoint visual no preview Vercel antes de qualquer merge para main/producao.
+
+**Plans**: 5 plans em 4 waves
+
+**Wave 1 — Backend de ingestao de caixa real** *(2 planos paralelos; 49-05 deploya apos a tabela do 49-01)*
+
+- [x] 49-01-PLAN.md — Tabelas (financial_settings/cash_inflows/cash_outflows com schema Tiny + RLS) + EF sync-mp-releases (ENTRADAS = liberacoes MP) + pg_cron Pattern B + [BLOCKING] apply/deploy/smoke (CASH-01, CASH-02, CASH-06)
+- [x] 49-05-PLAN.md — EF sync-tiny-payables (SAIDAS = contas a pagar do Tiny /contas-pagar -> cash_outflows, multi-tenant, idempotente) + pg_cron Pattern B 6h + [BLOCKING] deploy/smoke (depends_on 49-01) (CASH-02)
+
+**Wave 2 — RPCs de fluxo de caixa** *(blocked on 49-01)*
+
+- [x] 49-02-PLAN.md — get_cashflow + get_daily_balance + get_projected_balance_summary (SECURITY INVOKER, SMA via orders por org, sem truncamento) + REVOKE/GRANT + [BLOCKING] apply (CASH-03)
+
+**Wave 3 — Frontend: hooks + grafico** *(blocked on 49-02)*
+
+- [x] 49-03-PLAN.md — 5 hooks (useFinancialSettings/useCashFlowData/useTodayBalance/useProjectedBalance/useFinancialHealth) + CashFlowChart (ComposedChart 2 linhas + alerta saldo<0) (CASH-04, CASH-05, CASH-06)
+
+**Wave 4 — Frontend: pagina + cards + nav** *(blocked on 49-03)*
+
+- [x] 49-04-PLAN.md — 3 cards (Caixa Hoje/Projecao Futura/Capacidade) + pagina MLFluxoCaixa + sidebar Operacoes/rota/roleAccess/routeMeta + [checkpoint] visual Wesley no preview Vercel (CASH-04, CASH-05)
+
+**UI hint**: yes
+
+### Phase 50: Simulador de Cenarios de Caixa ("E se...?")
+
+**Goal**: Na propria pagina de Fluxo de Caixa, uma aba "Simulador" permite ao lojista arrastar medias de recebimento e gasto extras (+ ate 2 eventos pontuais) e ver na hora como o caixa evolui, respondendo "posso gastar mais ou preciso receber mais?" via veredito de folga + status.
+**Depends on**: Phase 49 (RPC get_cashflow, hook useCashFlowData, CashFlowChart, pagina MLFluxoCaixa)
+**Decisao travada (Wesley 2026-06-19)**: (1) modelo hibrido — 2 sliders de media (delta "extra sobre o real") + ate 2 eventos pontuais; (2) veredito Folga + status (Saudavel/Risco, "pode gastar +R$X/dia" ou "precisa +R$Y/dia"); (3) margem = financial_settings.safety_margin (R$10k); (4) aba na pagina de Fluxo de Caixa (nao pagina separada); (5) SEM persistencia (rascunho de sessao); (6) calculo 100% frontend reusando get_cashflow — ZERO migration/tabela/RPC nova.
+**Referencia**: ScenarioSimulator do nexointeligence (porte enxuto). Spec completo: docs/superpowers/specs/2026-06-19-simulador-fluxo-caixa-design.md
+**Success Criteria** (what must be TRUE):
+
+  1. Modulo puro testavel src/lib/cashflowSimulation.ts calcula serie simulada + veredito (folga/necessidade/status) a partir do baseline + deltas + eventos, com testes vitest cobrindo: sem-simulacao, gasto empurra risco, recebimento da folga, evento pontual entrada/saida na data certa
+  2. Aba "Simulador" na pagina MLFluxoCaixa (Tabs shadcn "Caixa Real" | "Simulador"), aba Caixa Real intocada
+  3. Controles: slider recebimento extra/dia (-5k..+5k step100), slider gasto extra/dia (0..+10k step100), ate 2 eventos pontuais (valor/data/tipo entrada-saida), botao Limpar
+  4. CashFlowChart estendido com prop opcional simulatedSeries (3a linha tracejada azul kpi-neutral "Cenario simulado"), 100% compativel com uso atual (aba Caixa Real nao passa a prop)
+  5. Painel de veredito (SimulatorVerdictCard): selo Saudavel/Risco + frase de folga/necessidade + menor saldo e data critica
+  6. Sem mudanca de backend (nenhuma migration/EF/RPC nova); estado so de sessao (rascunho)
+
+**Requirements**: SIM-01, SIM-02, SIM-03, SIM-04, SIM-05
+
+**Pontos que exigem aprovacao do Wesley** (sinalizar nos planos): checkpoint visual no preview Vercel antes de qualquer merge para main.
+
+**UI hint**: yes
+
+**Plans**: 3 plans
+Plans:
+- [ ] 50-01-PLAN.md — Modulo puro cashflowSimulation.ts + testes vitest (TDD, SIM-01)
+- [ ] 50-02-PLAN.md — CashFlowChart estendido (simulatedSeries) + SimulatorVerdictCard (SIM-04, SIM-05)
+- [ ] 50-03-PLAN.md — CashFlowSimulator (controles/estado) + Tabs em MLFluxoCaixa + checkpoint visual (SIM-02, SIM-03)
+
+---
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -254,6 +334,8 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 | 43. Multi-Tenant Hardening | 4/4 | Complete | Isolamento 2-org PASS; pendente verify-phase + checkpoint visual |
 | 44. Monetizacao Stripe | 0/? | Not started | - |
 | 45. Consultor v1 | 3/3 | Complete   | 2026-06-14 |
-| 46. UX para Leigos | 0/? | Not started | - |
+| 46. UX para Leigos | 4/5 | In Progress|  |
 | 47. QA End-to-End + Go-Live | 0/? | Not started | - |
 | 48. MCO com Ads | 3/3 | Complete | 2026-06-14 |
+| 49. Fluxo de Caixa (Caixa Real) | 5/5 | Complete   | 2026-06-18 |
+| 50. Simulador de Cenarios de Caixa | 0/3 | Not started | - |

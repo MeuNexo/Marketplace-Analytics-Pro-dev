@@ -20,13 +20,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { EmptyState } from "@/components/ui/empty-state";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { MLPeriodPicker } from "@/components/mercadolivre/MLPeriodPicker";
 import { useMLStore } from "@/contexts/MLStoreContext";
 import { useMLFilters } from "@/hooks/useMLFilters";
 import { useToast } from "@/hooks/use-toast";
 import { useOrganization } from "@/contexts/OrganizationContext";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { KPI_GLOSSARY } from "@/lib/kpi-glossary";
 import { supabase } from "@/integrations/supabase/client";
+
+// Helper: build tooltip string from glossary key
+const tip = (key: keyof typeof KPI_GLOSSARY) => {
+  const e = KPI_GLOSSARY[key];
+  return e.example ? `${e.definition} ${e.example}` : e.definition;
+};
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -110,10 +119,10 @@ function normalizeListingType(t: string | null): ListingType {
 }
 
 function marginColor(pct: number) {
-  if (pct >= 10) return "text-emerald-600";
-  if (pct >= 5)  return "text-amber-600";
-  if (pct >= 0)  return "text-orange-500";
-  return "text-red-600";
+  if (pct >= 10) return "text-kpi-positive";
+  if (pct >= 5)  return "text-amber-600";    // warning — manter amber
+  if (pct >= 0)  return "text-orange-500";   // borderline — manter orange
+  return "text-kpi-negative";
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -154,12 +163,13 @@ function StatusBadge({ status }: { status: OrderStatus }) {
 
 function NotConnected() {
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-      <Plug className="w-16 h-16 text-muted-foreground/40" />
-      <h2 className="text-xl font-semibold">Mercado Livre não conectado</h2>
-      <p className="text-muted-foreground text-sm">Conecte sua conta para acessar os pedidos.</p>
-      <Button asChild><Link to="/integracoes">Conectar conta</Link></Button>
-    </div>
+    <EmptyState
+      icon={Plug}
+      title="Mercado Livre não conectado"
+      description="Conecte sua conta para acessar os pedidos e relatórios de vendas."
+      actionLabel="Ir para Integrações"
+      actionHref="/integracoes"
+    />
   );
 }
 
@@ -279,7 +289,7 @@ function SubTabTopProdutos({ orders }: { orders: ProcessedOrder[] }) {
                     <td className="px-3 py-3 text-right text-xs tabular-nums text-orange-600">
                       {p.frete > 0 ? `−${currFmt(p.frete)}` : <span className="text-muted-foreground">—</span>}
                     </td>
-                    <td className="px-3 py-3 text-right text-xs tabular-nums text-red-600">
+                    <td className="px-3 py-3 text-right text-xs tabular-nums text-kpi-negative">
                       {p.cost > 0 ? `−${currFmt(p.cost)}` : <span className="text-muted-foreground/60">—</span>}
                     </td>
                     <td className="px-3 py-3 text-right text-xs tabular-nums text-violet-600">
@@ -535,7 +545,7 @@ function SubTabTipoAnuncio({ orders }: { orders: ProcessedOrder[] }) {
                     {t.frete > 0 ? `−${currFmt(t.frete)} (${pctFmt(t.frete_rate)})` : <span className="text-muted-foreground">—</span>}
                   </span>
                 </div>
-                <div className="flex justify-between text-red-600">
+                <div className="flex justify-between text-kpi-negative">
                   <span>Custo (CMV)</span>
                   <span className="font-mono">
                     {t.cost > 0 ? `−${currFmt(t.cost)}` : <span className="text-muted-foreground/60">—</span>}
@@ -611,10 +621,12 @@ function SubTabTipoAnuncio({ orders }: { orders: ProcessedOrder[] }) {
 
 function EmptyReport() {
   return (
-    <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
-      <TrendingUp className="w-10 h-10 text-muted-foreground/30" />
-      <p className="text-sm text-muted-foreground">Nenhum dado para exibir no período selecionado.</p>
-    </div>
+    <EmptyState
+      icon={ClipboardList}
+      title="Sem pedidos no período"
+      description="Nenhum pedido para exibir. Ajuste o filtro de período ou sincronize os dados."
+      size="compact"
+    />
   );
 }
 
@@ -641,6 +653,7 @@ export default function MLPedidos() {
   const { stores, resolvedMLUserIds } = useMLStore();
   const { toast } = useToast();
   const { currentOrg } = useOrganization();
+  const isMobile = useIsMobile();
 
   const {
     period, setPeriod,
@@ -1147,6 +1160,7 @@ export default function MLPedidos() {
                 iconClassName="bg-primary/10 text-primary"
                 size="compact"
                 icon={<ClipboardList className="w-4 h-4" />}
+                tooltip={tip("pedidos")}
                 subtitle={
                   summary.pending_orders > 0
                     ? `${summary.confirmed_orders} confirmados · ${summary.pending_orders} pendentes`
@@ -1160,6 +1174,7 @@ export default function MLPedidos() {
                 iconClassName="bg-accent/10 text-accent"
                 size="compact"
                 icon={<DollarSign className="w-4 h-4" />}
+                tooltip={tip("receita_bruta")}
                 subtitle="Apenas pedidos confirmados"
               />
               <KPICard
@@ -1169,6 +1184,7 @@ export default function MLPedidos() {
                 iconClassName="bg-success/10 text-success"
                 size="compact"
                 icon={<TrendingDown className="w-4 h-4" />}
+                tooltip={tip("receita_liquida")}
                 subtitle={`Comissão, frete, custo e imposto · ${pctFmt(summary.full_net_margin_pct)}`}
               />
               <KPICard
@@ -1178,6 +1194,7 @@ export default function MLPedidos() {
                 iconClassName="bg-[hsl(25,95%,53%)]/10 text-[hsl(25,95%,53%)]"
                 size="compact"
                 icon={<Package className="w-4 h-4" />}
+                tooltip={tip("ticket_medio")}
                 subtitle="Por pedido confirmado"
               />
             </div>
@@ -1291,123 +1308,160 @@ export default function MLPedidos() {
                 </div>
               </div>
               <CardContent className="p-0">
-                <div className="overflow-x-auto max-h-[560px] overflow-y-auto">
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-card border-b border-border z-10">
-                      <tr>
-                        <th className="text-left px-6 py-3 text-xs text-muted-foreground font-medium">
-                          <button onClick={() => toggleSort("date")} className="hover:text-foreground transition-colors">
-                            Data <SortIcon sortKey={sortKey} k="date" sortDir={sortDir} />
-                          </button>
-                        </th>
-                        <th className="text-left px-3 py-3 text-xs text-muted-foreground font-medium">Pedido / Produto</th>
-                        <th className="text-left px-3 py-3 text-xs text-muted-foreground font-medium">Tipo</th>
-                        <th className="text-left px-3 py-3 text-xs text-muted-foreground font-medium">Status</th>
-                        <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">
-                          <button onClick={() => toggleSort("gross")} className="hover:text-foreground transition-colors">
-                            Bruto <SortIcon sortKey={sortKey} k="gross" sortDir={sortDir} />
-                          </button>
-                        </th>
-                        <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">
-                          <button onClick={() => toggleSort("commission")} className="hover:text-foreground transition-colors">
-                            Comissão <SortIcon sortKey={sortKey} k="commission" sortDir={sortDir} />
-                          </button>
-                        </th>
-                        <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">Frete</th>
-                        <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">Custo</th>
-                        <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">Imposto</th>
-                        <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">
-                          <button onClick={() => toggleSort("net")} className="hover:text-foreground transition-colors">
-                            Líquido <SortIcon sortKey={sortKey} k="net" sortDir={sortDir} />
-                          </button>
-                        </th>
-                        <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">M. Bruta</th>
-                        <th className="text-right px-6 py-3 text-xs text-muted-foreground font-medium">
-                          <button onClick={() => toggleSort("margin")} className="hover:text-foreground transition-colors">
-                            M. Líquida <SortIcon sortKey={sortKey} k="margin" sortDir={sortDir} />
-                          </button>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {filtered.length === 0 ? (
+                {isMobile ? (
+                  /* ── Mobile: stacked cards (D-06) ── */
+                  <div className="space-y-2 p-2">
+                    {filtered.length === 0 ? (
+                      <p className="text-center py-8 text-muted-foreground text-sm">Nenhum pedido encontrado</p>
+                    ) : (
+                      filtered.map((order, idx) => (
+                        <div key={`${order.id}-${idx}`} className="rounded-lg border border-border bg-card p-3 space-y-1.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium truncate">{order.id}</p>
+                              <p className="text-xs text-muted-foreground line-clamp-2">{order.titulo}</p>
+                            </div>
+                            <StatusBadge status={order.status} />
+                          </div>
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                            {([
+                              ["Data",      order.date ? format(parseISO(order.date), "dd/MM/yy") : "—"],
+                              ["Bruto",     currFmt(order.gross_revenue)],
+                              ["Comissão",  `−${currFmt(order.ml_commission)}`],
+                              ["Frete",     order.free_shipping ? `−${currFmt(order.shipping_cost)}` : "—"],
+                              ["Líquido",   currFmt(order.net_revenue)],
+                              ["M. Líquida", order.full_net_margin_pct != null ? pctFmt(order.full_net_margin_pct) : `${pctFmt(order.net_margin_pct)}*`],
+                            ] as [string, string][]).map(([label, val]) => (
+                              <div key={label}>
+                                <span className="text-muted-foreground">{label} </span>
+                                <span className="font-mono tabular-nums">{val}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                ) : (
+                  /* ── Desktop: table (D-07) ── */
+                  <div className="overflow-x-auto max-h-[560px] overflow-y-auto">
+                    <table className="w-full text-sm">
+                      <thead className="sticky top-0 bg-card border-b border-border z-10">
                         <tr>
-                          <td colSpan={12} className="text-center py-12 text-muted-foreground text-sm">
-                            Nenhum pedido encontrado
-                          </td>
+                          <th className="text-left px-6 py-3 text-xs text-muted-foreground font-medium">
+                            <button onClick={() => toggleSort("date")} className="hover:text-foreground transition-colors">
+                              Data <SortIcon sortKey={sortKey} k="date" sortDir={sortDir} />
+                            </button>
+                          </th>
+                          <th className="text-left px-3 py-3 text-xs text-muted-foreground font-medium">Pedido / Produto</th>
+                          <th className="text-left px-3 py-3 text-xs text-muted-foreground font-medium">Tipo</th>
+                          <th className="text-left px-3 py-3 text-xs text-muted-foreground font-medium">Status</th>
+                          <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">
+                            <button onClick={() => toggleSort("gross")} className="hover:text-foreground transition-colors">
+                              Bruto <SortIcon sortKey={sortKey} k="gross" sortDir={sortDir} />
+                            </button>
+                          </th>
+                          <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">
+                            <button onClick={() => toggleSort("commission")} className="hover:text-foreground transition-colors">
+                              Comissão <SortIcon sortKey={sortKey} k="commission" sortDir={sortDir} />
+                            </button>
+                          </th>
+                          <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">Frete</th>
+                          <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">Custo</th>
+                          <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">Imposto</th>
+                          <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">
+                            <button onClick={() => toggleSort("net")} className="hover:text-foreground transition-colors">
+                              Líquido <SortIcon sortKey={sortKey} k="net" sortDir={sortDir} />
+                            </button>
+                          </th>
+                          <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">M. Bruta</th>
+                          <th className="text-right px-6 py-3 text-xs text-muted-foreground font-medium">
+                            <button onClick={() => toggleSort("margin")} className="hover:text-foreground transition-colors">
+                              M. Líquida <SortIcon sortKey={sortKey} k="margin" sortDir={sortDir} />
+                            </button>
+                          </th>
                         </tr>
-                      ) : (
-                        filtered.map((order, idx) => (
-                          <tr key={`${order.id}-${idx}`} className="hover:bg-muted/30 transition-colors">
-                            <td className="px-6 py-3 text-muted-foreground text-xs whitespace-nowrap">
-                              {order.date ? format(parseISO(order.date), "dd/MM/yy") : "—"}
-                            </td>
-                            <td className="px-3 py-3 max-w-[220px]">
-                              <p className="font-medium text-xs truncate">{order.id}</p>
-                              <p className="text-xs text-muted-foreground truncate">{order.titulo}</p>
-                              <p className="text-[10px] text-muted-foreground/60">{order.comprador} · {order.quantidade}x</p>
-                            </td>
-                            <td className="px-3 py-3 text-xs text-muted-foreground">
-                              {LISTING_LABELS[order.listing_type]}
-                            </td>
-                            <td className="px-3 py-3">
-                              <StatusBadge status={order.status} />
-                            </td>
-                            <td className="px-3 py-3 text-right font-mono text-xs">
-                              {currFmt(order.gross_revenue)}
-                            </td>
-                            <td className="px-3 py-3 text-right text-xs">
-                              <span className="text-destructive font-mono">−{currFmt(order.ml_commission)}</span>
-                              <span className="text-[10px] text-muted-foreground ml-1">({pctFmt(order.commission_rate)})</span>
-                            </td>
-                            <td className="px-3 py-3 text-right text-xs">
-                              {order.free_shipping
-                                ? <span className="text-orange-600 font-mono">−{currFmt(order.shipping_cost)}</span>
-                                : <span className="text-muted-foreground">—</span>
-                              }
-                            </td>
-                            <td className="px-3 py-3 text-right text-xs">
-                              {order.cost_total != null
-                                ? <span className="text-red-600 font-mono">−{currFmt(order.cost_total)}</span>
-                                : <span className="text-muted-foreground/60" title="Custo não configurado">—</span>}
-                            </td>
-                            <td className="px-3 py-3 text-right text-xs">
-                              {order.tax_total != null
-                                ? (
-                                  <>
-                                    <span className="text-violet-600 font-mono">−{currFmt(order.tax_total)}</span>
-                                    {order.tax_rate != null && (
-                                      <span className="text-[10px] text-muted-foreground ml-1">({pctFmt(order.tax_rate)})</span>
-                                    )}
-                                  </>
-                                )
-                                : <span className="text-muted-foreground/60" title="Fiscal não configurado">—</span>}
-                            </td>
-                            <td className="px-3 py-3 text-right font-mono text-xs font-semibold">
-                              {currFmt(order.net_revenue)}
-                            </td>
-                            <td className="px-3 py-3 text-right text-xs">
-                              {order.gross_margin_pct != null
-                                ? <span className={`font-semibold ${marginColor(order.gross_margin_pct)}`}>{pctFmt(order.gross_margin_pct)}</span>
-                                : <span className="text-muted-foreground/60">—</span>}
-                            </td>
-                            <td className="px-6 py-3 text-right">
-                              {order.full_net_margin_pct != null ? (
-                                <span className={`text-sm font-bold ${marginColor(order.full_net_margin_pct)}`}>
-                                  {pctFmt(order.full_net_margin_pct)}
-                                </span>
-                              ) : (
-                                <span className={`text-sm font-bold ${marginColor(order.net_margin_pct)} opacity-60`} title="Sem custo/imposto — usando margem parcial">
-                                  {pctFmt(order.net_margin_pct)}*
-                                </span>
-                              )}
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {filtered.length === 0 ? (
+                          <tr>
+                            <td colSpan={12} className="text-center py-12 text-muted-foreground text-sm">
+                              Nenhum pedido encontrado
                             </td>
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                        ) : (
+                          filtered.map((order, idx) => (
+                            <tr key={`${order.id}-${idx}`} className="hover:bg-muted/30 transition-colors">
+                              <td className="px-6 py-3 text-muted-foreground text-xs whitespace-nowrap">
+                                {order.date ? format(parseISO(order.date), "dd/MM/yy") : "—"}
+                              </td>
+                              <td className="px-3 py-3 max-w-[220px]">
+                                <p className="font-medium text-xs truncate">{order.id}</p>
+                                <p className="text-xs text-muted-foreground truncate">{order.titulo}</p>
+                                <p className="text-[10px] text-muted-foreground/60">{order.comprador} · {order.quantidade}x</p>
+                              </td>
+                              <td className="px-3 py-3 text-xs text-muted-foreground">
+                                {LISTING_LABELS[order.listing_type]}
+                              </td>
+                              <td className="px-3 py-3">
+                                <StatusBadge status={order.status} />
+                              </td>
+                              <td className="px-3 py-3 text-right font-mono text-xs">
+                                {currFmt(order.gross_revenue)}
+                              </td>
+                              <td className="px-3 py-3 text-right text-xs">
+                                <span className="text-destructive font-mono">−{currFmt(order.ml_commission)}</span>
+                                <span className="text-[10px] text-muted-foreground ml-1">({pctFmt(order.commission_rate)})</span>
+                              </td>
+                              <td className="px-3 py-3 text-right text-xs">
+                                {order.free_shipping
+                                  ? <span className="text-orange-600 font-mono">−{currFmt(order.shipping_cost)}</span>
+                                  : <span className="text-muted-foreground">—</span>
+                                }
+                              </td>
+                              <td className="px-3 py-3 text-right text-xs">
+                                {order.cost_total != null
+                                  ? <span className="text-kpi-negative font-mono">−{currFmt(order.cost_total)}</span>
+                                  : <span className="text-muted-foreground/60" title="Custo não configurado">—</span>}
+                              </td>
+                              <td className="px-3 py-3 text-right text-xs">
+                                {order.tax_total != null
+                                  ? (
+                                    <>
+                                      <span className="text-violet-600 font-mono">−{currFmt(order.tax_total)}</span>
+                                      {order.tax_rate != null && (
+                                        <span className="text-[10px] text-muted-foreground ml-1">({pctFmt(order.tax_rate)})</span>
+                                      )}
+                                    </>
+                                  )
+                                  : <span className="text-muted-foreground/60" title="Fiscal não configurado">—</span>}
+                              </td>
+                              <td className="px-3 py-3 text-right font-mono text-xs font-semibold">
+                                {currFmt(order.net_revenue)}
+                              </td>
+                              <td className="px-3 py-3 text-right text-xs">
+                                {order.gross_margin_pct != null
+                                  ? <span className={`font-semibold ${marginColor(order.gross_margin_pct)}`}>{pctFmt(order.gross_margin_pct)}</span>
+                                  : <span className="text-muted-foreground/60">—</span>}
+                              </td>
+                              <td className="px-6 py-3 text-right">
+                                {order.full_net_margin_pct != null ? (
+                                  <span className={`text-sm font-bold ${marginColor(order.full_net_margin_pct)}`}>
+                                    {pctFmt(order.full_net_margin_pct)}
+                                  </span>
+                                ) : (
+                                  <span className={`text-sm font-bold ${marginColor(order.net_margin_pct)} opacity-60`} title="Sem custo/imposto — usando margem parcial">
+                                    {pctFmt(order.net_margin_pct)}*
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
                 {filtered.length > 0 && (
                   <div className="px-6 py-3 border-t text-xs text-muted-foreground flex items-center gap-3 flex-wrap">
                     <span>

@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMLStore } from "@/contexts/MLStoreContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { supabase } from "@/integrations/supabase/client";
+import { nextDayUTC } from "@/lib/dateRange";
 
 export interface MLOrderSummary {
   total_comissao: number;
@@ -34,7 +35,8 @@ export function useMLOrders(from: string, to: string) {
         .eq("organization_id", orgId)
         .in("ml_user_id", resolvedMLUserIds)
         .gte("data_pedido", from)
-        .lte("data_pedido", to)
+        // data_pedido é timestamptz; .lt(nextDay) inclui o dia `to` inteiro (equivale a ::date <= to)
+        .lt("data_pedido", nextDayUTC(to))
         .limit(50000);
 
       if (error) throw error;

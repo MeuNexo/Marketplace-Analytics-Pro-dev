@@ -47,6 +47,8 @@ import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
 import { useOnboardingProgress } from "@/hooks/useOnboardingProgress";
 import { ConsultorCard } from "@/components/mercadolivre/ConsultorCard";
 import { useConsultorInsights } from "@/hooks/useConsultorInsights";
+import { MLMcoStrip } from "@/components/mercadolivre/MLMcoStrip";
+import { computeMco } from "@/lib/mco";
 
 const currencyFmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -299,6 +301,46 @@ export default function MercadoLivre() {
     );
   }, [monthlyCostWaterfall, monthlyAdsTotal]);
 
+  // ── MCO do período — input montado a partir de valores já derivados (sem novo fetch) ──
+  // platformCost = custo_plataforma (frete+comissão, SEM ads — confirmado em useMLKPISummary)
+  // ads somado UMA única vez via adsSummary.total_spend (anti-duplicação)
+  const mcoInput = useMemo(() => {
+    const grossRevenue = kpiSummary?.gross_revenue ?? 0;
+    const platformCost = kpiSummary?.custo_plataforma ?? 0; // frete+comissão, exclui ads
+    const ads = adsSummary.total_spend; // somado exatamente uma vez
+
+    // CMV: valor real do período quando disponível; fallback por % do waterfall mensal
+    const monthlyPaidRevenue = monthlyCostWaterfall?.paid_revenue ?? 0;
+    const monthlyCmv = (monthlyCostWaterfall?.has_cmv ? (monthlyCostWaterfall?.cmv ?? 0) : 0);
+    const cmvFallback =
+      monthlyPaidRevenue > 0 ? grossRevenue * (monthlyCmv / monthlyPaidRevenue) : 0;
+    const cmv = kpiSummary?.cmv_has_cost
+      ? (kpiSummary?.cmv ?? 0)
+      : cmvFallback;
+
+    // Tax: valor real do período quando disponível; fallback por % do waterfall mensal
+    const monthlyTax = (monthlyCostWaterfall?.has_tax_data ? (monthlyCostWaterfall?.total_tax ?? 0) : 0);
+    const taxFallback =
+      monthlyPaidRevenue > 0 ? grossRevenue * (monthlyTax / monthlyPaidRevenue) : 0;
+    const tax = kpiSummary?.has_tax_data
+      ? (kpiSummary?.total_tax ?? 0)
+      : taxFallback;
+
+    return { grossRevenue, cmv, platformCost, ads, tax };
+  }, [kpiSummary, adsSummary.total_spend, monthlyCostWaterfall]);
+
+  const { mco: mcoValue, pct: mcoPct } = useMemo(() => computeMco(mcoInput), [mcoInput]);
+
+  // Rótulo dinâmico: "MCO do dia" quando o período selecionado é hoje
+  const mcoLabel = useMemo(() => {
+    const today = todayUTC();
+    const isToday = filters.singleDayRange
+      ? filters.singleDayRange === today
+      : currentFrom === currentTo && currentTo === today;
+    return isToday ? "MCO do dia" : "MCO do período";
+  }, [filters.singleDayRange, currentFrom, currentTo]);
+
+  const mcoEmpty = (kpiSummary?.gross_revenue ?? 0) <= 0;
 
   // Auto-recalc silencioso: se CMV ou impostos ausentes, dispara recalc-order-costs em background.
   // isRecalcing expõe o estado de loading para os cards que dependem de kpiSummary.
@@ -657,6 +699,19 @@ export default function MercadoLivre() {
               scoreBand={consultorScoreBand}
               syncing={consultorSyncing}
               onDismiss={consultorDismiss}
+            />
+          )}
+
+          {/* Faixa MCO do período — posicionada entre ConsultorCard e MLKPIGrid.
+              Visível apenas quando conectado (mesma condição do restante do conteúdo).
+              Mudança 100% aditiva: não altera o MLKPIGrid nem nenhum KPI existente. */}
+          {connected && (
+            <MLMcoStrip
+              mco={mcoValue}
+              pct={mcoPct}
+              label={mcoLabel}
+              loading={kpiSummaryLoading || isRecalcing || effectiveLoading}
+              empty={mcoEmpty}
             />
           )}
 

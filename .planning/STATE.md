@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 48-03-PLAN.md (frontend MCO+ads aprovado Wesley — DRE sem duplicidade, /anuncios Mg.Op/Pós-Ads, fix truncamento RPC)
-last_updated: "2026-06-14T22:00:00.000Z"
-last_activity: 2026-06-14 -- Phase 48 completa (3/3 planos com SUMMARY)
+stopped_at: Completed 46-02-PLAN.md
+last_updated: "2026-06-19T02:15:00.000Z"
+last_activity: 2026-06-19 -- Phase 49 (Fluxo de Caixa) validada + Phase 50 (Simulador) verifier PASSED 6/6; aprovação visual Wesley OK. Ambas em preview, pendente merge p/ prod.
 progress:
-  total_phases: 8
-  completed_phases: 4
-  total_plans: 21
-  completed_plans: 17
-  percent: 50
+  total_phases: 10
+  completed_phases: 8
+  total_plans: 39
+  completed_plans: 35
+  percent: 80
 ---
 
 # Project State
@@ -22,20 +22,23 @@ See: .planning/PROJECT.md
 
 **Milestone:** v7.0 — SaaS Operacional End-to-End
 **Core value:** Sistema 100% operacional e vendável como assinatura — dados verdadeiros em todas as páginas (zero mock), multi-tenant endurecido, monetização via Stripe ativa, onboarding guiado para lojista leigo, e Consultor v1 (motor de regras + score de saúde) como diferencial de venda.
-**Current focus:** Phase 48 — mco-com-ads
+**Current focus:** Phase 50 — simulador-de-cenarios-de-caixa (CONCLUÍDA, em preview)
 
 ## Current Position
 
-Phase: 48 (mco-com-ads) — COMPLETE (3/3 planos com SUMMARY)
-Plan: 3 of 3
-Status: Complete
-Last activity: 2026-06-14 -- Phase 48 completa (3/3 planos com SUMMARY)
+Phase: 50 (simulador-de-cenarios-de-caixa-e-se) — COMPLETE (verifier PASSED 6/6 + aprovação visual Wesley)
+Phase: 49 (fluxo-de-caixa-caixa-real) — COMPLETE (dados validados centavo a centavo + timezone BRT corrigido + aprovação visual)
+Status: Ambas em preview (branch preview/phase-50-simulador-caixa). PENDENTE: merge p/ main/prod.
+Last activity: 2026-06-19 -- Phase 50 (Simulador "E se...?") fechada: módulo puro 7 testes + 3ª linha + veredito folga/status + Tabs. 2 fixes pós-checkpoint: criticalDate (1º cruzamento da margem) + timezone BRT (card/RPCs usavam UTC). Wesley aprovou.
 
 ### Quick Tasks Completed
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260613-2p6 | DRE mês-calendário exato (01–31) via ml_billing_daily | 2026-06-13 | feat(dre) | [260613-2p6](./quick/260613-2p6-dre-mes-calendario-exato-01-31-via-ml-bi/) |
+| 260618-sum | Fluxo de caixa: RPCs consideram contas a pagar de QUALQUER status (paid+pending), futuro-only | 2026-06-18 | 5652ebfa | [260618-sum](./quick/260618-sum-corrigir-rpcs-de-fluxo-de-caixa-consider/) |
+| 260618-sma | Fluxo de caixa: 2ª linha de projeção (média 15d via orders) — AGUARDA validação Wesley | 2026-06-18 | fe19611d | [260618-sma](./quick/260618-sma-segunda-linha-projecao-media-15d/) |
+| 260619-02b | Fluxo de caixa: base da média 15d = bruta−comissão−frete (sem dupla imposto) + rótulo piso ~30d | 2026-06-19 | ddf946c8 | [260619-02b](./quick/260619-02b-trocar-base-da-linha-de-projecao-media-1/) |
 
 ### DRE mês-calendário (quick 260613-2p6, 2026-06-13)
 
@@ -81,6 +84,13 @@ Last activity: 2026-06-14 -- Phase 48 completa (3/3 planos com SUMMARY)
 | Phase 48-mco-com-ads P01 | 45min | 3 tasks | 3 files |
 | Phase 48-mco-com-ads P02 | 30min | 3 tasks | 1 files |
 | Phase 48-mco-com-ads P03 | ~3h | 2 tasks + 3 fixes + 1 checkpoint | 4 files |
+| Phase 46-ux-para-leigos P01 | 4min | 3 tasks | 3 files |
+| Phase 46 P02 | 213 | 3 tasks | 5 files |
+| Phase 46 P03 | 90 | 2 tasks | 3 files |
+| Phase 46-ux-para-leigos P05 | 8min | 2 tasks | 6 files |
+| Phase 49-fluxo-de-caixa-caixa-real P01 | 45m | 3 tasks | 4 files |
+| Phase 49-fluxo-de-caixa-caixa-real P03 | 15min | 2 tasks | 6 files |
+| Phase 49 P04 | 20 | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -119,6 +129,14 @@ Last activity: 2026-06-14 -- Phase 48 completa (3/3 planos com SUMMARY)
 - [Phase 48-03]: DRE não adiciona linha extra de Publicidade — groupBillingCharges já categoriza PADS em 'Campanhas de publicidade'; linha extra causaria dupla contagem (Pitfall 7 mais profundo que documentado)
 - [Phase 48-03]: supabase.rpc() retorna set completo sem LIMIT; PostgREST select direto trunca em 1000 linhas — para conjuntos financeiros >1000 linhas/período, sempre usar RPC
 - [Phase 48-03]: MCO-02 e MCO-03 satisfeitos e aprovados por Wesley no preview Vercel (dados reais ckcdevcxgvueywivefgx)
+- [Phase 46]: Popover over Tooltip for KPICard: Radix Tooltip does not fire on touch; Popover with controlled open state is reliable on iOS/Android
+- [Phase 46]: KPICard tooltip prop stays string (not GlossaryKey) — component stays generic; consumers do glossary lookup
+- [Phase ?]: tip(key) helper defined in MLKPIGrid typed by keyof typeof KPI_GLOSSARY — tsc enforces valid glossary keys at compile time
+- [Phase ?]: MLEstoque NotConnected CTA uses /integracoes (correct Portuguese route)
+- [Phase ?]: Sub-tables kept overflow-x-auto scroll — secondary analytical views with column-comparison needs; primary CRUD tables upgraded to stacked cards
+- [Phase ?]: Recharts SVG fill/stroke hex values preserved untouched — SVG attributes bypass Tailwind token system
+- [Phase ?]: cash_outflows com schema Tiny criada no 49-01 compartilhada por 49-05
+- [Phase ?]: release_date e outflow_date como DATE não timestamptz para cálculo de caixa por dia
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -166,8 +184,8 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-14T22:00:00.000Z
-Stopped at: Completed 48-03-PLAN.md (frontend MCO+ads aprovado Wesley — DRE sem duplicidade, /anuncios Mg.Op/Pós-Ads, fix truncamento RPC)
+Last session: 2026-06-18T19:45:47.404Z
+Stopped at: Completed 46-02-PLAN.md
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 

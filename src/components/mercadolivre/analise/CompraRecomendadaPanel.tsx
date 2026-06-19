@@ -182,7 +182,7 @@ export function CompraRecomendadaPanel({ snapshots }: CompraRecomendadaPanelProp
                         <span
                           className={
                             result.compraRecomendada > 0
-                              ? "text-xs text-emerald-600 font-semibold"
+                              ? "text-xs text-kpi-positive font-semibold"
                               : "text-xs text-muted-foreground"
                           }
                         >

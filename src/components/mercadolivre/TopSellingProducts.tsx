@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Package, Trophy, ExternalLink, AlertTriangle, Download } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import * as XLSX from "xlsx";
 import * as React from "react";
 
@@ -93,10 +94,12 @@ export function TopSellingProducts({ products, loading, showOrigin }: Props) {
       </div>
       <CardContent className="flex-1 p-0 flex flex-col">
         {products.length === 0 ? (
-          <div className="flex flex-col items-center justify-center flex-1 text-muted-foreground text-sm">
-            <Package className="w-8 h-8 mb-2 opacity-50" />
-            Nenhum produto encontrado
-          </div>
+          <EmptyState
+            icon={Package}
+            title="Nenhum produto encontrado"
+            description="Sincronize suas vendas para ver os produtos mais vendidos."
+            size="compact"
+          />
         ) : (
           <div className="divide-y divide-border flex flex-col flex-1">
             {visibleProducts.map((product, idx) => (

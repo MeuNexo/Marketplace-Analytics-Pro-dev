@@ -1,6 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { DollarSign, ShoppingCart, Receipt, Eye, Percent, Maximize2, Settings2 } from "lucide-react";
 import { KPICard } from "@/components/dashboard/KPICard";
+import { KPI_GLOSSARY } from "@/lib/kpi-glossary";
+
+const tip = (key: keyof typeof KPI_GLOSSARY) => {
+  const e = KPI_GLOSSARY[key];
+  return e.example ? `${e.definition} ${e.example}` : e.definition;
+};
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -394,11 +400,11 @@ const TVModeVendas = () => {
 
       {/* KPI Row */}
       <div className="grid grid-cols-5 gap-4">
-        <KPICard title="Receita Total"  value={formatCurrency(current.kpi.revenue)}  rawValue={current.kpi.revenue}  valuePrefix="R$ " icon={<DollarSign className="w-6 h-6" />}  variant="minimal" iconClassName="bg-accent/10 text-accent"                              size="tv" refreshing={loading} delta={calcDelta(current.kpi.revenue,     current.kpiYesterday.revenue)} />
-        <KPICard title="Pedidos"        value={String(current.kpi.orders)}            rawValue={current.kpi.orders}                icon={<ShoppingCart className="w-6 h-6" />} variant="minimal" iconClassName="bg-[hsl(270,70%,50%)]/10 text-[hsl(270,70%,50%)]" size="tv" refreshing={loading} delta={calcDelta(current.kpi.orders,      current.kpiYesterday.orders)} />
-        <KPICard title="Ticket Médio"   value={formatCurrency(current.kpi.ticket)}   rawValue={current.kpi.ticket}   valuePrefix="R$ " icon={<Receipt className="w-6 h-6" />}     variant="minimal" iconClassName="bg-[hsl(25,95%,53%)]/10 text-[hsl(25,95%,53%)]"  size="tv" refreshing={loading} delta={calcDelta(current.kpi.ticket,      current.kpiYesterday.ticket)} />
-        <KPICard title="Visitas"        value={new Intl.NumberFormat("pt-BR").format(current.kpi.visits)} rawValue={current.kpi.visits} icon={<Eye className="w-6 h-6" />} variant="minimal" iconClassName="bg-accent/10 text-accent"                              size="tv" refreshing={loading} delta={calcDelta(current.kpi.visits,      current.kpiYesterday.visits)} />
-        <KPICard title="Conversão"      value={`${current.kpi.conversion.toFixed(1)}%`} rawValue={current.kpi.conversion} valueSuffix="%" valueDecimals={1} icon={<Percent className="w-6 h-6" />} variant="minimal" iconClassName="bg-success/10 text-success"  size="tv" refreshing={loading} delta={calcDelta(current.kpi.conversion, current.kpiYesterday.conversion)} />
+        <KPICard title="Receita Total"  value={formatCurrency(current.kpi.revenue)}  rawValue={current.kpi.revenue}  valuePrefix="R$ " icon={<DollarSign className="w-6 h-6" />}  variant="minimal" iconClassName="bg-accent/10 text-accent"                              size="tv" refreshing={loading} delta={calcDelta(current.kpi.revenue,     current.kpiYesterday.revenue)} tooltip={tip("receita_total")} />
+        <KPICard title="Pedidos"        value={String(current.kpi.orders)}            rawValue={current.kpi.orders}                icon={<ShoppingCart className="w-6 h-6" />} variant="minimal" iconClassName="bg-[hsl(270,70%,50%)]/10 text-[hsl(270,70%,50%)]" size="tv" refreshing={loading} delta={calcDelta(current.kpi.orders,      current.kpiYesterday.orders)} tooltip={tip("pedidos")} />
+        <KPICard title="Ticket Médio"   value={formatCurrency(current.kpi.ticket)}   rawValue={current.kpi.ticket}   valuePrefix="R$ " icon={<Receipt className="w-6 h-6" />}     variant="minimal" iconClassName="bg-[hsl(25,95%,53%)]/10 text-[hsl(25,95%,53%)]"  size="tv" refreshing={loading} delta={calcDelta(current.kpi.ticket,      current.kpiYesterday.ticket)} tooltip={tip("ticket_medio")} />
+        <KPICard title="Visitas"        value={new Intl.NumberFormat("pt-BR").format(current.kpi.visits)} rawValue={current.kpi.visits} icon={<Eye className="w-6 h-6" />} variant="minimal" iconClassName="bg-accent/10 text-accent"                              size="tv" refreshing={loading} delta={calcDelta(current.kpi.visits,      current.kpiYesterday.visits)} tooltip={tip("visitas")} />
+        <KPICard title="Conversão"      value={`${current.kpi.conversion.toFixed(1)}%`} rawValue={current.kpi.conversion} valueSuffix="%" valueDecimals={1} icon={<Percent className="w-6 h-6" />} variant="minimal" iconClassName="bg-success/10 text-success"  size="tv" refreshing={loading} delta={calcDelta(current.kpi.conversion, current.kpiYesterday.conversion)} tooltip={tip("conversao")} />
       </div>
 
       {/* Hourly chart */}

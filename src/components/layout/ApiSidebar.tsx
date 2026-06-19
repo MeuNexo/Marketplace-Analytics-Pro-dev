@@ -1,4 +1,5 @@
 import {
+  Banknote,
   Target,
   ClipboardList,
   FileText,
@@ -46,6 +47,7 @@ const apiSections: SidebarNavSection[] = [
           { icon: Package,       label: "Estoque",  path: "/estoque"  },
           { icon: ClipboardList, label: "Pedidos",  path: "/pedidos"  },
           { icon: Calculator,    label: "Precificação", path: "/precificacao" },
+          { icon: Banknote,     label: "Fluxo de Caixa", path: "/fluxo-de-caixa" },
         ],
       },
       {

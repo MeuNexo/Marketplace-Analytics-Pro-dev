@@ -7,7 +7,8 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Clock3, TrendingUp, MapPin, GitMerge, Info, ShoppingCart, DollarSign, Eye, Users, Percent, Tag } from "lucide-react";
+import { Clock3, TrendingUp, MapPin, GitMerge, Info, ShoppingCart, DollarSign, Eye, Users, Percent, Tag, Clock } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
 import { BrazilHeatMap } from "@/components/mercadolivre/BrazilHeatMap";
 import { useMLStore } from "@/contexts/MLStoreContext";
 import { useMLStateQuery } from "@/hooks/useMLQueries";
@@ -54,17 +55,6 @@ const UF_NAME_FALLBACK: Record<string, string> = {
   SE: "Sergipe", TO: "Tocantins",
 };
 
-// ─── Empty state ─────────────────────────────────────────────────────────────
-
-function EmptyState({ message }: { message: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
-      <TrendingUp className="w-8 h-8 opacity-30" />
-      <p className="text-sm">{message}</p>
-    </div>
-  );
-}
-
 // ─── Tab: Venda por Hora ──────────────────────────────────────────────────────
 
 function TabHorario({ from, to }: { from: string; to: string }) {
@@ -104,7 +94,14 @@ function TabHorario({ from, to }: { from: string; to: string }) {
   }, [filteredHourly]);
 
   if (filteredHourly.length === 0) {
-    return <EmptyState message="Selecione o período 'Hoje' ou um dia específico para ver vendas por hora." />;
+    return (
+      <EmptyState
+        icon={Clock}
+        title="Nenhuma venda por hora"
+        description="Selecione o período 'Hoje' ou um dia específico para ver as vendas por hora."
+        size="compact"
+      />
+    );
   }
 
   const totalPedidos = hourlyAgg.reduce((s, b) => s + b.pedidos, 0);
@@ -258,7 +255,14 @@ function TabTicket({ from, to }: { from: string; to: string }) {
   }, [chartData]);
 
   if (filteredDaily.length === 0) {
-    return <EmptyState message="Nenhum dado de vendas disponível para o período selecionado." />;
+    return (
+      <EmptyState
+        icon={TrendingUp}
+        title="Sem dados de vendas"
+        description="Nenhum dado de vendas para o período. Ajuste o filtro de período ou sincronize."
+        size="compact"
+      />
+    );
   }
 
   return (
@@ -404,7 +408,14 @@ function TabEstado({ from, to }: { from: string; to: string }) {
   const dailyHasSales = filteredDaily.some((d) => d.approved > 0 || d.qty > 0);
 
   if (isLoading && stateData.length === 0) {
-    return <EmptyState message="Carregando dados de estado..." />;
+    return (
+      <EmptyState
+        icon={MapPin}
+        title="Carregando dados..."
+        description="Buscando dados de estado para o período selecionado."
+        size="compact"
+      />
+    );
   }
 
   if (stateData.length === 0) {
@@ -536,7 +547,14 @@ function TabFunil({ from, to }: { from: string; to: string }) {
   const hasAny = filteredDaily.some((d) => d.unique_visits > 0 || d.qty > 0);
 
   if (!hasAny) {
-    return <EmptyState message="Nenhum dado de conversão disponível para o período selecionado." />;
+    return (
+      <EmptyState
+        icon={Percent}
+        title="Sem dados de conversão"
+        description="Nenhum dado de conversão disponível. Requer visitas e vendas no período."
+        size="compact"
+      />
+    );
   }
 
   return (
