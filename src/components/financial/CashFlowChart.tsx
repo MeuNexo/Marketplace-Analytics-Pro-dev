@@ -51,7 +51,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
         <span className="text-muted-foreground">Saldo (piso ~30d):</span>
         <span
           className={`font-semibold tabular-nums ${
-            point.accumulated_balance < 0 ? "text-kpi-negative" : "text-kpi-neutral"
+            point.accumulated_balance < 0 ? "text-kpi-negative" : "text-kpi-positive"
           }`}
         >
           {currFmt(point.accumulated_balance)}
@@ -148,7 +148,7 @@ export function CashFlowChart({ data, isLoading = false }: CashFlowChartProps) {
           <div>
             <p className="text-sm font-medium">Como meu dinheiro vai evoluir?</p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Linha azul = piso confirmado (só liberações já agendadas pelo MP, ~30d) &nbsp;|&nbsp;
+              Linha verde = piso confirmado (só liberações já agendadas pelo MP, ~30d) &nbsp;|&nbsp;
               Linha âmbar tracejada = projeção pela média de vendas dos últimos 15 dias
             </p>
           </div>
@@ -202,26 +202,26 @@ export function CashFlowChart({ data, isLoading = false }: CashFlowChartProps) {
               }}
             />
 
-            {/* ReferenceLine y=0 */}
+            {/* ReferenceLine y=0 — guia neutra (cinza) */}
             <ReferenceLine
               y={0}
-              stroke="hsl(var(--destructive))"
+              stroke="hsl(var(--muted-foreground))"
               strokeDasharray="4 4"
               strokeWidth={1.5}
               label={{
                 value: "R$0",
                 position: "insideTopRight",
-                fill: "hsl(var(--destructive))",
+                fill: "hsl(var(--muted-foreground))",
                 fontSize: 10,
               }}
             />
 
-            {/* LINHA PRINCIPAL — Saldo projetado confirmado */}
+            {/* LINHA PRINCIPAL — Saldo projetado confirmado (verde) */}
             <Line
               type="monotone"
               dataKey="accumulated_balance"
               name="accumulated_balance"
-              stroke="hsl(var(--kpi-neutral))"
+              stroke="hsl(var(--kpi-positive))"
               strokeWidth={2.5}
               dot={false}
               connectNulls
