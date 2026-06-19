@@ -316,6 +316,12 @@ Plans:
 
 **UI hint**: yes
 
+**Plans**: 3 plans
+Plans:
+- [ ] 50-01-PLAN.md — Modulo puro cashflowSimulation.ts + testes vitest (TDD, SIM-01)
+- [ ] 50-02-PLAN.md — CashFlowChart estendido (simulatedSeries) + SimulatorVerdictCard (SIM-04, SIM-05)
+- [ ] 50-03-PLAN.md — CashFlowSimulator (controles/estado) + Tabs em MLFluxoCaixa + checkpoint visual (SIM-02, SIM-03)
+
 ---
 
 ## Progress
@@ -331,3 +337,4 @@ Plans:
 | 47. QA End-to-End + Go-Live | 0/? | Not started | - |
 | 48. MCO com Ads | 3/3 | Complete | 2026-06-14 |
 | 49. Fluxo de Caixa (Caixa Real) | 5/5 | Complete   | 2026-06-18 |
+| 50. Simulador de Cenarios de Caixa | 0/3 | Not started | - |
