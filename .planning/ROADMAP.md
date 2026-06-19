@@ -344,6 +344,22 @@ Plans:
 
 **Pontos que exigem aprovacao do Wesley**: checkpoint visual no preview Vercel antes de qualquer merge para main.
 
+**Plans**: 3 plans em 3 waves
+
+Plans:
+
+**Wave 1 — Backend (RPCs + coluna)**
+
+- [ ] 51-01-PLAN.md — Migration alert_threshold + 3 RPCs (get_treasury_panel/get_cost_by_month/get_supplier_exposure) SECURITY INVOKER + [BLOCKING] apply via MCP em ckcdevcxgvueywivefgx (TESO-03, TESO-04)
+
+**Wave 2 — Hooks** *(blocked on 51-01)*
+
+- [ ] 51-02-PLAN.md — 3 hooks (useTreasuryPanel/useCostByMonth/useSupplierExposure) + useFinancialSettings estendido com alert_threshold (TESO-01, TESO-02, TESO-03)
+
+**Wave 3 — UI + wiring** *(blocked on 51-01 + 51-02)*
+
+- [ ] 51-03-PLAN.md — TreasuryPanel (12 KPIs/3 faixas) + CostCompositionChart + SupplierExposureChart + wiring MLFluxoCaixa (remove 3 cards, preserva Simulador) + [checkpoint] visual Wesley (TESO-01, TESO-02, TESO-05)
+
 **UI hint**: yes
 
 ---
@@ -362,4 +378,4 @@ Plans:
 | 48. MCO com Ads | 3/3 | Complete | 2026-06-14 |
 | 49. Fluxo de Caixa (Caixa Real) | 5/5 | Complete   | 2026-06-18 |
 | 50. Simulador de Cenarios de Caixa | 0/3 | Not started | - |
-| 51. Painel de Tesouraria | 0/? | Not started | - |
+| 51. Painel de Tesouraria | 0/3 | Not started | - |

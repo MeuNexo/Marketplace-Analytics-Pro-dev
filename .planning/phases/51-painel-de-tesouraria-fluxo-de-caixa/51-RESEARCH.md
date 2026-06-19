@@ -988,21 +988,19 @@ Step 2.6: SKIPPED — this phase is purely code/SQL changes with no new external
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Data do Saldo Mínimo vs critical_date semantics**
-   - What we know: existing RPC's `critical_date` = first day balance < 0. Reference shows Saldo Mín = 11.715 (positive) on 23/06.
-   - What's unclear: the reference labels 23/06 as both "Data do Saldo Mín" AND "Alerta" — they appear to be the same date because the minimum balance (11.715) is also below alert_threshold (30000).
-   - Recommendation: `get_treasury_panel` tracks BOTH `min_balance_date` (arg-min of projected balance) AND `alert_date` (first day < alert_threshold). Display min_balance_date for D-05, alert_date for D-06. When they coincide (as in reference), both show 23/06.
+1. **Data do Saldo Mínimo vs critical_date semantics** — ✅ RESOLVED
+   - existing RPC's `critical_date` = first day balance < 0. Reference shows Saldo Mín = 11.715 (positive) on 23/06.
+   - Resolution: `get_treasury_panel` tracks BOTH `min_balance_date` (arg-min of projected balance, D-05) AND `alert_date` (first day < alert_threshold, D-06) as DISTINCT fields. When they coincide (as in reference) both show 23/06. Plan 51-01 Task 1 adds `min_balance_date` to the RETURNS TABLE/RETURN QUERY (the "AJUSTE SOBRE O §5" note). No ambiguity remains.
 
-2. **Saída Real 30d: paid-only or all statuses?**
-   - What we know: D-07 says "somatorio de cash_outflows PAGOS nos ultimos 30d" (emphasis on "pagos")
-   - What's unclear: the CONTEXT.md text actually says "pagos" but most outflows of Tiny are pending until pay date. If only 'paid' in past 30d, Saída Real may be much smaller than Total reference.
-   - Recommendation: Use `status = 'paid' AND outflow_date <= today` for Saída Real (strictly paid, historical). For Burn Rate (3m avg), include all statuses in the past window to capture the full obligation pattern.
+2. **Saída Real 30d: paid-only or all statuses?** — ✅ RESOLVED (paid-only)
+   - D-07 says "cash_outflows PAGOS nos ultimos 30d". "Saída REAL/realizada" = effectively paid.
+   - Resolution: **`status = 'paid'`** for Saída Real 30d. Verified empirically against the live DB (project ckcdevcxgvueywivefgx, 2026-06-19): in the last 30d window, paid == all-statuses (R$208.127,35 identical) because pending payables (Tiny contas a pagar) carry future `outflow_date` and don't fall in [today-30, today]. So paid-only is both semantically correct AND loses no data. Plan 51-01 Bloco B updated to add `AND status='paid'`. Burn Rate (3m, D-08) intentionally keeps all-statuses over the 90d window as an obligation run-rate — different metric, not a contradiction.
 
-3. **Burn Rate 30d checkpoint with Wesley**
-   - CONTEXT.md D-08 flags this explicitly: "PONTO A CONFIRMAR COM WESLEY no checkpoint"
-   - Recommendation: Implement 3-month version, document the checkpoint clearly in the plan so executor adds the confirmation step.
+3. **Burn Rate 30d vs 3m checkpoint with Wesley** — ✅ RESOLVED (3-month, confirm at checkpoint)
+   - CONTEXT.md D-08 flags this explicitly.
+   - Resolution: Implement 3-month monthly average (avoids duplicating Saída Real). The 3m-vs-30d confirmation is embedded as Task 4 of Plan 51-03 (visual checkpoint with Wesley on the Vercel preview). Not a blocker for execution.
 
 ---
 
