@@ -9,7 +9,6 @@
 
 import {
   ComposedChart,
-  Bar,
   Line,
   XAxis,
   YAxis,
@@ -149,8 +148,8 @@ export function CashFlowChart({ data, isLoading = false }: CashFlowChartProps) {
           <div>
             <p className="text-sm font-medium">Como meu dinheiro vai evoluir?</p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Linha cheia = piso confirmado (só liberações já agendadas pelo MP, ~30d) &nbsp;|&nbsp;
-              Linha tracejada = projeção pela média de vendas dos últimos 15 dias
+              Linha azul = piso confirmado (só liberações já agendadas pelo MP, ~30d) &nbsp;|&nbsp;
+              Linha âmbar tracejada = projeção pela média de vendas dos últimos 15 dias
             </p>
           </div>
 
@@ -197,8 +196,6 @@ export function CashFlowChart({ data, isLoading = false }: CashFlowChartProps) {
             <Legend
               wrapperStyle={{ fontSize: "12px", paddingTop: "8px" }}
               formatter={(value) => {
-                if (value === "daily_income")            return "Entradas do dia";
-                if (value === "daily_expense")           return "Saídas do dia";
                 if (value === "accumulated_balance")     return "Saldo confirmado (piso ~30d)";
                 if (value === "accumulated_balance_sma") return "Projeção média de vendas 15d";
                 return value;
@@ -217,22 +214,6 @@ export function CashFlowChart({ data, isLoading = false }: CashFlowChartProps) {
                 fill: "hsl(var(--destructive))",
                 fontSize: 10,
               }}
-            />
-
-            {/* BARRAS ao fundo — entradas (verde) e saídas (vermelho) */}
-            <Bar
-              dataKey="daily_income"
-              name="daily_income"
-              fill="hsl(var(--kpi-positive))"
-              opacity={0.25}
-              radius={[2, 2, 0, 0]}
-            />
-            <Bar
-              dataKey="daily_expense"
-              name="daily_expense"
-              fill="hsl(var(--kpi-negative))"
-              opacity={0.25}
-              radius={[2, 2, 0, 0]}
             />
 
             {/* LINHA PRINCIPAL — Saldo projetado confirmado */}
