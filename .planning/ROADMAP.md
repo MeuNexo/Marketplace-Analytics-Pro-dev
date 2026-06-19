@@ -325,6 +325,29 @@ Plans:
 
 ---
 
+### Phase 51: Painel de Tesouraria (Fluxo de Caixa)
+
+**Goal**: Substituir os cards atuais da aba "Caixa Real" da pagina de Fluxo de Caixa (que hoje respondem "quanto tenho/quanto vou ter/posso comprar estoque") por um painel de tesouraria orientado a saude de caixa e exposicao a fornecedores: 12 KPIs em 3 faixas (saude de caixa, realizado, exposicao a fornecedor) + 3 graficos (Saldo Projetado, Composicao de Custos por Mes por categoria, Exposicao por Fornecedor 30/60/90d). O card "Posso comprar mais estoque?" e considerado irrelevante por Wesley e sai.
+**Depends on**: Phase 49 (tabelas cash_inflows/cash_outflows/financial_settings, RPCs get_cashflow/get_daily_balance/get_projected_balance_summary, CashFlowChart) e Phase 50 (aba Simulador — preservada).
+**Dados**: Ja existem em cash_inflows (MP), cash_outflows (Tiny: amount/outflow_date/supplier/category/status) e orders. Os 2 graficos novos usam cash_outflows.category e cash_outflows.supplier (ja preenchidos). Provavel necessidade de 1 RPC nova de agregacao (KPIs de tesouraria + series de composicao/exposicao).
+**Success Criteria** (what must be TRUE):
+
+  1. Aba "Caixa Real" exibe 12 KPIs: [Saude] Saldo Atual, Runway (meses), Saldo Minimo projetado (90d), Data do Saldo Minimo, Alerta de saldo abaixo do limite; [Realizado] Entrada Real, Saida Real, Resultado, Burn Rate (D/O medio 3 meses); [Exposicao] Fornec 30d, Fornec 60d, Fornec 90d, Total Exposicao
+  2. Card "Posso comprar mais estoque?" (CapacityCard) removido da pagina
+  3. Grafico Saldo Projetado mantido (reuso do CashFlowChart existente)
+  4. Grafico novo: Composicao de Custos por Mes (barras empilhadas por categoria de cash_outflows.category)
+  5. Grafico novo: Exposicao por Fornecedor (barras 30/60/90d por supplier de cash_outflows)
+  6. Aba "Simulador" (Phase 50) preservada e intocada
+  7. Formulas/janelas de cada KPI travadas na discussao (CONTEXT.md) e implementadas conforme o painel de referencia de Wesley
+
+**Requirements**: TESO-01, TESO-02, TESO-03, TESO-04, TESO-05
+
+**Pontos que exigem aprovacao do Wesley**: checkpoint visual no preview Vercel antes de qualquer merge para main.
+
+**UI hint**: yes
+
+---
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -339,3 +362,4 @@ Plans:
 | 48. MCO com Ads | 3/3 | Complete | 2026-06-14 |
 | 49. Fluxo de Caixa (Caixa Real) | 5/5 | Complete   | 2026-06-18 |
 | 50. Simulador de Cenarios de Caixa | 0/3 | Not started | - |
+| 51. Painel de Tesouraria | 0/? | Not started | - |
