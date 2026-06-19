@@ -55,9 +55,73 @@ export type SimBasePoint = Pick<
  * projetado e dos parâmetros de simulação. Função pura e determinística.
  */
 export function simulateCashflow(
-  _base: SimBasePoint[],
-  _params: SimParams
+  base: SimBasePoint[],
+  params: SimParams
 ): { series: SimPoint[]; verdict: SimVerdict } {
-  // Stub (RED): implementação real na Task 2.
-  throw new Error("simulateCashflow not implemented yet");
+  const { recebExtra, gastoExtra, eventos, margem } = params;
+  const ativa = recebExtra !== 0 || gastoExtra !== 0 || eventos.length > 0;
+
+  // Edge §7: baseline vazio → série vazia + veredito neutro (não lança).
+  if (base.length === 0) {
+    return {
+      series: [],
+      verdict: {
+        menorSaldo: 0,
+        valeIdx: 0,
+        diasAteVale: 1,
+        valeDate: "",
+        status: 0 >= margem ? "saudavel" : "risco",
+        folgaGastoDia: 0,
+        necessidadeReceitaDia: 0,
+        ativa,
+      },
+    };
+  }
+
+  // Série simulada ponto a ponto (spec §5).
+  const series: SimPoint[] = base.map((ponto, i) => {
+    const diasDecorridos = i + 1;
+    const deltaMediaAcum = (recebExtra - gastoExtra) * diasDecorridos;
+    // Datas yyyy-MM-dd: comparação lexicográfica == cronológica.
+    const eventosAcum = eventos.reduce((acc, ev) => {
+      if (ev.data <= ponto.fullDate) {
+        return acc + (ev.tipo === "entrada" ? ev.valor : -ev.valor);
+      }
+      return acc;
+    }, 0);
+    return {
+      fullDate: ponto.fullDate,
+      cenario: ponto.accumulated_balance_sma + deltaMediaAcum + eventosAcum,
+    };
+  });
+
+  // Veredito: menor saldo (argmin) ao longo do horizonte.
+  let valeIdx = 0;
+  let menorSaldo = series[0].cenario;
+  for (let i = 1; i < series.length; i++) {
+    if (series[i].cenario < menorSaldo) {
+      menorSaldo = series[i].cenario;
+      valeIdx = i;
+    }
+  }
+
+  const diasAteVale = valeIdx + 1; // sempre >= 1 → sem divisão por zero (edge §7)
+  const valeDate = base[valeIdx].fullDate;
+  const status: "saudavel" | "risco" = menorSaldo >= margem ? "saudavel" : "risco";
+  const folgaGastoDia = Math.max(0, (menorSaldo - margem) / diasAteVale);
+  const necessidadeReceitaDia = Math.max(0, (margem - menorSaldo) / diasAteVale);
+
+  return {
+    series,
+    verdict: {
+      menorSaldo,
+      valeIdx,
+      diasAteVale,
+      valeDate,
+      status,
+      folgaGastoDia,
+      necessidadeReceitaDia,
+      ativa,
+    },
+  };
 }
