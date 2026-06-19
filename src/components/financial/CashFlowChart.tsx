@@ -46,9 +46,31 @@ const CustomTooltip = ({ active, payload, label }: any) => {
     <div className="rounded-lg border border-border bg-card p-3 shadow-lg text-xs space-y-1.5 min-w-[200px]">
       <p className="font-semibold text-foreground mb-2">{label}</p>
 
-      {/* Saldo projetado confirmado — linha principal */}
-      <div className="flex items-center justify-between gap-4">
-        <span className="text-muted-foreground">Saldo (piso ~30d):</span>
+      {/* Fluxos do dia */}
+      <div className="flex items-center justify-between gap-6">
+        <span className="text-kpi-positive">+ Entradas (MP):</span>
+        <span className="font-medium tabular-nums text-kpi-positive">
+          {currFmt(point.daily_income)}
+        </span>
+      </div>
+      <div className="flex items-center justify-between gap-6">
+        <span className="text-kpi-negative">- Saídas (Tiny):</span>
+        <span className="font-medium tabular-nums text-kpi-negative">
+          {currFmt(point.daily_expense)}
+        </span>
+      </div>
+      <div className="flex items-center justify-between gap-6">
+        <span className="text-warning">+ Previsão:</span>
+        <span className="font-medium tabular-nums text-warning">
+          {currFmt(point.daily_projection)}
+        </span>
+      </div>
+
+      <div className="border-t border-border/60 my-1.5" />
+
+      {/* Saldos acumulados */}
+      <div className="flex items-center justify-between gap-6">
+        <span className="font-semibold text-kpi-positive">Saldo Real:</span>
         <span
           className={`font-semibold tabular-nums ${
             point.accumulated_balance < 0 ? "text-kpi-negative" : "text-kpi-positive"
@@ -57,13 +79,8 @@ const CustomTooltip = ({ active, payload, label }: any) => {
           {currFmt(point.accumulated_balance)}
         </span>
       </div>
-      <p className="text-[10px] text-muted-foreground -mt-0.5">
-        só entradas já liberadas pelo MP (~30d)
-      </p>
-
-      {/* Saldo projetado pela média de 15 dias */}
-      <div className="flex items-center justify-between gap-4">
-        <span className="text-muted-foreground">Saldo (média 15d):</span>
+      <div className="flex items-center justify-between gap-6">
+        <span className="font-semibold text-warning">Saldo Projetado:</span>
         <span
           className={`font-semibold tabular-nums ${
             point.accumulated_balance_sma < 0 ? "text-kpi-negative" : "text-warning"
@@ -72,25 +89,6 @@ const CustomTooltip = ({ active, payload, label }: any) => {
           {currFmt(point.accumulated_balance_sma)}
         </span>
       </div>
-
-      {/* Entradas / Saídas do dia */}
-      {(point.daily_income > 0 || point.daily_expense > 0) && (
-        <>
-          <div className="border-t border-border/40 my-1" />
-          <div className="flex items-center justify-between gap-4">
-            <span className="text-muted-foreground">+ Entradas do dia:</span>
-            <span className="font-medium tabular-nums text-kpi-positive">
-              {currFmt(point.daily_income)}
-            </span>
-          </div>
-          <div className="flex items-center justify-between gap-4">
-            <span className="text-muted-foreground">- Saídas do dia:</span>
-            <span className="font-medium tabular-nums text-kpi-negative">
-              {currFmt(point.daily_expense)}
-            </span>
-          </div>
-        </>
-      )}
     </div>
   );
 };

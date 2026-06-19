@@ -19,6 +19,8 @@ export interface CashFlowDataPoint {
   fullDate: string;
   daily_income: number;
   daily_expense: number;
+  /** Entrada média projetada do dia (v_sma = média de recebimento 15d). Usada na "+ Previsão" do tooltip. */
+  daily_projection: number;
   daily_balance: number;
   /**
    * Saldo projetado acumulado (CONFIRMADO) retornado pelo RPC get_cashflow.
@@ -62,6 +64,7 @@ export function useCashFlowData(startDate: string, endDate: string) {
         date: string;
         daily_income: number;
         daily_expense: number;
+        daily_projection: number;
         daily_balance: number;
         accumulated_balance: number;
         accumulated_balance_sma: number;
@@ -69,6 +72,7 @@ export function useCashFlowData(startDate: string, endDate: string) {
         date:                    String(r.date ?? "").substring(0, 10),
         daily_income:            Number(r.daily_income            ?? 0),
         daily_expense:           Number(r.daily_expense           ?? 0),
+        daily_projection:        Number(r.daily_projection        ?? 0),
         daily_balance:           Number(r.daily_balance           ?? 0),
         accumulated_balance:     Number(r.accumulated_balance     ?? 0),
         accumulated_balance_sma: Number(r.accumulated_balance_sma ?? 0),
@@ -81,6 +85,7 @@ export function useCashFlowData(startDate: string, endDate: string) {
           fullDate:           row.date,
           daily_income:       row.daily_income,
           daily_expense:      row.daily_expense,
+          daily_projection:   row.daily_projection,
           daily_balance:      row.daily_balance,
           accumulated_balance: row.accumulated_balance,
           accumulated_balance_sma: row.accumulated_balance_sma,
