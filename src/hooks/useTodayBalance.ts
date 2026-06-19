@@ -6,6 +6,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrganization } from "@/contexts/OrganizationContext";
+import { brToday } from "@/lib/brDate";
 
 export interface TodayBalanceData {
   saldo_inicial: number;
@@ -25,7 +26,7 @@ export function useTodayBalance() {
     queryFn: async (): Promise<TodayBalanceData | null> => {
       if (!orgId) return null;
 
-      const today = new Date().toISOString().substring(0, 10);
+      const today = brToday(); // dia BRT — NÃO usar toISOString (UTC adianta o dia à noite)
 
       const { data, error } = await supabase.rpc("get_daily_balance", {
         p_org_id:      orgId,
