@@ -23,11 +23,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { TodayBalanceCard } from "@/components/financial/TodayBalanceCard";
 import { ProjectedBalanceCard } from "@/components/financial/ProjectedBalanceCard";
 import { CapacityCard } from "@/components/financial/CapacityCard";
 import { CashFlowChart } from "@/components/financial/CashFlowChart";
+import { CashFlowSimulator } from "@/components/financial/CashFlowSimulator";
 import { useCashFlowData } from "@/hooks/useCashFlowData";
 import { useFinancialSettings } from "@/hooks/useFinancialSettings";
 import { useOrganization } from "@/contexts/OrganizationContext";
@@ -213,38 +215,54 @@ export default function MLFluxoCaixa() {
         <MLPageHeader title="Fluxo de Caixa" />
       </div>
 
-      {/* ── Grid 3 cards + botão Ajustar saldo ── */}
-      <div className="flex flex-col gap-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <TodayBalanceCard />
-          <ProjectedBalanceCard />
-          <CapacityCard />
-        </div>
+      {/* ── Tabs: Caixa Real | Simulador ── */}
+      <Tabs defaultValue="real" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="real">Caixa Real</TabsTrigger>
+          <TabsTrigger value="simulador">Simulador</TabsTrigger>
+        </TabsList>
 
-        {/* Botão owner-only para ajustar saldo inicial */}
-        {isOwner && (
-          <div className="flex justify-end">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setAdjustOpen(true)}
-              className="gap-1.5 text-xs"
-            >
-              <Settings2 className="w-3.5 h-3.5" />
-              Ajustar saldo de hoje
-            </Button>
+        {/* ── Aba Caixa Real (conteúdo atual INTOCADO) ── */}
+        <TabsContent value="real" className="space-y-6 mt-0">
+          {/* ── Grid 3 cards + botão Ajustar saldo ── */}
+          <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <TodayBalanceCard />
+              <ProjectedBalanceCard />
+              <CapacityCard />
+            </div>
+
+            {/* Botão owner-only para ajustar saldo inicial */}
+            {isOwner && (
+              <div className="flex justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAdjustOpen(true)}
+                  className="gap-1.5 text-xs"
+                >
+                  <Settings2 className="w-3.5 h-3.5" />
+                  Ajustar saldo de hoje
+                </Button>
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      {/* ── Gráfico: Como meu dinheiro vai evoluir? ── */}
-      {chartLoading ? (
-        <Skeleton className="h-72 rounded-xl" />
-      ) : hasData ? (
-        <CashFlowChart data={cashFlowData} isLoading={false} />
-      ) : (
-        <CashFlowEmptyState />
-      )}
+          {/* ── Gráfico: Como meu dinheiro vai evoluir? ── */}
+          {chartLoading ? (
+            <Skeleton className="h-72 rounded-xl" />
+          ) : hasData ? (
+            <CashFlowChart data={cashFlowData} isLoading={false} />
+          ) : (
+            <CashFlowEmptyState />
+          )}
+        </TabsContent>
+
+        {/* ── Aba Simulador ("E se...?") ── */}
+        <TabsContent value="simulador" className="mt-0">
+          <CashFlowSimulator />
+        </TabsContent>
+      </Tabs>
 
       {/* ── Dialog de ajuste de saldo (owner only) ── */}
       {isOwner && currentOrg && (
