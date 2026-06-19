@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: milestone
-status: "Ambas em preview (branch preview/phase-50-simulador-caixa). PENDENTE: merge p/ main/prod."
+status: executing
 stopped_at: Phase 51 planned + verified (3 plans, 3 waves)
-last_updated: "2026-06-19T17:49:35.786Z"
-last_activity: "2026-06-19 -- Phase 50 (Simulador "E se...?") fechada: módulo puro 7 testes + 3ª linha + veredito folga/status + Tabs. 2 fixes pós-checkpoint: criticalDate (1º cruzamento da margem) + timezone BRT (card/RPCs usavam UTC). Wesley aprovou."
+last_updated: "2026-06-19T17:51:41.630Z"
+last_activity: 2026-06-19 -- Phase 51 execution started
 progress:
   total_phases: 11
   completed_phases: 7
@@ -22,14 +22,15 @@ See: .planning/PROJECT.md
 
 **Milestone:** v7.0 — SaaS Operacional End-to-End
 **Core value:** Sistema 100% operacional e vendável como assinatura — dados verdadeiros em todas as páginas (zero mock), multi-tenant endurecido, monetização via Stripe ativa, onboarding guiado para lojista leigo, e Consultor v1 (motor de regras + score de saúde) como diferencial de venda.
-**Current focus:** Phase 50 — simulador-de-cenarios-de-caixa (CONCLUÍDA, em preview)
+**Current focus:** Phase 51 — painel-de-tesouraria-fluxo-de-caixa
 
 ## Current Position
 
-Phase: 50 (simulador-de-cenarios-de-caixa-e-se) — COMPLETE (verifier PASSED 6/6 + aprovação visual Wesley)
+Phase: 51 (painel-de-tesouraria-fluxo-de-caixa) — EXECUTING
+Plan: 1 of 3
 Phase: 49 (fluxo-de-caixa-caixa-real) — COMPLETE (dados validados centavo a centavo + timezone BRT corrigido + aprovação visual)
-Status: Ambas em preview (branch preview/phase-50-simulador-caixa). PENDENTE: merge p/ main/prod.
-Last activity: 2026-06-19 -- Phase 50 (Simulador "E se...?") fechada: módulo puro 7 testes + 3ª linha + veredito folga/status + Tabs. 2 fixes pós-checkpoint: criticalDate (1º cruzamento da margem) + timezone BRT (card/RPCs usavam UTC). Wesley aprovou.
+Status: Executing Phase 51
+Last activity: 2026-06-19 -- Phase 51 execution started
 
 ### Quick Tasks Completed
 

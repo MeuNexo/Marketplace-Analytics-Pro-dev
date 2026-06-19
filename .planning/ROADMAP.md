@@ -319,6 +319,7 @@ Plans:
 
 **Plans**: 3 plans
 Plans:
+
 - [ ] 50-01-PLAN.md — Modulo puro cashflowSimulation.ts + testes vitest (TDD, SIM-01)
 - [ ] 50-02-PLAN.md — CashFlowChart estendido (simulatedSeries) + SimulatorVerdictCard (SIM-04, SIM-05)
 - [ ] 50-03-PLAN.md — CashFlowSimulator (controles/estado) + Tabs em MLFluxoCaixa + checkpoint visual (SIM-02, SIM-03)
@@ -350,7 +351,7 @@ Plans:
 
 **Wave 1 — Backend (RPCs + coluna)**
 
-- [ ] 51-01-PLAN.md — Migration alert_threshold + 3 RPCs (get_treasury_panel/get_cost_by_month/get_supplier_exposure) SECURITY INVOKER + [BLOCKING] apply via MCP em ckcdevcxgvueywivefgx (TESO-03, TESO-04)
+- [x] 51-01-PLAN.md — Migration alert_threshold + 3 RPCs (get_treasury_panel/get_cost_by_month/get_supplier_exposure) SECURITY INVOKER + [BLOCKING] apply via MCP em ckcdevcxgvueywivefgx (TESO-03, TESO-04)
 
 **Wave 2 — Hooks** *(blocked on 51-01)*
 
@@ -378,4 +379,4 @@ Plans:
 | 48. MCO com Ads | 3/3 | Complete | 2026-06-14 |
 | 49. Fluxo de Caixa (Caixa Real) | 5/5 | Complete   | 2026-06-18 |
 | 50. Simulador de Cenarios de Caixa | 0/3 | Not started | - |
-| 51. Painel de Tesouraria | 0/3 | Not started | - |
+| 51. Painel de Tesouraria | 1/3 | In Progress|  |
