@@ -52,7 +52,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
         <span className="text-muted-foreground">Saldo (piso ~30d):</span>
         <span
           className={`font-semibold tabular-nums ${
-            point.accumulated_balance < 0 ? "text-kpi-negative" : "text-kpi-positive"
+            point.accumulated_balance < 0 ? "text-kpi-negative" : "text-kpi-neutral"
           }`}
         >
           {currFmt(point.accumulated_balance)}
@@ -67,7 +67,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
         <span className="text-muted-foreground">Saldo (média 15d):</span>
         <span
           className={`font-semibold tabular-nums ${
-            point.accumulated_balance_sma < 0 ? "text-kpi-negative" : "text-kpi-neutral"
+            point.accumulated_balance_sma < 0 ? "text-kpi-negative" : "text-warning"
           }`}
         >
           {currFmt(point.accumulated_balance_sma)}
@@ -246,12 +246,14 @@ export function CashFlowChart({ data, isLoading = false }: CashFlowChartProps) {
               connectNulls
             />
 
-            {/* LINHA SECUNDÁRIA — Projeção pela média de 15 dias */}
+            {/* LINHA SECUNDÁRIA — Projeção pela média de 15 dias.
+                Cor âmbar (warning): exclusiva, não colide com o verde das
+                Entradas do dia nem com o azul do Saldo confirmado. */}
             <Line
               type="monotone"
               dataKey="accumulated_balance_sma"
               name="accumulated_balance_sma"
-              stroke="hsl(var(--kpi-positive))"
+              stroke="hsl(var(--warning))"
               strokeWidth={2}
               strokeDasharray="5 4"
               dot={false}
