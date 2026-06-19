@@ -295,6 +295,27 @@ Plans:
 
 **UI hint**: yes
 
+### Phase 50: Simulador de Cenarios de Caixa ("E se...?")
+
+**Goal**: Na propria pagina de Fluxo de Caixa, uma aba "Simulador" permite ao lojista arrastar medias de recebimento e gasto extras (+ ate 2 eventos pontuais) e ver na hora como o caixa evolui, respondendo "posso gastar mais ou preciso receber mais?" via veredito de folga + status.
+**Depends on**: Phase 49 (RPC get_cashflow, hook useCashFlowData, CashFlowChart, pagina MLFluxoCaixa)
+**Decisao travada (Wesley 2026-06-19)**: (1) modelo hibrido — 2 sliders de media (delta "extra sobre o real") + ate 2 eventos pontuais; (2) veredito Folga + status (Saudavel/Risco, "pode gastar +R$X/dia" ou "precisa +R$Y/dia"); (3) margem = financial_settings.safety_margin (R$10k); (4) aba na pagina de Fluxo de Caixa (nao pagina separada); (5) SEM persistencia (rascunho de sessao); (6) calculo 100% frontend reusando get_cashflow — ZERO migration/tabela/RPC nova.
+**Referencia**: ScenarioSimulator do nexointeligence (porte enxuto). Spec completo: docs/superpowers/specs/2026-06-19-simulador-fluxo-caixa-design.md
+**Success Criteria** (what must be TRUE):
+
+  1. Modulo puro testavel src/lib/cashflowSimulation.ts calcula serie simulada + veredito (folga/necessidade/status) a partir do baseline + deltas + eventos, com testes vitest cobrindo: sem-simulacao, gasto empurra risco, recebimento da folga, evento pontual entrada/saida na data certa
+  2. Aba "Simulador" na pagina MLFluxoCaixa (Tabs shadcn "Caixa Real" | "Simulador"), aba Caixa Real intocada
+  3. Controles: slider recebimento extra/dia (-5k..+5k step100), slider gasto extra/dia (0..+10k step100), ate 2 eventos pontuais (valor/data/tipo entrada-saida), botao Limpar
+  4. CashFlowChart estendido com prop opcional simulatedSeries (3a linha tracejada azul kpi-neutral "Cenario simulado"), 100% compativel com uso atual (aba Caixa Real nao passa a prop)
+  5. Painel de veredito (SimulatorVerdictCard): selo Saudavel/Risco + frase de folga/necessidade + menor saldo e data critica
+  6. Sem mudanca de backend (nenhuma migration/EF/RPC nova); estado so de sessao (rascunho)
+
+**Requirements**: SIM-01, SIM-02, SIM-03, SIM-04, SIM-05
+
+**Pontos que exigem aprovacao do Wesley** (sinalizar nos planos): checkpoint visual no preview Vercel antes de qualquer merge para main.
+
+**UI hint**: yes
+
 ---
 
 ## Progress

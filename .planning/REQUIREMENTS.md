@@ -81,6 +81,16 @@ Decisão travada (Wesley 2026-06-14): modelo de 2 números (operacional + pós-a
 
 Decisão travada (Wesley 2026-06-18): fonte = caixa REAL (liberações MP + despesas), não derivado de vendas; nova página em "Operações" (não mexer no /financeiro de competência); MVP = gráfico + 3 cards. Portado do nexointeligence.
 
+### Bloco SIM — Simulador de Cenários "E se...?" (Phase 50)
+
+- [ ] **SIM-01**: Módulo puro testável `src/lib/cashflowSimulation.ts` calcula série simulada + veredito (folga/necessidade/status) a partir do baseline (`get_cashflow`) + deltas (recebimento/gasto extra) + eventos pontuais; testes vitest cobrindo sem-simulação, gasto→risco, recebimento→folga, evento entrada/saída na data certa
+- [ ] **SIM-02**: Aba "Simulador" na página `MLFluxoCaixa` (Tabs shadcn "Caixa Real" | "Simulador"); aba Caixa Real intocada
+- [ ] **SIM-03**: Controles — slider recebimento extra/dia (−5k..+5k), slider gasto extra/dia (0..+10k), até 2 eventos pontuais (valor/data/tipo), botão Limpar
+- [ ] **SIM-04**: `CashFlowChart` estendido com prop opcional `simulatedSeries` (3ª linha tracejada azul "Cenário simulado"), 100% compatível com o uso atual
+- [ ] **SIM-05**: Painel de veredito (`SimulatorVerdictCard`): selo Saudável/Risco + frase de folga/necessidade + menor saldo e data crítica; sem backend novo, estado só de sessão
+
+Decisão travada (Wesley 2026-06-19): modelo híbrido (sliders de média delta + eventos pontuais); veredito folga+status; aba no Fluxo de Caixa; sem persistência; cálculo 100% frontend reusando get_cashflow (zero migration/RPC/tabela). Spec: docs/superpowers/specs/2026-06-19-simulador-fluxo-caixa-design.md
+
 ### Bloco QA — Go-live
 
 - [ ] **QA-01**: Tenant novo via convite chega a dashboard com dados reais sem nenhum passo manual de super-admin além de criar org+convite
@@ -152,6 +162,11 @@ Decisão travada (Wesley 2026-06-18): fonte = caixa REAL (liberações MP + desp
 | CASH-04 | Phase 49 | Complete |
 | CASH-05 | Phase 49 | Complete |
 | CASH-06 | Phase 49 | Complete |
+| SIM-01 | Phase 50 | Pending |
+| SIM-02 | Phase 50 | Pending |
+| SIM-03 | Phase 50 | Pending |
+| SIM-04 | Phase 50 | Pending |
+| SIM-05 | Phase 50 | Pending |
 
 ---
 *Criado: 2026-06-12 — milestone v7.0*
