@@ -12,12 +12,14 @@ export interface FinancialSettings {
   initial_balance: number;
   operational_cost_rate: number;
   safety_margin: number;
+  alert_threshold: number;  // D-10 — limite configurável de alerta de saldo
 }
 
 const DEFAULTS: FinancialSettings = {
   initial_balance: 0,
   operational_cost_rate: 0.22,
   safety_margin: 10000,
+  alert_threshold: 30000,
 };
 
 export function useFinancialSettings() {
@@ -35,7 +37,7 @@ export function useFinancialSettings() {
       // (chave única por organization_id — sem risco de truncamento PostgREST)
       const { data, error } = await supabase
         .from("financial_settings")
-        .select("initial_balance, operational_cost_rate, safety_margin")
+        .select("initial_balance, operational_cost_rate, safety_margin, alert_threshold")
         .eq("organization_id", orgId)
         .maybeSingle();
 
@@ -44,9 +46,10 @@ export function useFinancialSettings() {
       if (!data) return DEFAULTS;
 
       return {
-        initial_balance: Number(data.initial_balance ?? 0),
+        initial_balance:       Number(data.initial_balance       ?? 0),
         operational_cost_rate: Number(data.operational_cost_rate ?? 0.22),
-        safety_margin: Number(data.safety_margin ?? 10000),
+        safety_margin:         Number(data.safety_margin         ?? 10000),
+        alert_threshold:       Number(data.alert_threshold       ?? 30000),
       };
     },
   });
