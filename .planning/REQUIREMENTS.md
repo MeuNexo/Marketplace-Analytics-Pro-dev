@@ -158,15 +158,15 @@ Decisão travada (Wesley 2026-06-19): modelo híbrido (sliders de média delta +
 | MCO-05 | Phase 48 | Complete |
 | CASH-01 | Phase 49 | Complete |
 | CASH-02 | Phase 49 | Complete |
-| CASH-03 | Phase 49 | Pending |
+| CASH-03 | Phase 49 | Complete |
 | CASH-04 | Phase 49 | Complete |
 | CASH-05 | Phase 49 | Complete |
 | CASH-06 | Phase 49 | Complete |
-| SIM-01 | Phase 50 | Pending |
-| SIM-02 | Phase 50 | Pending |
-| SIM-03 | Phase 50 | Pending |
-| SIM-04 | Phase 50 | Pending |
-| SIM-05 | Phase 50 | Pending |
+| SIM-01 | Phase 50 | Complete |
+| SIM-02 | Phase 50 | Complete |
+| SIM-03 | Phase 50 | Complete |
+| SIM-04 | Phase 50 | Complete |
+| SIM-05 | Phase 50 | Complete |
 
 ---
 *Criado: 2026-06-12 — milestone v7.0*

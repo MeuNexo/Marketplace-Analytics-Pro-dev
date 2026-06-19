@@ -4,14 +4,14 @@ milestone: v7.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 46-02-PLAN.md
-last_updated: "2026-06-18T19:45:47.416Z"
-last_activity: 2026-06-18 -- Phase 49 execution started
+last_updated: "2026-06-19T02:15:00.000Z"
+last_activity: 2026-06-19 -- Phase 49 (Fluxo de Caixa) validada + Phase 50 (Simulador) verifier PASSED 6/6; aprovação visual Wesley OK. Ambas em preview, pendente merge p/ prod.
 progress:
-  total_phases: 9
-  completed_phases: 6
-  total_plans: 31
-  completed_plans: 27
-  percent: 67
+  total_phases: 10
+  completed_phases: 8
+  total_plans: 39
+  completed_plans: 35
+  percent: 80
 ---
 
 # Project State
@@ -22,14 +22,14 @@ See: .planning/PROJECT.md
 
 **Milestone:** v7.0 — SaaS Operacional End-to-End
 **Core value:** Sistema 100% operacional e vendável como assinatura — dados verdadeiros em todas as páginas (zero mock), multi-tenant endurecido, monetização via Stripe ativa, onboarding guiado para lojista leigo, e Consultor v1 (motor de regras + score de saúde) como diferencial de venda.
-**Current focus:** Phase 49 — fluxo-de-caixa-caixa-real
+**Current focus:** Phase 50 — simulador-de-cenarios-de-caixa (CONCLUÍDA, em preview)
 
 ## Current Position
 
-Phase: 49 (fluxo-de-caixa-caixa-real) — EXECUTING
-Plan: 4 of 5
-Status: Ready to execute
-Last activity: 2026-06-19 -- Phase 49: DADOS VALIDADOS (a-pagar R$1.046.875,01 banco = Wesley EXATO; saldo R$6.997 disponível confirmado, sem dupla contagem; vendas ~2% vs ML; a-liberar MP ~96%). Ajustes visuais: saldo verde / projeção âmbar / R$0 cinza / barras removidas. Falta só aprovação visual final.
+Phase: 50 (simulador-de-cenarios-de-caixa-e-se) — COMPLETE (verifier PASSED 6/6 + aprovação visual Wesley)
+Phase: 49 (fluxo-de-caixa-caixa-real) — COMPLETE (dados validados centavo a centavo + timezone BRT corrigido + aprovação visual)
+Status: Ambas em preview (branch preview/phase-50-simulador-caixa). PENDENTE: merge p/ main/prod.
+Last activity: 2026-06-19 -- Phase 50 (Simulador "E se...?") fechada: módulo puro 7 testes + 3ª linha + veredito folga/status + Tabs. 2 fixes pós-checkpoint: criticalDate (1º cruzamento da margem) + timezone BRT (card/RPCs usavam UTC). Wesley aprovou.
 
 ### Quick Tasks Completed
 
