@@ -1,6 +1,6 @@
 // ============================================================================
 // TreasuryPanel — 12 KPIs em 3 faixas rotuladas
-//   Faixa 1 — Saúde de Caixa: Saldo Atual, Runway, Saldo Mín 90d, Alerta
+//   Faixa 1 — Saúde de Caixa: Saldo Atual, Runway, Saldo Mín 30d, Alerta
 //   Faixa 2 — Realizado (30d): Entrada Real, Saída Real, Resultado, Burn Rate
 //   Faixa 3 — Exposição a Fornecedor: Fornec 30/60/90d, Total Exposição
 // TESO-01
@@ -99,7 +99,7 @@ export function TreasuryPanel() {
   const currentBalance = projected?.current_balance ?? 0;
   const burnRate = treasury?.burn_rate ?? 0;
   const runway = burnRate > 0 ? currentBalance / burnRate : null;
-  const minBalance = projected?.min_balance ?? 0;
+  const minBalance = treasury?.min_balance ?? 0;
   const alertThreshold = settings?.alert_threshold ?? treasury?.alert_threshold ?? 30000;
   const alertDate = treasury?.alert_date ?? null;
   const minBalanceDate = treasury?.min_balance_date ?? null;
@@ -146,9 +146,9 @@ export function TreasuryPanel() {
             }
           />
 
-          {/* Saldo Mín 90d */}
+          {/* Saldo Mín 30d */}
           <KpiCard
-            label="Saldo Mín 90d"
+            label="Saldo Mín 30d"
             value={
               <p className={`text-lg font-bold tabular-nums leading-none ${minBalance < alertThreshold ? "text-kpi-negative" : "text-kpi-neutral"}`}>
                 {currFmt(minBalance)}

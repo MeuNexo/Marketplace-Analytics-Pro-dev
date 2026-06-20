@@ -43,7 +43,16 @@ export function LayoutShell({ sidebar, mobileSidebar, showSellerSwitcher = true,
       {isMobile && (
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
           <SheetContent side="left" className="p-0 w-64 [&>button]:hidden">
-            <div onClick={() => setMobileOpen(false)} className="h-full">
+            {/* Fecha o drawer apenas quando um LINK de navegação (<a>) é tocado.
+                Tocar no trigger de um grupo colapsável (<button>, ex. "Operações")
+                NÃO fecha — senão os itens aninhados (ex. Fluxo de Caixa) ficam
+                inacessíveis no mobile, pois o grupo nunca consegue expandir. */}
+            <div
+              onClick={(e) => {
+                if ((e.target as HTMLElement).closest("a")) setMobileOpen(false);
+              }}
+              className="h-full"
+            >
               {mobileSidebar ?? sidebar}
             </div>
           </SheetContent>

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 51 planned + verified (3 plans, 3 waves)
-last_updated: "2026-06-19T18:27:25.402Z"
-last_activity: 2026-06-19 -- Phase 51 execution started
+stopped_at: Phase 51 FECHADA — verifier PASS + code review (CR-01/HG-01/HG-03 corrigidos em prod)
+last_updated: "2026-06-20T00:00:00.000Z"
+last_activity: 2026-06-20 -- Phase 51 fechada (review fixes aplicados, não pushada)
 progress:
   total_phases: 11
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 37
-  completed_plans: 33
-  percent: 73
+  completed_plans: 37
+  percent: 82
 ---
 
 # Project State
@@ -26,11 +26,18 @@ See: .planning/PROJECT.md
 
 ## Current Position
 
-Phase: 51 (painel-de-tesouraria-fluxo-de-caixa) — EXECUTING
-Plan: 2 of 3
-Phase: 49 (fluxo-de-caixa-caixa-real) — COMPLETE (dados validados centavo a centavo + timezone BRT corrigido + aprovação visual)
-Status: Ready to execute
-Last activity: 2026-06-19 -- Phase 51 execution started
+Phase: 51 (painel-de-tesouraria-fluxo-de-caixa) — COMPLETE (3/3 plans + verifier PASS + code review fechado)
+Status: Fechada no GSD. NÃO pushada / NÃO em prod (frontend) — branch preview/phase-50-simulador-caixa
+Last activity: 2026-06-20 -- Phase 51 fechada (review fixes CR-01/HG-01/HG-03)
+
+### Fechamento Phase 51 (2026-06-20)
+- **Verifier:** PASS 5/5 (TESO-01..05), build limpo (51-VERIFICATION.md).
+- **Code review:** 1 Critical + 4 High (51-REVIEW.md). HG-02 e HG-04 = falsos positivos vs prod (já BRT / já bounded). Reais corrigidos + aplicados em prod via MCP (commit 1d1750c4):
+  - CR-01: enrich_drain token Tiny hardcoded (1639558873) → token por org da fila + REVOKE de PUBLIC/anon/authenticated. (latente: só Pé Vermeio usa Tiny hoje)
+  - HG-01: card "Saldo Mín" → horizonte 30d (decisão Wesley); RPC retorna min_balance (valor) + data do mesmo modelo. −719k/90d → −168k/30d.
+  - HG-03: burn_rate só status='paid' (R$185.149) consistente c/ Saída Real (decisão Wesley). Antes R$189.316 (incluía 9 contas vencidas).
+- Migrations prod: treasury_fix_cr01_enrich_drain_security, treasury_fix_hg01_hg03_panel. Arquivo repo: 20260650000200.
+- **PENDENTE:** push dos commits + deploy frontend (prod ainda no estado pré-51) + checkpoint visual real do painel de Tesouraria por Wesley.
 
 ### Quick Tasks Completed
 

@@ -1,7 +1,7 @@
 // ============================================================================
 // useTreasuryPanel — painel de tesouraria via RPC get_treasury_panel
-// Retorna 10 escalares: burn_rate, alert_threshold, alert_date, min_balance_date,
-// entrada_real_30d, saida_real_30d, fornec_30d/60d/90d, total_exposicao
+// Retorna 11 escalares: burn_rate, alert_threshold, alert_date, min_balance_date,
+// min_balance, entrada_real_30d, saida_real_30d, fornec_30d/60d/90d, total_exposicao
 // TESO-01 / TESO-03
 // ============================================================================
 
@@ -13,7 +13,8 @@ export interface TreasuryPanelData {
   burn_rate:        number;
   alert_threshold:  number;
   alert_date:       string | null;   // ISO date or null
-  min_balance_date: string | null;   // date of minimum balance in 90d horizon
+  min_balance_date: string | null;   // date of minimum balance in 30d horizon
+  min_balance:      number;          // value of minimum balance (same model/horizon as date)
   entrada_real_30d: number;
   saida_real_30d:   number;
   fornec_30d:       number;
@@ -47,6 +48,7 @@ export function useTreasuryPanel() {
         alert_threshold:  Number(r.alert_threshold  ?? 30000),
         alert_date:       r.alert_date       ? String(r.alert_date)       : null,
         min_balance_date: r.min_balance_date ? String(r.min_balance_date) : null,
+        min_balance:      Number(r.min_balance      ?? 0),
         entrada_real_30d: Number(r.entrada_real_30d ?? 0),
         saida_real_30d:   Number(r.saida_real_30d   ?? 0),
         fornec_30d:       Number(r.fornec_30d        ?? 0),
