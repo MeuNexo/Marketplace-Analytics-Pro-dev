@@ -3,16 +3,30 @@ gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 51 FECHADA — verifier PASS + code review (CR-01/HG-01/HG-03 corrigidos em prod)
-last_updated: "2026-06-20T00:00:00.000Z"
-last_activity: 2026-06-20 -- Phase 51 fechada (review fixes aplicados, não pushada)
+stopped_at: Phase 47 (QA/Go-Live) fechada escopo técnico — sem Stripe (decisão Wesley "testes apenas")
+last_updated: "2026-06-20T12:00:00.000Z"
+last_activity: 2026-06-20 -- Phase 47 auditoria de segurança + build, críticos corrigidos
 progress:
   total_phases: 11
-  completed_phases: 9
-  total_plans: 37
-  completed_plans: 37
-  percent: 82
+  completed_phases: 10
+  total_plans: 38
+  completed_plans: 38
+  percent: 91
 ---
+
+## Fechamento Phase 47 — QA / Go-Live (2026-06-20, escopo técnico sem Stripe)
+
+Decisão Wesley: pular tudo de assinatura/Stripe ("esta versão é só testes"). Critérios cobertos:
+- **Build/deploy:** tsc --noEmit + npm run build limpos; prod READY.
+- **Segurança (críticos corrigidos em prod via MCP):** migration `20260650000400_phase47_security_hardening` →
+  (1) RLS habilitado em `cat_backfill_queue` (era advisor ERROR rls_disabled_in_public);
+  (2) REVOKE total (anon/PUBLIC) em `batch_upsert_orders` + `upsert_order_preserve_cost` (anon escrevia pedidos via REST). EFs de sync usam service_role, sem regressão.
+- **EFs de debug neutralizadas** (deploy stub 410, sem token p/ delete): `temp-reset-password` (backdoor reset-senha sem auth) e `probe-tiny-map`. Remoção definitiva do endpoint: dashboard ou `supabase functions delete` (requer SUPABASE_ACCESS_TOKEN).
+- **EFs de negócio:** verify_jwt=true confirmado (ml-ads/inventory/reputation/precos-custos/recalc-order-costs/org-*/admin-*).
+
+**Backlog não-bloqueante (deferido p/ go-live real):** ~13 helper/cron SECURITY DEFINER chamáveis por anon (enumeração, não escrevem); 9 funções search_path mutável; leaked-password protection off (config Auth); validação E2E de tenant-novo (depende de Stripe/Phase 44).
+
+**Restam no milestone v7.0:** Phase 44 (Stripe) — adiada por decisão (não será o Wesley a organizar assinatura).
 
 # Project State
 
