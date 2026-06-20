@@ -1,9 +1,13 @@
 import {
   Target,
   ArrowLeft,
+  Banknote,
+  Calculator,
   ClipboardList,
+  FileText,
   Layers,
   LayoutDashboard,
+  Lightbulb,
   Megaphone,
   MessageCircle,
   Package,
@@ -25,6 +29,7 @@ const sections = [
     label: "Dashboard",
     items: [
       { icon: TrendingUp,  label: "Vendas",      path: "/"            },
+      { icon: Lightbulb,   label: "Consultor",   path: "/consultor"   },
       { icon: Megaphone,   label: "Publicidade", path: "/publicidade" },
       { icon: Receipt,     label: "Margem",      path: "/financeiro" },
     ],
@@ -32,9 +37,11 @@ const sections = [
   {
     label: "Operações",
     items: [
-      { icon: ShoppingBag,   label: "Anúncios", path: "/anuncios" },
-      { icon: Package,       label: "Estoque",  path: "/estoque"  },
-      { icon: ClipboardList, label: "Pedidos",  path: "/pedidos"  },
+      { icon: ShoppingBag,   label: "Anúncios",     path: "/anuncios"      },
+      { icon: Package,       label: "Estoque",      path: "/estoque"       },
+      { icon: ClipboardList, label: "Pedidos",      path: "/pedidos"       },
+      { icon: Calculator,    label: "Precificação", path: "/precificacao"  },
+      { icon: Banknote,      label: "Fluxo de Caixa", path: "/fluxo-de-caixa" },
     ],
   },
   {
@@ -48,9 +55,10 @@ const sections = [
   {
     label: "Configurações",
     items: [
-      { icon: Target, label: "Metas",       path: "/metas"       },
-      { icon: Users,  label: "Sellers",     path: "/sellers"     },
-      { icon: Plug,   label: "Integrações", path: "/integracoes" },
+      { icon: Target,   label: "Metas",       path: "/metas"       },
+      { icon: Users,    label: "Sellers",     path: "/sellers"     },
+      { icon: Plug,     label: "Integrações", path: "/integracoes" },
+      { icon: FileText, label: "Fiscal",      path: "/fiscal"      },
     ],
   },
 ];
