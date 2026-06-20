@@ -12,7 +12,10 @@
 -- (migration treasury_fix_cr01_backfill_pipeline_multitenant).
 -- ============================================================
 
--- enqueue: ml_user_id correto por org (join ml_tokens), nao literal
+-- enqueue: ml_user_id correto por org (join ml_tokens), nao literal.
+-- SEM filtro de data: enfileira TODA conta sem categoria com tiny_payable_id
+-- (passada, presente, futura) — garante que nada fique descategorizado e que
+-- contas novas entram no proximo tick do cron. Idempotente (ON CONFLICT).
 CREATE OR REPLACE FUNCTION public.enrich_enqueue_new()
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -22,7 +25,6 @@ AS $function$
 DECLARE
   v_added int := 0;
 BEGIN
-  WITH hoje AS (SELECT (now() AT TIME ZONE 'America/Sao_Paulo')::date AS d)
   INSERT INTO public.cat_backfill_queue (tiny_payable_id, organization_id, ml_user_id, status)
   SELECT DISTINCT co.tiny_payable_id, co.organization_id, t.ml_user_id, 'todo'
   FROM public.cash_outflows co
@@ -31,11 +33,9 @@ BEGIN
     WHERE ml.organization_id = co.organization_id
       AND ml.tiny_access_token IS NOT NULL
     LIMIT 1
-  ) t ON true,
-  hoje
-  WHERE co.category IS NULL
+  ) t ON true
+  WHERE (co.category IS NULL OR TRIM(co.category) = '')
     AND co.tiny_payable_id IS NOT NULL
-    AND (co.outflow_date >= hoje.d - 365 OR co.status = 'pending')
   ON CONFLICT (tiny_payable_id) DO NOTHING;
   GET DIAGNOSTICS v_added = ROW_COUNT;
 
