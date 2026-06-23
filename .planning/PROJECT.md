@@ -1,8 +1,31 @@
 # Garment Glow — Plataforma de Gestão ML
 
-## Current Milestone: v7.0 SaaS Operacional End-to-End
+## Current Milestone: v8.0 Consultor v2 (Inteligência)
+
+**Goal:** Evoluir o Consultor v1 (motor determinístico de ~12 regras + score de saúde, já em prod) para uma camada de inteligência com LLM + ações acionáveis — de "alertas por regra" para "consultor que explica, prioriza e ajuda a agir".
+
+**Decisões de produto (Wesley, 2026-06-23):**
+- **Ação em 1 clique = preparar para aprovação** — o insight gera uma "ação proposta" que entra numa fila; Wesley aprova e só então executa via MCP/EF. Respeita a regra de plataforma "ações que alteram o ML exigem aprovação".
+- **LLM sob demanda + cache** — análise gerada quando o lojista abre o painel / clica "explicar", resultado cacheado por org/dia. Controla custo de API. Modelo Claude (Haiku barato / Sonnet profundidade — definir na pesquisa).
+- **Score/insights por loja ML** — v1 consolida tudo por org; v2 permite drill-down por loja mantendo a visão consolidada de COO.
+- **Limiares editáveis na UI** — tirar a config do consultor do SQL e levar para a tela do lojista.
+
+**Target features (âncora = Deferred Ideas da Phase 45):**
+- Análises geradas por LLM por org — interpretação em linguagem natural sobre os insights determinísticos (o "porquê" e o "como" contextualizados)
+- Ação em 1 clique a partir do insight — fila de ação proposta → aprovação → execução
+- Snooze/adiar insight — "lembrar depois" (estado persistido por insight/org)
+- UI para o lojista editar os limiares do consultor
+- Score/insights separados por loja ML (drill-down) além do consolidado por org
+
+**Base herdada do v1 (Phase 45, em prod):** motor de ~12 regras determinístico, tabela `insights`, score 0-100 (5 pilares: Margem 30 / Ads 25 / Estoque 20 / Reputação 15 / Completude 10), card "O que fazer agora" (Top 3), painel de insights, deep-links, cron diário + on-demand. `consultor_config` por org (editável só via SQL hoje).
+
+---
+
+## Previous Milestone: v7.0 SaaS Operacional End-to-End
 
 **Goal:** Sistema 100% operacional e vendável como assinatura em 10 dias — dados verdadeiros em todas as páginas (zero mock), multi-tenant endurecido, monetização via Stripe ativa, onboarding guiado para lojista leigo, e Consultor v1 (motor de regras + score de saúde) como diferencial de venda.
+
+**Resultado:** Concluído 10/11 (91%) em 2026-06-20. Phases 41-43, 45-51 entregues e em prod. Phase 44 (Stripe) adiada por decisão (Wesley não organiza assinatura nesta versão de testes). Phase 47 (QA/Go-Live) fechada em escopo técnico sem Stripe.
 
 **Decisões de produto (Wesley, 2026-06-12):**
 - Gateway de pagamento: **Stripe** (checkout + webhook + customer portal)
@@ -141,7 +164,7 @@ A tabela `ml_tokens` relaciona loja ML → organização. A nova tabela `ml_tax_
 | Owner only para configuração fiscal | Dado sensível e consequente — não delegar a membros comuns | — Pending |
 
 ---
-*Last updated: 2026-06-12 — início do milestone v7.0 SaaS Operacional End-to-End*
+*Last updated: 2026-06-23 — início do milestone v8.0 Consultor v2 (Inteligência)*
 
 ## Evolution
 

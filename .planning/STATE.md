@@ -1,26 +1,27 @@
 ---
 gsd_state_version: 1.0
-milestone: v7.0
-milestone_name: milestone
-status: executing
-stopped_at: Phase 47 (QA/Go-Live) fechada escopo técnico — sem Stripe (decisão Wesley "testes apenas")
-last_updated: "2026-06-20T12:00:00.000Z"
-last_activity: 2026-06-20 -- Phase 47 auditoria de segurança + build, críticos corrigidos
+milestone: v8.0
+milestone_name: Consultor v2 (Inteligência)
+status: planning
+last_updated: "2026-06-23T23:15:47.482Z"
+last_activity: 2026-06-23
 progress:
-  total_phases: 11
-  completed_phases: 10
-  total_plans: 38
-  completed_plans: 38
-  percent: 91
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 ## Fechamento Phase 47 — QA / Go-Live (2026-06-20, escopo técnico sem Stripe)
 
 Decisão Wesley: pular tudo de assinatura/Stripe ("esta versão é só testes"). Critérios cobertos:
+
 - **Build/deploy:** tsc --noEmit + npm run build limpos; prod READY.
 - **Segurança (críticos corrigidos em prod via MCP):** migration `20260650000400_phase47_security_hardening` →
   (1) RLS habilitado em `cat_backfill_queue` (era advisor ERROR rls_disabled_in_public);
   (2) REVOKE total (anon/PUBLIC) em `batch_upsert_orders` + `upsert_order_preserve_cost` (anon escrevia pedidos via REST). EFs de sync usam service_role, sem regressão.
+
 - **EFs de debug neutralizadas** (deploy stub 410, sem token p/ delete): `temp-reset-password` (backdoor reset-senha sem auth) e `probe-tiny-map`. Remoção definitiva do endpoint: dashboard ou `supabase functions delete` (requer SUPABASE_ACCESS_TOKEN).
 - **EFs de negócio:** verify_jwt=true confirmado (ml-ads/inventory/reputation/precos-custos/recalc-order-costs/org-*/admin-*).
 
@@ -34,24 +35,33 @@ Decisão Wesley: pular tudo de assinatura/Stripe ("esta versão é só testes").
 
 See: .planning/PROJECT.md
 
-**Milestone:** v7.0 — SaaS Operacional End-to-End
-**Core value:** Sistema 100% operacional e vendável como assinatura — dados verdadeiros em todas as páginas (zero mock), multi-tenant endurecido, monetização via Stripe ativa, onboarding guiado para lojista leigo, e Consultor v1 (motor de regras + score de saúde) como diferencial de venda.
-**Current focus:** Phase 51 — painel-de-tesouraria-fluxo-de-caixa
+**Milestone:** v8.0 — Consultor v2 (Inteligência)
+**Core value:** Consultor que explica, prioriza e ajuda a agir — LLM sob demanda + ações com aprovação, sobre o motor determinístico do v1.
+**Current focus:** Definindo requisitos (pesquisa de domínio em andamento).
 
 ## Current Position
 
-Phase: 51 (painel-de-tesouraria-fluxo-de-caixa) — COMPLETE (3/3 plans + verifier PASS + code review fechado)
-Status: Fechada no GSD. NÃO pushada / NÃO em prod (frontend) — branch preview/phase-50-simulador-caixa
-Last activity: 2026-06-20 -- Phase 51 fechada (review fixes CR-01/HG-01/HG-03)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-06-23 — Milestone v8.0 started
+
+### Pendências de validação visual (não bloqueiam novo milestone)
+
+- Checkpoint visual do painel de Tesouraria (Phase 51) por Wesley.
+- Card "Caixa Hoje": conferir saldo inicial (efeito do fix de fuso BRT pode estar 1 dia adiantado; ajustável pelo botão).
+
+### Fechamento Phase 51 (2026-06-20) — EM PROD via PR#4 (merge 69883b00) + fix mobile PR#7 (101754ef)
 
 ### Fechamento Phase 51 (2026-06-20)
+
 - **Verifier:** PASS 5/5 (TESO-01..05), build limpo (51-VERIFICATION.md).
 - **Code review:** 1 Critical + 4 High (51-REVIEW.md). HG-02 e HG-04 = falsos positivos vs prod (já BRT / já bounded). Reais corrigidos + aplicados em prod via MCP (commit 1d1750c4):
   - CR-01: enrich_drain token Tiny hardcoded (1639558873) → token por org da fila + REVOKE de PUBLIC/anon/authenticated. (latente: só Pé Vermeio usa Tiny hoje)
   - HG-01: card "Saldo Mín" → horizonte 30d (decisão Wesley); RPC retorna min_balance (valor) + data do mesmo modelo. −719k/90d → −168k/30d.
   - HG-03: burn_rate só status='paid' (R$185.149) consistente c/ Saída Real (decisão Wesley). Antes R$189.316 (incluía 9 contas vencidas).
 - Migrations prod: treasury_fix_cr01_enrich_drain_security, treasury_fix_hg01_hg03_panel. Arquivo repo: 20260650000200.
-- **PENDENTE:** push dos commits + deploy frontend (prod ainda no estado pré-51) + checkpoint visual real do painel de Tesouraria por Wesley.
+- **STATUS:** push + deploy frontend CONCLUÍDOS (PR#4 merge 69883b00, em prod). Único item aberto = checkpoint visual de Wesley (não bloqueante).
 
 ### Quick Tasks Completed
 
