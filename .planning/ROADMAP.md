@@ -172,10 +172,10 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
   5. Quando uma tool retorna vazio/parcial, o Nexo declara o que tem/falta (sem inventar, sem "não configurado")
   6. Bateria de testes E2E por domínio (vendas, margem×4, ads×2, estoque/cobertura, caixa/tesouraria, DRE/custos, perguntas, devoluções, reputação, fornecedores, metas, alertas, score) — todos batendo com a fonte-da-verdade
 
-**Plans**: 1/6 plans executed
+**Plans**: 2/6 plans executed
 
 - [x] 58-01-PLAN.md — tools.ts ESTOQUE: get_inventory status=active default + agregado + variações esgotadas + rótulo "Full" + synced_at; get_coverage rotulado (VERAC-01/02/04)
-- [ ] 58-02-PLAN.md — tools.ts VENDAS/ADS: get_ads_campaigns neutralizada + nova get_ads_account_summary; faturamento/status/top-50/attributed/waterfall rotulados (VERAC-03/06)
+- [x] 58-02-PLAN.md — tools.ts VENDAS/ADS: get_ads_campaigns neutralizada + nova get_ads_account_summary; faturamento/status/top-50/attributed/waterfall rotulados (VERAC-03/06)
 - [ ] 58-03-PLAN.md — tools.ts FINANCEIRO: get_dre_monthly via ml_billing_daily mês-calendário + cashflow saldo_hoje + costs descrição; migration cron re-sync ml_billing_daily (VERAC-03/04/06)
 - [ ] 58-04-PLAN.md — tools NOVAS: get_reputation (EF ml-reputation) + get_goals (ml_targets por seller_id, anti-IDOR adaptado) + claims/health/questions limpos (VERAC-03/05)
 - [ ] 58-05-PLAN.md — prompt.ts: bloco VERACIDADE/FRESCURA/SEMÂNTICA (fonte certa, Full≠total, declarar limitação, sinalizar defasagem) (VERAC-04/05/06)
@@ -193,7 +193,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 | 55. Drill-down Multi-Loja | 0/? | Not started | - |
 | 56. Snooze + Limiares | 0/? | Not started | - |
 | 57. Nexo Conversacional | 0/4 | Em execução (preview) | - |
-| 58. Veracidade & Completude | 1/6 | In Progress|  |
+| 58. Veracidade & Completude | 2/6 | In Progress|  |
 
 ## Build Order / Dependências
 
