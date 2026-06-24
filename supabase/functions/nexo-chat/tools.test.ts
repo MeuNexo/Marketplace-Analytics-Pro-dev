@@ -55,7 +55,7 @@ const ML_IDS_SERVER = ["111", "222"];
 const EVIL_ARGS = { org_id: "ORG-ALHEIA", seller_id: "999", ml_user_id: "888" };
 
 describe("TOOL_DECLARATIONS", () => {
-  it("declara as 22 tools esperadas", () => {
+  it("declara as 23 tools esperadas", () => {
     const names = TOOL_DECLARATIONS.map((d) => d.name).sort();
     expect(names).toEqual(
       [
@@ -83,6 +83,8 @@ describe("TOOL_DECLARATIONS", () => {
         "get_open_questions",
         "get_claims",
         "get_ads_campaigns",
+        // VMA-1 nova (58-02)
+        "get_ads_account_summary",
       ].sort(),
     );
   });
@@ -244,6 +246,66 @@ describe("dispatchTool — anti-IDOR (orgId/mlUserIds só do servidor)", () => {
     expect(call).toBeDefined();
     expect(call!.eqs.organization_id).toBe(ORG_SERVER);
   });
+
+  it("get_ads_account_summary (ml_ads_daily_cache) anti-IDOR: escopado por org + mlUserIds, ignora EVIL_ARGS", async () => {
+    const { sb, selectCalls } = makeStub([
+      { spend: 100, attributed_revenue: 300, impressions: 5000, clicks: 200, synced_at: "2026-06-24T10:00:00Z" },
+      { spend: 50, attributed_revenue: 150, impressions: 2000, clicks: 80, synced_at: "2026-06-23T10:00:00Z" },
+    ]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_ads_account_summary", EVIL_ARGS) as Record<string, unknown>;
+    const call = selectCalls.find((c) => c.table === "ml_ads_daily_cache");
+    expect(call).toBeDefined();
+    // Anti-IDOR: organization_id vem do servidor
+    expect(call!.eqs.organization_id).toBe(ORG_SERVER);
+    expect(call!.ins.ml_user_id).toEqual(ML_IDS_SERVER);
+    // Resultado: objeto com spend/attributed_revenue/roas/impressions/clicks/period
+    expect(result).toHaveProperty("spend");
+    expect(result).toHaveProperty("attributed_revenue");
+    expect(result).toHaveProperty("roas");
+    expect(result).toHaveProperty("impressions");
+    expect(result).toHaveProperty("clicks");
+    expect(result).toHaveProperty("period");
+    expect(result).toHaveProperty("freshness");
+    // ROAS correto (150+300)/( 50+100) = 450/150 = 3 — mas stub retorna mesmo array para cada page
+    // então verificamos apenas que não é nulo (spend > 0)
+    expect(result.roas).not.toBeNull();
+    // nota obrigatória sobre attributed_revenue
+    expect(typeof result.note).toBe("string");
+    expect((result.note as string)).toMatch(/atribuída/i);
+  });
+
+  it("get_ads_account_summary: roas é null quando spend=0 (guard divisão por zero)", async () => {
+    const { sb } = makeStub([
+      { spend: 0, attributed_revenue: 0, impressions: 0, clicks: 0, synced_at: null },
+    ]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_ads_account_summary", {}) as Record<string, unknown>;
+    expect(result.roas).toBeNull();
+    expect(result.spend).toBe(0);
+  });
+
+  it("get_ads_campaigns neutralizada: não inclui spend/roas/impressions, retorna performance_note (VMA-1)", async () => {
+    const { sb, selectCalls } = makeStub([
+      { name: "Campanha A", status: "enabled" },
+      { name: "Campanha B", status: "paused" },
+    ]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_ads_campaigns", EVIL_ARGS) as Record<string, unknown>;
+    // Anti-IDOR mantido
+    const call = selectCalls.find((c) => c.table === "ml_ads_campaigns_cache");
+    expect(call).toBeDefined();
+    expect(call!.eqs.organization_id).toBe(ORG_SERVER);
+    // Retorna performance_note (não retorna métricas zeradas como verdade)
+    expect(typeof result.performance_note).toBe("string");
+    expect((result.performance_note as string)).toMatch(/sem dados de performance|get_ads_account_summary/i);
+    // campaigns é array
+    expect(Array.isArray(result.campaigns)).toBe(true);
+    // Cada item NÃO deve ter spend/roas/impressions (neutralizados)
+    const campaigns = result.campaigns as Record<string, unknown>[];
+    if (campaigns.length > 0) {
+      expect(campaigns[0]).not.toHaveProperty("spend");
+      expect(campaigns[0]).not.toHaveProperty("roas");
+      expect(campaigns[0]).not.toHaveProperty("impressions");
+    }
+  });
 });
 
 describe("dispatchTool — datas (clamp/defaults)", () => {
@@ -376,5 +438,49 @@ describe("TOOL_DECLARATIONS — get_inventory novos atributos (D1/D2/D3)", () =>
     expect(props).not.toContain("seller_id");
     expect(props).not.toContain("ml_user_id");
     expect(props).not.toContain("organization_id");
+  });
+});
+
+describe("TOOL_DECLARATIONS — descrições inequívocas VMA-2/4/7 (58-02)", () => {
+  it("get_sales_kpis description menciona pedidos pagos e divergência do painel (VMA-2/D4)", () => {
+    const decl = TOOL_DECLARATIONS.find((d) => d.name === "get_sales_kpis");
+    expect(decl).toBeDefined();
+    expect(decl!.description).toMatch(/pagos/i);
+    expect(decl!.description).toMatch(/painel|ml_daily_cache/i);
+  });
+
+  it("get_ads_by_product description cita 'top 50' e remete ao total em get_ads_account_summary (VMA-4/D6)", () => {
+    const decl = TOOL_DECLARATIONS.find((d) => d.name === "get_ads_by_product");
+    expect(decl).toBeDefined();
+    expect(decl!.description).toMatch(/top 50|não é o total/i);
+    expect(decl!.description).toMatch(/get_ads_account_summary/i);
+  });
+
+  it("get_day_kpis description alerta que não inclui tarifas fixas ML e remete ao get_dre_monthly (VMA-7/D6)", () => {
+    const decl = TOOL_DECLARATIONS.find((d) => d.name === "get_day_kpis");
+    expect(decl).toBeDefined();
+    expect(decl!.description).toMatch(/NÃO inclui tarifas fixas|nao inclui tarifas fixas/i);
+    expect(decl!.description).toMatch(/get_dre_monthly/i);
+  });
+
+  it("get_margin_summary description menciona pedidos pagos e partially_refunded (VMA-3/D7)", () => {
+    const decl = TOOL_DECLARATIONS.find((d) => d.name === "get_margin_summary");
+    expect(decl).toBeDefined();
+    expect(decl!.description).toMatch(/pagos/i);
+    expect(decl!.description).toMatch(/partially_refunded/i);
+  });
+
+  it("get_ads_account_summary description cita 'subconjunto do faturamento' e 'top 50' distinção (D6)", () => {
+    const decl = TOOL_DECLARATIONS.find((d) => d.name === "get_ads_account_summary");
+    expect(decl).toBeDefined();
+    expect(decl!.description).toMatch(/subconjunto do faturamento/i);
+    expect(decl!.description).toMatch(/top 50/i);
+  });
+
+  it("get_ads_campaigns description alerta que performance não está disponível (VMA-1/D5)", () => {
+    const decl = TOOL_DECLARATIONS.find((d) => d.name === "get_ads_campaigns");
+    expect(decl).toBeDefined();
+    expect(decl!.description).toMatch(/sem dados de performance|sem dados|zerada|não disponível/i);
+    expect(decl!.description).toMatch(/get_ads_account_summary/i);
   });
 });

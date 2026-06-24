@@ -82,13 +82,17 @@ export const TOOL_DECLARATIONS: FnDecl[] = [
   {
     name: "get_margin_summary",
     description:
-      "DRE consolidado do período (receita, CMV, comissão, frete, impostos, lucro, lucro_pct, pedidos, ticket médio). Use para visão geral de lucratividade.",
+      "DRE consolidado do período (receita de pedidos PAGOS, CMV, comissão, frete, impostos, lucro, lucro_pct, pedidos, ticket médio). " +
+      "Receita aqui é de pedidos PAGOS — pode divergir levemente do card 'Receita Total' do painel /vendas (que usa ml_daily_cache com escopo levemente diferente). " +
+      "Use para visão geral de lucratividade. Pedidos com status partially_refunded (~21) podem não estar incluídos no total (alinhado ao painel atual).",
     parameters: { type: "object", properties: { ...DATE_PROPS } },
   },
   {
     name: "get_day_kpis",
     description:
-      "Waterfall de custo/receita do período (paid_revenue, cmv, comissão, frete, imposto, pedidos). Use para MCO/receita do dia e composição de custo.",
+      "Waterfall de pedidos do período (paid_revenue, cmv, comissão, frete, imposto, pedidos). " +
+      "NÃO inclui tarifas fixas do ML (CFFE/CFONPN/PADS) — para a fatura/DRE do ML use get_dre_monthly. " +
+      "Use para MCO/receita do período e composição de custo operacional.",
     parameters: { type: "object", properties: { ...DATE_PROPS } },
   },
   {
@@ -120,7 +124,10 @@ export const TOOL_DECLARATIONS: FnDecl[] = [
   {
     name: "get_ads_by_product",
     description:
-      "Gasto/ROAS/CTR/CPC por item no período (publicidade). Use para performance de ads por produto, ACoS/TACoS, ads sem venda.",
+      "Top 50 produtos por gasto de publicidade no período (não é o total da conta). " +
+      "attributed_revenue por produto é receita atribuída a ads daquele item, subconjunto do faturamento. " +
+      "Para o total de ads da conta use get_ads_account_summary. " +
+      "Use para performance de ads por produto, ACoS/TACoS, ads sem venda.",
     parameters: { type: "object", properties: { ...DATE_PROPS } },
   },
   {
@@ -168,7 +175,11 @@ export const TOOL_DECLARATIONS: FnDecl[] = [
   {
     name: "get_sales_kpis",
     description:
-      "KPIs de vendas do período: faturamento, nº de pedidos, ticket médio, unidades. Use para 'quanto vendi', faturamento, volume de vendas.",
+      "KPIs de receita de pedidos PAGOS no período: gross_revenue, nº de pedidos, ticket médio, unidades. " +
+      "Fonte: RPC get_kpi_summary sobre pedidos pagos — pode divergir levemente do card 'Receita Total' do painel /vendas (~R$296k ml_daily_cache) " +
+      "porque o painel inclui pedidos com escopo/data levemente diferente. " +
+      "Para 'quanto faturei' alinhado ao painel, este é o realizado de pedidos pagos; o painel pode mostrar GMV bruto maior. " +
+      "Use para 'quanto vendi', faturamento, volume de vendas.",
     parameters: { type: "object", properties: { ...DATE_PROPS } },
   },
   {
