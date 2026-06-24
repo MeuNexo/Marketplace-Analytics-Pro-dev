@@ -10,7 +10,7 @@
  * sb é um stub encadeável que registra os argumentos recebidos por .rpc()/.from().
  */
 import { describe, it, expect } from "vitest";
-import { TOOL_DECLARATIONS, dispatchTool } from "./tools";
+import { TOOL_DECLARATIONS, dispatchTool, summarizeVariations } from "./tools";
 
 // ── Stub Supabase encadeável que grava o que foi chamado ─────────────────────
 type RpcCall = { fn: string; params: Record<string, unknown> };
@@ -155,6 +155,79 @@ describe("dispatchTool — anti-IDOR (orgId/mlUserIds só do servidor)", () => {
     expect(call!.ins.ml_user_id).toEqual(ML_IDS_SERVER);
   });
 
+  it("get_inventory (select direto) escopado por org + .in(ml_user_id, mlUserIds), retorna {label,freshness,summary,sample}", async () => {
+    const { sb, selectCalls } = makeStub([{
+      item_id: "MLB1",
+      title: "Coturno",
+      status: "active",
+      available_quantity: 10,
+      sold_quantity: 100,
+      price: 299.9,
+      health: 0.9,
+      visits: 5,
+      brand: "Pé Vermeio",
+      seller_custom_field: "SKU-001",
+      has_variations: false,
+      variations: null,
+      logistic_type: "fulfillment",
+      synced_at: "2026-06-24T10:00:00Z",
+    }]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_inventory", EVIL_ARGS) as Record<string, unknown>;
+    // Anti-IDOR: tabela escopada por org e mlUserIds
+    const aggCall = selectCalls.find((c) => c.table === "ml_inventory_cache" && c.eqs.organization_id === ORG_SERVER);
+    expect(aggCall).toBeDefined();
+    expect(aggCall!.eqs.organization_id).toBe(ORG_SERVER);
+    expect(aggCall!.ins.ml_user_id).toEqual(ML_IDS_SERVER);
+    // Forma do retorno: {label, freshness, summary, sample}
+    expect(typeof result.label).toBe("string");
+    expect((result.label as string)).toContain("Full");
+    expect(result).toHaveProperty("freshness");
+    expect(result).toHaveProperty("summary");
+    expect(result).toHaveProperty("sample");
+    const summary = result.summary as Record<string, number>;
+    expect(summary).toHaveProperty("totalItems");
+    expect(summary).toHaveProperty("totalUnits");
+    expect(summary).toHaveProperty("active");
+    expect(summary).toHaveProperty("paused");
+    expect(summary).toHaveProperty("outOfStock");
+    expect(summary).toHaveProperty("itemsWithSizeOutOfStock");
+  });
+
+  it("get_inventory sem args aplica filtro status=active (anti-EST-1)", async () => {
+    const { sb, selectCalls } = makeStub([]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_inventory", {});
+    // deve haver ao menos um select em ml_inventory_cache com status=active
+    const calls = selectCalls.filter((c) => c.table === "ml_inventory_cache");
+    expect(calls.length).toBeGreaterThan(0);
+    const activeFiltered = calls.some((c) => c.eqs.status === "active");
+    expect(activeFiltered).toBe(true);
+  });
+
+  it("get_inventory status=paused aplica filtro paused", async () => {
+    const { sb, selectCalls } = makeStub([]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_inventory", { status: "paused" });
+    const calls = selectCalls.filter((c) => c.table === "ml_inventory_cache");
+    const pausedFiltered = calls.some((c) => c.eqs.status === "paused");
+    expect(pausedFiltered).toBe(true);
+  });
+
+  it("get_inventory status=all não aplica filtro de status", async () => {
+    const { sb, selectCalls } = makeStub([]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_inventory", { status: "all" });
+    const calls = selectCalls.filter((c) => c.table === "ml_inventory_cache");
+    // nenhuma call deve ter filtro de status
+    const hasStatusFilter = calls.some((c) => "status" in c.eqs);
+    expect(hasStatusFilter).toBe(false);
+  });
+
+  it("get_inventory status inválido cai no default active", async () => {
+    const { sb, selectCalls } = makeStub([]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_inventory", { status: "EVIL_STATUS" });
+    const calls = selectCalls.filter((c) => c.table === "ml_inventory_cache");
+    const activeFiltered = calls.some((c) => c.eqs.status === "active");
+    expect(activeFiltered).toBe(true);
+  });
+
   it("get_dre_monthly (ml_billing_monthly) escopado por org + mlUserIds", async () => {
     const { sb, selectCalls } = makeStub([{ resumo: {} }]);
     await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_dre_monthly", EVIL_ARGS);
@@ -208,5 +281,100 @@ describe("dispatchTool — robustez", () => {
     const r = (await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_margin_by_product", {})) as unknown[];
     expect(Array.isArray(r)).toBe(true);
     expect(r.length).toBeLessThanOrEqual(50);
+  });
+});
+
+describe("summarizeVariations — helper puro (VERAC-02/EST-2)", () => {
+  const makeVariation = (qty: number, attrs: Array<{ name: string; value: string }>) => ({
+    variation_id: "v" + Math.random(),
+    attribute_combinations: attrs.map((a) => ({ id: a.name.toUpperCase(), name: a.name, value: a.value })),
+    available_quantity: qty,
+    sold_quantity: 10,
+    price: 100,
+  });
+
+  it("null/undefined/empty retorna zeros", () => {
+    expect(summarizeVariations(null)).toEqual({ total: 0, out_of_stock: 0, names: [] });
+    expect(summarizeVariations(undefined)).toEqual({ total: 0, out_of_stock: 0, names: [] });
+    expect(summarizeVariations([])).toEqual({ total: 0, out_of_stock: 0, names: [] });
+  });
+
+  it("array com N variações e K zeradas retorna {total:N, out_of_stock:K, names:K itens}", () => {
+    const variations = [
+      makeVariation(0, [{ name: "Tamanho", value: "38 BR" }, { name: "Cor", value: "Preto" }]),
+      makeVariation(5, [{ name: "Tamanho", value: "40 BR" }, { name: "Cor", value: "Preto" }]),
+      makeVariation(0, [{ name: "Tamanho", value: "42 BR" }, { name: "Cor", value: "Preto" }]),
+    ];
+    const result = summarizeVariations(variations);
+    expect(result.total).toBe(3);
+    expect(result.out_of_stock).toBe(2);
+    expect(result.names).toHaveLength(2);
+    // nomes devem incluir os atributos formatados
+    expect(result.names[0]).toContain("38 BR");
+    expect(result.names[1]).toContain("42 BR");
+  });
+
+  it("todas as variações com estoque retorna out_of_stock=0 e names=[]", () => {
+    const variations = [
+      makeVariation(3, [{ name: "Tamanho", value: "38 BR" }]),
+      makeVariation(7, [{ name: "Tamanho", value: "40 BR" }]),
+    ];
+    const result = summarizeVariations(variations);
+    expect(result.total).toBe(2);
+    expect(result.out_of_stock).toBe(0);
+    expect(result.names).toHaveLength(0);
+  });
+
+  it("variação com available_quantity=0 como string é tratada como zero", () => {
+    const variations = [{ variation_id: "v1", attribute_combinations: [], available_quantity: 0 }];
+    const result = summarizeVariations(variations);
+    expect(result.out_of_stock).toBe(1);
+  });
+
+  it("itens não-objeto no array são ignorados defensivamente", () => {
+    const variations = [null, "lixo", 42, { variation_id: "ok", attribute_combinations: [{ id: "T", name: "Tamanho", value: "38" }], available_quantity: 0 }];
+    const result = summarizeVariations(variations);
+    expect(result.total).toBe(1);
+    expect(result.out_of_stock).toBe(1);
+  });
+});
+
+describe("TOOL_DECLARATIONS — get_coverage rótulos (EST-4/D3)", () => {
+  it("get_coverage description cita '30 dias' e 'Full'", () => {
+    const decl = TOOL_DECLARATIONS.find((d) => d.name === "get_coverage");
+    expect(decl).toBeDefined();
+    expect(decl!.description).toMatch(/30 dias/i);
+    expect(decl!.description).toMatch(/full/i);
+  });
+});
+
+describe("TOOL_DECLARATIONS — get_inventory novos atributos (D1/D2/D3)", () => {
+  it("get_inventory description cita 'Full (fulfillment)' e nega 'total'", () => {
+    const decl = TOOL_DECLARATIONS.find((d) => d.name === "get_inventory");
+    expect(decl).toBeDefined();
+    expect(decl!.description).toMatch(/full/i);
+    expect(decl!.description).toMatch(/fulfillment/i);
+    expect(decl!.description).toMatch(/não é estoque total|nao e estoque total/i);
+  });
+
+  it("get_inventory aceita parâmetro status com enum (active|paused|all)", () => {
+    const decl = TOOL_DECLARATIONS.find((d) => d.name === "get_inventory");
+    expect(decl).toBeDefined();
+    const statusProp = decl!.parameters.properties.status as Record<string, unknown>;
+    expect(statusProp).toBeDefined();
+    expect(Array.isArray(statusProp.enum)).toBe(true);
+    expect((statusProp.enum as string[])).toContain("active");
+    expect((statusProp.enum as string[])).toContain("paused");
+    expect((statusProp.enum as string[])).toContain("all");
+  });
+
+  it("get_inventory NÃO expõe org_id/seller_id/ml_user_id como parâmetro (anti-IDOR)", () => {
+    const decl = TOOL_DECLARATIONS.find((d) => d.name === "get_inventory");
+    expect(decl).toBeDefined();
+    const props = Object.keys(decl!.parameters.properties);
+    expect(props).not.toContain("org_id");
+    expect(props).not.toContain("seller_id");
+    expect(props).not.toContain("ml_user_id");
+    expect(props).not.toContain("organization_id");
   });
 });
