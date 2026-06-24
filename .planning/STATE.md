@@ -19,7 +19,16 @@ progress:
 - **Validado em preview Vercel** (resumo real Gemini + Explicar + kill-switch demonstrado ligando/desligando `consultor_config.llm_enabled` na Pé Vermeio). Fix de checkpoint: "Explicar" agora some junto com o resumo quando LLM desligada.
 - **MERGEADO PRA PRODUÇÃO** (ver tarefa de merge). Tudo o que entrou junto: Phases 52 (schema/types), 54 Wave 1 (EF/hook inertes — sem UI ainda), limpeza de planning. Único impacto visível = Phase 53.
 - ⚠️ **Wesley: ROTACIONAR a GEMINI_API_KEY** (exposta no transcript) — me manda a nova que eu re-registro no vault via `get_app_secret`.
-- **Próximo:** Phase 57 (Nexo Conversacional) — planejar via GSD. Modelo do chat: **Gemini 2.5 Pro**.
+- **Próximo:** Phase 57 (Nexo Conversacional) — **PLANEJADA** (ver abaixo).
+
+## ✅ Phase 57 PLANEJADA (2026-06-24) — Nexo Conversacional (chat consultor)
+
+- **GSD plan-phase completo:** CONTEXT (decisões travadas) + RESEARCH (HIGH) + 4 planos / 3 waves + plan-checker **PASS após 1 revisão**. Commits `0c788415` (context) → `ad0ed513`/`c1cef66e` (planos) → `d6de0929` (revisão do checker).
+- **Waves:** W1 `57-01` (playbooks bundle no repo + EF skeleton: auth→is_org_member→kill-switch→vault→Gemini 2.5 Pro `thinkingBudget=-1` + system prompt persona+playbooks) → W2 `57-02` (function-calling tools + dispatcher anti-IDOR + loop cap=5/timeout) ∥ `57-03` (FAB+Sheet `useNexoChat` em LayoutShell, efêmero) → W3 `57-04` (checkpoint: deploy EF pelo orquestrador + validação E2E Wesley).
+- **Decisões-chave:** Gemini **2.5 Pro** (NÃO aceita thinkingBudget=0 — usa -1); tools mapeiam RPCs REAIS (`get_margin_with_ads_by_product`, `get_consultor_coverage`, `get_cost_waterfall`, etc.); playbooks (~49KB) copiados pro repo (`supabase/functions/nexo-chat/playbooks.ts` — Deno não acessa /root/.claude); anti-IDOR (org do JWT, nunca de args do modelo) como threat model de 1ª classe; read-only (sugere → Phase 54); efêmero (sem tabela). Reusa auth/vault/kill-switch da `consultor-llm`.
+- **Fix do checker:** `vitest.config.ts` precisa incluir `supabase/functions/**/*.test.ts` (senão testes anti-IDOR/loop não rodam) — virou Task 1 do 57-01. get_app_secret('GEMINI_API_KEY') = pré-condição BLOQUEANTE do deploy no 57-04.
+- **Pré-requisito de execução:** EF deploy é checkpoint do orquestrador (gsd-executor sem SUPABASE_ACCESS_TOKEN). **GEMINI_API_KEY no vault precisa estar rotacionada** (a atual vazou).
+- **Próximo:** `/gsd-execute-phase 57`.
 
 ## ✅ Milestone v7.0 FECHADO (2026-06-24) + Phase 46 concluída
 
