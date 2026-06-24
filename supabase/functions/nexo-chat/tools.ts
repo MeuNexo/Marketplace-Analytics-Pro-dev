@@ -245,8 +245,18 @@ export const TOOL_DECLARATIONS: FnDecl[] = [
   {
     name: "get_ads_campaigns",
     description:
-      "Campanhas de publicidade no nível CAMPANHA: status, orçamento diário, gasto, receita atribuída, ROAS. Use para visão por campanha (diferente de ads por produto).",
+      "Lista campanhas de publicidade com nome e status. " +
+      "ATENÇÃO: sem dados de performance por campanha nesta base (gasto/ROAS/impressões por CAMPANHA não disponível — ml_ads_campaigns_cache não tem coluna date e está zerada). " +
+      "Para performance de ads use get_ads_account_summary (total da conta) ou get_ads_by_product (por item).",
     parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "get_ads_account_summary",
+    description:
+      "Resumo AGREGADO de publicidade da conta no período: gasto total, receita atribuída total, ROAS médio, impressões e cliques totais — visão confiável do total de ads da conta (diferente de get_ads_by_product que é top 50 por gasto, não o total). " +
+      "attributed_revenue é receita ATRIBUÍDA a ads, subconjunto do faturamento (não é o total vendido). " +
+      "Fonte: ml_ads_daily_cache agregada por período.",
+    parameters: { type: "object", properties: { ...DATE_PROPS } },
   },
 ];
 
@@ -550,12 +560,69 @@ export async function dispatchTool(
       return cap(data ?? []);
     }
     case "get_ads_campaigns": {
+      // NEUTRALIZADO (VMA-1 / D5): ml_ads_campaigns_cache não tem coluna date e está zerada.
+      // Retornar APENAS name+status para não induzir o modelo a inferir ROAS=0 como verdade.
       let q = sb.from("ml_ads_campaigns_cache")
-        .select("name,status,daily_budget,impressions,clicks,spend,attributed_revenue,attributed_orders,cpc,ctr,roas")
+        .select("name,status")
         .eq("organization_id", orgId);
       if (mlUserIds.length) q = q.in("ml_user_id", mlUserIds);
-      const { data } = await q.order("spend", { ascending: false }).limit(MAX_ROWS);
-      return cap(data ?? []);
+      const { data } = await q.order("name", { ascending: true }).limit(MAX_ROWS);
+      return {
+        performance_note:
+          "Sem dados de performance por campanha nesta base (gasto/ROAS por CAMPANHA não disponível). " +
+          "Para performance de ads use get_ads_account_summary (total da conta) ou get_ads_by_product (por item).",
+        campaigns: cap(data ?? []),
+      };
+    }
+    case "get_ads_account_summary": {
+      // Agrega ml_ads_daily_cache por período para visão confiável do total de ads da conta.
+      // Anti-IDOR: .eq(organization_id) + .in(ml_user_id) — ambos do servidor.
+      type DailyRow = {
+        spend: number;
+        attributed_revenue: number;
+        impressions: number;
+        clicks: number;
+        synced_at: string;
+      };
+      let totalSpend = 0;
+      let totalAttributed = 0;
+      let totalImpressions = 0;
+      let totalClicks = 0;
+      let maxSyncedAt: string | null = null;
+      const PAGE = 1000;
+      let offset = 0;
+      while (true) {
+        const { data: page } = await sb
+          .from("ml_ads_daily_cache")
+          .select("spend,attributed_revenue,impressions,clicks,synced_at")
+          .eq("organization_id", orgId)
+          .in("ml_user_id", mlUserIds)
+          .gte("date", from)
+          .lte("date", to)
+          .range(offset, offset + PAGE - 1);
+        const rows = (page ?? []) as DailyRow[];
+        for (const r of rows) {
+          totalSpend += r.spend ?? 0;
+          totalAttributed += r.attributed_revenue ?? 0;
+          totalImpressions += r.impressions ?? 0;
+          totalClicks += r.clicks ?? 0;
+          const sa = r.synced_at;
+          if (sa && (maxSyncedAt === null || sa > maxSyncedAt)) maxSyncedAt = sa;
+        }
+        if (rows.length < PAGE) break;
+        offset += PAGE;
+      }
+      const roas = totalSpend > 0 ? totalAttributed / totalSpend : null;
+      return {
+        period: { from, to },
+        spend: totalSpend,
+        attributed_revenue: totalAttributed,
+        roas,
+        impressions: totalImpressions,
+        clicks: totalClicks,
+        freshness: maxSyncedAt,
+        note: "attributed_revenue é receita atribuída a ads, subconjunto do faturamento — não é o total vendido.",
+      };
     }
 
     default:
