@@ -42,6 +42,9 @@ export function today(): string {
 export function daysAgo(n: number): string {
   return new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
 }
+export function daysAhead(n: number): string {
+  return new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+}
 /** Aceita só YYYY-MM-DD válido e real; senão null (cai no default no caller). */
 export function clampDate(s: unknown): string | null {
   if (typeof s !== "string") return null;
@@ -132,13 +135,19 @@ export const TOOL_DECLARATIONS: FnDecl[] = [
   {
     name: "get_cashflow",
     description:
-      "Fluxo de caixa futuro (entradas/saídas/saldo diário e acumulado). Use para liquidez, quando o dinheiro cai, projeção de caixa.",
-    parameters: { type: "object", properties: { ...DATE_PROPS } },
+      "Projeção FUTURA de fluxo de caixa (entradas/saídas/saldo diário e acumulado), padrão próximos 90 dias. Use para 'meu caixa vai ficar negativo?', liquidez, quando o dinheiro cai/sai, projeção de caixa.",
+    parameters: {
+      type: "object",
+      properties: {
+        from: { type: "string", description: "Data inicial YYYY-MM-DD (opcional, default HOJE)" },
+        to: { type: "string", description: "Data final YYYY-MM-DD (opcional, default +90 dias)" },
+      },
+    },
   },
   {
     name: "get_treasury_panel",
     description:
-      "Painel de tesouraria / horizonte de caixa. Use para visão de tesouraria num horizonte (default 30 dias).",
+      "Painel de tesouraria: saldo atual + saldo MÍNIMO projetado no horizonte (e quando). Melhor ferramenta para responder se/quando o caixa fica negativo. Horizonte default 30 dias.",
     parameters: {
       type: "object",
       properties: {
@@ -188,8 +197,13 @@ export async function dispatchTool(
       return cap(data ?? []);
     }
     case "get_cashflow": {
+      // PROJEÇÃO FUTURA: caixa é forward-looking → default hoje → +90d
+      // (a janela genérica de -30d→hoje devolvia ~0 linhas e o modelo concluía
+      // que não havia dados / "não configurado").
+      const cfFrom = clampDate(args.from) ?? today();
+      const cfTo = clampDate(args.to) ?? daysAhead(90);
       const { data } = await sb.rpc("get_cashflow", {
-        p_org_id: orgId, p_start_date: from, p_end_date: to,
+        p_org_id: orgId, p_start_date: cfFrom, p_end_date: cfTo,
       });
       return cap(data ?? []);
     }
