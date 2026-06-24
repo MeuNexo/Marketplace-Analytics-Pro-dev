@@ -893,7 +893,7 @@ export async function dispatchTool(
         return {
           seller_id: t.seller_id,
           meta_receita: metaReceita,
-          meta_lucro_pct: t.kpi_targets?.lucro_pct ?? null,
+          meta_lucro_pct: t.kpi_targets?.gross_profit ?? t.kpi_targets?.lucro_pct ?? null,
           realizado_receita: realizadoReceita,
           pct_atingido: pctAtingido,
         };

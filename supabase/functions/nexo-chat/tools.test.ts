@@ -630,6 +630,20 @@ describe("dispatchTool — anti-IDOR get_goals (OPS-2/T-58-04-GOALS-IDOR)", () =
     expect(kpiCall!.params.p_user_ids).toEqual(ML_IDS_SERVER);
   });
 
+  it("get_goals: meta_lucro_pct lê kpi_targets.gross_profit (chave real de produção) — VERAC-07", async () => {
+    // Em produção ml_targets.kpi_targets usa 'gross_profit', não 'lucro_pct'
+    const { sb } = makeStub([
+      { seller_id: "111", target_value: 583000, kpi_targets: { revenue: 583000, gross_profit: 9 } },
+    ]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_goals", {
+      period_month: "2026-06",
+    }) as Record<string, unknown>;
+    const bySeller = result.by_seller as Array<Record<string, unknown>>;
+    expect(bySeller.length).toBe(1);
+    expect(bySeller[0].meta_receita).toBe(583000);
+    expect(bySeller[0].meta_lucro_pct).toBe(9); // gross_profit, não null
+  });
+
   it("get_goals: sem metas cadastradas — declara limitação (VERAC-05), não inventa", async () => {
     // stub retorna array vazio — sem metas para o mês
     const { sb } = makeStub([]);
