@@ -52,7 +52,15 @@ Phase: **52 (Fundação de Dados v8.0) COMPLETA** — verifier PASSED 6/6, aplic
 Plan: 52-01 (4 migrations) + 52-02 (types.ts) — ambos completos
 Status: Phase 52 fechada; desbloqueia 53/54/55/56
 Last activity: 2026-06-24 — Phase 52 executada (3 tabelas novas + 5 colunas + RPC atômica INVOKER, advisors sem erro novo, build verde)
-Next: `/gsd-execute-phase 53` (Camada LLM) e/ou `/gsd-execute-phase 54` (Pipeline de Ações) — planejadas (PASS), podem rodar em paralelo
+Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint visual; depois adaptar/executar **Phase 53 com Gemini**.
+
+### Phase 54 — Wave 1 EXECUTADA (2026-06-24), Wave 2 PENDENTE
+- **Wave 1 (backend) DONE:** EF `consultor-actions` **deployada em prod** (ckcdevcxgvueywivefgx, ACTIVE v1, verify_jwt=true) — 5 mutações ML do Nexo MCP, gate atômico antes do ML, anti-IDOR, pre-flight+TTL 48h, audit ≤4KB. Hook `useConsultorActions` + `actionMapping` (14 testes verdes, tsc/build OK). Commit 0a6cdffe. **Nenhuma mutação real disparada** (EF só roda quando a UI da Wave 2 invocar com ação aprovada).
+- **Wave 2 PENDENTE:** `54-03` — UI no /consultor (abas Insights|Fila|Histórico owner-only, ProposeActionDialog diff+impacto, ActionQueue aprovar-c/-confirmação, ActionHistory) + checkpoint visual. Pausado por limite de contexto.
+- **DECISÕES ABERTAS p/ Wesley (54):** D-A4 mapa rule_key→action_type; D-A2 preço-alvo = input owner; D-A3 TTL 48h; D-A1 campo `budget` de ads (confirmar na 1ª execução real).
+
+### Phase 53 — MUDANÇA DE PROVEDOR: Anthropic → **Gemini** (decisão Wesley 2026-06-24)
+- A key será do **Gemini**, não Anthropic. Planos 53-01/53-RESEARCH/ROADMAP/REQUIREMENTS dizem "Claude Haiku 4.5 / api.anthropic.com / cache_control ephemeral". **ADAPTAR antes de executar a 53:** trocar para Gemini (`generativelanguage.googleapis.com/v1beta/models/gemini-2.x:generateContent`, header `x-goog-api-key`, context caching do Gemini ≠ Anthropic ephemeral), modelo `gemini-flash`, secret `GEMINI_API_KEY` no vault. A lógica (cache-check first, grounding, numericGuard, kill-switch) permanece — só muda a camada de chamada ao LLM.
 
 ### Phases 53 + 54 PLANEJADAS (2026-06-24, plan-checker PASS nas duas)
 - **53 (Camada LLM):** 2 plans — 53-01 EF `consultor-llm` (Haiku 4.5, cache-check first, grounding anti-alucinação `numericGuard`, kill-switch) + `ANTHROPIC_API_KEY` vault [BLOCKING]; 53-02 UI resumo COO + Explicar + staleness. Commit 984e33fb.
