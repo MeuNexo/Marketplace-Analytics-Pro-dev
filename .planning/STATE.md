@@ -1,26 +1,42 @@
 ---
 gsd_state_version: 1.0
-milestone: v7.0
-milestone_name: milestone
-status: executing
-stopped_at: Phase 47 (QA/Go-Live) fechada escopo técnico — sem Stripe (decisão Wesley "testes apenas")
-last_updated: "2026-06-20T12:00:00.000Z"
-last_activity: 2026-06-20 -- Phase 47 auditoria de segurança + build, críticos corrigidos
+milestone: v8.0
+milestone_name: Consultor v2 (Inteligência)
+status: planning
+last_updated: "2026-06-23T23:15:47.482Z"
+last_activity: 2026-06-23
 progress:
-  total_phases: 11
-  completed_phases: 10
-  total_plans: 38
-  completed_plans: 38
-  percent: 91
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
+
+## ✅ Phase 53 FECHADA (2026-06-24) — Camada LLM (Gemini) em produção
+
+- **53-01 + 53-02 completos.** EF `consultor-llm` **v4** (Gemini 2.5 Flash, modos summary+explain, cache-check first, numericGuard, kill-switch). **Blindada para prod: `verify_jwt=true`, smoke_token REMOVIDO do código e do vault** (chamada com smoke_token agora 401). Frontend: `ConsultorLLMSummary` (resumo COO no topo de /vendas) + "Explicar" por insight (ConsultorCard + MLConsultor) + "Atualizar análise" + badge stale; respeita kill-switch/fallback→v1.
+- **Validado em preview Vercel** (resumo real Gemini + Explicar + kill-switch demonstrado ligando/desligando `consultor_config.llm_enabled` na Pé Vermeio). Fix de checkpoint: "Explicar" agora some junto com o resumo quando LLM desligada.
+- **MERGEADO PRA PRODUÇÃO** (ver tarefa de merge). Tudo o que entrou junto: Phases 52 (schema/types), 54 Wave 1 (EF/hook inertes — sem UI ainda), limpeza de planning. Único impacto visível = Phase 53.
+- ⚠️ **Wesley: ROTACIONAR a GEMINI_API_KEY** (exposta no transcript) — me manda a nova que eu re-registro no vault via `get_app_secret`.
+- **Próximo:** Phase 57 (Nexo Conversacional) — planejar via GSD. Modelo do chat: **Gemini 2.5 Pro**.
+
+## ✅ Milestone v7.0 FECHADO (2026-06-24) + Phase 46 concluída
+
+- **Phase 46 (UX para Leigos) — COMPLETA.** Plano 46-04 (checkpoint): gate técnico OK (`tsc --noEmit` sem erros, `npm run build` limpo 15s); glossário central de **28 termos** (`src/lib/kpi-glossary.ts`) com redação leiga **aprovada por Wesley**; checkpoint visual (tooltips hover+tap, empty states, tabelas→cards mobile, dark mode nas 6 páginas) **confirmado por Wesley** (validado em sessões anteriores). Cobertura UX-01: 15 telas consomem KPICard.
+- **Milestone v7.0 FECHADO sem Stripe** — Phase 44 (Monetização Stripe) **deferida** por decisão de Wesley (versão de teste não precisa de pagamento; planos 44-01/02/03 existem para reativação futura). Phases 41,42,43,45,46,48,49,50,51 completas; 47 go-live técnico (PR#6).
+- **Limpeza de planning commitada** (decisão Wesley): 252 planos de phase (`.planning/phases/*`) removidos do working tree + `REQUIREMENTS.md` reescrito para o v8.0. Planos preservados no histórico git (até commit fc7fbad5).
+- **Próximo:** Milestone v8.0 — Consultor v2 (Inteligência). Research concluído (commits 5cf049b6 + fc7fbad5, 2026-06-23). Falta: definir requisitos + roadmap das phases.
 
 ## Fechamento Phase 47 — QA / Go-Live (2026-06-20, escopo técnico sem Stripe)
 
 Decisão Wesley: pular tudo de assinatura/Stripe ("esta versão é só testes"). Critérios cobertos:
+
 - **Build/deploy:** tsc --noEmit + npm run build limpos; prod READY.
 - **Segurança (críticos corrigidos em prod via MCP):** migration `20260650000400_phase47_security_hardening` →
   (1) RLS habilitado em `cat_backfill_queue` (era advisor ERROR rls_disabled_in_public);
   (2) REVOKE total (anon/PUBLIC) em `batch_upsert_orders` + `upsert_order_preserve_cost` (anon escrevia pedidos via REST). EFs de sync usam service_role, sem regressão.
+
 - **EFs de debug neutralizadas** (deploy stub 410, sem token p/ delete): `temp-reset-password` (backdoor reset-senha sem auth) e `probe-tiny-map`. Remoção definitiva do endpoint: dashboard ou `supabase functions delete` (requer SUPABASE_ACCESS_TOKEN).
 - **EFs de negócio:** verify_jwt=true confirmado (ml-ads/inventory/reputation/precos-custos/recalc-order-costs/org-*/admin-*).
 
@@ -34,24 +50,60 @@ Decisão Wesley: pular tudo de assinatura/Stripe ("esta versão é só testes").
 
 See: .planning/PROJECT.md
 
-**Milestone:** v7.0 — SaaS Operacional End-to-End
-**Core value:** Sistema 100% operacional e vendável como assinatura — dados verdadeiros em todas as páginas (zero mock), multi-tenant endurecido, monetização via Stripe ativa, onboarding guiado para lojista leigo, e Consultor v1 (motor de regras + score de saúde) como diferencial de venda.
-**Current focus:** Phase 51 — painel-de-tesouraria-fluxo-de-caixa
+**Milestone:** v8.0 — Consultor v2 (Inteligência)
+**Core value:** Consultor que explica, prioriza e ajuda a agir — LLM sob demanda + ações com aprovação, sobre o motor determinístico do v1.
+**Current focus:** Definindo requisitos (pesquisa de domínio em andamento).
 
 ## Current Position
 
-Phase: 51 (painel-de-tesouraria-fluxo-de-caixa) — COMPLETE (3/3 plans + verifier PASS + code review fechado)
-Status: Fechada no GSD. NÃO pushada / NÃO em prod (frontend) — branch preview/phase-50-simulador-caixa
-Last activity: 2026-06-20 -- Phase 51 fechada (review fixes CR-01/HG-01/HG-03)
+Phase: **52 (Fundação de Dados v8.0) COMPLETA** — verifier PASSED 6/6, aplicada em prod ckcdevcxgvueywivefgx
+Plan: 52-01 (4 migrations) + 52-02 (types.ts) — ambos completos
+Status: Phase 52 fechada; desbloqueia 53/54/55/56
+Last activity: 2026-06-24 — Phase 52 executada (3 tabelas novas + 5 colunas + RPC atômica INVOKER, advisors sem erro novo, build verde)
+Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint visual; depois adaptar/executar **Phase 53 com Gemini**.
+
+### Phase 54 — Wave 1 EXECUTADA (2026-06-24), Wave 2 PENDENTE
+- **Wave 1 (backend) DONE:** EF `consultor-actions` **deployada em prod** (ckcdevcxgvueywivefgx, ACTIVE v1, verify_jwt=true) — 5 mutações ML do Nexo MCP, gate atômico antes do ML, anti-IDOR, pre-flight+TTL 48h, audit ≤4KB. Hook `useConsultorActions` + `actionMapping` (14 testes verdes, tsc/build OK). Commit 0a6cdffe. **Nenhuma mutação real disparada** (EF só roda quando a UI da Wave 2 invocar com ação aprovada).
+- **Wave 2 PENDENTE:** `54-03` — UI no /consultor (abas Insights|Fila|Histórico owner-only, ProposeActionDialog diff+impacto, ActionQueue aprovar-c/-confirmação, ActionHistory) + checkpoint visual. Pausado por limite de contexto.
+- **DECISÕES ABERTAS p/ Wesley (54):** D-A4 mapa rule_key→action_type; D-A2 preço-alvo = input owner; D-A3 TTL 48h; D-A1 campo `budget` de ads (confirmar na 1ª execução real).
+
+### Phase 53 — MUDANÇA DE PROVEDOR: Anthropic → **Gemini** (decisão Wesley 2026-06-24)
+- A key será do **Gemini**, não Anthropic. Planos 53-01/53-RESEARCH/ROADMAP/REQUIREMENTS dizem "Claude Haiku 4.5 / api.anthropic.com / cache_control ephemeral". **ADAPTAR antes de executar a 53:** trocar para Gemini (`generativelanguage.googleapis.com/v1beta/models/gemini-2.x:generateContent`, header `x-goog-api-key`, context caching do Gemini ≠ Anthropic ephemeral), modelo `gemini-flash`, secret `GEMINI_API_KEY` no vault. A lógica (cache-check first, grounding, numericGuard, kill-switch) permanece — só muda a camada de chamada ao LLM.
+- **GEMINI VALIDADO em prod (2026-06-24, curl direto):** key funciona, `gemini-2.5-flash` HTTP 200, resumo COO PT-BR limpo sem alucinar números. **CONFIG DE PRODUÇÃO TRAVADA:** endpoint `POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`, header `x-goog-api-key`, body `{system_instruction:{parts:[{text}]}, contents:[{role:'user',parts:[{text}]}], generationConfig:{maxOutputTokens, temperature:0.3, thinkingConfig:{thinkingBudget:0}}}`. **CRÍTICO: `thinkingConfig.thinkingBudget=0`** senão o thinking do 2.5 consome todo o maxOutputTokens (resposta truncada). Resposta em `candidates[0].content.parts[0].text`, `finishReason:'STOP'`.
+- **EF `consultor-llm` DEPLOYADA + TESTADA (2026-06-24, ACTIVE v2):** Gemini funcionando em prod. GEMINI_API_KEY + SMOKE_TOKEN no vault; RPC `get_app_secret` (SECURITY DEFINER service_role-only) lê os secrets. Auth dual (user JWT is_org_member | smoke_token). Smoke-test org `e4150d57` (30 insights): HTTP 200, resumo COO PT-BR, **fallback=false** (numericGuard passou). Commit 2ba612fe.
+- **numericGuard:** allowed inclui TODOS os números do grounding (scores+impact+títulos) — sem isso dá falso-positivo de fallback (descoberto no 1º smoke).
+- **53-02 (UI) ENTREGUE (2026-06-24, commit 7e1ea5b1):** EF `consultor-llm` **v3** com modo `explain` (insight único, cache por insight/dia `prompt_version='explain:'+id`, numericGuard, fallback determinístico via `body`; helper `callGemini` reusado; summary cai pro fallback em erro de rede; aceita `force_refresh`). Smoke-test prod do explain: HTTP 200, fallback=false, 2ª chamada cached=true. Frontend: `useConsultorInsights` estendido (summary query + `refreshSummary()` + `explain()`, API antiga intacta); `ConsultorLLMSummary` (novo, prosa COO no topo de /vendas + "Atualizar análise" + badge stale, respeita kill-switch/fallback→v1); botão "Explicar" por insight em `ConsultorCard` + `MLConsultor`. tsc+build+112 testes verdes. **PENDENTE: checkpoint visual Wesley** (resumo/Explicar/stale/kill-switch via preview Vercel). Remover/blindar o smoke_token backdoor antes de produção real (hoje gated no vault SMOKE_TOKEN='pv-smoke-2026-53').
+- ⚠️ **Wesley: ROTACIONAR a GEMINI_API_KEY** (exposta no transcript) — atualizar via `vault` ou pedir pra eu re-registrar.
+
+### Phases 53 + 54 PLANEJADAS (2026-06-24, plan-checker PASS nas duas)
+- **53 (Camada LLM):** 2 plans — 53-01 EF `consultor-llm` (Haiku 4.5, cache-check first, grounding anti-alucinação `numericGuard`, kill-switch) + `ANTHROPIC_API_KEY` vault [BLOCKING]; 53-02 UI resumo COO + Explicar + staleness. Commit 984e33fb.
+- **54 (Pipeline Ações):** 3 plans — 54-01 EF `consultor-actions` (5 mutações ML do zero portadas do Nexo MCP: PUT /items, PUT /advertising/.../campaigns api-version:2; gate claim_approved_action; pre-flight+TTL 48h; token-por-org anti-IDOR; audit ≤4KB) + 54-02 hook+actionMapping + 54-03 UI fila/diff/histórico. Commits ea9ff2f4 + a5639028 (fix item_id).
+- **DECISÕES ABERTAS p/ Wesley (sinalizadas nos planos):** D-A4 mapa rule_key→action_type; D-A2 preço-alvo = input do owner (insight só dá item+impacto); D-A3 TTL 48h; D-A1 campo budget de ads. Confirmar antes/durante execução da 54.
+- **Pré-requisito de execução:** registrar `ANTHROPIC_API_KEY` no vault (53) — orquestrador via MCP. Ambas têm deploy de EF [BLOCKING] (gsd-executor sem Supabase MCP).
+
+### Phase 52 (2026-06-24) — schema v8.0 em prod
+- 3 tabelas novas: `proposed_actions` (state-machine 6 estados text+CHECK + dedup parcial), `action_audit_log` (append-only), `llm_analysis_cache` (org-first key).
+- ALTERs: `insights.snoozed_until`/`snooze_count`, `consultor_config.llm_enabled`/`llm_model`, `consultor_health_snapshots.ml_user_id_key` (+ troca UNIQUE p/ por-loja).
+- RPC `claim_approved_action` SECURITY INVOKER (anti-IDOR) + REVOKE de PUBLIC/anon/authenticated (anti default-EXECUTE).
+- 4 migrations `20260652*` commitadas; aplicadas via MCP (CLI no projeto errado — nunca db push). types.ts manual.
+- **WARNING aberto (não-bloqueante, p/ Phase 56):** mapeamento TUNE-01 → 14 limiares existentes é MEDIUM confidence; confirmar com Wesley se quer limiares-alvo NOVOS antes da 56.
+
+### Pendências de validação visual (não bloqueiam novo milestone)
+
+- Checkpoint visual do painel de Tesouraria (Phase 51) por Wesley.
+- Card "Caixa Hoje": conferir saldo inicial (efeito do fix de fuso BRT pode estar 1 dia adiantado; ajustável pelo botão).
+
+### Fechamento Phase 51 (2026-06-20) — EM PROD via PR#4 (merge 69883b00) + fix mobile PR#7 (101754ef)
 
 ### Fechamento Phase 51 (2026-06-20)
+
 - **Verifier:** PASS 5/5 (TESO-01..05), build limpo (51-VERIFICATION.md).
 - **Code review:** 1 Critical + 4 High (51-REVIEW.md). HG-02 e HG-04 = falsos positivos vs prod (já BRT / já bounded). Reais corrigidos + aplicados em prod via MCP (commit 1d1750c4):
   - CR-01: enrich_drain token Tiny hardcoded (1639558873) → token por org da fila + REVOKE de PUBLIC/anon/authenticated. (latente: só Pé Vermeio usa Tiny hoje)
   - HG-01: card "Saldo Mín" → horizonte 30d (decisão Wesley); RPC retorna min_balance (valor) + data do mesmo modelo. −719k/90d → −168k/30d.
   - HG-03: burn_rate só status='paid' (R$185.149) consistente c/ Saída Real (decisão Wesley). Antes R$189.316 (incluía 9 contas vencidas).
 - Migrations prod: treasury_fix_cr01_enrich_drain_security, treasury_fix_hg01_hg03_panel. Arquivo repo: 20260650000200.
-- **PENDENTE:** push dos commits + deploy frontend (prod ainda no estado pré-51) + checkpoint visual real do painel de Tesouraria por Wesley.
+- **STATUS:** push + deploy frontend CONCLUÍDOS (PR#4 merge 69883b00, em prod). Único item aberto = checkpoint visual de Wesley (não bloqueante).
 
 ### Quick Tasks Completed
 

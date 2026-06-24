@@ -14,6 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
+      action_audit_log: {
+        Row: {
+          action_id: string
+          actor_id: string | null
+          created_at: string
+          detail: Json | null
+          from_status: string
+          id: string
+          organization_id: string
+          to_status: string
+        }
+        Insert: {
+          action_id: string
+          actor_id?: string | null
+          created_at?: string
+          detail?: Json | null
+          from_status: string
+          id?: string
+          organization_id: string
+          to_status: string
+        }
+        Update: {
+          action_id?: string
+          actor_id?: string | null
+          created_at?: string
+          detail?: Json | null
+          from_status?: string
+          id?: string
+          organization_id?: string
+          to_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "action_audit_log_action_id_fkey"
+            columns: ["action_id"]
+            isOneToOne: false
+            referencedRelation: "proposed_actions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "action_audit_log_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_log: {
         Row: {
           action: string
@@ -125,6 +173,8 @@ export type Database = {
           ads_no_sale_days: number
           claims_spike_pct: number
           goal_risk_pct: number
+          llm_enabled: boolean
+          llm_model: string
           margin_alert_pct: number
           margin_critical_pct: number
           organization_id: string
@@ -143,6 +193,8 @@ export type Database = {
           ads_no_sale_days?: number
           claims_spike_pct?: number
           goal_risk_pct?: number
+          llm_enabled?: boolean
+          llm_model?: string
           margin_alert_pct?: number
           margin_critical_pct?: number
           organization_id: string
@@ -161,6 +213,8 @@ export type Database = {
           ads_no_sale_days?: number
           claims_spike_pct?: number
           goal_risk_pct?: number
+          llm_enabled?: boolean
+          llm_model?: string
           margin_alert_pct?: number
           margin_critical_pct?: number
           organization_id?: string
@@ -188,6 +242,7 @@ export type Database = {
           id: string
           insights_critical: number
           insights_total: number
+          ml_user_id_key: string
           organization_id: string
           score: number
           score_ads: number
@@ -202,6 +257,7 @@ export type Database = {
           id?: string
           insights_critical?: number
           insights_total?: number
+          ml_user_id_key?: string
           organization_id: string
           score: number
           score_ads?: number
@@ -216,6 +272,7 @@ export type Database = {
           id?: string
           insights_critical?: number
           insights_total?: number
+          ml_user_id_key?: string
           organization_id?: string
           score?: number
           score_ads?: number
@@ -251,6 +308,8 @@ export type Database = {
           resolved_at: string | null
           rule_key: string
           severity: string
+          snooze_count: number
+          snoozed_until: string | null
           status: string
           title: string
           updated_at: string
@@ -270,6 +329,8 @@ export type Database = {
           resolved_at?: string | null
           rule_key: string
           severity: string
+          snooze_count?: number
+          snoozed_until?: string | null
           status?: string
           title: string
           updated_at?: string
@@ -289,6 +350,8 @@ export type Database = {
           resolved_at?: string | null
           rule_key?: string
           severity?: string
+          snooze_count?: number
+          snoozed_until?: string | null
           status?: string
           title?: string
           updated_at?: string
@@ -296,6 +359,53 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "insights_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      llm_analysis_cache: {
+        Row: {
+          analysis_date: string
+          analysis_text: string
+          created_at: string
+          id: string
+          insight_count: number
+          model_used: string
+          organization_id: string
+          prompt_hash: string | null
+          prompt_version: string
+          tokens_used: number | null
+        }
+        Insert: {
+          analysis_date: string
+          analysis_text: string
+          created_at?: string
+          id?: string
+          insight_count?: number
+          model_used: string
+          organization_id: string
+          prompt_hash?: string | null
+          prompt_version?: string
+          tokens_used?: number | null
+        }
+        Update: {
+          analysis_date?: string
+          analysis_text?: string
+          created_at?: string
+          id?: string
+          insight_count?: number
+          model_used?: string
+          organization_id?: string
+          prompt_hash?: string | null
+          prompt_version?: string
+          tokens_used?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "llm_analysis_cache_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -1538,6 +1648,87 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      proposed_actions: {
+        Row: {
+          action_type: string
+          approved_at: string | null
+          approved_by: string | null
+          created_at: string
+          current_value: Json | null
+          dry_run_preview: Json | null
+          estimated_impact_brl: number | null
+          executed_at: string | null
+          id: string
+          insight_id: string | null
+          ml_user_id: string | null
+          organization_id: string
+          proposed_by: string
+          proposed_value: Json
+          result_summary: string | null
+          rule_key: string
+          status: string
+          target_ref: string
+          updated_at: string
+        }
+        Insert: {
+          action_type: string
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          current_value?: Json | null
+          dry_run_preview?: Json | null
+          estimated_impact_brl?: number | null
+          executed_at?: string | null
+          id?: string
+          insight_id?: string | null
+          ml_user_id?: string | null
+          organization_id: string
+          proposed_by: string
+          proposed_value: Json
+          result_summary?: string | null
+          rule_key: string
+          status?: string
+          target_ref: string
+          updated_at?: string
+        }
+        Update: {
+          action_type?: string
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          current_value?: Json | null
+          dry_run_preview?: Json | null
+          estimated_impact_brl?: number | null
+          executed_at?: string | null
+          id?: string
+          insight_id?: string | null
+          ml_user_id?: string | null
+          organization_id?: string
+          proposed_by?: string
+          proposed_value?: Json
+          result_summary?: string | null
+          rule_key?: string
+          status?: string
+          target_ref?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "proposed_actions_insight_id_fkey"
+            columns: ["insight_id"]
+            isOneToOne: false
+            referencedRelation: "insights"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proposed_actions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       seller_stores: {
         Row: {

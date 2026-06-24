@@ -26,6 +26,23 @@ export interface HealthScore {
   } | null;
 }
 
+// ─── EF consultor-llm response shapes (Plan 53) ──────────────────────────────
+
+interface LLMSummaryResponse {
+  summary?: string;
+  cached?: boolean;
+  stale?: boolean;
+  fallback?: boolean;
+  disabled?: boolean;
+}
+
+interface LLMExplainResponse {
+  explanation?: string;
+  cached?: boolean;
+  fallback?: boolean;
+  disabled?: boolean;
+}
+
 // ─── Severity ordering (D-17: critical=0, high=1, medium=2) ──────────────────
 
 const SEVERITY_RANK: Record<string, number> = {
@@ -188,6 +205,66 @@ export function useConsultorInsights() {
 
   const dismiss = (insightId: string) => dismissMutation.mutate(insightId);
 
+  // ── 7. Resumo COO (camada LLM, Plan 53) ───────────────────────────────────
+  //
+  // Invoca a EF `consultor-llm` (mode='summary'). JWT do usuário é anexado
+  // automaticamente pelo supabase-js. A EF faz cache-check server-side, então
+  // reabrir o painel não re-gera nem re-cobra. staleTime alto (mesmo dia).
+  // Retornos possíveis: {summary,cached,stale,fallback} | {disabled:true}.
+
+  const summaryQuery = useQuery<LLMSummaryResponse>({
+    queryKey: ["consultor_summary", orgId],
+    enabled: !!orgId,
+    staleTime: 12 * 60 * 60 * 1000, // 12h — resumo é do dia
+    retry: false,
+    queryFn: async (): Promise<LLMSummaryResponse> => {
+      if (!orgId) return {};
+      const { data, error } = await supabase.functions.invoke("consultor-llm", {
+        body: { org_id: orgId, mode: "summary" },
+      });
+      if (error) throw error;
+      return (data ?? {}) as LLMSummaryResponse;
+    },
+  });
+
+  const summaryResp = summaryQuery.data;
+
+  // ── 8. Atualizar análise (LLM-04, força regeneração respeitando cap server) ─
+
+  const refreshSummaryMutation = useMutation({
+    mutationFn: async (): Promise<LLMSummaryResponse> => {
+      if (!orgId) throw new Error("No org");
+      const { data, error } = await supabase.functions.invoke("consultor-llm", {
+        body: { org_id: orgId, mode: "summary", force_refresh: true },
+      });
+      if (error) throw error;
+      return (data ?? {}) as LLMSummaryResponse;
+    },
+    onSuccess: (data) => {
+      // grava o resultado fresco diretamente no cache da query (sem 2ª chamada)
+      queryClient.setQueryData(["consultor_summary", orgId], data);
+    },
+  });
+
+  const refreshSummary = () => refreshSummaryMutation.mutateAsync();
+
+  // ── 9. Explicar (LLM-02, explicação sob demanda por insight) ──────────────
+  //
+  // Cache por insight/dia é responsabilidade da EF (prompt_version='explain:'+id).
+  // Retorna o texto da explicação; em fallback/disabled retorna string vazia
+  // (o consumidor decide o que mostrar).
+
+  const explain = async (insightId: string): Promise<string> => {
+    if (!orgId) return "";
+    const { data, error } = await supabase.functions.invoke("consultor-llm", {
+      body: { org_id: orgId, mode: "explain", insight_id: insightId },
+    });
+    if (error) throw error;
+    const resp = (data ?? {}) as LLMExplainResponse;
+    if (resp.disabled) return "";
+    return resp.explanation ?? "";
+  };
+
   // ── Return ────────────────────────────────────────────────────────────────
 
   return {
@@ -199,5 +276,14 @@ export function useConsultorInsights() {
     loading: insightsQuery.isLoading || snapshotQuery.isLoading,
     syncing,
     dismiss,
+    // camada LLM (Plan 53)
+    summaryText: summaryResp?.summary ?? null,
+    summaryDisabled: summaryResp?.disabled === true,
+    summaryFallback: summaryResp?.fallback === true,
+    summaryStale: summaryResp?.stale === true,
+    summaryLoading: summaryQuery.isLoading,
+    summaryRefreshing: refreshSummaryMutation.isPending,
+    refreshSummary,
+    explain,
   };
 }
