@@ -97,6 +97,11 @@ serve(async (req) => {
     const model = cfgModel && cfgModel.startsWith("gemini") ? cfgModel : undefined;
 
     // ── loop server-side de function-calling read-only (Plan 57-02) ─────────
+    // userJwt = JWT real do usuário — reutiliza o mesmo valor já lido para getUser
+    // acima. É repassado ao runChat → loop → dispatchTool apenas para tools que
+    // invocam EFs que exigem JWT do usuário (ex.: get_reputation → ml-reputation).
+    // NUNCA logado, NUNCA exposto ao modelo.
+    const userJwt = auth.replace("Bearer ", "");
     const { reply, usedTools, fallback } = await runChat(
       sb,
       gkey,
@@ -104,7 +109,7 @@ serve(async (req) => {
       mlUserIds,
       buildSystemPrompt(),
       messages,
-      { model },
+      { model, userJwt },
     );
     // observabilidade: só metadados (nunca conteúdo das mensagens nem segredos)
     console.log(`nexo-chat: tools=${usedTools.length} fallback=${fallback}`);

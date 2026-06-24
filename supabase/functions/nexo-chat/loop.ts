@@ -39,11 +39,18 @@ export type RunChatOpts = {
   /** dispatcher injetável (default dispatchTool de ./tools.ts) — mockado no teste. */
   dispatchImpl?: (
     sb: SupabaseClient, orgId: string, mlUserIds: string[], name: string, args: Record<string, unknown>,
+    ctx?: { userJwt?: string },
   ) => Promise<unknown>;
   /** relógio injetável (default Date.now) — força timeout no teste. */
   nowImpl?: () => number;
   /** modelo Gemini (default gemini-2.5-pro). */
   model?: string;
+  /**
+   * JWT real do usuário — extraído em index.ts de `Authorization: Bearer <token>`.
+   * Repassado ao dispatcher para tools que invocam EFs que exigem JWT do usuário
+   * (ex.: get_reputation → ml-reputation). NUNCA logado, NUNCA exposto ao modelo.
+   */
+  userJwt?: string;
 };
 
 export async function runChat(
@@ -122,10 +129,11 @@ export async function runChat(
     contents.push({ role: "model", parts: fnCalls.map((fc) => ({ functionCall: fc })) });
 
     // 2) executa cada tool ESCOPADA por org/mlUserIds do servidor (args do modelo só p/ datas)
+    // userJwt (de opts) trafega ao dispatcher para tools que invocam EFs com JWT do usuário
     const responseParts: GeminiPart[] = [];
     for (const fc of fnCalls) {
       usedTools.push(fc.name);
-      const result = await dispatch(sb, orgId, mlUserIds, fc.name, fc.args ?? {});
+      const result = await dispatch(sb, orgId, mlUserIds, fc.name, fc.args ?? {}, { userJwt: opts.userJwt });
       responseParts.push({ functionResponse: { name: fc.name, response: { content: result } } });
     }
 

@@ -5,10 +5,13 @@
  *   - TOOL_DECLARATIONS: function declarations no formato Gemini. NENHUMA declara
  *     org_id/seller_id/ml_user_id como parâmetro — o modelo NÃO escolhe org/loja.
  *     Só aceitam datas opcionais (from/to YYYY-MM-DD) onde a RPC suporta.
- *   - dispatchTool(sb, orgId, mlUserIds, name, args): mapeia cada tool à RPC/tabela
+ *   - dispatchTool(sb, orgId, mlUserIds, name, args, ctx?): mapeia cada tool à RPC/tabela
  *     REAL existente (ckcdevcxgvueywivefgx), SEMPRE injetando p_org_id=orgId (do JWT)
  *     e p_user_ids=mlUserIds (derivado server-side de ml_tokens). Qualquer
  *     args.org_id/args.seller_id/args.ml_user_id vindo do modelo é IGNORADO.
+ *     ctx.userJwt (opcional, ÚLTIMO parâmetro com default {}) é o JWT real do usuário
+ *     — usado EXCLUSIVAMENTE para invocar EFs que exigem JWT do usuário (ex.: ml-reputation).
+ *     NUNCA logado, nunca exposto ao modelo.
  *
  * ANTI-IDOR (T-57-07/08): orgId e mlUserIds são parâmetros do SERVIDOR; args só
  * influenciam datas (com clamp/default). Selects diretos via service_role bypassam
@@ -30,6 +33,8 @@
  *   get_ads_by_product    → table ml_ads_products_cache (.eq org, .in ml_user_id) — pagina .range()
  *   get_dre_monthly       → table ml_billing_daily (.eq org, .in ml_user_id) agrega por mês-calendário
  *   get_health_score      → table consultor_health_snapshots (.eq org)
+ *   get_reputation        → EF ml-reputation (jwt real do usuário via ctx.userJwt) — sem tabela persistida
+ *   get_goals             → table ml_targets (.in seller_id, mlUserIds — sem organization_id!) anti-IDOR via seller_id
  */
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -282,15 +287,54 @@ export const TOOL_DECLARATIONS: FnDecl[] = [
       "Fonte: ml_ads_daily_cache agregada por período.",
     parameters: { type: "object", properties: { ...DATE_PROPS } },
   },
+
+  // ── OPS-1/D12: reputação ao vivo (mesma fonte do /reputacao) ─────────────
+  {
+    name: "get_reputation",
+    description:
+      "Reputação do ML ao vivo (mesma fonte do /reputacao): nível/termômetro (level_id), claims_rate, " +
+      "cancellation_rate, power_seller_status. Read-only. " +
+      "Retorna por loja. Se os dados não estiverem disponíveis no momento, declara a limitação.",
+    parameters: { type: "object", properties: {} },
+  },
+
+  // ── OPS-2/D13: metas × realizado (ml_targets por seller_id ∈ mlUserIds) ──
+  {
+    name: "get_goals",
+    description:
+      "Meta do mês × realizado: meta de receita/lucro (ml_targets) vs realizado (get_kpi_summary) → % atingido. " +
+      "Metas são por loja (seller_id). " +
+      "Passe period_month (YYYY-MM) para outro mês; sem parâmetro usa o mês corrente. " +
+      "Se não houver meta cadastrada para o mês, declara a limitação em vez de inventar.",
+    parameters: {
+      type: "object",
+      properties: {
+        period_month: { type: "string", description: "Mês YYYY-MM (opcional, default mês corrente)" },
+      },
+    },
+  },
 ];
 
 // ── dispatcher escopado (anti-IDOR) ──────────────────────────────────────────
+/**
+ * dispatchTool — executa a tool `name` escopada por org/mlUserIds do servidor.
+ *
+ * ctx (ÚLTIMO parâmetro, default {}) carrega o JWT real do usuário para tools que
+ * invocam EFs que exigem autenticação por JWT de usuário (não service_role):
+ *   ctx.userJwt — JWT real extraído do request em index.ts; NUNCA logado; NUNCA
+ *   exposto ao modelo; só trafega internamente index→runChat→loop→dispatchTool.
+ *
+ * Chamadas sem o 6º argumento (testes legados, call-sites anteriores) continuam
+ * funcionando porque ctx tem default {} e todas as tools que não precisam de JWT
+ * simplesmente ignoram ctx.
+ */
 export async function dispatchTool(
   sb: SupabaseClient,
   orgId: string,
   mlUserIds: string[],
   name: string,
   args: Record<string, unknown>,
+  ctx: { userJwt?: string } = {},
 ): Promise<unknown> {
   // janela de datas: SÓ datas vindas do modelo são respeitadas (não-sensíveis),
   // com clamp + defaults. org/seller dos args são SEMPRE ignorados.
@@ -722,6 +766,121 @@ export async function dispatchTool(
         clicks: totalClicks,
         freshness: maxSyncedAt,
         note: "attributed_revenue é receita atribuída a ads, subconjunto do faturamento — não é o total vendido.",
+      };
+    }
+
+    // ── OPS-1/D12: reputação ao vivo via EF ml-reputation ───────────────────
+    // Anti-IDOR (T-58-04-REP-IDOR): ml_user_id SEMPRE de mlUserIds (servidor);
+    // ctx.userJwt é o JWT real do usuário — a EF revalida is_org_member como 2ª barreira.
+    // NUNCA logar ctx.userJwt.
+    case "get_reputation": {
+      // Sem JWT real → declarar limitação (VERAC-05), não inventar
+      if (!ctx.userJwt) {
+        return { error: "sem_jwt", label: "não foi possível consultar a reputação ao vivo agora" };
+      }
+      const supabaseUrl = Deno.env.get("SUPABASE_URL");
+      // Invoca a EF ml-reputation para cada loja (ml_user_id ∈ mlUserIds — servidor)
+      // com o JWT real do usuário (requerido pela EF — service_role retornaria 401)
+      type RepResult = {
+        ml_user_id: string;
+        level_id?: string | null;
+        claims_rate?: number | null;
+        cancellation_rate?: number | null;
+        power_seller_status?: string | null;
+        nickname?: string | null;
+        error?: string;
+      };
+      const results: RepResult[] = [];
+      for (const mlUserId of mlUserIds) {
+        try {
+          const efUrl = `${supabaseUrl}/functions/v1/ml-reputation?ml_user_id=${encodeURIComponent(mlUserId)}`;
+          const res = await fetch(efUrl, {
+            headers: { "Authorization": `Bearer ${ctx.userJwt}` },
+          });
+          if (!res.ok) {
+            results.push({ ml_user_id: mlUserId, error: `ef_status_${res.status}` });
+            continue;
+          }
+          const data = await res.json() as Record<string, unknown>;
+          const rep = data.seller_reputation as Record<string, unknown> | null ?? null;
+          results.push({
+            ml_user_id: mlUserId,
+            level_id: (rep?.level_id as string | null) ?? null,
+            claims_rate: (rep?.transactions as Record<string, unknown>)?.claims_rate as number | null ?? null,
+            cancellation_rate: (rep?.transactions as Record<string, unknown>)?.cancellation_rate as number | null ?? null,
+            power_seller_status: data.power_seller_status as string | null ?? null,
+            nickname: data.nickname as string | null ?? null,
+          });
+        } catch {
+          results.push({ ml_user_id: mlUserId, error: "ef_fetch_error" });
+        }
+      }
+      return { label: "reputação ao vivo do ML", data: results.slice(0, MAX_ROWS) };
+    }
+
+    // ── OPS-2/D13: metas × realizado — anti-IDOR adaptado para ml_targets ────
+    // CRÍTICO (T-58-04-GOALS-IDOR): ml_targets NÃO tem organization_id.
+    // Scopar SOMENTE por .in('seller_id', mlUserIds) derivado server-side.
+    // seller do modelo é COMPLETAMENTE IGNORADO.
+    case "get_goals": {
+      const pm = clampMonth(args.period_month) ?? today().slice(0, 7);
+      const [pmY, pmM] = pm.split("-").map(Number);
+      // mês como inteiros para comparar com year/month na tabela
+      const { data: targetRows } = await sb
+        .from("ml_targets")
+        .select("seller_id,target_value,kpi_targets")
+        // Anti-IDOR: SOMENTE mlUserIds do servidor; seller do modelo ignorado
+        .in("seller_id", mlUserIds)
+        .eq("year", pmY)
+        .eq("month", pmM);
+
+      const targets = (targetRows ?? []) as Array<{
+        seller_id: string;
+        target_value: number;
+        kpi_targets: Record<string, number> | null;
+      }>;
+
+      // Cruzar com o realizado (receita de pedidos pagos no período)
+      const monthFrom = `${pm}-01`;
+      const lastDay = new Date(Date.UTC(pmY, pmM, 0)).getUTCDate();
+      const monthTo = `${pm}-${String(lastDay).padStart(2, "0")}`;
+      const { data: kpiData } = await sb.rpc("get_kpi_summary", {
+        p_org_id: orgId,
+        p_user_ids: mlUserIds,
+        p_from: monthFrom,
+        p_to: monthTo,
+      });
+      const kpi = (Array.isArray(kpiData) ? kpiData[0] : kpiData) as Record<string, unknown> | null ?? null;
+      const realizadoReceita = (kpi?.gross_revenue as number) ?? (kpi?.receita as number) ?? null;
+
+      if (targets.length === 0) {
+        return {
+          period_month: pm,
+          label: `sem meta cadastrada para ${pm} — nenhum registro em ml_targets para as lojas desta conta neste mês`,
+          by_seller: [],
+          realizado_receita: realizadoReceita,
+        };
+      }
+
+      const bySeller = targets.map((t) => {
+        const metaReceita = Number(t.target_value ?? 0);
+        const pctAtingido =
+          metaReceita > 0 && realizadoReceita !== null
+            ? Math.round((realizadoReceita / metaReceita) * 1000) / 10
+            : null;
+        return {
+          seller_id: t.seller_id,
+          meta_receita: metaReceita,
+          meta_lucro_pct: t.kpi_targets?.lucro_pct ?? null,
+          realizado_receita: realizadoReceita,
+          pct_atingido: pctAtingido,
+        };
+      });
+
+      return {
+        period_month: pm,
+        label: `meta × realizado ${pm} — realizado é receita de pedidos pagos (get_kpi_summary)`,
+        by_seller: bySeller,
       };
     }
 
