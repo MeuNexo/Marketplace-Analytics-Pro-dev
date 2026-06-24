@@ -92,6 +92,12 @@ verify_jwt = false
 [functions.reply-ml-question]
 verify_jwt = true
 
+# consultor-actions: executor das 5 mutações ML da fila de aprovação (Phase 54).
+# verify_jwt=true — user-invoked (igual reply-ml-question); auth interna valida
+# JWT + owner via get_org_role. Service_role só p/ gate/write/audit.
+[functions.consultor-actions]
+verify_jwt = true
+
 # Phase 45 (Consultor v1) — auth dual: service_role (cron Pattern B) + user JWT (on-demand).
 # verify_jwt=false because the cron sends sb_secret_ key (not a JWT).
 # Auth is enforced internally in authenticate(): service_role | valid user JWT | 401.
