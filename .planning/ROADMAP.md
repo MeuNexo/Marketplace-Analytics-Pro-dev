@@ -36,7 +36,9 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
   5. RPC de transição atômica `UPDATE ... WHERE status='approved' RETURNING *` (SECURITY INVOKER, escopo org) + REVOKE de anon/public
   6. `types.ts` atualizado; migrations aplicadas em ckcdevcxgvueywivefgx via MCP; advisors sem erro crítico novo
 
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 52-01-PLAN.md — 4 migrations (proposed_actions + action_audit_log + llm_analysis_cache + ALTERs + RPC claim_approved_action) aplicadas via MCP em ckcdevcxgvueywivefgx
+- [ ] 52-02-PLAN.md — types.ts atualizado manualmente (3 tabelas novas + 5 colunas) + build verde
 
 ---
 
@@ -117,7 +119,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 52. Fundação de Dados v8.0 | 0/? | Not started | - |
+| 52. Fundação de Dados v8.0 | 0/2 | Planned | - |
 | 53. Camada LLM | 0/? | Not started | - |
 | 54. Pipeline de Ações | 0/? | Not started | - |
 | 55. Drill-down Multi-Loja | 0/? | Not started | - |
