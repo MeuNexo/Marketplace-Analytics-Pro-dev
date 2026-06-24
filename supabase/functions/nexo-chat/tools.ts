@@ -262,13 +262,17 @@ export const TOOL_DECLARATIONS: FnDecl[] = [
   {
     name: "get_open_questions",
     description:
-      "Perguntas de compradores SEM resposta (mais recentes). Use para 'tenho perguntas pendentes?', dúvidas de clientes a responder.",
+      "Perguntas de compradores sem resposta (status UNANSWERED) — mais recentes. " +
+      "Use para 'tenho perguntas pendentes?', dúvidas de clientes a responder. " +
+      "Filtra por resposta IS NULL (equivalente a status UNANSWERED nesta base).",
     parameters: { type: "object", properties: {} },
   },
   {
     name: "get_claims",
     description:
-      "Reclamações / devoluções / mediações (mais recentes). Use para pós-venda, reclamações abertas, devoluções, prazos de resposta.",
+      "Reclamações / devoluções / mediações: status e tipo + contagem aberto×total. " +
+      "NÃO há prazo/solução nesta base (data_limite e solução são 100% nulos — campos não populados). " +
+      "Use para pós-venda, reclamações abertas, distribuição por tipo (mediations/returns/change/cancel_purchase).",
     parameters: { type: "object", properties: {} },
   },
   {
@@ -540,11 +544,12 @@ export async function dispatchTool(
       };
     }
     case "get_health_score": {
+      // OPS-4/D14: ordenar por snapshot_month DESC (casar com o dashboard) — não created_at
       const { data } = await sb
         .from("consultor_health_snapshots")
-        .select("score,score_margin,score_ads,score_estoque,score_reputacao,score_completude,created_at")
+        .select("snapshot_month,score,score_margin,score_ads,score_estoque,score_reputacao,score_completude,created_at")
         .eq("organization_id", orgId)
-        .order("created_at", { ascending: false })
+        .order("snapshot_month", { ascending: false })
         .limit(1);
       return cap(data ?? []);
     }
@@ -696,12 +701,29 @@ export async function dispatchTool(
       return cap(data ?? []);
     }
     case "get_claims": {
+      // OPS-3/D14: removidos data_limite e solucao (100% null — campos mortos que
+      // prometem "prazos" inexistentes). Retorna status/tipo + contagem aberto×total.
       let q = sb.from("ml_claims")
-        .select("claim_id,tipo,status,motivo,data_abertura,data_limite,solucao")
+        .select("claim_id,tipo,status,motivo,data_abertura")
         .eq("organization_id", orgId);
       if (mlUserIds.length) q = q.in("ml_user_id", mlUserIds);
       const { data } = await q.order("data_abertura", { ascending: false }).limit(MAX_ROWS);
-      return cap(data ?? []);
+      const rows = (data ?? []) as Array<{ tipo?: string; status?: string }>;
+      // contagem aberto × total e distribuição por tipo
+      const totalClaims = rows.length;
+      const openCount = rows.filter((r) => r.status === "opened").length;
+      const byType: Record<string, number> = {};
+      for (const r of rows) {
+        const t = r.tipo ?? "unknown";
+        byType[t] = (byType[t] ?? 0) + 1;
+      }
+      return {
+        label: "Reclamações: NÃO há prazo/solução nesta base (data_limite e solucao 100% nulos)",
+        total: totalClaims,
+        open: openCount,
+        by_type: byType,
+        items: rows,
+      };
     }
     case "get_ads_campaigns": {
       // NEUTRALIZADO (VMA-1 / D5): ml_ads_campaigns_cache não tem coluna date e está zerada.
