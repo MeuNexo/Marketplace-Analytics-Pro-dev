@@ -57,7 +57,9 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
   6. Indicador "análise desatualizada — clique para atualizar" quando o estado dos insights muda após a geração; botão respeita cap diário por org
   7. Kill-switch por org em `consultor_config.llm_enabled` — desligado volta ao consultor determinístico puro
 
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 53-01-PLAN.md — EF consultor-llm (auth dual + cache-check first + grounding + Haiku 4.5 + validação numérica + upsert) + ANTHROPIC_API_KEY vault Pattern B + config.toml + numericGuard testável
+- [ ] 53-02-PLAN.md — UI: resumo COO no topo de /vendas + "Explicar" por insight + badge "análise desatualizada" + "Atualizar análise" + kill-switch/fallback caem pro v1
 
 ---
 
@@ -120,7 +122,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 52. Fundação de Dados v8.0 | 2/2 | Complete | 2026-06-24 |
-| 53. Camada LLM | 0/? | Not started | - |
+| 53. Camada LLM | 0/2 | Planned | - |
 | 54. Pipeline de Ações | 0/? | Not started | - |
 | 55. Drill-down Multi-Loja | 0/? | Not started | - |
 | 56. Snooze + Limiares | 0/? | Not started | - |
