@@ -161,6 +161,77 @@ export const TOOL_DECLARATIONS: FnDecl[] = [
       "Score de saúde do negócio (0-100) e 5 pilares (margem, ads, estoque, reputação, completude). Use para diagnóstico geral.",
     parameters: { type: "object", properties: {} },
   },
+
+  // ── Cobertura ampla dos dados da conta (Phase 57) ────────────────────────
+  {
+    name: "get_sales_kpis",
+    description:
+      "KPIs de vendas do período: faturamento, nº de pedidos, ticket médio, unidades. Use para 'quanto vendi', faturamento, volume de vendas.",
+    parameters: { type: "object", properties: { ...DATE_PROPS } },
+  },
+  {
+    name: "get_margin_by_brand",
+    description:
+      "Margem/lucro por MARCA no período. Use para 'qual marca dá mais lucro', ranking de marcas, mix por marca.",
+    parameters: { type: "object", properties: { ...DATE_PROPS } },
+  },
+  {
+    name: "get_margin_trend",
+    description:
+      "Série DIÁRIA de margem/lucro no período (tendência). Use para evolução do lucro dia a dia, se está melhorando ou piorando.",
+    parameters: { type: "object", properties: { ...DATE_PROPS } },
+  },
+  {
+    name: "get_margin_by_state",
+    description:
+      "Margem/receita por estado (UF) no período. Use para desempenho por região e onde concentrar.",
+    parameters: { type: "object", properties: { ...DATE_PROPS } },
+  },
+  {
+    name: "get_costs_by_month",
+    description:
+      "Custos/DRE por mês (vários meses). Use para tendência de custos e fatura ML mês a mês.",
+    parameters: {
+      type: "object",
+      properties: { months: { type: "integer", description: "Qtde de meses (opcional, default 9)" } },
+    },
+  },
+  {
+    name: "get_supplier_exposure",
+    description:
+      "Exposição financeira por fornecedor (contas a pagar). Use para 'quanto devo a cada fornecedor', concentração de fornecedores.",
+    parameters: {
+      type: "object",
+      properties: { top_n: { type: "integer", description: "Top N fornecedores (opcional, default 10)" } },
+    },
+  },
+  {
+    name: "get_inventory",
+    description:
+      "Estoque atual por anúncio: quantidade disponível, vendida, preço, saúde do anúncio, visitas, marca. Use para 'quanto tenho em estoque', estoque/situação de um produto específico (passe 'search'), anúncios ativos/pausados.",
+    parameters: {
+      type: "object",
+      properties: { search: { type: "string", description: "Filtra por texto no título ou SKU do produto (opcional)" } },
+    },
+  },
+  {
+    name: "get_open_questions",
+    description:
+      "Perguntas de compradores SEM resposta (mais recentes). Use para 'tenho perguntas pendentes?', dúvidas de clientes a responder.",
+    parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "get_claims",
+    description:
+      "Reclamações / devoluções / mediações (mais recentes). Use para pós-venda, reclamações abertas, devoluções, prazos de resposta.",
+    parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "get_ads_campaigns",
+    description:
+      "Campanhas de publicidade no nível CAMPANHA: status, orçamento diário, gasto, receita atribuída, ROAS. Use para visão por campanha (diferente de ads por produto).",
+    parameters: { type: "object", properties: {} },
+  },
 ];
 
 // ── dispatcher escopado (anti-IDOR) ──────────────────────────────────────────
@@ -304,6 +375,84 @@ export async function dispatchTool(
         .eq("organization_id", orgId)
         .order("created_at", { ascending: false })
         .limit(1);
+      return cap(data ?? []);
+    }
+
+    // ── RPCs de margem/vendas (INVOKER): p_org_id + p_user_ids do servidor ───
+    case "get_sales_kpis": {
+      const { data } = await sb.rpc("get_kpi_summary", {
+        p_org_id: orgId, p_user_ids: mlUserIds, p_from: from, p_to: to,
+      });
+      return cap(data ?? []);
+    }
+    case "get_margin_by_brand": {
+      const { data } = await sb.rpc("get_margin_by_brand", {
+        p_org_id: orgId, p_user_ids: mlUserIds, p_from: from, p_to: to,
+      });
+      return cap(data ?? []);
+    }
+    case "get_margin_trend": {
+      const { data } = await sb.rpc("get_margin_by_day", {
+        p_org_id: orgId, p_user_ids: mlUserIds, p_from: from, p_to: to,
+      });
+      return cap(data ?? []);
+    }
+    case "get_margin_by_state": {
+      const { data } = await sb.rpc("get_margin_by_estado", {
+        p_org_id: orgId, p_user_ids: mlUserIds, p_from: from, p_to: to,
+      });
+      return cap(data ?? []);
+    }
+    case "get_costs_by_month": {
+      const months = typeof args.months === "number" && args.months > 0 && args.months <= 24
+        ? Math.floor(args.months) : 9;
+      const { data } = await sb.rpc("get_cost_by_month", { p_org_id: orgId, p_months: months });
+      return cap(data ?? []);
+    }
+    case "get_supplier_exposure": {
+      const topN = typeof args.top_n === "number" && args.top_n > 0 && args.top_n <= 50
+        ? Math.floor(args.top_n) : 10;
+      const { data } = await sb.rpc("get_supplier_exposure", { p_org_id: orgId, p_top_n: topN });
+      return cap(data ?? []);
+    }
+
+    // ── selects diretos: .eq(org) obrigatório + .in(ml_user_id) quando houver ─
+    case "get_inventory": {
+      let q = sb.from("ml_inventory_cache")
+        .select("item_id,title,status,available_quantity,sold_quantity,price,health,visits,brand,seller_custom_field")
+        .eq("organization_id", orgId);
+      if (mlUserIds.length) q = q.in("ml_user_id", mlUserIds);
+      // sanitiza o search: remove caracteres especiais do filtro PostgREST/ilike
+      const raw = typeof args.search === "string" ? args.search : "";
+      const safe = raw.replace(/[%,()*\\]/g, "").trim().slice(0, 60);
+      if (safe) q = q.or(`title.ilike.%${safe}%,seller_custom_field.ilike.%${safe}%`);
+      q = q.order("available_quantity", { ascending: true }).limit(MAX_ROWS);
+      const { data } = await q;
+      return cap(data ?? []);
+    }
+    case "get_open_questions": {
+      let q = sb.from("ml_questions")
+        .select("item_title,texto,status,data_pergunta")
+        .eq("organization_id", orgId)
+        .is("resposta", null);
+      if (mlUserIds.length) q = q.in("ml_user_id", mlUserIds);
+      const { data } = await q.order("data_pergunta", { ascending: false }).limit(MAX_ROWS);
+      return cap(data ?? []);
+    }
+    case "get_claims": {
+      let q = sb.from("ml_claims")
+        .select("claim_id,tipo,status,motivo,data_abertura,data_limite,solucao")
+        .eq("organization_id", orgId);
+      if (mlUserIds.length) q = q.in("ml_user_id", mlUserIds);
+      const { data } = await q.order("data_abertura", { ascending: false }).limit(MAX_ROWS);
+      return cap(data ?? []);
+    }
+    case "get_ads_campaigns": {
+      let q = sb.from("ml_ads_campaigns_cache")
+        .select("name,status,daily_budget,impressions,clicks,spend,attributed_revenue,attributed_orders,cpc,ctr,roas")
+        .eq("organization_id", orgId);
+      if (mlUserIds.length) q = q.in("ml_user_id", mlUserIds);
+      const { data } = await q.order("spend", { ascending: false }).limit(MAX_ROWS);
       return cap(data ?? []);
     }
 

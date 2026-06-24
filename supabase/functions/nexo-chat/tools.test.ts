@@ -55,10 +55,11 @@ const ML_IDS_SERVER = ["111", "222"];
 const EVIL_ARGS = { org_id: "ORG-ALHEIA", seller_id: "999", ml_user_id: "888" };
 
 describe("TOOL_DECLARATIONS", () => {
-  it("declara as 12 tools esperadas", () => {
+  it("declara as 22 tools esperadas", () => {
     const names = TOOL_DECLARATIONS.map((d) => d.name).sort();
     expect(names).toEqual(
       [
+        // núcleo original (12)
         "get_active_insights",
         "get_ads_by_product",
         "get_cashflow",
@@ -71,6 +72,17 @@ describe("TOOL_DECLARATIONS", () => {
         "get_no_cost_count",
         "get_paused_with_sales",
         "get_treasury_panel",
+        // cobertura ampla (10)
+        "get_sales_kpis",
+        "get_margin_by_brand",
+        "get_margin_trend",
+        "get_margin_by_state",
+        "get_costs_by_month",
+        "get_supplier_exposure",
+        "get_inventory",
+        "get_open_questions",
+        "get_claims",
+        "get_ads_campaigns",
       ].sort(),
     );
   });
