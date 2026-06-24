@@ -10,7 +10,7 @@
  * thinkingConfig.thinkingBudget=0 (senão o thinking trunca a resposta).
  * GEMINI_API_KEY lida do vault via RPC get_app_secret (service_role only).
  *
- * verify_jwt=false: auth dual — user JWT (is_org_member) OU smoke_token (vault).
+ * verify_jwt=true: auth por JWT do usuário + is_org_member (anti-IDOR por org).
  * Supabase project: ckcdevcxgvueywivefgx.
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -113,22 +113,14 @@ serve(async (req) => {
     const insightId: string | undefined = body.insight_id;
     const refresh: boolean = body.refresh === true || body.force_refresh === true;
 
-    // ── auth dual ──────────────────────────────────────────────────────────
-    let smoke = false;
-    if (body.smoke_token) {
-      const { data: tk } = await sb.rpc("get_app_secret", { p_name: "SMOKE_TOKEN" });
-      smoke = !!tk && body.smoke_token === tk;
-    }
-    if (!smoke) {
-      const auth = req.headers.get("authorization");
-      if (!auth?.startsWith("Bearer ")) return j({ error: "Unauthorized" }, 401);
-      const { data: u, error: ue } = await sb.auth.getUser(auth.replace("Bearer ", ""));
-      if (ue || !u?.user) return j({ error: "Unauthorized" }, 401);
-      if (!orgId) return j({ error: "org_id required" }, 400);
-      const { data: member } = await sb.rpc("is_org_member", { _user_id: u.user.id, _org_id: orgId });
-      if (!member) return j({ error: "Forbidden" }, 403);
-    }
+    // ── auth: JWT do usuário + membership na org (anti-IDOR) ────────────────
+    const auth = req.headers.get("authorization");
+    if (!auth?.startsWith("Bearer ")) return j({ error: "Unauthorized" }, 401);
+    const { data: u, error: ue } = await sb.auth.getUser(auth.replace("Bearer ", ""));
+    if (ue || !u?.user) return j({ error: "Unauthorized" }, 401);
     if (!orgId) return j({ error: "org_id required" }, 400);
+    const { data: member } = await sb.rpc("is_org_member", { _user_id: u.user.id, _org_id: orgId });
+    if (!member) return j({ error: "Forbidden" }, 403);
 
     // ── kill-switch (LLM-07) ────────────────────────────────────────────────
     const { data: cfg } = await sb.from("consultor_config").select("llm_enabled").eq("organization_id", orgId).maybeSingle();
