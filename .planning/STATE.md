@@ -52,7 +52,13 @@ Phase: **52 (Fundação de Dados v8.0) COMPLETA** — verifier PASSED 6/6, aplic
 Plan: 52-01 (4 migrations) + 52-02 (types.ts) — ambos completos
 Status: Phase 52 fechada; desbloqueia 53/54/55/56
 Last activity: 2026-06-24 — Phase 52 executada (3 tabelas novas + 5 colunas + RPC atômica INVOKER, advisors sem erro novo, build verde)
-Next: `/gsd-plan-phase 53` (Camada LLM) e/ou `/gsd-plan-phase 54` (Pipeline de Ações) — podem rodar em paralelo
+Next: `/gsd-execute-phase 53` (Camada LLM) e/ou `/gsd-execute-phase 54` (Pipeline de Ações) — planejadas (PASS), podem rodar em paralelo
+
+### Phases 53 + 54 PLANEJADAS (2026-06-24, plan-checker PASS nas duas)
+- **53 (Camada LLM):** 2 plans — 53-01 EF `consultor-llm` (Haiku 4.5, cache-check first, grounding anti-alucinação `numericGuard`, kill-switch) + `ANTHROPIC_API_KEY` vault [BLOCKING]; 53-02 UI resumo COO + Explicar + staleness. Commit 984e33fb.
+- **54 (Pipeline Ações):** 3 plans — 54-01 EF `consultor-actions` (5 mutações ML do zero portadas do Nexo MCP: PUT /items, PUT /advertising/.../campaigns api-version:2; gate claim_approved_action; pre-flight+TTL 48h; token-por-org anti-IDOR; audit ≤4KB) + 54-02 hook+actionMapping + 54-03 UI fila/diff/histórico. Commits ea9ff2f4 + a5639028 (fix item_id).
+- **DECISÕES ABERTAS p/ Wesley (sinalizadas nos planos):** D-A4 mapa rule_key→action_type; D-A2 preço-alvo = input do owner (insight só dá item+impacto); D-A3 TTL 48h; D-A1 campo budget de ads. Confirmar antes/durante execução da 54.
+- **Pré-requisito de execução:** registrar `ANTHROPIC_API_KEY` no vault (53) — orquestrador via MCP. Ambas têm deploy de EF [BLOCKING] (gsd-executor sem Supabase MCP).
 
 ### Phase 52 (2026-06-24) — schema v8.0 em prod
 - 3 tabelas novas: `proposed_actions` (state-machine 6 estados text+CHECK + dedup parcial), `action_audit_log` (append-only), `llm_analysis_cache` (org-first key).

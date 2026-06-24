@@ -126,7 +126,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 |-------|----------------|--------|-----------|
 | 52. Fundação de Dados v8.0 | 2/2 | Complete | 2026-06-24 |
 | 53. Camada LLM | 0/2 | Planned | - |
-| 54. Pipeline de Ações | 0/? | Not started | - |
+| 54. Pipeline de Ações | 0/3 | Planned | - |
 | 55. Drill-down Multi-Loja | 0/? | Not started | - |
 | 56. Snooze + Limiares | 0/? | Not started | - |
 
