@@ -78,7 +78,10 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
   6. Toda transição registrada em action_audit_log imutável (ator, de→para, timestamp, resposta ML trimada)
   7. Owner vê histórico de ações executadas com o resultado de cada uma
 
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 54-01-PLAN.md — EF `consultor-actions` (executor): 5 mutações ML (PUT /items + PUT /advertising/product_ads/campaigns api-version:2) portadas do Nexo MCP, gate atômico `claim_approved_action` (409), pre-flight + TTL 48h, token-por-org (anti-IDOR), audit ≤4KB, dry_run preview
+- [ ] 54-02-PLAN.md — `useConsultorActions` (queue/badge/propose/dryRun/approve/reject/history paginado) + `actionMapping` (rule_key→action_type) + testes unit
+- [ ] 54-03-PLAN.md — UI no `/consultor`: abas Insights|Fila|Histórico owner-only, `ProposeActionDialog` (diff+impacto), `ActionQueue` (aprovar c/ confirmação, staleness badge), `ActionHistory` + checkpoint visual
 
 ---
 
