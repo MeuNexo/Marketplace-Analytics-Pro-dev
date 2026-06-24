@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Sparkles } from "lucide-react";
+import { Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useMLStore } from "@/contexts/MLStoreContext";
@@ -50,12 +50,12 @@ export function NexoChatFab() {
     <>
       <Button
         type="button"
-        onClick={() => setOpen(true)}
-        aria-label="Abrir Nexo"
-        className="fixed bottom-6 right-6 z-50 h-14 w-14 rounded-full shadow-glow"
+        onClick={() => setOpen((v) => !v)}
+        aria-label={open ? "Fechar Nexo" : "Abrir Nexo"}
+        className="fixed bottom-6 right-6 z-50 h-14 w-14 rounded-full shadow-glow transition-transform hover:scale-105 active:scale-95"
         size="icon"
       >
-        <Sparkles className="h-6 w-6" />
+        {open ? <X className="h-6 w-6" /> : <Sparkles className="h-6 w-6" />}
       </Button>
       <NexoChatPanel open={open} onOpenChange={setOpen} />
     </>
