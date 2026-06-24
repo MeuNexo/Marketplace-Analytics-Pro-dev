@@ -86,7 +86,7 @@ Pesquisa completa em `.planning/research/SUMMARY.md` (HIGH confidence — arquit
 - [x] **VERAC-02**: Estoque por VARIAÇÃO (tamanho/cor) quando o item tem variações — o Nexo não reporta número item-level como se fosse por SKU/variação
 - [x] **VERAC-03**: Reconciliação fonte-da-verdade — para CADA tool do Nexo, a fonte (tabela/RPC), escopo (Full/total, período) e semântica batem com o que o dashboard mostra para o mesmo indicador; divergências corrigidas
 - [x] **VERAC-04**: Frescura — o Nexo conhece o `synced_at`/recência das fontes e sinaliza quando um dado está defasado, em vez de afirmá-lo como atual
-- [ ] **VERAC-05**: Declarar limitação — quando uma tool retorna parcial/vazio, o Nexo diz o que tem e o que falta (ex.: "só tenho o estoque Full") em vez de inventar número ou dizer "não configurado"
+- [x] **VERAC-05**: Declarar limitação — quando uma tool retorna parcial/vazio, o Nexo diz o que tem e o que falta (ex.: "só tenho o estoque Full") em vez de inventar número ou dizer "não configurado"
 - [x] **VERAC-06**: O Nexo não confunde campos — unidades vendidas ≠ estoque; receita ≠ lucro; Full ≠ total; período passado ≠ projeção futura. Descrições das tools deixam a semântica inequívoca
 - [ ] **VERAC-07**: Bateria de testes cobrindo TODOS os domínios (vendas/faturamento, margem por produto/marca/UF/dia, ads por produto/campanha, estoque/cobertura, caixa/tesouraria, DRE/custos, perguntas, devoluções, reputação, fornecedores, metas, alertas, score) — cada domínio validado contra a fonte-da-verdade do dashboard, com as divergências corrigidas e documentadas
 
