@@ -230,13 +230,34 @@ describe("dispatchTool — anti-IDOR (orgId/mlUserIds só do servidor)", () => {
     expect(activeFiltered).toBe(true);
   });
 
-  it("get_dre_monthly (ml_billing_monthly) escopado por org + mlUserIds", async () => {
-    const { sb, selectCalls } = makeStub([{ resumo: {} }]);
-    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_dre_monthly", EVIL_ARGS);
-    const call = selectCalls.find((c) => c.table === "ml_billing_monthly");
+  it("get_dre_monthly (ml_billing_daily) escopado por org + mlUserIds — FIN-1 (58-03)", async () => {
+    // Fonte trocada de ml_billing_monthly → ml_billing_daily (mês-calendário)
+    const { sb, selectCalls } = makeStub([
+      { charge_type: "CFFE", charge_label: "Comissão", amount: 1200, charge_date: "2026-06-10", synced_at: "2026-06-24T06:00:00Z" },
+      { charge_type: "CFONPN", charge_label: "Parcelamento", amount: 300, charge_date: "2026-06-15", synced_at: "2026-06-24T06:00:00Z" },
+    ]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_dre_monthly", {
+      ...EVIL_ARGS,
+      period_month: "2026-06",
+    }) as Record<string, unknown>;
+    // Anti-IDOR: tabela ml_billing_daily (não ml_billing_monthly) escopada por org e mlUserIds
+    const call = selectCalls.find((c) => c.table === "ml_billing_daily");
     expect(call).toBeDefined();
     expect(call!.eqs.organization_id).toBe(ORG_SERVER);
     expect(call!.ins.ml_user_id).toEqual(ML_IDS_SERVER);
+    // Retorno com campos do novo shape (FIN-1)
+    expect(result).toHaveProperty("period_month");
+    expect(result).toHaveProperty("by_type");
+    expect(result).toHaveProperty("total");
+    expect(result).toHaveProperty("coverage_until");
+    expect(result).toHaveProperty("freshness");
+    expect(result).toHaveProperty("label");
+    // label deve mencionar mês-calendário e NÃO é DRE completo
+    expect(typeof result.label).toBe("string");
+    expect((result.label as string)).toMatch(/calendário|01.*(fim|último)|NÃO é DRE/i);
+    // NÃO encontrar ml_billing_monthly (fonte antiga)
+    const oldCall = selectCalls.find((c) => c.table === "ml_billing_monthly");
+    expect(oldCall).toBeUndefined();
   });
 
   it("get_health_score (consultor_health_snapshots) escopado por org", async () => {
@@ -438,6 +459,47 @@ describe("TOOL_DECLARATIONS — get_inventory novos atributos (D1/D2/D3)", () =>
     expect(props).not.toContain("seller_id");
     expect(props).not.toContain("ml_user_id");
     expect(props).not.toContain("organization_id");
+  });
+});
+
+describe("TOOL_DECLARATIONS — descrições financeiras FIN-1/4/5 (58-03)", () => {
+  it("get_dre_monthly description menciona mês-calendário e nega DRE completo (FIN-1/FIN-5/D8/D11)", () => {
+    const decl = TOOL_DECLARATIONS.find((d) => d.name === "get_dre_monthly");
+    expect(decl).toBeDefined();
+    expect(decl!.description).toMatch(/mês.calendário|mes.calendario/i);
+    expect(decl!.description).toMatch(/NÃO é DRE completo|nao e dre completo/i);
+    expect(decl!.description).toMatch(/espelha|espelho/i);
+  });
+
+  it("get_costs_by_month description diz 'saídas de caixa' e nega CMV e fatura ML (FIN-4/D11)", () => {
+    const decl = TOOL_DECLARATIONS.find((d) => d.name === "get_costs_by_month");
+    expect(decl).toBeDefined();
+    expect(decl!.description).toMatch(/saídas de caixa|saidas de caixa/i);
+    expect(decl!.description).toMatch(/NÃO é CMV|nao e cmv/i);
+    expect(decl!.description).toMatch(/fatura do ML|get_dre_monthly/i);
+  });
+
+  it("get_cashflow description menciona saldo_hoje e cobertura parcial de inflows (FIN-3/D10)", () => {
+    const decl = TOOL_DECLARATIONS.find((d) => d.name === "get_cashflow");
+    expect(decl).toBeDefined();
+    expect(decl!.description).toMatch(/saldo_hoje/i);
+    expect(decl!.description).toMatch(/cobertura|parcial|inflows/i);
+    expect(decl!.description).toMatch(/get_treasury_panel/i);
+  });
+
+  it("get_cashflow dispatcher retorna {horizon_label, saldo_hoje, series} (FIN-3/D10)", async () => {
+    const { sb } = makeStub([
+      { date: new Date().toISOString().slice(0, 10), saldo_acumulado: 12500 },
+      { date: "2026-07-01", saldo_acumulado: 11000 },
+    ]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_cashflow", {}) as Record<string, unknown>;
+    expect(result).toHaveProperty("horizon_label");
+    expect(result).toHaveProperty("saldo_hoje");
+    expect(result).toHaveProperty("series");
+    expect(typeof result.horizon_label).toBe("string");
+    expect((result.horizon_label as string)).toMatch(/saldo_hoje|cobertura|get_treasury_panel/i);
+    // saldo_hoje deve ser o saldo do dia de hoje (primeira linha com data de hoje)
+    expect(result.saldo_hoje).toBe(12500);
   });
 });
 
