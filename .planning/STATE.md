@@ -13,6 +13,14 @@ progress:
   percent: 0
 ---
 
+## ✅ Phase 53 FECHADA (2026-06-24) — Camada LLM (Gemini) em produção
+
+- **53-01 + 53-02 completos.** EF `consultor-llm` **v4** (Gemini 2.5 Flash, modos summary+explain, cache-check first, numericGuard, kill-switch). **Blindada para prod: `verify_jwt=true`, smoke_token REMOVIDO do código e do vault** (chamada com smoke_token agora 401). Frontend: `ConsultorLLMSummary` (resumo COO no topo de /vendas) + "Explicar" por insight (ConsultorCard + MLConsultor) + "Atualizar análise" + badge stale; respeita kill-switch/fallback→v1.
+- **Validado em preview Vercel** (resumo real Gemini + Explicar + kill-switch demonstrado ligando/desligando `consultor_config.llm_enabled` na Pé Vermeio). Fix de checkpoint: "Explicar" agora some junto com o resumo quando LLM desligada.
+- **MERGEADO PRA PRODUÇÃO** (ver tarefa de merge). Tudo o que entrou junto: Phases 52 (schema/types), 54 Wave 1 (EF/hook inertes — sem UI ainda), limpeza de planning. Único impacto visível = Phase 53.
+- ⚠️ **Wesley: ROTACIONAR a GEMINI_API_KEY** (exposta no transcript) — me manda a nova que eu re-registro no vault via `get_app_secret`.
+- **Próximo:** Phase 57 (Nexo Conversacional) — planejar via GSD. Modelo do chat: **Gemini 2.5 Pro**.
+
 ## ✅ Milestone v7.0 FECHADO (2026-06-24) + Phase 46 concluída
 
 - **Phase 46 (UX para Leigos) — COMPLETA.** Plano 46-04 (checkpoint): gate técnico OK (`tsc --noEmit` sem erros, `npm run build` limpo 15s); glossário central de **28 termos** (`src/lib/kpi-glossary.ts`) com redação leiga **aprovada por Wesley**; checkpoint visual (tooltips hover+tap, empty states, tabelas→cards mobile, dark mode nas 6 páginas) **confirmado por Wesley** (validado em sessões anteriores). Cobertura UX-01: 15 telas consomem KPICard.

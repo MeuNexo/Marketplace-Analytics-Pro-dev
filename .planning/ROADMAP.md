@@ -13,7 +13,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 ## Phases
 
 - [x] **Phase 52: Fundação de Dados v8.0** — Tabelas (llm_analysis_cache, proposed_actions com state-machine de 6 estados, action_audit_log) + colunas (insights.snoozed_until/ml_user_id, consultor_config: limiares editáveis + llm_enabled) + RLS org-first + transição atômica + RPCs base + types.ts. Bloqueia 53–56. **(completed 2026-06-24 — aplicada em prod ckcdevcxgvueywivefgx, advisors sem erro novo, build verde)**
-- [ ] **Phase 53: Camada LLM (Análise Inteligente)** — Resumo narrativo estilo COO + "Explicar" por insight, com cache por org/dia, grounding anti-alucinação e kill-switch (LLM-01..07).
+- [x] **Phase 53: Camada LLM (Análise Inteligente)** — Resumo narrativo estilo COO + "Explicar" por insight, com cache por org/dia, grounding anti-alucinação e kill-switch (LLM-01..07). **(completed 2026-06-24 — provedor Gemini 2.5 Flash, não Anthropic; EF v4 blindada verify_jwt=true; validado em preview + kill-switch demonstrado)**
 - [ ] **Phase 54: Pipeline de Ações com Aprovação** — Propor ação (diff + impacto) → fila → aprovar → executor ML (preço/anúncio/ads) com gate atômico, pre-flight e audit log imutável (ACT-01..08).
 - [ ] **Phase 55: Drill-down Multi-Loja** — Score e insights por loja ML, seletor com badge de saúde, score org = média ponderada por GMV (STORE-01..05).
 - [ ] **Phase 56: Ajuste Fino (Snooze + Limiares na UI)** — Adiar insights (amanhã/semana/30d, server-side) + editor de limiares com presets, preview ao vivo e guardrails (SNZ-01..03, TUNE-01..05).
@@ -59,8 +59,8 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
   7. Kill-switch por org em `consultor_config.llm_enabled` — desligado volta ao consultor determinístico puro
 
 **Plans**: 2 plans
-- [ ] 53-01-PLAN.md — EF consultor-llm (auth dual + cache-check first + grounding + Haiku 4.5 + validação numérica + upsert) + ANTHROPIC_API_KEY vault Pattern B + config.toml + numericGuard testável
-- [ ] 53-02-PLAN.md — UI: resumo COO no topo de /vendas + "Explicar" por insight + badge "análise desatualizada" + "Atualizar análise" + kill-switch/fallback caem pro v1
+- [x] 53-01-PLAN.md — EF consultor-llm (**Gemini 2.5 Flash** via raw fetch, não Haiku; cache-check first + grounding + numericGuard + upsert) + GEMINI_API_KEY vault + config.toml. EF v4 blindada (verify_jwt=true, sem smoke_token)
+- [x] 53-02-PLAN.md — UI: resumo COO no topo de /vendas + "Explicar" por insight (modo explain na EF) + badge "análise desatualizada" + "Atualizar análise" + kill-switch/fallback caem pro v1
 
 ---
 
@@ -145,7 +145,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 52. Fundação de Dados v8.0 | 2/2 | Complete | 2026-06-24 |
-| 53. Camada LLM | 0/2 | Planned | - |
+| 53. Camada LLM | 2/2 | Complete | 2026-06-24 |
 | 54. Pipeline de Ações | 0/3 | Planned | - |
 | 55. Drill-down Multi-Loja | 0/? | Not started | - |
 | 56. Snooze + Limiares | 0/? | Not started | - |
