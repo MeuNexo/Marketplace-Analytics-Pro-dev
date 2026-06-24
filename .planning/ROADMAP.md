@@ -17,6 +17,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 - [ ] **Phase 54: Pipeline de Ações com Aprovação** — Propor ação (diff + impacto) → fila → aprovar → executor ML (preço/anúncio/ads) com gate atômico, pre-flight e audit log imutável (ACT-01..08).
 - [ ] **Phase 55: Drill-down Multi-Loja** — Score e insights por loja ML, seletor com badge de saúde, score org = média ponderada por GMV (STORE-01..05).
 - [ ] **Phase 56: Ajuste Fino (Snooze + Limiares na UI)** — Adiar insights (amanhã/semana/30d, server-side) + editor de limiares com presets, preview ao vivo e guardrails (SNZ-01..03, TUNE-01..05).
+- [ ] **Phase 57: Nexo Conversacional (Chat Consultor)** — Painel de chat flutuante "Nexo" em todas as telas; multi-turno efêmero; persona COO + TODOS os playbooks embutidos; function-calling read-only escopado por org (anti-IDOR) para puxar dados ao vivo da conta; grounding numérico; kill-switch reusado; guardrails de custo (NEXO-01..07).
 
 ---
 
@@ -120,6 +121,25 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 
 ---
 
+### Phase 57: Nexo Conversacional (Chat Consultor)
+
+**Goal**: O lojista conversa com o **Nexo** — um consultor COO em chat (multi-turno) acessível de qualquer tela — que raciocina sobre os dados ao vivo da conta atual e responde calibrado por TODOS os playbooks da metodologia (estratégicos + ads), citando o playbook usado, sem inventar números, e sem nunca executar mudança sozinho (read-only; ações continuam na Phase 54 com aprovação).
+**Depends on**: Phase 52 (consultor_config.llm_enabled / kill-switch), Phase 53 (EF Gemini + grounding + numericGuard reaproveitados). Integra Phase 54 (Nexo pode SUGERIR ação; disparo real passa pelo pipeline com aprovação).
+**Requirements**: NEXO-01, NEXO-02, NEXO-03, NEXO-04, NEXO-05, NEXO-06, NEXO-07
+**Success Criteria** (what must be TRUE):
+
+  1. Painel de chat flutuante "Nexo" abre/fecha de qualquer página (botão no canto); conversa multi-turno fluida; só aparece quando ML conectado
+  2. EF `nexo-chat` (Deno, Gemini, function-calling) com persona Nexo (COO PT-BR, foco lucro líquido) + TODOS os playbooks embutidos no system prompt; respostas citam `[playbook: X]` quando aplicável
+  3. Function-calling read-only: Nexo puxa dados ao vivo sob demanda (margem por SKU, sales velocity, ads, estoque crítico, KPIs do dia, insights, DRE) via tools — CADA query escopada ao `organization_id` do JWT (anti-IDOR), nunca org fornecida pelo modelo
+  4. Conversa efêmera: histórico mantido no cliente e enviado a cada turno; nenhuma tabela nova de mensagens
+  5. Grounding numérico: números nas respostas vêm de tool-results/contexto; instrução estrita anti-invenção (mesma filosofia do numericGuard da 53)
+  6. Kill-switch reusa `consultor_config.llm_enabled` — desligado, o painel Nexo fica indisponível
+  7. Guardrails de custo/latência: cap de tool-calls por turno + timeout; o chat é read-only (não dispara mutação ML — sugere e encaminha pro pipeline da 54)
+
+**Plans**: TBD (a planejar via /gsd-plan-phase 57)
+
+---
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -129,6 +149,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 | 54. Pipeline de Ações | 0/3 | Planned | - |
 | 55. Drill-down Multi-Loja | 0/? | Not started | - |
 | 56. Snooze + Limiares | 0/? | Not started | - |
+| 57. Nexo Conversacional | 0/? | Not started | - |
 
 ## Build Order / Dependências
 

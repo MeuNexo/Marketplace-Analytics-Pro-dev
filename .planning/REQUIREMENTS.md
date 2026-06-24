@@ -65,6 +65,18 @@ Pesquisa completa em `.planning/research/SUMMARY.md` (HIGH confidence — arquit
 - [ ] **STORE-04**: O score consolidado da org é a média dos scores das lojas ponderada pelo faturamento (GMV) de cada uma
 - [ ] **STORE-05**: Cada insight identifica a loja ML afetada quando aplicável
 
+### NEXO — Consultor Conversacional (decisão Wesley 2026-06-24)
+
+> **Mudança de decisão:** "Chat aberto com IA" estava em Out of Scope (risco de alucinação para leigos). Wesley reverteu — o risco é mitigado porque NÃO é chat aberto "pergunte qualquer coisa": é ancorado em dados reais da conta (function-calling read-only escopado por org) + playbooks da metodologia + anti-invenção de número + read-only (não executa). Domínio restrito ao consultor.
+
+- [ ] **NEXO-01**: Lojista conversa com o "Nexo" num painel de chat flutuante acessível de qualquer tela (botão no canto); multi-turno; só disponível com ML conectado
+- [ ] **NEXO-02**: Nexo tem **persona completa de COO/especialista do negócio** (PT-BR, foco em lucro líquido) e **habilidades completas** — reúne num só agente as competências dos 4 analistas (Gabriel/Financeiro, Laura/Ads-SEO-Conversão, Estela/Estoque, Rafael/Competitivo), calibrado por TODOS os playbooks da metodologia (estratégicos + ads: break_even, lifecycle, tacos_guardrail, funnel, bidding, ads_x_organic, inventory_runway, benchmarks, pitfalls, glossary), citando `[playbook: X]` quando aplicável. Barra: nível especialista de verdade, raciocínio analítico (não respostas rasas)
+- [ ] **NEXO-03**: Nexo consulta dados ao vivo da conta sob demanda (function-calling read-only: margem por SKU, sales velocity, ads, estoque crítico, KPIs do dia, insights, DRE) — cada query escopada ao `organization_id` do JWT (anti-IDOR), nunca org fornecida pelo modelo
+- [ ] **NEXO-04**: Conversa efêmera — histórico mantido no cliente e reenviado a cada turno; sem tabela de mensagens
+- [ ] **NEXO-05**: Nexo não inventa números — valores vêm de tool-results/contexto; instrução estrita anti-invenção (mesma filosofia do numericGuard da 53)
+- [ ] **NEXO-06**: Kill-switch reusa `consultor_config.llm_enabled` — desligado, o painel Nexo fica indisponível
+- [ ] **NEXO-07**: Read-only e com guardrails — o chat não executa mutação no ML (sugere e encaminha para o pipeline de aprovação da Phase 54); cap de tool-calls por turno + timeout para conter custo/latência
+
 ## v2 Requirements (deferidos)
 
 ### Notificações
@@ -78,7 +90,7 @@ Pesquisa completa em `.planning/research/SUMMARY.md` (HIGH confidence — arquit
 
 | Feature | Motivo |
 |---------|--------|
-| Chat aberto com IA ("pergunte qualquer coisa") | Risco de alucinação destrói confiança do lojista leigo — nunca para esse público |
+| ~~Chat aberto com IA ("pergunte qualquer coisa")~~ | **REVERTIDO 2026-06-24 → Phase 57 (NEXO).** Risco de alucinação mitigado: chat NÃO é aberto — é ancorado (function-calling em dados reais + playbooks + anti-invenção + read-only), domínio restrito ao consultor. Barra de qualidade: agente nível especialista do negócio |
 | Auto-execução de ação sem fila de aprovação | Regra de plataforma "ações que alteram o ML exigem aprovação" — sem exceção |
 | Exibir score de confiança do LLM | Leigos tratam como certeza; amplifica percepção de alucinação |
 | Múltiplos perfis de limiar por org | Prematuro; confunde o leigo. "Restaurar padrão" é a rede de segurança |
@@ -96,6 +108,7 @@ Mapeada no roadmap v8.0 (2026-06-24).
 | STORE (Score/Insights por Loja) | STORE-01..05 | 55 |
 | SNZ (Snooze) | SNZ-01..03 | 56 |
 | TUNE (Limiares na UI) | TUNE-01..05 | 56 |
+| NEXO (Consultor Conversacional) | NEXO-01..07 | 57 |
 | Fundação de dados (transversal) | — | 52 |
 
 **Coverage:**
