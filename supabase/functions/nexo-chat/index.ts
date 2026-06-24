@@ -90,7 +90,11 @@ serve(async (req) => {
       .not("refresh_token", "is", null);
     const mlUserIds = ((tokenRows ?? []) as Array<{ ml_user_id: string }>).map((r) => r.ml_user_id);
 
-    const model = (cfg?.llm_model as string) || undefined;
+    // só honra llm_model se for um modelo Gemini; senão usa o default (gemini-2.5-pro
+    // em loop.ts). Protege contra o default legado da coluna ('claude-haiku-4-5'),
+    // que apontaria a URL do Gemini para um modelo inexistente → 404.
+    const cfgModel = cfg?.llm_model as string | null | undefined;
+    const model = cfgModel && cfgModel.startsWith("gemini") ? cfgModel : undefined;
 
     // ── loop server-side de function-calling read-only (Plan 57-02) ─────────
     const { reply, usedTools, fallback } = await runChat(
