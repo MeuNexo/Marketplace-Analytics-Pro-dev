@@ -94,7 +94,9 @@ export const TOOL_DECLARATIONS: FnDecl[] = [
   {
     name: "get_coverage",
     description:
-      "Cobertura de estoque (dias) e venda média diária por SKU. Use para ruptura, estoque crítico, runway de estoque.",
+      "Cobertura de estoque em dias e venda média diária por SKU, calculada sobre os últimos 30 dias (janela fixa). " +
+      "Ruptura aqui é ruptura no FULL — não no estoque total (pode haver saldo em CD/Tiny). " +
+      "sold_quantity de outras tools é total histórico do anúncio, não venda do período.",
     parameters: { type: "object", properties: { from: DATE_PROPS.from } },
   },
   {
@@ -208,10 +210,24 @@ export const TOOL_DECLARATIONS: FnDecl[] = [
   {
     name: "get_inventory",
     description:
-      "Estoque atual por anúncio: quantidade disponível, vendida, preço, saúde do anúncio, visitas, marca. Use para 'quanto tenho em estoque', estoque/situação de um produto específico (passe 'search'), anúncios ativos/pausados.",
+      "Estoque FULL (fulfillment) por anúncio — NÃO é estoque total da empresa; não há saldo de CD/Tiny nesta base. " +
+      "Por padrão lista anúncios ATIVOS. Retorna um resumo agregado (total de itens, total de unidades Full, ativos, pausados, " +
+      "com ruptura, tamanhos esgotados) + amostra de até 50 itens. Quando o anúncio tem variações (has_variations=true), " +
+      "resume os tamanhos/cores esgotados ('X de N tamanhos esgotados'). " +
+      "Passe search para um produto específico. " +
+      "IMPORTANTE: 'vendido' (sold_quantity) é total histórico do anúncio, NÃO estoque. " +
+      "Ruptura no Full NÃO implica ruptura total (pode haver estoque em CD/Tiny). " +
+      "O campo freshness indica quando o cache foi sincronizado pela última vez.",
     parameters: {
       type: "object",
-      properties: { search: { type: "string", description: "Filtra por texto no título ou SKU do produto (opcional)" } },
+      properties: {
+        search: { type: "string", description: "Filtra por texto no título ou SKU do produto (opcional)" },
+        status: {
+          type: "string",
+          enum: ["active", "paused", "all"],
+          description: "Status dos anúncios: 'active' (padrão), 'paused' ou 'all'",
+        },
+      },
     },
   },
   {
@@ -293,7 +309,8 @@ export async function dispatchTool(
       const { data } = await sb.rpc("get_consultor_coverage", {
         p_org_id: orgId, p_from: from,
       });
-      return cap(data ?? []);
+      // Anexar rótulo de janela fixa para o modelo não interpretar sold_qty como venda do período
+      return { window: "30d-fixed", label: "ruptura no Full (fulfillment)", data: cap(data ?? []) };
     }
     case "get_paused_with_sales": {
       const { data } = await sb.rpc("get_consultor_paused_with_sales", {
@@ -418,17 +435,102 @@ export async function dispatchTool(
 
     // ── selects diretos: .eq(org) obrigatório + .in(ml_user_id) quando houver ─
     case "get_inventory": {
-      let q = sb.from("ml_inventory_cache")
-        .select("item_id,title,status,available_quantity,sold_quantity,price,health,visits,brand,seller_custom_field")
-        .eq("organization_id", orgId);
-      if (mlUserIds.length) q = q.in("ml_user_id", mlUserIds);
+      // allow-list de status: valor fora do enum cai no default "active" (T-58-01-STATUS)
+      const rawStatus = typeof args.status === "string" ? args.status : "active";
+      const statusEnum = rawStatus === "paused" ? "paused" : rawStatus === "all" ? "all" : "active";
+
       // sanitiza o search: remove caracteres especiais do filtro PostgREST/ilike
       const raw = typeof args.search === "string" ? args.search : "";
       const safe = raw.replace(/[%,()*\\]/g, "").trim().slice(0, 60);
-      if (safe) q = q.or(`title.ilike.%${safe}%,seller_custom_field.ilike.%${safe}%`);
-      q = q.order("available_quantity", { ascending: true }).limit(MAX_ROWS);
-      const { data } = await q;
-      return cap(data ?? []);
+
+      // ── query de agregado (sem cap — roda sobre TODO o conjunto da org) ─────
+      // Seleciona só o necessário para o sumário; pagina se >1000 linhas (PostgREST)
+      type AggRow = {
+        status: string;
+        available_quantity: number;
+        has_variations: boolean;
+        variations: unknown;
+      };
+      const aggAcc: AggRow[] = [];
+      const PAGE_SIZE = 1000;
+      let aggOffset = 0;
+      while (true) {
+        let aq = sb.from("ml_inventory_cache")
+          .select("status,available_quantity,has_variations,variations")
+          .eq("organization_id", orgId);
+        if (mlUserIds.length) aq = aq.in("ml_user_id", mlUserIds);
+        if (statusEnum !== "all") aq = aq.eq("status", statusEnum);
+        if (safe) aq = aq.or(`title.ilike.%${safe}%,seller_custom_field.ilike.%${safe}%`);
+        aq = aq.range(aggOffset, aggOffset + PAGE_SIZE - 1);
+        const { data: aggPage } = await aq;
+        const pageRows = (aggPage ?? []) as AggRow[];
+        aggAcc.push(...pageRows);
+        if (pageRows.length < PAGE_SIZE) break;
+        aggOffset += PAGE_SIZE;
+      }
+
+      // calcular agregado em memória
+      let totalItems = aggAcc.length;
+      let totalUnits = 0;
+      let countActive = 0;
+      let countPaused = 0;
+      let countOutOfStock = 0;
+      let countItemsWithSizeOutOfStock = 0;
+      for (const r of aggAcc) {
+        totalUnits += r.available_quantity ?? 0;
+        if (r.status === "active") countActive++;
+        else if (r.status === "paused") countPaused++;
+        if ((r.available_quantity ?? 0) === 0) countOutOfStock++;
+        if (r.has_variations) {
+          const vs = summarizeVariations(r.variations);
+          if (vs.out_of_stock > 0) countItemsWithSizeOutOfStock++;
+        }
+      }
+      const summary = {
+        totalItems,
+        totalUnits,
+        active: countActive,
+        paused: countPaused,
+        outOfStock: countOutOfStock,
+        itemsWithSizeOutOfStock: countItemsWithSizeOutOfStock,
+      };
+
+      // ── query de amostra (com cap MAX_ROWS) ──────────────────────────────────
+      let sq = sb.from("ml_inventory_cache")
+        .select("item_id,title,status,available_quantity,sold_quantity,price,health,visits,brand,seller_custom_field,has_variations,variations,logistic_type,synced_at")
+        .eq("organization_id", orgId);
+      if (mlUserIds.length) sq = sq.in("ml_user_id", mlUserIds);
+      if (statusEnum !== "all") sq = sq.eq("status", statusEnum);
+      if (safe) sq = sq.or(`title.ilike.%${safe}%,seller_custom_field.ilike.%${safe}%`);
+      sq = sq.order("available_quantity", { ascending: true }).limit(MAX_ROWS);
+      const { data: sampleRaw } = await sq;
+
+      // enriquecer amostra com variações esgotadas e calcular freshness
+      let maxSyncedAt: string | null = null;
+      type SampleRow = Record<string, unknown>;
+      const sample: SampleRow[] = ((sampleRaw ?? []) as SampleRow[]).map((row) => {
+        // frescura: max(synced_at) das linhas da amostra
+        const sa = row.synced_at as string | null;
+        if (sa && (maxSyncedAt === null || sa > maxSyncedAt)) maxSyncedAt = sa;
+
+        const enriched: SampleRow = { ...row };
+        // remover campos volumosos que o modelo não precisa em lista
+        delete enriched.variations;
+        if (row.has_variations) {
+          const vs = summarizeVariations(row.variations);
+          enriched.variations_out_of_stock = vs.out_of_stock > 0
+            ? `${vs.out_of_stock} de ${vs.total} tamanhos/cores esgotados (${vs.names.slice(0, 5).join(", ")}${vs.names.length > 5 ? ", ..." : ""})`
+            : "todos os tamanhos com estoque";
+        }
+        return enriched;
+      });
+
+      return {
+        label: "estoque Full (fulfillment) — não inclui CD/Tiny; não é estoque total",
+        freshness: maxSyncedAt,
+        summary,
+        sample,
+      };
     }
     case "get_open_questions": {
       let q = sb.from("ml_questions")
@@ -459,6 +561,52 @@ export async function dispatchTool(
     default:
       return { error: "unknown_tool" };
   }
+}
+
+/**
+ * summarizeVariations — extrai, do jsonb `variations`, um resumo defensivo das
+ * variações com estoque zerado.
+ *
+ * Estrutura esperada de cada variação (conforme ml-inventory/index.ts):
+ *   { variation_id, attribute_combinations: [{id, name, value}], available_quantity, ... }
+ *
+ * Retorna { total, out_of_stock, names } onde names = lista de rótulos legíveis
+ * das variações esgotadas (ex.: "Tamanho: 38 BR / Cor: Preto").
+ */
+export function summarizeVariations(variations: unknown): {
+  total: number;
+  out_of_stock: number;
+  names: string[];
+} {
+  if (!Array.isArray(variations) || variations.length === 0) {
+    return { total: 0, out_of_stock: 0, names: [] };
+  }
+  let total = 0;
+  let out_of_stock = 0;
+  const names: string[] = [];
+  for (const v of variations) {
+    if (typeof v !== "object" || v === null) continue;
+    total++;
+    const qty = (v as Record<string, unknown>).available_quantity;
+    if ((typeof qty === "number" ? qty : Number(qty) || 0) === 0) {
+      out_of_stock++;
+      // extrair rótulo legível a partir de attribute_combinations
+      const combos = (v as Record<string, unknown>).attribute_combinations;
+      if (Array.isArray(combos) && combos.length > 0) {
+        const label = combos
+          .filter((a: unknown) => typeof a === "object" && a !== null)
+          .map((a: unknown) => {
+            const attr = a as Record<string, unknown>;
+            const name = typeof attr.name === "string" ? attr.name : String(attr.name ?? "");
+            const value = typeof attr.value === "string" ? attr.value : String(attr.value ?? "");
+            return value ? `${name}: ${value}` : name;
+          })
+          .join(" / ");
+        if (label) names.push(label);
+      }
+    }
+  }
+  return { total, out_of_stock, names };
 }
 
 /** Mês YYYY-MM válido; senão null. */
