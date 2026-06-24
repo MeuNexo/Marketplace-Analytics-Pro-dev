@@ -32,6 +32,11 @@ progress:
 - **Hardening (ee743ada):** EF só honra `llm_model` gemini* (default da coluna é 'claude-haiku-4-5' → 404 sem guard). consultor_config normalizado p/ gemini-2.5-pro.
 - **Wave 3 (57-04) — EF DEPLOYADA ✅ (2026-06-24):** `nexo-chat` ACTIVE v1, verify_jwt=true em ckcdevcxgvueywivefgx (deploy via CLI com token do Wesley; script 111.8kB c/ playbooks). Smoke: 401 sem auth + 200 OPTIONS (bundle compilou). consultor_config normalizado p/ gemini-2.5-pro. **Preview Vercel:** branch `preview/phase57-nexo-chat`, alias `...-git-pr-3a15c0-...`. **PENDENTE: validação E2E Wesley logado (NEXO-01..07) — "200 com reply" real só autenticado.** Depois: merge→prod (igual à 53) + verifier + fechar fase.
 - ⚠️ Wesley deu SUPABASE_ACCESS_TOKEN no chat (sbp_…) → **REVOGAR** após uso.
+- **Iterações de checkpoint (2026-06-24, em preview):**
+  1. UI: painel virou **popup flutuante** compacto+animado (era Sheet lateral) + **ChatMarkdown** (renderer seguro: negrito/itálico/listas, sem dangerouslySetInnerHTML) + prompt usa markdown leve. Commit 62ff9be0.
+  2. Fix caixa: `get_cashflow` usava janela passada (-30d) → vazio → Nexo dizia "não configurado". Agora janela FUTURA (hoje→+90d) + prompt anti-"não configurado". Commit (tools/prompt).
+  3. **+10 tools (12→22)** p/ "responder qualquer coisa da conta": sales_kpis, margin_by_brand/trend/state, costs_by_month, supplier_exposure, inventory(+search), open_questions, claims, ads_campaigns. Todas anti-IDOR. EF v… redeployada (114.9kB). 20 testes EF verdes.
+- **Pendente:** reaprovação visual Wesley do Nexo turbinado (mesma preview, F5). Depois: merge→prod + verifier + fechar fase.
 - ⚠️ **ROTACIONAR GEMINI_API_KEY** antes do go-live real (vazou no transcript).
 
 ## ✅ Phase 57 PLANEJADA (2026-06-24) — Nexo Conversacional (chat consultor)
