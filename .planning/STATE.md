@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 57
-current_phase_name: nexo-conversacional-chat-consultor
+current_phase: 58
+current_phase_name: veracidade-completude-dados
 status: executing
 stopped_at: Phase 51 planned + verified (3 plans, 3 waves)
-last_updated: "2026-06-24T18:55:44.504Z"
+last_updated: "2026-06-24T21:00:59.968Z"
 last_activity: 2026-06-24
-last_activity_desc: Phase 57 execution started
+last_activity_desc: Phase 58 execution started
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 1
-  total_plans: 11
-  completed_plans: 5
-  percent: 17
+  total_plans: 17
+  completed_plans: 9
+  percent: 14
 ---
 
 ## ✅ Phase 53 FECHADA (2026-06-24) — Camada LLM (Gemini) em produção
@@ -79,14 +79,14 @@ See: .planning/PROJECT.md
 
 **Milestone:** v8.0 — Consultor v2 (Inteligência)
 **Core value:** Consultor que explica, prioriza e ajuda a agir — LLM sob demanda + ações com aprovação, sobre o motor determinístico do v1.
-**Current focus:** Phase 57 — nexo-conversacional-chat-consultor
+**Current focus:** Phase 58 — veracidade-completude-dados
 
 ## Current Position
 
-Phase: 57 (nexo-conversacional-chat-consultor) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 57
-Last activity: 2026-06-24 — Phase 57 execution started
+Phase: 58 (veracidade-completude-dados) — EXECUTING
+Plan: 2 of 6
+Status: Ready to execute
+Last activity: 2026-06-24 — Phase 58 execution started
 Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint visual; depois adaptar/executar **Phase 53 com Gemini**.
 
 ### Phase 54 — Wave 1 EXECUTADA (2026-06-24), Wave 2 PENDENTE
@@ -134,7 +134,7 @@ Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint
   - HG-01: card "Saldo Mín" → horizonte 30d (decisão Wesley); RPC retorna min_balance (valor) + data do mesmo modelo. −719k/90d → −168k/30d.
   - HG-03: burn_rate só status='paid' (R$185.149) consistente c/ Saída Real (decisão Wesley). Antes R$189.316 (incluía 9 contas vencidas).
 - Migrations prod: treasury_fix_cr01_enrich_drain_security, treasury_fix_hg01_hg03_panel. Arquivo repo: 20260650000200.
-- **STATUS:** Executing Phase 57
+- **STATUS:** Ready to execute
 
 ### Quick Tasks Completed
 
@@ -197,6 +197,7 @@ Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint
 | Phase 49-fluxo-de-caixa-caixa-real P03 | 15min | 2 tasks | 6 files |
 | Phase 49 P04 | 20 | 2 tasks | 8 files |
 | Phase 51-painel-de-tesouraria-fluxo-de-caixa P03 | 25min | 4 tasks | 4 files |
+| Phase 58-veracidade-completude-dados P01 | 8min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -244,6 +245,8 @@ Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint
 - [Phase ?]: cash_outflows com schema Tiny criada no 49-01 compartilhada por 49-05
 - [Phase ?]: release_date e outflow_date como DATE não timestamptz para cálculo de caixa por dia
 - [Phase ?]: Mantido como média das saídas dos últimos 3 meses para diferenciar de Saída Real (30d)
+- [Phase ?]: get_inventory: status allow-list (active/paused/all), valor fora do enum cai no default active
+- [Phase ?]: summarizeVariations exportada como função pura para testabilidade e legibilidade
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -291,7 +294,7 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-19T18:27:04.447Z
+Last session: 2026-06-24T21:00:38.680Z
 Stopped at: Phase 51 planned + verified (3 plans, 3 waves)
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
