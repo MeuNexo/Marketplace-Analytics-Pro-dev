@@ -28,7 +28,7 @@
  *   get_treasury_panel    → get_treasury_panel(p_org_id,p_horizon) [INVOKER]
  *   get_active_insights   → table insights (.eq org, status=active)
  *   get_ads_by_product    → table ml_ads_products_cache (.eq org, .in ml_user_id) — pagina .range()
- *   get_dre_monthly       → table ml_billing_monthly (.eq org, .in ml_user_id)
+ *   get_dre_monthly       → table ml_billing_daily (.eq org, .in ml_user_id) agrega por mês-calendário
  *   get_health_score      → table consultor_health_snapshots (.eq org)
  */
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -133,7 +133,12 @@ export const TOOL_DECLARATIONS: FnDecl[] = [
   {
     name: "get_dre_monthly",
     description:
-      "Fatura ML do mês (CFFE, CFONPN, total de cobranças). Use para custos fixos do ML, fatura do mês de fechamento.",
+      "Fatura/tarifas do ML por MÊS-CALENDÁRIO (espelha o card DRE do painel). " +
+      "Agrega ml_billing_daily por mês (01 ao último dia do mês), mesma fonte e escopo do card 'DRE do Mês' em /vendas. " +
+      "NÃO é DRE completo: só tarifas ML (CFFE/CFONPN/PADS e outros), sem CMV/impostos/lucro. " +
+      "Para lucro e margem use get_margin_summary. " +
+      "Retorna by_type (totais por tipo de tarifa), total, coverage_until (último dia coberto) e freshness (quando sincronizou). " +
+      "Use coverage_until para verificar se o mês está completo ou parcialmente sincronizado.",
     parameters: {
       type: "object",
       properties: {
@@ -144,7 +149,12 @@ export const TOOL_DECLARATIONS: FnDecl[] = [
   {
     name: "get_cashflow",
     description:
-      "Projeção FUTURA de fluxo de caixa (entradas/saídas/saldo diário e acumulado), padrão próximos 90 dias. Use para 'meu caixa vai ficar negativo?', liquidez, quando o dinheiro cai/sai, projeção de caixa.",
+      "Projeção FUTURA de fluxo de caixa (entradas/saídas/saldo diário e acumulado), padrão próximos 90 dias. " +
+      "saldo_hoje é o saldo do caixa no dia de hoje. " +
+      "ATENÇÃO: inflows projetados existem só até ~+27 dias; o saldo muito à frente é projeção parcial " +
+      "(outflows chegam até 2030, inflows têm cobertura limitada) — o horizon_label indica isso. " +
+      "Para visão resumida de caixa e saldo mínimo use get_treasury_panel (horizonte 30d). " +
+      "Use para 'meu caixa vai ficar negativo?', liquidez, quando o dinheiro cai/sai, projeção de caixa.",
     parameters: {
       type: "object",
       properties: {
@@ -203,7 +213,10 @@ export const TOOL_DECLARATIONS: FnDecl[] = [
   {
     name: "get_costs_by_month",
     description:
-      "Custos/DRE por mês (vários meses). Use para tendência de custos e fatura ML mês a mês.",
+      "Saídas de caixa por categoria e por mês (Fornecedores, Salários, Empréstimo, etc., pagas + a pagar). " +
+      "NÃO é CMV nem a fatura do ML. " +
+      "Para fatura/tarifas ML use get_dre_monthly; para CMV/lucro use get_margin_summary. " +
+      "Use para tendência de gastos por categoria, exposição por tipo de custo, mês a mês.",
     parameters: {
       type: "object",
       properties: { months: { type: "integer", description: "Qtde de meses (opcional, default 9)" } },
@@ -305,15 +318,35 @@ export async function dispatchTool(
       return cap(data ?? []);
     }
     case "get_cashflow": {
-      // PROJEÇÃO FUTURA: caixa é forward-looking → default hoje → +90d
-      // (a janela genérica de -30d→hoje devolvia ~0 linhas e o modelo concluía
-      // que não havia dados / "não configurado").
+      // FIN-3 (D10): PROJEÇÃO FUTURA, default hoje → +90d. Enriquece com saldo_hoje
+      // e horizon_label para o modelo não confundir projeção parcial com saldo real.
+      // ATENÇÃO: inflows projetados têm cobertura ~+27d; saldo além disso é artefato
+      // de outflows sem inflows correspondentes (não significa falência).
       const cfFrom = clampDate(args.from) ?? today();
       const cfTo = clampDate(args.to) ?? daysAhead(90);
-      const { data } = await sb.rpc("get_cashflow", {
+      const { data: cfData } = await sb.rpc("get_cashflow", {
         p_org_id: orgId, p_start_date: cfFrom, p_end_date: cfTo,
       });
-      return cap(data ?? []);
+      const rows = (cfData ?? []) as Array<Record<string, unknown>>;
+      const todayStr = today();
+      // saldo_hoje: linha cuja data == hoje; senão o primeiro ponto da série
+      const todayRow = rows.find((r) => {
+        const d = r.date ?? r.data ?? r.dia;
+        return typeof d === "string" && d.slice(0, 10) === todayStr;
+      });
+      const firstRow = rows[0];
+      const saldoHojeRow = todayRow ?? firstRow;
+      const saldo_hoje =
+        saldoHojeRow !== undefined
+          ? (saldoHojeRow.saldo_acumulado ?? saldoHojeRow.saldo ?? saldoHojeRow.balance ?? null)
+          : null;
+      const horizon_label =
+        `Projeção ${cfFrom} → ${cfTo}. ` +
+        "saldo_hoje = saldo do caixa hoje. " +
+        "Inflows projetados cobrem apenas ~+27 dias; o saldo muito à frente é projeção parcial " +
+        "(outflows chegam a 2030, inflows têm cobertura limitada). " +
+        "Para saldo mínimo nos próximos 30d use get_treasury_panel.";
+      return { horizon_label, saldo_hoje, series: cap(rows) };
     }
     case "get_treasury_panel": {
       const horizon = typeof args.horizon === "number" && args.horizon > 0 && args.horizon <= 365
@@ -396,15 +429,71 @@ export async function dispatchTool(
       return agg;
     }
     case "get_dre_monthly": {
+      // FIN-1/FIN-5 (D8): agrega ml_billing_daily por mês-calendário (01–fim),
+      // espelhando o card DRE do dashboard (useMLBillingDaily). Fonte trocada de
+      // ml_billing_monthly (ciclo 06→05) → ml_billing_daily (competência = data de lançamento).
       const pm = clampMonth(args.period_month) ?? today().slice(0, 7);
-      const { data } = await sb
-        .from("ml_billing_monthly")
-        .select("ml_user_id,period_month,resumo")
-        .eq("organization_id", orgId)
-        .in("ml_user_id", mlUserIds)
-        .eq("period_month", pm)
-        .limit(MAX_ROWS);
-      return cap(data ?? []);
+      const dreFrom = `${pm}-01`;
+      // último dia do mês: dia 0 do mês seguinte
+      const [pmY, pmM] = pm.split("-").map(Number);
+      const lastDay = new Date(Date.UTC(pmY, pmM, 0)).getUTCDate();
+      const dreTo = `${pm}-${String(lastDay).padStart(2, "0")}`;
+
+      // pagina defensivamente (multi-loja pode ter >1000 linhas)
+      type DailyRow = {
+        charge_type: string;
+        charge_label: string;
+        amount: number;
+        charge_date: string;
+        synced_at: string;
+      };
+      const allRows: DailyRow[] = [];
+      const PAGE = 1000;
+      let offset = 0;
+      while (true) {
+        const { data: page } = await sb
+          .from("ml_billing_daily")
+          .select("charge_type,charge_label,amount,charge_date,synced_at")
+          .eq("organization_id", orgId)
+          .in("ml_user_id", mlUserIds)
+          .gte("charge_date", dreFrom)
+          .lte("charge_date", dreTo)
+          .range(offset, offset + PAGE - 1);
+        const rows = (page ?? []) as DailyRow[];
+        allRows.push(...rows);
+        if (rows.length < PAGE) break;
+        offset += PAGE;
+      }
+
+      // agregar por tipo
+      const byType: Record<string, { label: string; amount: number }> = {};
+      let total = 0;
+      let coverageUntil: string | null = null;
+      let freshness: string | null = null;
+      for (const r of allRows) {
+        const t = r.charge_type ?? "OUTROS";
+        if (!byType[t]) byType[t] = { label: r.charge_label ?? t, amount: 0 };
+        byType[t].amount += r.amount ?? 0;
+        total += r.amount ?? 0;
+        if (!coverageUntil || r.charge_date > coverageUntil) coverageUntil = r.charge_date;
+        if (!freshness || r.synced_at > freshness) freshness = r.synced_at;
+      }
+      // arredondar totais
+      for (const t of Object.keys(byType)) {
+        byType[t].amount = Math.round(byType[t].amount * 100) / 100;
+      }
+
+      return {
+        period_month: pm,
+        label:
+          "fatura/tarifas ML do mês-calendário (01–" + String(lastDay).padStart(2, "0") + "), " +
+          "espelho do card DRE do painel — NÃO é DRE completo " +
+          "(sem CMV/impostos/lucro); para lucro use get_margin_summary",
+        by_type: byType,
+        total: Math.round(total * 100) / 100,
+        coverage_until: coverageUntil,
+        freshness,
+      };
     }
     case "get_health_score": {
       const { data } = await sb
