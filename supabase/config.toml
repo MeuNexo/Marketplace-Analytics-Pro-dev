@@ -120,3 +120,8 @@ verify_jwt = false
 # verify_jwt=false — auth dual interna: user JWT (is_org_member) OU smoke_token (vault).
 [functions.consultor-llm]
 verify_jwt = false
+
+# nexo-chat: chat conversacional "Nexo" (Phase 57) — Gemini 2.5 Pro.
+# verify_jwt=true — JWT do usuário obrigatório + is_org_member (anti-IDOR por org).
+[functions.nexo-chat]
+verify_jwt = true
