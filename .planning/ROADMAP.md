@@ -144,7 +144,11 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 - **Reuso:** mesma base da EF `consultor-llm` (auth JWT + is_org_member, vault `get_app_secret('GEMINI_API_KEY')`, verify_jwt=true, kill-switch `consultor_config.llm_enabled`).
 - **Read-only:** chat NÃO muta o ML; quando sugere ação, encaminha pro pipeline de aprovação da Phase 54.
 
-**Plans**: TBD (a planejar via /gsd-plan-phase 57)
+**Plans**: 4 plans
+- [ ] 57-01-PLAN.md — EF nexo-chat: playbooks.ts (bundle versionado da skill Nexo) + prompt.ts (persona COO + buildSystemPrompt) + index.ts skeleton (auth→is_org_member→kill-switch→vault→Gemini 2.5 Pro non-streaming, thinkingBudget=-1) + config.toml (NEXO-02/05/06)
+- [ ] 57-02-PLAN.md — Function-calling read-only: tools.ts (12 declarations sem param de org + dispatcher escopado anti-IDOR mapeando às RPCs reais) + loop.ts (runChat cap=5 + timeout 25s) + index.ts resolve mlUserIds server-side (NEXO-03/07)
+- [ ] 57-03-PLAN.md — Frontend: useNexoChat (estado efêmero reenviado a cada turno) + NexoChatPanel (Sheet, render anti-XSS) + NexoChatFab (gate hasMLConnection + kill-switch) montado no LayoutShell (NEXO-01/04)
+- [ ] 57-04-PLAN.md — Checkpoint: deploy da EF nexo-chat (orquestrador) + validação visual/comportamental de Wesley dos NEXO-01..07 (FAB em todas as telas, grounding, anti-IDOR, read-only)
 
 ---
 
@@ -157,7 +161,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 | 54. Pipeline de Ações | 0/3 | Planned | - |
 | 55. Drill-down Multi-Loja | 0/? | Not started | - |
 | 56. Snooze + Limiares | 0/? | Not started | - |
-| 57. Nexo Conversacional | 0/? | Not started | - |
+| 57. Nexo Conversacional | 0/4 | Planned | - |
 
 ## Build Order / Dependências
 
