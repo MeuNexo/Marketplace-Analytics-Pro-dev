@@ -6,8 +6,10 @@
  *   (consultor_config.llm_enabled) → vault get_app_secret('GEMINI_API_KEY') →
  *   chamada Gemini 2.5 Pro non-streaming.
  *
- * NESTA versão (Plan 57-01) NÃO há loop de tools — é uma chamada única. O loop de
- * function-calling read-only entra no Plan 57-02. Read-only: nenhuma mutação no ML.
+ * Plan 57-02: a chamada única do Gemini foi SUBSTITUÍDA pelo loop server-side de
+ * function-calling read-only (runChat). mlUserIds é resolvido server-side de
+ * ml_tokens WHERE organization_id (NEXO-03: nunca do modelo). Read-only: nenhuma
+ * mutação no ML.
  *
  * CRÍTICO (Gemini 2.5 Pro): thinkingConfig.thinkingBudget = -1 (dinâmico). NUNCA 0
  * no 2.5-pro (retorna HTTP 400). O modelo é configurável via consultor_config.llm_model
@@ -22,10 +24,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { buildSystemPrompt } from "./prompt.ts";
-
-const GEMINI_BASE =
-  "https://generativelanguage.googleapis.com/v1beta/models/";
-const DEFAULT_MODEL = "gemini-2.5-pro";
+import { runChat } from "./loop.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -80,41 +79,32 @@ serve(async (req) => {
     const gkey = await sb.rpc("get_app_secret", { p_name: "GEMINI_API_KEY" }).then((r) => r.data);
     if (!gkey) return j({ error: "gemini_key_missing" }, 500);
 
-    const model = (cfg?.llm_model as string) || DEFAULT_MODEL;
-    const geminiUrl = GEMINI_BASE + model + ":generateContent";
+    // ── mlUserIds resolvido SERVER-SIDE (NEXO-03: nunca do modelo) ───────────
+    // ml_tokens WHERE organization_id (com refresh_token) — mesmo padrão da
+    // consultor-insights. O modelo nunca fornece seller/loja; o dispatcher de
+    // tools só recebe estes ids do servidor.
+    const { data: tokenRows } = await sb
+      .from("ml_tokens")
+      .select("ml_user_id")
+      .eq("organization_id", orgId)
+      .not("refresh_token", "is", null);
+    const mlUserIds = ((tokenRows ?? []) as Array<{ ml_user_id: string }>).map((r) => r.ml_user_id);
 
-    // ── chamada ÚNICA non-streaming (sem tools ainda — Plan 57-02 add loop) ──
-    try {
-      const gres = await fetch(geminiUrl, {
-        method: "POST",
-        headers: { "x-goog-api-key": gkey, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: buildSystemPrompt() }] },
-          contents: messages,
-          generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 1200,
-            // ⚠️ 2.5-PRO: thinkingBudget NUNCA 0 (HTTP 400). -1 = dinâmico.
-            thinkingConfig: { thinkingBudget: -1 },
-          },
-        }),
-      });
-      if (!gres.ok) {
-        console.error("nexo-chat: gemini status=" + gres.status);
-        return j({ reply: "Não consegui consultar a IA agora.", used_tools: [], fallback: true });
-      }
-      const gj = await gres.json();
-      const parts = gj?.candidates?.[0]?.content?.parts ?? [];
-      const reply = parts
-        .filter((p: GeminiPart) => p.text)
-        .map((p: GeminiPart) => p.text)
-        .join("")
-        .trim();
-      return j({ reply: reply || "Sem resposta.", used_tools: [], fallback: !reply });
-    } catch (netErr) {
-      console.error("nexo-chat: gemini fetch failed (network)");
-      return j({ reply: "Não consegui consultar a IA agora.", used_tools: [], fallback: true });
-    }
+    const model = (cfg?.llm_model as string) || undefined;
+
+    // ── loop server-side de function-calling read-only (Plan 57-02) ─────────
+    const { reply, usedTools, fallback } = await runChat(
+      sb,
+      gkey,
+      orgId,
+      mlUserIds,
+      buildSystemPrompt(),
+      messages,
+      { model },
+    );
+    // observabilidade: só metadados (nunca conteúdo das mensagens nem segredos)
+    console.log(`nexo-chat: tools=${usedTools.length} fallback=${fallback}`);
+    return j({ reply, used_tools: usedTools, fallback });
   } catch (e) {
     console.error("nexo-chat error:", e instanceof Error ? e.message : "unknown");
     return j({ error: "Internal server error" }, 500);
