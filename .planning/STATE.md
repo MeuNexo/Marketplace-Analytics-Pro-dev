@@ -13,6 +13,13 @@ progress:
   percent: 0
 ---
 
+## ✅ Milestone v7.0 FECHADO (2026-06-24) + Phase 46 concluída
+
+- **Phase 46 (UX para Leigos) — COMPLETA.** Plano 46-04 (checkpoint): gate técnico OK (`tsc --noEmit` sem erros, `npm run build` limpo 15s); glossário central de **28 termos** (`src/lib/kpi-glossary.ts`) com redação leiga **aprovada por Wesley**; checkpoint visual (tooltips hover+tap, empty states, tabelas→cards mobile, dark mode nas 6 páginas) **confirmado por Wesley** (validado em sessões anteriores). Cobertura UX-01: 15 telas consomem KPICard.
+- **Milestone v7.0 FECHADO sem Stripe** — Phase 44 (Monetização Stripe) **deferida** por decisão de Wesley (versão de teste não precisa de pagamento; planos 44-01/02/03 existem para reativação futura). Phases 41,42,43,45,46,48,49,50,51 completas; 47 go-live técnico (PR#6).
+- **Limpeza de planning commitada** (decisão Wesley): 252 planos de phase (`.planning/phases/*`) removidos do working tree + `REQUIREMENTS.md` reescrito para o v8.0. Planos preservados no histórico git (até commit fc7fbad5).
+- **Próximo:** Milestone v8.0 — Consultor v2 (Inteligência). Research concluído (commits 5cf049b6 + fc7fbad5, 2026-06-23). Falta: definir requisitos + roadmap das phases.
+
 ## Fechamento Phase 47 — QA / Go-Live (2026-06-20, escopo técnico sem Stripe)
 
 Decisão Wesley: pular tudo de assinatura/Stripe ("esta versão é só testes"). Critérios cobertos:

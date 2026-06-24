@@ -13,8 +13,8 @@ Supabase project: **ckcdevcxgvueywivefgx** (não o ID em CLAUDE.md). Deploy: pus
 - [x] **Phase 43: Multi-Tenant Hardening** — RLS org-first, backfill de orfaos, quota enforcement, wizard de onboarding guiado (isolamento 2-org PASS; pendente code-review/verify-phase + checkpoint visual)
 - [~] **Phase 44: Monetizacao Stripe** — ADIADA (decisão Wesley 2026-06-14): versão de teste do dashboard não precisa de pagamento; integração Stripe (checkout/webhooks/secrets) fica para o desenvolvedor depois. Planos já existem (44-01/02/03-PLAN.md). Reativar antes da Phase 47 (go-live depende de PAY-*).
 - [x] **Phase 45: Consultor v1** — Engine de ~12 regras, card "O que fazer agora", painel de insights e score de saude 0-100 (completed 2026-06-14)
-- [ ] **Phase 46: UX para Leigos** — Glossario/tooltips em todo KPI, empty states acionaveis, mobile polish, consistencia visual
-- [ ] **Phase 47: QA End-to-End + Go-Live** — Simulacao tenant novo, auditoria de seguranca, tsc + build + smoke de deploy Vercel
+- [x] **Phase 46: UX para Leigos** — Glossario/tooltips em todo KPI, empty states acionaveis, mobile polish, consistencia visual (completed 2026-06-24 — 46-04: build limpo tsc/build, glossário de 28 termos aprovado por Wesley, checkpoint visual confirmado)
+- [x] **Phase 47: QA End-to-End + Go-Live** — Simulacao tenant novo, auditoria de seguranca, tsc + build + smoke de deploy Vercel (completed 2026-06-20 — escopo técnico sem Stripe, PR#6: hardening RLS/REVOKE/EFs debug)
 - [x] **Phase 48: MCO com Ads** — Margem por produto considerando publicidade: margem operacional + margem pos-ads lado a lado, alerta separado "ads comendo a margem" (TACoS/ACoS por produto), MCO agregado da operacao. Atribuicao direta via ml_ads_products_cache (reconcilia 100% com total da conta) (completed 2026-06-14)
 - [x] **Phase 49: Fluxo de Caixa (Caixa Real)** — Nova pagina em "Operacoes" com o grafico "Como meu dinheiro vai evoluir?" (saldo real + projecao) e 3 cards (Caixa Hoje, Projecao Futura, Capacidade de Compra), alimentados por caixa REAL: entradas = liberacoes Mercado Pago, saidas = despesas/OCs. Portado do antigo SaaS nexointeligence. Dados validados centavo a centavo vs planilha DFC do Wesley + timezone BRT corrigido (completed 2026-06-19)
 - [x] **Phase 50: Simulador de Cenarios ("E se...?")** — Aba "Simulador" no Fluxo de Caixa: sliders de recebimento/gasto extra/dia + ate 2 eventos pontuais + veredito folga/status ("posso gastar mais ou preciso receber mais?"). Modulo puro testavel + 3a linha no grafico. Calculo 100% frontend, zero backend. Verifier PASSED 6/6 (completed 2026-06-19)
@@ -372,10 +372,16 @@ Plans:
 | 41. Veracidade Total | 4/4 | Complete    | 2026-06-13 |
 | 42. Zero Mock | 4/4 | Complete   | 2026-06-13 |
 | 43. Multi-Tenant Hardening | 4/4 | Complete | Isolamento 2-org PASS; pendente verify-phase + checkpoint visual |
-| 44. Monetizacao Stripe | 0/? | Not started | - |
+| 44. Monetizacao Stripe | 0/? | Deferred (fora do v7.0) | decisão Wesley 2026-06-14 |
 | 45. Consultor v1 | 3/3 | Complete   | 2026-06-14 |
-| 46. UX para Leigos | 4/5 | In Progress|  |
-| 47. QA End-to-End + Go-Live | 0/? | Not started | - |
+| 46. UX para Leigos | 5/5 | Complete   | 2026-06-24 |
+| 47. QA End-to-End + Go-Live | — | Complete (escopo técnico, sem Stripe) | 2026-06-20 |
+
+---
+
+## ✅ Milestone v7.0 — FECHADO (2026-06-24)
+
+Todas as phases concluídas exceto **44 (Stripe)**, formalmente **deferida** por decisão de Wesley ("versão de teste não precisa de pagamento"). Go-live técnico entregue na Phase 47 (PR#6). Próximo: **Milestone v8.0 — Consultor v2 (Inteligência)** (research já concluído, commits 2026-06-23).
 | 48. MCO com Ads | 3/3 | Complete | 2026-06-14 |
 | 49. Fluxo de Caixa (Caixa Real) | 5/5 | Complete   | 2026-06-18 |
 | 50. Simulador de Cenarios de Caixa | 0/3 | Not started | - |

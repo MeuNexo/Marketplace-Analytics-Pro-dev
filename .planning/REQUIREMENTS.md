@@ -1,172 +1,103 @@
-# Requirements — v7.0 SaaS Operacional End-to-End
+# Requirements — v8.0 Consultor v2 (Inteligência)
+
+**Defined:** 2026-06-23
+**Core Value:** Consultor que explica, prioriza e ajuda a agir — LLM sob demanda + ações com aprovação, sobre o motor determinístico do v1.
 
 ## Contexto
 
-Transformar o dashboard (hoje operando para a Pé Vermeio) em SaaS vendável por assinatura em 10 dias.
-Diagnóstico completo e decisões de produto em `.planning/MILESTONE-v7-SAAS.md` (sessão 2026-06-12).
+Camada aditiva sobre o Consultor v1 (Phase 45, em prod): motor determinístico de ~12 regras, tabela `insights`, score 0-100 (5 pilares), cron diário + on-demand. v8.0 adiciona três trilhas: (1) análise narrativa por LLM sobre os insights determinísticos, (2) pipeline de ação proposta → aprovação → execução, (3) UX (snooze, limiares na UI, drill-down por loja).
 
-Decisões fixadas por Wesley: Stripe | convite controlado | Consultor v1 por regras | integrar perguntas/devoluções de verdade.
+Pesquisa completa em `.planning/research/SUMMARY.md` (HIGH confidence — arquitetura e pitfalls de inspeção do código real do v1). Requisitos do milestone anterior em `.planning/MILESTONE-v7-SAAS.md` e no histórico do PROJECT.md.
 
----
+**Decisões fixadas por Wesley (2026-06-23):**
+- Ação em 1 clique = **preparar para aprovação** (nunca auto-executar). Regra de plataforma.
+- LLM = **Claude Haiku 4.5, sob demanda + cache por org/dia** (raw fetch no Deno EF; `ANTHROPIC_API_KEY` no vault Pattern B).
+- Score consolidado de múltiplas lojas = **média ponderada por GMV**.
+- Notificação de nova proposta = **só na UI** (fila + badge); Telegram fica para depois.
+- Os 4 diferenciais (diff na proposta, preview ao vivo de limiares, badge por loja, narrativa causal) entram **já no v8**.
 
-## Requisitos
-
-### Bloco DATA — Veracidade total dos números
-
-- [x] **DATA-01**: Card "Custos" em /vendas exibe CMV e Impostos não-nulos quando há configuração cadastrada — ✅ executado 2026-06-12 (migration 20260612120000, commit fc090c46; backend validado em produção, confirmação visual pendente)
-- [x] **DATA-02**: Filtro "Hoje" em /vendas carrega os KPI cards via auto-recalc silencioso com skeleton — nunca "—" estático (executar plano pronto da Phase 31)
-- [x] **DATA-03**: Lucro Bruto mensal calculado de fonte única (useMLCostWaterfall) sem pedidos cancelados (executar plano pronto da Phase 21)
-- [x] **DATA-04**: Usuário vê CFFE real ("Frete ML") e linha "Parcelamento (CFONPN)" no breakdown de custos — tabela `ml_billing_monthly` + EF `sync-ml-billing` (ML `/billing/periods`) com indicador de fonte ("billing" vs "estimado")
-- [x] **DATA-05**: Comissão em /anuncios vem da API real do ML (sale_fee/listing_prices) por anúncio — fim do `LISTING_TYPE_RATES` hardcoded
-- [x] **DATA-06**: KPIs de /vendas, /financeiro e /anuncios batem entre si (mesma fonte) — validados contra referência Nexo Abril/2026 (comissão R$39,2k, CFFE R$40k, CFONPN R$15,9k)
-
-### Bloco MOCK — Zero dados simulados
-
-- [x] **MOCK-01**: /perguntas lista perguntas reais do ML (tabela `ml_questions` + EF de sync via ML Questions API)
-- [x] **MOCK-02**: Usuário responde pergunta do comprador direto pela UI de /perguntas (POST answer na API ML)
-- [x] **MOCK-03**: /devolucoes lista reclamações e devoluções reais (tabela `ml_claims` + EF de sync via ML Claims API)
-- [x] **MOCK-04**: /reputacao exibe feedback real da API ML — remoção de todos os `getMock*`
-- [x] **MOCK-05**: /tv lê sellers da tabela `sellers` filtrada por `organization_id` (sem UUIDs hardcoded em TVModeVendas.tsx)
-
-### Bloco TENANT — Multi-tenant hardening
-
-- [x] **TENANT-01**: RLS de `ml_product_costs` org-first — upserts via service role funcionam para qualquer org, sem dependência de `user_id = auth.uid()`
-- [x] **TENANT-02**: Dados órfãos (`organization_id` NULL) backfillados ou removidos em todas as tabelas de cache
-- [x] **TENANT-03**: Sync consulta quota por `plan_tier` (`check_quota` RPC em dispatch/process) e bloqueia excedente
-- [x] **TENANT-04**: Owner novo passa por wizard de onboarding guiado (Conectar ML → Tiny opcional → Custos → Fiscal → Pronto) com progresso persistido e CTA no dashboard vazio
-- [x] **TENANT-05**: Teste de isolamento: 2 orgs em paralelo sem vazamento (RLS + caches + queries)
-
-### Bloco PAY — Monetização (Stripe)
-
-- [ ] **PAY-01**: Owner assina plano via Stripe Checkout (tiers de `organization_plans`, trial configurável)
-- [ ] **PAY-02**: Webhooks Stripe atualizam assinatura/tier (`checkout.session.completed`, `invoice.paid`, `customer.subscription.updated/deleted`) em tabelas `subscriptions`/`billing_events`
-- [ ] **PAY-03**: Página /planos mostra plano atual, estado de pagamento e permite upgrade/downgrade via Stripe Customer Portal
-- [ ] **PAY-04**: Limites do tier aplicados de verdade (`history_days`, `sync_interval_minutes`)
-
-### Bloco CONSUL — Consultor v1 (motor de regras)
-
-- [x] **CONSUL-01**: Engine de insights roda por org (EF + cron) avaliando ~12 regras e gravando em tabela `insights` (severidade, categoria, ação recomendada, impacto estimado em R$)
-- [x] **CONSUL-02**: Card "O que fazer agora" no topo de /vendas com os top insights acionáveis
-- [x] **CONSUL-03**: Painel de insights com explicação leiga por insight ("por que isso importa", "como resolver")
-- [x] **CONSUL-04**: Score de saúde do negócio (0-100) composto por margem, ads, estoque, reputação e completude de configuração
-- [x] **CONSUL-05**: Org Pé Vermeio gera ≥5 insights reais e acionáveis no primeiro run
-
-Regras iniciais candidatas: margem < alvo por produto; ROAS/ACoS fora da meta; TACoS subindo; ruptura/cobertura crítica; produto sem custo cadastrado; sem regime fiscal; ticket médio caindo; cancelamentos acima da média; anúncio pausado com histórico de venda; campanha gastando sem venda; meta do mês em risco (projeção); pergunta sem resposta > 24h.
-
-### Bloco UX — Compreensível para lojista leigo
-
-- [x] **UX-01**: Todo KPI tem tooltip/glossário em linguagem leiga (ex.: "CFFE = o frete que o ML te cobra")
-- [x] **UX-02**: Toda página tem empty state que orienta ação ("o que fazer para ter dados aqui")
-- [ ] **UX-03**: Tabelas de /anuncios, /pedidos e /financeiro sem overflow quebrado em mobile
-- [x] **UX-04**: Consistência visual revisada (tokens kpi.positive/negative, espaçamentos, dark mode) nas páginas principais
-
-### Bloco MCO com Ads (Phase 48)
-
-- [x] **MCO-01**: Fonte por produto de ads_spend/attributed_revenue por janela (RPC junta margem + ads por item_id sem truncamento PostgREST). Atribuição direta via `ml_ads_products_cache`
-- [ ] **MCO-02**: Margem por produto exibe margem operacional (sem ads) E margem pós-ads lado a lado
-- [ ] **MCO-03**: MCO agregado da operação (Σ margem de contribuição − ads total) visível
-- [x] **MCO-04**: Alerta separado por produto "ads comendo a margem" (TACoS/ACoS acima do limiar), independente do alerta de prejuízo operacional
-- [x] **MCO-05**: (a confirmar no plano) ads_no_sale por produto — gasto de ads com zero venda no item
-
-Decisão travada (Wesley 2026-06-14): modelo de 2 números (operacional + pós-ads), não 1 número combinado. "Prejuízo" fica na operacional.
-
-### Bloco CASH — Fluxo de Caixa (Caixa Real) (Phase 49)
-
-- [x] **CASH-01**: Ingestão de caixa REAL multi-tenant — entradas = liberações do Mercado Pago (nova EF + tabela, padrão das EFs `sync-*`), escopada por `organization_id` com RLS
-- [x] **CASH-02**: Saídas de caixa — despesas / ordens de compra em tabela própria, escopada por `organization_id` com RLS (fonte inicial a definir no plano: OC Tiny e/ou lançamento)
-- [ ] **CASH-03**: RPC de fluxo de caixa `SECURITY INVOKER` retorna saldo diário acumulado real + projeção (SMA de vendas dos últimos 15d × (1 − custo operacional), ativa após dia 8), sem truncamento PostgREST, boundary de data timestamptz correto (`.lt` nextDay)
-- [x] **CASH-04**: Nova página `/fluxo-de-caixa` sob grupo de menu "Operações" no shell, com guard de rota e isolamento por org; gráfico "Como meu dinheiro vai evoluir?" (ComposedChart, linha real + linha projetada, alerta de saldo negativo)
-- [x] **CASH-05**: 3 cards com dado real — Caixa Hoje, Projeção Futura (pessimista/realista + data crítica), Capacidade de Compra ("posso comprar mais estoque?" = saldo projetado − margem de segurança)
-- [x] **CASH-06**: Parâmetros por org configuráveis (`financial_settings`): saldo inicial, taxa de custo operacional, margem de segurança
-
-Decisão travada (Wesley 2026-06-18): fonte = caixa REAL (liberações MP + despesas), não derivado de vendas; nova página em "Operações" (não mexer no /financeiro de competência); MVP = gráfico + 3 cards. Portado do nexointeligence.
-
-### Bloco SIM — Simulador de Cenários "E se...?" (Phase 50)
-
-- [ ] **SIM-01**: Módulo puro testável `src/lib/cashflowSimulation.ts` calcula série simulada + veredito (folga/necessidade/status) a partir do baseline (`get_cashflow`) + deltas (recebimento/gasto extra) + eventos pontuais; testes vitest cobrindo sem-simulação, gasto→risco, recebimento→folga, evento entrada/saída na data certa
-- [ ] **SIM-02**: Aba "Simulador" na página `MLFluxoCaixa` (Tabs shadcn "Caixa Real" | "Simulador"); aba Caixa Real intocada
-- [ ] **SIM-03**: Controles — slider recebimento extra/dia (−5k..+5k), slider gasto extra/dia (0..+10k), até 2 eventos pontuais (valor/data/tipo), botão Limpar
-- [ ] **SIM-04**: `CashFlowChart` estendido com prop opcional `simulatedSeries` (3ª linha tracejada azul "Cenário simulado"), 100% compatível com o uso atual
-- [ ] **SIM-05**: Painel de veredito (`SimulatorVerdictCard`): selo Saudável/Risco + frase de folga/necessidade + menor saldo e data crítica; sem backend novo, estado só de sessão
-
-Decisão travada (Wesley 2026-06-19): modelo híbrido (sliders de média delta + eventos pontuais); veredito folga+status; aba no Fluxo de Caixa; sem persistência; cálculo 100% frontend reusando get_cashflow (zero migration/RPC/tabela). Spec: docs/superpowers/specs/2026-06-19-simulador-fluxo-caixa-design.md
-
-### Bloco QA — Go-live
-
-- [ ] **QA-01**: Tenant novo via convite chega a dashboard com dados reais sem nenhum passo manual de super-admin além de criar org+convite
-- [ ] **QA-02**: Auditoria de segurança limpa — Supabase advisors sem erro crítico, RLS em todas as tabelas de dados, verify_jwt correto nas EFs
-- [ ] **QA-03**: `tsc --noEmit` + `npm run build` + smoke de deploy Vercel limpos
+**Restrição de fundo (pitfalls):** LLM recebe SÓ a saída estruturada do v1 (nunca recalcula números); execução com gate atômico `UPDATE ... WHERE status='approved' RETURNING *`; cache e ações escopados a `organization_id` (anti-IDOR, anti-leak).
 
 ---
 
-## Future Requirements (deferidas para v8+)
+## v1 Requirements
 
-- Self-service signup público com proteção anti-abuso (decisão: lançamento por convite)
-- Consultor com análises geradas por LLM (v1 é determinístico)
-- Phases 28/29 (performance N+1, RPCs de agregação) — entram no dia 10 SOMENTE se QA mostrar lentidão real
-- Phase 23 (dashboard granular — coluna Margem % em Top Anúncios, dual-axis)
-- DIFAL, CSHIA e cobranças menores do billing
-- Landing page pública de marketing/pricing
+### LLM — Análise Inteligente
+
+- [ ] **LLM-01**: Lojista vê um resumo do consultor em linguagem natural (PT-BR, estilo COO) no topo do painel, gerado por LLM sobre os insights determinísticos do v1
+- [ ] **LLM-02**: Lojista clica "Explicar" em um insight e recebe explicação contextual gerada sob demanda (cacheada por insight/dia)
+- [ ] **LLM-03**: O resumo conecta os pilares com narrativa causal (ex: "TACoS subiu 6%, puxando a margem para baixo 3pp")
+- [ ] **LLM-04**: Análise é cacheada por org/dia — reabrir o painel não re-gera nem re-cobra; botão "Atualizar análise" força regeneração respeitando cap diário por org
+- [ ] **LLM-05**: A análise nunca inventa números — usa apenas dados dos insights; qualquer valor não rastreável à entrada estruturada faz cair para o texto determinístico do v1
+- [ ] **LLM-06**: Lojista vê indicador "análise desatualizada — clique para atualizar" quando o estado dos insights muda após a geração
+- [ ] **LLM-07**: Owner pode desligar a camada LLM por org (kill-switch em `consultor_config.llm_enabled`)
+
+### ACT — Ações com Aprovação
+
+- [ ] **ACT-01**: A partir de um insight acionável, lojista clica "Propor ação" e vê preview de diff (atual → proposto + impacto estimado em R$/margem) antes de enviar
+- [ ] **ACT-02**: Ação proposta entra numa fila de aprovação visível, com badge de contagem de pendentes
+- [ ] **ACT-03**: Owner aprova ou rejeita uma ação proposta na fila
+- [ ] **ACT-04**: Ação aprovada é executada no ML (alterar preço, pausar/ativar anúncio, pausar/ajustar campanha de ads) via executor — nunca automaticamente sem aprovação
+- [ ] **ACT-05**: Toda transição de estado da ação é registrada em log de auditoria imutável (ator, de→para, timestamp, resposta da API ML)
+- [ ] **ACT-06**: Execução é à prova de duplicação (gate atômico) e de IDOR (ação e token escopados a `organization_id` + `ml_user_id`)
+- [ ] **ACT-07**: Proposta obsoleta (dado do ML mudou desde a criação) é bloqueada/sinalizada antes de executar (pre-flight check + TTL de validade)
+- [ ] **ACT-08**: Owner vê o histórico de ações executadas (aba "Ver histórico") com o resultado de cada uma
+
+### SNZ — Snooze / Dispensar
+
+- [ ] **SNZ-01**: Lojista adia um insight por uma duração nomeada (Amanhã / Próxima semana / Em 30 dias)
+- [ ] **SNZ-02**: O estado de adiamento é persistido por org no servidor (em `insights.snoozed_until`), não no navegador
+- [ ] **SNZ-03**: Insight adiado some da lista até expirar; ao expirar reaparece se a condição ainda existir (auto-resolver do v1 respeita o snooze)
+
+### TUNE — Limiares na UI
+
+- [ ] **TUNE-01**: Lojista edita os limiares do consultor pela tela, sem SQL (margem alvo, TACoS alvo, dias de cobertura, etc.)
+- [ ] **TUNE-02**: Presets "Conservador / Moderado / Agressivo" preenchem todos os limiares de uma vez
+- [ ] **TUNE-03**: Ao ajustar um limiar, preview ao vivo mostra quantos produtos/insights disparariam com a config atual (debounced)
+- [ ] **TUNE-04**: Limiares têm faixas válidas (guardrails) validadas no cliente e no servidor — o lojista não consegue quebrar o próprio score
+- [ ] **TUNE-05**: Botão "Restaurar padrão" volta os limiares aos defaults
+
+### STORE — Score / Insights por Loja
+
+- [ ] **STORE-01**: O consultor calcula score e insights por loja ML, além do consolidado por org
+- [ ] **STORE-02**: Seletor de loja permite drill-down por loja; a visão consolidada da org é o default (seletor só aparece quando há > 1 loja)
+- [ ] **STORE-03**: Cada loja exibe seu badge de score de saúde (verde/amarelo/vermelho) no seletor
+- [ ] **STORE-04**: O score consolidado da org é a média dos scores das lojas ponderada pelo faturamento (GMV) de cada uma
+- [ ] **STORE-05**: Cada insight identifica a loja ML afetada quando aplicável
+
+## v2 Requirements (deferidos)
+
+### Notificações
+- **NOTF-01**: Notificação no Telegram quando uma nova ação proposta entra na fila (infra `nexo_telegram.py` existe)
+
+### Inteligência avançada
+- **LLM-A1**: Modelo Sonnet para análise multi-step / raciocínio quando o caso exigir (v8 usa só Haiku)
+- **SNZ-A1**: Smart snooze — reaparecer ao mudar a métrica, além do TTL nomeado
 
 ## Out of Scope
 
-- NCM/CFOP por produto, geração de guias/SPED — plataforma é analytics, não fiscal
-- Múltiplos marketplaces além do ML — foco total no ML neste milestone
-- App mobile nativo — web responsivo cobre
-- Proration custom no Stripe — usar comportamento padrão do Customer Portal
+| Feature | Motivo |
+|---------|--------|
+| Chat aberto com IA ("pergunte qualquer coisa") | Risco de alucinação destrói confiança do lojista leigo — nunca para esse público |
+| Auto-execução de ação sem fila de aprovação | Regra de plataforma "ações que alteram o ML exigem aprovação" — sem exceção |
+| Exibir score de confiança do LLM | Leigos tratam como certeza; amplifica percepção de alucinação |
+| Múltiplos perfis de limiar por org | Prematuro; confunde o leigo. "Restaurar padrão" é a rede de segurança |
+| Notificação Telegram de proposta | Adiada para v2 (NOTF-01) — v8 usa só fila + badge na UI |
+| Streaming da resposta do LLM | Resposta curta e cacheada; non-streaming é suficiente e mais simples |
 
 ## Traceability
 
-| REQ-ID | Phase | Status |
-|--------|-------|--------|
-| DATA-01 | Phase 41 | Complete |
-| DATA-02 | Phase 41 | Complete |
-| DATA-03 | Phase 41 | Complete |
-| DATA-04 | Phase 41 | Complete |
-| DATA-05 | Phase 41 | Complete |
-| DATA-06 | Phase 41 | Complete |
-| MOCK-01 | Phase 42 | Complete |
-| MOCK-02 | Phase 42 | Complete |
-| MOCK-03 | Phase 42 | Complete |
-| MOCK-04 | Phase 42 | Complete |
-| MOCK-05 | Phase 42 | Complete |
-| TENANT-01 | Phase 43 | Complete |
-| TENANT-02 | Phase 43 | Complete |
-| TENANT-03 | Phase 43 | Complete |
-| TENANT-04 | Phase 43 | Complete |
-| TENANT-05 | Phase 43 | Complete |
-| PAY-01 | Phase 44 | Pending |
-| PAY-02 | Phase 44 | Pending |
-| PAY-03 | Phase 44 | Pending |
-| PAY-04 | Phase 44 | Pending |
-| CONSUL-01 | Phase 45 | Complete |
-| CONSUL-02 | Phase 45 | Complete |
-| CONSUL-03 | Phase 45 | Complete |
-| CONSUL-04 | Phase 45 | Complete |
-| CONSUL-05 | Phase 45 | Complete |
-| UX-01 | Phase 46 | Complete |
-| UX-02 | Phase 46 | Complete |
-| UX-03 | Phase 46 | Pending |
-| UX-04 | Phase 46 | Complete |
-| QA-01 | Phase 47 | Pending |
-| QA-02 | Phase 47 | Pending |
-| QA-03 | Phase 47 | Pending |
-| MCO-01 | Phase 48 | Complete |
-| MCO-02 | Phase 48 | Pending |
-| MCO-03 | Phase 48 | Pending |
-| MCO-04 | Phase 48 | Complete |
-| MCO-05 | Phase 48 | Complete |
-| CASH-01 | Phase 49 | Complete |
-| CASH-02 | Phase 49 | Complete |
-| CASH-03 | Phase 49 | Complete |
-| CASH-04 | Phase 49 | Complete |
-| CASH-05 | Phase 49 | Complete |
-| CASH-06 | Phase 49 | Complete |
-| SIM-01 | Phase 50 | Complete |
-| SIM-02 | Phase 50 | Complete |
-| SIM-03 | Phase 50 | Complete |
-| SIM-04 | Phase 50 | Complete |
-| SIM-05 | Phase 50 | Complete |
+Preenchida na criação do roadmap.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| (a mapear) | — | Pending |
+
+**Coverage:**
+- v1 requirements: 28 total (LLM 7 / ACT 8 / SNZ 3 / TUNE 5 / STORE 5)
+- Mapped to phases: 0 (pendente roadmap)
+- Unmapped: 28 ⚠️
 
 ---
-*Criado: 2026-06-12 — milestone v7.0*
+*Requirements defined: 2026-06-23*
+*Last updated: 2026-06-23 after milestone v8.0 definition*
