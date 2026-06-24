@@ -185,7 +185,7 @@ function PillarRow({ label, score }: { label: string; score: number }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function MLConsultor() {
-  const { insights, score, scoreDelta, scoreBand, pillars, loading, syncing, dismiss, explain } =
+  const { insights, score, scoreDelta, scoreBand, pillars, loading, syncing, dismiss, explain, summaryDisabled } =
     useConsultorInsights();
 
   const trendArrow =
@@ -286,7 +286,7 @@ export default function MLConsultor() {
         ) : (
           <div className="flex flex-col gap-3">
             {insights.map((insight) => (
-              <InsightCard key={insight.id} insight={insight} onDismiss={dismiss} onExplain={explain} />
+              <InsightCard key={insight.id} insight={insight} onDismiss={dismiss} onExplain={summaryDisabled ? undefined : explain} />
             ))}
           </div>
         )}

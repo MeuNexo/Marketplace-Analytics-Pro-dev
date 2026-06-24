@@ -104,7 +104,7 @@ export default function MercadoLivre() {
   const [onboardingWizardOpen, setOnboardingWizardOpen] = useState(false);
 
   // ── Consultor v1 (Phase 45) — card de saúde + top 3 insights ──
-  const { insights: consultorInsights, score: consultorScore, scoreDelta: consultorScoreDelta, scoreBand: consultorScoreBand, syncing: consultorSyncing, dismiss: consultorDismiss, explain: consultorExplain } = useConsultorInsights();
+  const { insights: consultorInsights, score: consultorScore, scoreDelta: consultorScoreDelta, scoreBand: consultorScoreBand, syncing: consultorSyncing, dismiss: consultorDismiss, explain: consultorExplain, summaryDisabled: consultorLLMDisabled } = useConsultorInsights();
 
   // ── Filters ──
   const filters = useMLFilters();
@@ -702,7 +702,7 @@ export default function MercadoLivre() {
               scoreBand={consultorScoreBand}
               syncing={consultorSyncing}
               onDismiss={consultorDismiss}
-              onExplain={consultorExplain}
+              onExplain={consultorLLMDisabled ? undefined : consultorExplain}
             />
           )}
 
