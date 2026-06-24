@@ -1,8 +1,10 @@
 import { Link } from "react-router-dom";
-import { XCircle, AlertTriangle, Info, Activity, Loader2, X } from "lucide-react";
+import { useState } from "react";
+import { XCircle, AlertTriangle, Info, Activity, Loader2, X, Sparkles } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useConsultorInsights } from "@/hooks/useConsultorInsights";
 import type { InsightRow, ScoreBand } from "@/hooks/useConsultorInsights";
@@ -70,10 +72,27 @@ function impactLabel(impact_brl: number | null): string | null {
 interface InsightCardProps {
   insight: InsightRow;
   onDismiss: (id: string) => void;
+  onExplain?: (id: string) => Promise<string>;
 }
 
-function InsightCard({ insight, onDismiss }: InsightCardProps) {
+function InsightCard({ insight, onDismiss, onExplain }: InsightCardProps) {
   const impact = impactLabel(insight.impact_brl);
+  const [explaining, setExplaining] = useState(false);
+  const [explanation, setExplanation] = useState<string | null>(null);
+
+  const handleExplain = async () => {
+    if (!onExplain || explaining) return;
+    setExplaining(true);
+    try {
+      const text = await onExplain(insight.id);
+      setExplanation(text || null);
+      if (!text) toast.info("Explicação indisponível no momento.");
+    } catch {
+      toast.error("Não foi possível explicar agora. Tente novamente.");
+    } finally {
+      setExplaining(false);
+    }
+  };
 
   return (
     <Card className="border-border/50">
@@ -110,11 +129,30 @@ function InsightCard({ insight, onDismiss }: InsightCardProps) {
           <p className="text-xs font-medium text-destructive">{impact}</p>
         )}
 
-        {/* Action: "como resolver" — deep-link para a página certa (D-19) */}
-        <div className="pt-1">
+        {/* Explicação sob demanda (camada LLM, Plan 53) */}
+        {explanation && (
+          <p className="text-xs leading-relaxed text-foreground/90 border-l-2 border-primary/30 pl-2">
+            {explanation}
+          </p>
+        )}
+
+        {/* Action: "como resolver" — deep-link para a página certa (D-19) + Explicar */}
+        <div className="pt-1 flex items-center gap-2 flex-wrap">
           <Button variant="outline" size="sm" asChild className="h-7 text-xs gap-1.5">
             <Link to={insight.action_href}>{insight.action_label}</Link>
           </Button>
+          {onExplain && !explanation && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleExplain}
+              disabled={explaining}
+              className="h-7 text-xs gap-1.5 text-primary hover:text-primary"
+            >
+              {explaining ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+              {explaining ? "Explicando…" : "Explicar"}
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -147,7 +185,7 @@ function PillarRow({ label, score }: { label: string; score: number }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function MLConsultor() {
-  const { insights, score, scoreDelta, scoreBand, pillars, loading, syncing, dismiss } =
+  const { insights, score, scoreDelta, scoreBand, pillars, loading, syncing, dismiss, explain } =
     useConsultorInsights();
 
   const trendArrow =
@@ -248,7 +286,7 @@ export default function MLConsultor() {
         ) : (
           <div className="flex flex-col gap-3">
             {insights.map((insight) => (
-              <InsightCard key={insight.id} insight={insight} onDismiss={dismiss} />
+              <InsightCard key={insight.id} insight={insight} onDismiss={dismiss} onExplain={explain} />
             ))}
           </div>
         )}

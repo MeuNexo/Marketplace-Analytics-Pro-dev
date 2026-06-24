@@ -1,8 +1,10 @@
-import { XCircle, AlertTriangle, Info, ArrowRight, Activity, X, Loader2 } from "lucide-react";
+import { XCircle, AlertTriangle, Info, ArrowRight, Activity, X, Loader2, Sparkles } from "lucide-react";
+import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { InsightRow, ScoreBand } from "@/hooks/useConsultorInsights";
 
@@ -15,6 +17,8 @@ interface ConsultorCardProps {
   scoreBand: ScoreBand | null;
   syncing: boolean;
   onDismiss: (id: string) => void;
+  /** Explicação sob demanda por insight (camada LLM, Plan 53). Opcional: sem ela o botão não aparece. */
+  onExplain?: (id: string) => Promise<string>;
 }
 
 // ─── Score band helpers (D-10) ────────────────────────────────────────────────
@@ -62,32 +66,74 @@ function impactLabel(impact_brl: number | null): string | null {
 interface InsightItemProps {
   insight: InsightRow;
   onDismiss: (id: string) => void;
+  onExplain?: (id: string) => Promise<string>;
 }
 
-function InsightItem({ insight, onDismiss }: InsightItemProps) {
+function InsightItem({ insight, onDismiss, onExplain }: InsightItemProps) {
   const impact = impactLabel(insight.impact_brl);
+  const [explaining, setExplaining] = useState(false);
+  const [explanation, setExplanation] = useState<string | null>(null);
+
+  const handleExplain = async () => {
+    if (!onExplain || explaining) return;
+    setExplaining(true);
+    try {
+      const text = await onExplain(insight.id);
+      // EF desligada/fallback retorna vazio → não mostra bloco LLM
+      setExplanation(text || null);
+      if (!text) toast.info("Explicação indisponível no momento.");
+    } catch {
+      toast.error("Não foi possível explicar agora. Tente novamente.");
+    } finally {
+      setExplaining(false);
+    }
+  };
 
   return (
-    <div className="flex items-start gap-2.5 py-1.5 border-t border-border/40 first:border-t-0">
-      <SeverityIcon severity={insight.severity} />
-      <div className="flex-1 min-w-0">
-        <Link
-          to={insight.action_href}
-          className="text-sm font-medium leading-tight hover:underline line-clamp-2"
+    <div className="flex flex-col gap-1 py-1.5 border-t border-border/40 first:border-t-0">
+      <div className="flex items-start gap-2.5">
+        <SeverityIcon severity={insight.severity} />
+        <div className="flex-1 min-w-0">
+          <Link
+            to={insight.action_href}
+            className="text-sm font-medium leading-tight hover:underline line-clamp-2"
+          >
+            {insight.title}
+          </Link>
+          {impact && (
+            <p className="text-xs text-destructive mt-0.5">{impact}</p>
+          )}
+        </div>
+        <button
+          onClick={() => onDismiss(insight.id)}
+          className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          aria-label="Dispensar alerta"
         >
-          {insight.title}
-        </Link>
-        {impact && (
-          <p className="text-xs text-destructive mt-0.5">{impact}</p>
-        )}
+          <X className="h-3.5 w-3.5" />
+        </button>
       </div>
-      <button
-        onClick={() => onDismiss(insight.id)}
-        className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-        aria-label="Dispensar alerta"
-      >
-        <X className="h-3.5 w-3.5" />
-      </button>
+
+      {/* ── Explicar (camada LLM, Plan 53) ──────────────────────────────── */}
+      {onExplain && (
+        <div className="pl-6">
+          {explanation ? (
+            <p className="text-xs leading-relaxed text-muted-foreground">{explanation}</p>
+          ) : (
+            <button
+              onClick={handleExplain}
+              disabled={explaining}
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline disabled:opacity-60"
+            >
+              {explaining ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Sparkles className="h-3 w-3" />
+              )}
+              {explaining ? "Explicando…" : "Explicar"}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -101,6 +147,7 @@ export function ConsultorCard({
   scoreBand,
   syncing,
   onDismiss,
+  onExplain,
 }: ConsultorCardProps) {
   // Top 3 insights (D-16)
   const topInsights = insights.slice(0, 3);
@@ -169,7 +216,7 @@ export function ConsultorCard({
         ) : (
           <div className="flex flex-col">
             {topInsights.map((insight) => (
-              <InsightItem key={insight.id} insight={insight} onDismiss={onDismiss} />
+              <InsightItem key={insight.id} insight={insight} onDismiss={onDismiss} onExplain={onExplain} />
             ))}
           </div>
         )}

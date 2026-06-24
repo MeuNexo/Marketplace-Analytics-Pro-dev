@@ -46,6 +46,7 @@ import { OnboardingBanner } from "@/components/onboarding/OnboardingBanner";
 import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
 import { useOnboardingProgress } from "@/hooks/useOnboardingProgress";
 import { ConsultorCard } from "@/components/mercadolivre/ConsultorCard";
+import { ConsultorLLMSummary } from "@/components/mercadolivre/ConsultorLLMSummary";
 import { useConsultorInsights } from "@/hooks/useConsultorInsights";
 import { MLMcoStrip } from "@/components/mercadolivre/MLMcoStrip";
 import { computeMco } from "@/lib/mco";
@@ -103,7 +104,7 @@ export default function MercadoLivre() {
   const [onboardingWizardOpen, setOnboardingWizardOpen] = useState(false);
 
   // ── Consultor v1 (Phase 45) — card de saúde + top 3 insights ──
-  const { insights: consultorInsights, score: consultorScore, scoreDelta: consultorScoreDelta, scoreBand: consultorScoreBand, syncing: consultorSyncing, dismiss: consultorDismiss } = useConsultorInsights();
+  const { insights: consultorInsights, score: consultorScore, scoreDelta: consultorScoreDelta, scoreBand: consultorScoreBand, syncing: consultorSyncing, dismiss: consultorDismiss, explain: consultorExplain } = useConsultorInsights();
 
   // ── Filters ──
   const filters = useMLFilters();
@@ -691,6 +692,8 @@ export default function MercadoLivre() {
               insights). Gate anterior em onboardingComplete escondia o card em orgs
               já estabelecidas (ex: Pé Vermeio) cujo onboarding_progress persistido
               não marca todos os passos, mesmo com ML/custos/fiscal presentes. */}
+          {connected && <ConsultorLLMSummary />}
+
           {connected && (
             <ConsultorCard
               insights={consultorInsights}
@@ -699,6 +702,7 @@ export default function MercadoLivre() {
               scoreBand={consultorScoreBand}
               syncing={consultorSyncing}
               onDismiss={consultorDismiss}
+              onExplain={consultorExplain}
             />
           )}
 
