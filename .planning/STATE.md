@@ -48,11 +48,18 @@ See: .planning/PROJECT.md
 
 ## Current Position
 
-Phase: Not started — roadmap v8.0 criado (5 phases: 52 Fundação de Dados → 53 LLM + 54 Ações em paralelo → 55 Multi-Loja → 56 Snooze/Limiares)
-Plan: —
-Status: Roadmap definido; pronto para `/gsd-plan-phase 52`
-Last activity: 2026-06-24 — Roadmap v8.0 gerado (28 reqs mapeados em 5 phases)
-Next: Phase 52 (Fundação de Dados) — bloqueia as demais; depois 53+54 podem rodar em paralelo
+Phase: **52 (Fundação de Dados v8.0) COMPLETA** — verifier PASSED 6/6, aplicada em prod ckcdevcxgvueywivefgx
+Plan: 52-01 (4 migrations) + 52-02 (types.ts) — ambos completos
+Status: Phase 52 fechada; desbloqueia 53/54/55/56
+Last activity: 2026-06-24 — Phase 52 executada (3 tabelas novas + 5 colunas + RPC atômica INVOKER, advisors sem erro novo, build verde)
+Next: `/gsd-plan-phase 53` (Camada LLM) e/ou `/gsd-plan-phase 54` (Pipeline de Ações) — podem rodar em paralelo
+
+### Phase 52 (2026-06-24) — schema v8.0 em prod
+- 3 tabelas novas: `proposed_actions` (state-machine 6 estados text+CHECK + dedup parcial), `action_audit_log` (append-only), `llm_analysis_cache` (org-first key).
+- ALTERs: `insights.snoozed_until`/`snooze_count`, `consultor_config.llm_enabled`/`llm_model`, `consultor_health_snapshots.ml_user_id_key` (+ troca UNIQUE p/ por-loja).
+- RPC `claim_approved_action` SECURITY INVOKER (anti-IDOR) + REVOKE de PUBLIC/anon/authenticated (anti default-EXECUTE).
+- 4 migrations `20260652*` commitadas; aplicadas via MCP (CLI no projeto errado — nunca db push). types.ts manual.
+- **WARNING aberto (não-bloqueante, p/ Phase 56):** mapeamento TUNE-01 → 14 limiares existentes é MEDIUM confidence; confirmar com Wesley se quer limiares-alvo NOVOS antes da 56.
 
 ### Pendências de validação visual (não bloqueiam novo milestone)
 
