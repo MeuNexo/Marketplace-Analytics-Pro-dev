@@ -87,16 +87,22 @@ Pesquisa completa em `.planning/research/SUMMARY.md` (HIGH confidence — arquit
 
 ## Traceability
 
-Preenchida na criação do roadmap.
+Mapeada no roadmap v8.0 (2026-06-24).
 
-| Requirement | Phase | Status |
-|-------------|-------|--------|
-| (a mapear) | — | Pending |
+| Trilha | Requisitos | Phase |
+|--------|-----------|-------|
+| LLM (Análise Inteligente) | LLM-01..07 | 53 |
+| ACT (Ações com Aprovação) | ACT-01..08 | 54 |
+| STORE (Score/Insights por Loja) | STORE-01..05 | 55 |
+| SNZ (Snooze) | SNZ-01..03 | 56 |
+| TUNE (Limiares na UI) | TUNE-01..05 | 56 |
+| Fundação de dados (transversal) | — | 52 |
 
 **Coverage:**
 - v1 requirements: 28 total (LLM 7 / ACT 8 / SNZ 3 / TUNE 5 / STORE 5)
-- Mapped to phases: 0 (pendente roadmap)
-- Unmapped: 28 ⚠️
+- Mapped to phases: 28 ✅ (Phase 52 entrega o schema/RPCs base que sustentam todas as trilhas)
+- Unmapped: 0
+- Deferidos v2: NOTF-01, LLM-A1, SNZ-A1
 
 ---
 *Requirements defined: 2026-06-23*

@@ -48,10 +48,11 @@ See: .planning/PROJECT.md
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Not started — roadmap v8.0 criado (5 phases: 52 Fundação de Dados → 53 LLM + 54 Ações em paralelo → 55 Multi-Loja → 56 Snooze/Limiares)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-23 — Milestone v8.0 started
+Status: Roadmap definido; pronto para `/gsd-plan-phase 52`
+Last activity: 2026-06-24 — Roadmap v8.0 gerado (28 reqs mapeados em 5 phases)
+Next: Phase 52 (Fundação de Dados) — bloqueia as demais; depois 53+54 podem rodar em paralelo
 
 ### Pendências de validação visual (não bloqueiam novo milestone)
 
