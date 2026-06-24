@@ -6,6 +6,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { PageLoader } from "@/components/ui/PageLoader";
+import { NexoChatFab } from "@/components/nexo/NexoChatFab";
 
 interface LayoutShellProps {
   sidebar: ReactNode;
@@ -72,6 +73,10 @@ export function LayoutShell({ sidebar, mobileSidebar, showSellerSwitcher = true,
           <Outlet />
         </main>
       </div>
+
+      {/* FAB do Nexo — fora do <main>, presente em todas as telas autenticadas.
+          Renderiza só com ML conectado + kill-switch ligado (gate interno). */}
+      <NexoChatFab />
     </div>
   );
 }
