@@ -77,6 +77,18 @@ Pesquisa completa em `.planning/research/SUMMARY.md` (HIGH confidence — arquit
 - [ ] **NEXO-06**: Kill-switch reusa `consultor_config.llm_enabled` — desligado, o painel Nexo fica indisponível
 - [ ] **NEXO-07**: Read-only e com guardrails — o chat não executa mutação no ML (sugere e encaminha para o pipeline de aprovação da Phase 54); cap de tool-calls por turno + timeout para conter custo/latência
 
+### VERAC — Veracidade & Completude dos Dados do Nexo (Phase 58, decisão Wesley 2026-06-24)
+
+> **Motivo:** em testes, o Nexo afirmou fatos errados por **fonte de dado incompleta**, não por falha da IA. Ex.: disse "0 em estoque / ruptura" lendo só o estoque **Full** (`ml_inventory_cache`, `logistic_type=fulfillment`), ignorando CD/consolidado; reportou estoque **item-level** como se fosse por variação; sem sinal de frescura. Wesley quer **certeza ampla em TODOS os domínios**, não só estoque.
+
+- [ ] **VERAC-01**: Estoque do Nexo é o CONSOLIDADO (Full + CD/Tiny) quando existir; se só houver Full nesta base, é rotulado explicitamente como "estoque Full" e o Nexo NUNCA afirma "ruptura/0 em estoque" como fato absoluto a partir do Full sozinho
+- [ ] **VERAC-02**: Estoque por VARIAÇÃO (tamanho/cor) quando o item tem variações — o Nexo não reporta número item-level como se fosse por SKU/variação
+- [ ] **VERAC-03**: Reconciliação fonte-da-verdade — para CADA tool do Nexo, a fonte (tabela/RPC), escopo (Full/total, período) e semântica batem com o que o dashboard mostra para o mesmo indicador; divergências corrigidas
+- [ ] **VERAC-04**: Frescura — o Nexo conhece o `synced_at`/recência das fontes e sinaliza quando um dado está defasado, em vez de afirmá-lo como atual
+- [ ] **VERAC-05**: Declarar limitação — quando uma tool retorna parcial/vazio, o Nexo diz o que tem e o que falta (ex.: "só tenho o estoque Full") em vez de inventar número ou dizer "não configurado"
+- [ ] **VERAC-06**: O Nexo não confunde campos — unidades vendidas ≠ estoque; receita ≠ lucro; Full ≠ total; período passado ≠ projeção futura. Descrições das tools deixam a semântica inequívoca
+- [ ] **VERAC-07**: Bateria de testes cobrindo TODOS os domínios (vendas/faturamento, margem por produto/marca/UF/dia, ads por produto/campanha, estoque/cobertura, caixa/tesouraria, DRE/custos, perguntas, devoluções, reputação, fornecedores, metas, alertas, score) — cada domínio validado contra a fonte-da-verdade do dashboard, com as divergências corrigidas e documentadas
+
 ## v2 Requirements (deferidos)
 
 ### Notificações
