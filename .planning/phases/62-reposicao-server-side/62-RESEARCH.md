@@ -287,10 +287,12 @@ CREATE POLICY "rp_select" ON public.replenishment_params
   FOR SELECT TO authenticated
   USING (public.is_org_member(auth.uid(), organization_id));
 
+-- ESCRITA: somente owner/admin (NÃO member) — configuração de parâmetros é decisão de gestão.
+-- (corrigido após plan-check WARNING 2: 62-01 Task 1 exige ausência de 'member' na write policy)
 CREATE POLICY "rp_write" ON public.replenishment_params
   FOR ALL TO authenticated
-  USING  (public.get_org_role(auth.uid(), organization_id) = ANY (ARRAY['owner','admin','member']::public.org_role[]))
-  WITH CHECK (public.get_org_role(auth.uid(), organization_id) = ANY (ARRAY['owner','admin','member']::public.org_role[]));
+  USING  (public.get_org_role(auth.uid(), organization_id) = ANY (ARRAY['owner','admin']::public.org_role[]))
+  WITH CHECK (public.get_org_role(auth.uid(), organization_id) = ANY (ARRAY['owner','admin']::public.org_role[]));
 
 -- Índice para lookup rápido
 CREATE INDEX replenishment_params_org_idx ON public.replenishment_params (organization_id, scope, scope_value);
@@ -766,22 +768,19 @@ Nenhum pacote npm novo é necessário para esta phase. Toda a stack já está in
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **CompraRecomendadaPanel em `/precos-custos` — substituir ou manter?**
    - O que sabemos: o componente atual está em `/precos-custos/analise` (não em `/estoque`). A CONTEXT diz para criar o novo em `/estoque`.
-   - Não está claro: se o painel antigo em `/precos-custos` deve ser depreciado ou mantido.
-   - Recomendação: manter o antigo (não quebra features existentes) e criar o novo em `/estoque`.
+   - RESOLVED: manter o antigo intocado (não quebra features existentes) e criar o novo em `/estoque`. Refletido em 62-03 (prohibition + git diff vazio no arquivo antigo).
 
 2. **Estoque multi-store: SUM ou escolher uma loja?**
    - Se a Pé Vermeio tiver apenas 1 loja (ml_user_id=1639558873), não importa.
-   - Para orgs com múltiplas lojas: SUM agrega o estoque total do item na org. Isso é o comportamento esperado para "tudo no ML"?
-   - Recomendação: SUM, consistente com a definição "tudo no ML".
+   - RESOLVED: SUM por item_id agrega o estoque total na org, consistente com "tudo no ML". Refletido em 62-01 (Assumption A4).
 
 3. **Defaults de `replenishment_params` — inserir na migration ou via UI?**
    - Se a tabela estiver vazia para a org, os `COALESCE` caem nos hardcoded defaults (30/60/7/1/1).
-   - Isso é aceitável para v1 sem UI de configuração.
-   - Recomendação: hardcoded defaults suficientes para v1; UI de parâmetros fica para evolução.
+   - RESOLVED: hardcoded defaults na RPC suficientes para v1; UI de parâmetros fica para evolução. Refletido em 62-01 (Assumption A1).
 
 ---
 

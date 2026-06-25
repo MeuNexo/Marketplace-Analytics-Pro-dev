@@ -5,7 +5,7 @@ milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem
 current_phase: 61
 current_phase_name: enriquecer-fornecedor-categoria-do-contas-a-pagar
 status: executing
-stopped_at: "Phases 57+58 MERGEADAS pra prod (PR #9, merge 670ac8be; Vercel success). Pendente: E2E Wesley logado. Próximo: /gsd-plan-phase 54 (UI fila de ações) ou 55 (multi-loja)"
+stopped_at: "Phase 62 (Reposição Server-Side) PLANEJADA 2026-06-25 — 3 plans / 2 waves, plan-checker PASS (2 warnings corrigidos). Pronta p/ /gsd-execute-phase 62. (Phase 61 backfill seguia drenando em paralelo.) Próximo: /gsd-execute-phase 62"
 last_updated: "2026-06-25T18:48:15.564Z"
 last_activity: 2026-06-25
 last_activity_desc: Phase 61 execution started
