@@ -104,7 +104,7 @@ Pesquisa completa em `.planning/research/SUMMARY.md` (HIGH confidence — arquit
 - [x] **REPL-08**: Sem giro — `venda_dia = 0` na janela → não sugere compra; flag `sem_giro` se houver estoque
 - [ ] **REPL-09**: v1 NÃO desconta compras "a chegar" (OC/trânsito); a tela exibe aviso explícito dessa limitação
 - [ ] **REPL-10**: A tela substitui os inputs digitados por colunas read-only da fonte (estoque, venda/dia, cobertura atual, ponto de reposição, sugestão, valor estimado) + flags + parâmetros usados (com origem global/marca)
-- [ ] **REPL-11**: Testes unitários da fórmula + casos da RPC (normal; estoque>alvo→0; sem giro; custo nulo; arredondamento MOQ/pack; override por marca; fallback sem vendas)
+- [x] **REPL-11**: Testes unitários da fórmula + casos da RPC (normal; estoque>alvo→0; sem giro; custo nulo; arredondamento MOQ/pack; override por marca; fallback sem vendas)
 
 ## v2 Requirements (deferidos)
 

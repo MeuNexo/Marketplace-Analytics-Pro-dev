@@ -6,14 +6,14 @@ current_phase: 62
 current_phase_name: reposicao-server-side
 status: executing
 stopped_at: "Phase 62 (Reposição Server-Side) PLANEJADA 2026-06-25 — 3 plans / 2 waves, plan-checker PASS (2 warnings corrigidos). Pronta p/ /gsd-execute-phase 62. (Phase 61 backfill seguia drenando em paralelo.) Próximo: /gsd-execute-phase 62"
-last_updated: "2026-06-25T20:45:41.934Z"
+last_updated: "2026-06-25T20:55:57.235Z"
 last_activity: 2026-06-25
 last_activity_desc: Phase 62 execution started
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 27
-  completed_plans: 21
+  completed_plans: 22
   percent: 27
 ---
 
@@ -112,7 +112,7 @@ See: .planning/PROJECT.md
 ## Current Position
 
 Phase: 62 (reposicao-server-side) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-06-25 — Phase 62 execution started
 Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint visual; depois adaptar/executar **Phase 53 com Gemini**.
@@ -231,6 +231,7 @@ Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint
 | Phase 58 P04 | 6min | 2 tasks | 4 files |
 | Phase 58 P05 | 3min | 1 tasks | 2 files |
 | Phase 62 P01 | 7min | 3 tasks | 3 files |
+| Phase 62-reposicao-server-side P02 | 2min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -282,6 +283,8 @@ Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint
 - [Phase ?]: summarizeVariations exportada como função pura para testabilidade e legibilidade
 - [Phase ?]: get_reputation via EF ml-reputation com JWT real; get_goals via ml_targets anti-IDOR por seller_id; userJwt threading 3 elos (index→loop→tools)
 - [Phase ?]: Phase 62-01: get_replenishment é SECURITY INVOKER (RLS org-first enforça isolamento; cross-org provado = 0 linhas); write de replenishment_params só owner/admin; estoque SUM cross-store sem filtro logistic_type
+- [Phase ?]: TDD RED/GREEN: test file commitado antes da implementação para garantir testes testam algo real
+- [Phase ?]: resolveParams: marca>global>hardcoded espelhando CTE params da RPC; brand param informativo
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -329,7 +332,7 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-25T20:45:35.504Z
+Last session: 2026-06-25T20:53:54.408Z
 Stopped at: Phase 51 planned + verified (3 plans, 3 waves)
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
