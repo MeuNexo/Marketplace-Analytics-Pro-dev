@@ -17,6 +17,18 @@ progress:
   percent: 28
 ---
 
+## 📋 Phase 59 PLANEJADA (2026-06-25) — Fluxo de Caixa: Correções (Projeção 7d + Sync Contas a Pagar)
+
+- **Status:** research (HIGH) + 2 plans (1 wave, paralelos) + **plan-checker PASS de 1ª iteração**. Pronta p/ `/gsd-execute-phase 59`.
+- **Plans:** `59-01` (CASHFIX-01 projeção: migration CREATE OR REPLACE get_cashflow base `20260619020000` BRT, CASE em accumulated_balance_sma + daily_projection, accumulated_balance intocado, apply via MCP + validação como checkpoint) · `59-02` (CASHFIX-02 sync: EF sync-tiny-payables debug-first + EdgeRuntime.waitUntil 202, prova de causa-raiz nos logs entre 4 suspects, deploy + prova de persistência — checkpoints do orquestrador).
+- **Origem:** Wesley usando o dashboard de Fluxo de Caixa (Phase 49) achou 2 inconsistências reais. Diagnóstico ao vivo em prod `ckcdevcxgvueywivefgx`.
+- **Issue 1 (Projeção):** linha SMA aplica a média diária (~R$6.486) desde hoje → infla o curto prazo (venda de hoje só vira caixa ~14d depois; já está no confirmado). **Regra travada com Wesley:** primeiros 7 dias = só confirmado (sem previsão); do 8º dia em diante a média entra **só nos dias SEM recebimento confirmado** (dias com recebimento mantêm o real). Fix na RPC `get_cashflow` (CASE na coluna `accumulated_balance_sma`, usando data BRT). Pegar a migration MAIS recente (3 mexem em get_cashflow: 20260619000000/010000/020000). Frontend provavelmente intocado.
+- **Issue 2 (Contas a pagar CONGELADO):** `cash_outflows` = 1.960 linhas, `synced_at` = `2026-06-18 19:29` em TODAS (1 dia distinto). Cron `sync-tiny-payables-6h` ATIVO e `succeeded`, mas `net._http_response` mostra **`Timeout of 5000 ms reached`** (timeout default do pg_net) enquanto a EF leva ~15,7s. Agravante: EF retorna **200 em 15,7s mas NÃO grava** (synced_at preso em 18/06) → debug obrigatório (token Tiny vazio? fetch vazio? upsert engolido?). Fix: timeout no `net.http_post` (≥60s) ou EF assíncrona (waitUntil) + provar/corrigir a não-persistência. Manter cadência (6h já basta o "≥1x/dia").
+- **Artefatos:** `phases/59-fluxo-caixa-correcoes/59-CONTEXT.md` + entrada no ROADMAP (Phase 59, CASHFIX-01/02). **Próximo: `/gsd-plan-phase 59`.**
+- Reconciliação ao centavo com a DFC do Wesley (Phase 49) NÃO pode quebrar — só a curva da projeção muda.
+
+---
+
 ## ✅ Phase 58 EXECUTADA + DEPLOYADA (2026-06-25) — Veracidade & Completude do Nexo
 
 - **6 planos, 6 waves sequenciais** (todos tocam `tools.ts`). 192 testes verdes, build ✓, deno check ✓. 25 tools, anti-IDOR mantido, userJwt propagado index→runChat→loop→dispatchTool (B-1).
