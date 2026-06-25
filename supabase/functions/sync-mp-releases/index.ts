@@ -15,12 +15,21 @@
  * Token: mesmo access_token de ml_tokens (OAuth ML serve para ML + MP na mesma conta —
  * validado em produção: /v1/payments/search retornou 200 com o token ML da Pé Vermeio).
  * Upsert idempotente por (organization_id, payment_id).
- * Disparada por pg_cron (Pattern B) diariamente às 07:00 UTC.
+ *
+ * CASHFIX-03 (2026-06-25): Reescrito com EdgeRuntime.waitUntil (202 imediato) para
+ * eliminar o timeout do pg_net (~5s) que abortava antes dos ~118s de execução —
+ * mesmo bug do CASH-02/payables. Toda a lógica de sync movida para runSync() com
+ * try/catch + console.error (Pitfall 4: exceção no background morre silenciosamente
+ * sem log se não capturada). Modo ?debug=1 roda runSync inline para prova de persistência.
  *
  * Supabase project: ckcdevcxgvueywivefgx (NÃO usar gionpsuunfkkzzjdubfy).
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+
+// EdgeRuntime é global no runtime Supabase Edge — sem import necessário.
+// Declaração de tipo para satisfazer deno check (premissa A2).
+declare const EdgeRuntime: { waitUntil: (p: Promise<unknown>) => void };
 
 const SUPABASE_URL = (Deno.env.get("SUPABASE_URL") ?? "").trim();
 const SERVICE_KEY  = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
@@ -283,29 +292,28 @@ async function syncOrg(
   return { org_id: orgId, upserted };
 }
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+// ── Background sync (toda a lógica de sync — Pitfall 4: try/catch obrigatório) ─
+// CASHFIX-03: movida para runSync() para uso com EdgeRuntime.waitUntil.
+// O try/catch externo captura TODA exceção do background — sem ele o processo
+// morre silenciosamente (sem log) quando chamado via EdgeRuntime.waitUntil.
 
-  const guard = requireServiceRole(req);
-  if (guard) return guard;
-
+async function runSync(daysBack: number, daysAhead: number): Promise<unknown> {
   try {
     const sb = createClient(SUPABASE_URL, SERVICE_KEY);
-
-    let body: any = {};
-    try { body = await req.json(); } catch { /* sem body */ }
-
-    const daysBack  = Number(body.days_back  ?? 30);
-    const daysAhead = Number(body.days_ahead ?? 45);
 
     const { data: tokenRows, error: tokErr } = await sb
       .from("ml_tokens")
       .select("ml_user_id,organization_id,seller_id")
       .not("refresh_token", "is", null);
 
-    if (tokErr) return json({ ok: false, error: tokErr.message }, 500);
+    if (tokErr) {
+      console.error("sync-mp-releases runSync error: Erro ao buscar ml_tokens:", tokErr.message);
+      return { ok: false, error: tokErr.message };
+    }
+
     if (!tokenRows || tokenRows.length === 0) {
-      return json({ ok: true, msg: "no active users" });
+      console.log("sync-mp-releases runSync: no active users");
+      return { ok: true, days_back: daysBack, days_ahead: daysAhead, results: [] };
     }
 
     const results: any[] = [];
@@ -319,10 +327,45 @@ serve(async (req) => {
       }
     }
 
-    return json({ ok: true, days_back: daysBack, days_ahead: daysAhead, results });
-
-  } catch (err: any) {
-    console.error("sync-mp-releases error:", err);
-    return json({ ok: false, error: err.message }, 500);
+    return { ok: true, days_back: daysBack, days_ahead: daysAhead, results };
+  } catch (err: unknown) {
+    // Pitfall 4: capturar TODA exceção do background — sem try/catch o processo
+    // morre silenciosamente (sem log) quando chamado via EdgeRuntime.waitUntil
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("sync-mp-releases runSync error:", message);
+    return { ok: false, error: message };
   }
+}
+
+// ── Main handler ──────────────────────────────────────────────────────────────
+// CASHFIX-03: serve() responde 202 imediatamente via EdgeRuntime.waitUntil(runSync()).
+// O pg_net do cron recebe 202 em <200ms → nunca mais timeout de ~5s abortando ~118s.
+// A lógica de sync continua em background.
+// requireServiceRole() permanece ANTES do waitUntil (T-ixc-01: auth não pode mover).
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+
+  const guard = requireServiceRole(req);
+  if (guard) return guard;
+
+  let body: any = {};
+  try { body = await req.json(); } catch { /* sem body */ }
+
+  const daysBack  = Number(body.days_back  ?? 30);
+  const daysAhead = Number(body.days_ahead ?? 45);
+
+  // Modo debug síncrono (CASHFIX-03): ?debug=1 roda runSync inline e
+  // devolve o diagnóstico no corpo — permite ao orquestrador provar a persistência
+  // (upserted>0) sem depender de logs de console.
+  const isDebug = new URL(req.url).searchParams.get("debug") === "1";
+  if (isDebug) {
+    const diag = await runSync(daysBack, daysAhead);
+    return json({ ok: true, mode: "debug-sync", diag }, 200);
+  }
+
+  // Desacoplar o pg_net da duração de execução (CASHFIX-03):
+  // runSync() processa em background — o caller recebe 202 imediatamente.
+  EdgeRuntime.waitUntil(runSync(daysBack, daysAhead));
+  return json({ ok: true, msg: "sync enqueued" }, 202);
 });
