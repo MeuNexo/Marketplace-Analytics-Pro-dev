@@ -4,22 +4,22 @@ milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
 current_phase: 62
 current_phase_name: reposicao-server-side
-status: executing
+status: verifying
 stopped_at: "Phase 62 (Reposição Server-Side) PLANEJADA 2026-06-25 — 3 plans / 2 waves, plan-checker PASS (2 warnings corrigidos). Pronta p/ /gsd-execute-phase 62. (Phase 61 backfill seguia drenando em paralelo.) Próximo: /gsd-execute-phase 62"
-last_updated: "2026-06-25T20:55:57.235Z"
+last_updated: "2026-06-25T21:02:00.695Z"
 last_activity: 2026-06-25
 last_activity_desc: Phase 62 execution started
 progress:
   total_phases: 11
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 27
-  completed_plans: 22
-  percent: 27
+  completed_plans: 23
+  percent: 36
 ---
 
 ## ✅ Phase 59 EXECUTADA + PROVADA EM PROD (2026-06-25) — Fluxo de Caixa: Correções (Projeção 7d + Sync Contas a Pagar)
 
-- **Status:** Ready to execute
+- **Status:** Phase complete — ready for verification
 - **CASHFIX-01 (projeção 7d):** migration `20260659000000` aplicada via MCP. Validado por SQL: dias 1-7 a linha âmbar = confirmado (previsão=0, sem inflar); 8º+ média só nos dias sem recebimento. `accumulated_balance` intocado. **Reconciliação DFC:** descoberto que `financial_settings.initial_balance` estava STALE (R$21.676,91 de 19/06) — corrigido p/ R$16.833,14 (abertura 25/06 da DFC do Wesley); resíduo = só a liberação intradiária do MP de hoje. Commits 3022829c (migration) + bf71486d (legenda).
 - **CASHFIX-02 (sync payables):** EF `sync-tiny-payables` v5 deployada via **MCP deploy_edge_function** (não precisou do token CLI do Wesley!). **Causa-raiz REAL ≠ os 4 suspects:** a lógica sempre funcionou (debug-sync provou: 1991 itens, upsert OK); o congelamento era o **pg_net derrubando a execução síncrona de ~15s aos 5s antes do commit**. Fix = `EdgeRuntime.waitUntil` (202 em ~290ms, background persiste). Provado: congelamento 18/06→25/06, synced_at avançando, count(distinct synced_at::date) 1→2, 1991 contas gravadas via chamada cron-style. Commits 0f877492 + 02cc72cd. **Sem migration de cron** (202 rápido basta).
 - ⚠️ **FOLLOW-UP:** `sync-mp-releases` tem o MESMO padrão (EF lenta ~118s, pg_net timeout) — não congelou mas está em risco; vale aplicar o mesmo `waitUntil`.
@@ -113,7 +113,7 @@ See: .planning/PROJECT.md
 
 Phase: 62 (reposicao-server-side) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-25 — Phase 62 execution started
 Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint visual; depois adaptar/executar **Phase 53 com Gemini**.
 
@@ -232,6 +232,7 @@ Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint
 | Phase 58 P05 | 3min | 1 tasks | 2 files |
 | Phase 62 P01 | 7min | 3 tasks | 3 files |
 | Phase 62-reposicao-server-side P02 | 2min | 2 tasks | 2 files |
+| Phase 62-reposicao-server-side P03 | 10 | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -332,7 +333,7 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-25T20:53:54.408Z
+Last session: 2026-06-25T21:02:00.677Z
 Stopped at: Phase 51 planned + verified (3 plans, 3 waves)
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
