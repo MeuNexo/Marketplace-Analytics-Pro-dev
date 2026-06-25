@@ -21,6 +21,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 - [ ] **Phase 59: Fluxo de Caixa — Correções (Projeção 7d + Sync Contas a Pagar)** — (a) a linha de projeção (média 15d) não infla os primeiros dias: nos primeiros 7 dias segue só o confirmado e, do 8º dia em diante, a média só preenche dias SEM recebimento confirmado; (b) o contas a pagar volta a sincronizar com o Tiny e PERSISTIR ≥1x/dia (hoje congelado em 18/06 — `net.http_post` estoura o timeout default de 5s vs ~15s da EF, e mesmo com 200 não grava). Correção do Fluxo de Caixa da Phase 49 (CASHFIX-01, CASHFIX-02). **Planejada 2026-06-25 — 2 plans (1 wave), plan-checker PASS de 1ª. Pronta p/ `/gsd-execute-phase 59`.**
 - [x] **Phase 58: Nexo — Veracidade & Completude dos Dados** — Corrigir a falta/inconsistência de informação que faz o Nexo afirmar fatos errados (ex: "0 em estoque/ruptura" lendo só o Full, não o consolidado; estoque item-level mascarando variações; sem sinal de frescura). Auditoria fonte-da-verdade das tools vs o que o dashboard mostra; estoque consolidado + por variação; frescura (synced_at); declarar limitação em vez de inventar (VERAC-01..06). **DEPLOYADA (EF nexo-chat v5 + cron billing); re-auditoria VERAC-07 PASS. Pendente: E2E Wesley + rotação de segredos.**
 - [ ] **Phase 60: Alinhamento da DFC (Fluxo de Caixa)** — Fechar a projeção do `/caixa` com a DFC/Tiny do Wesley. (a) ENTRADA: dia 8+ usa `GREATEST(d.inc, v_sma)` para a média R$5.880/dia virar PISO (a cauda do MP com recebimentos minúsculos parava de suprimir a média); (b) SAÍDA: `get_cashflow` ganha parâmetro `p_include_purchase_forecasts BOOLEAN DEFAULT false` — por padrão exclui `category='Previsões de compra'` (reconciliação provada ao centavo: R$99.495,58 − R$12.389,79 previsões = R$87.105,79 = Tiny do Wesley) e resolve a OC383 contada 2x; (c) toggle "Incluir previsões de compra" na UI /caixa. Continuação da Phase 59 (CASHFIX-05, CASHFIX-06). **Planejada 2026-06-25.**
+- [ ] **Phase 61: Enriquecer Fornecedor + Categoria do Contas a Pagar** — Os gráficos **Composição de Custos por Mês** (só "Outros" + "Previsões de compra", sem categorias reais) e **Exposição por Fornecedor** (só Pralana) só funcionaram 1x e voltaram a quebrar. Causa-raiz: em `cash_outflows`, 1991/2011 linhas têm `category` vazia E `supplier` nulo. O endpoint Tiny `/contas-pagar` (LISTA) NÃO traz categoria nem fornecedor — só o DETALHE `/contas-pagar/{id}` traz (`categoria.descricao` + `contato.nome`). O `sync-tiny-payables` lê só a lista → grava NULL e, a cada sync, **sobrescreve** o que o enriquecimento-detalhe da Phase 51 (fila `cat_backfill_queue` + `enrich_drain`/`enrich_harvest` via pg_net/cron) havia preenchido; o enqueue usa `ON CONFLICT DO NOTHING`, então linhas `done` nunca são re-enriquecidas. Fix (opção A, aprovada): (a) `sync-tiny-payables` para de escrever `category`/`supplier` no upsert → enriquecimento vira fonte única; (b) `enrich_harvest` passa a gravar TAMBÉM `supplier = contato.nome` (hoje só categoria); (c) enqueue re-marca `todo` toda linha com `category IS NULL OR supplier IS NULL`, sobrevivendo a re-syncs; (d) rodar o backfill das ~2011 linhas via fila/cron já existentes (Tiny ~1–2 req/s, drain throttled ~20–30 min, resumível). Continuação da Phase 51 + Phase 60 (CASHFIX-07, CASHFIX-08). **Planejada 2026-06-25.**
 
 ---
 
@@ -239,6 +240,26 @@ centavo com o contas a pagar do Tiny, com as "Previsões de compra" controlávei
 - [x] 60-03 (feedback Wesley) — toggle move também os indicadores de SALDO/PROJEÇÃO (TreasuryPanel saldo/alerta/mín + get_projected_balance_summary), NÃO a Exposição por fornecedor (100% previsões — zeraria). Migration 20260660000200 + hooks/prop. **Provado em prod; commit 9d614b1d pushado.** Descoberta: `supplier` só existe nas OCs (dívida de sync futura)
 
 Continuação direta da Phase 59. Diagnóstico fechado nesta sessão (2026-06-25) com dados live + decisões do Wesley. **Pendente: validação visual do Wesley em /fluxo-de-caixa (curva OFF vs DFC + toggle ao vivo).**
+
+---
+
+### Phase 61: Enriquecer Fornecedor + Categoria do Contas a Pagar
+
+**Goal**: Os gráficos "Composição de Custos por Mês" e "Exposição por Fornecedor" da `/fluxo-de-caixa` passam a mostrar as categorias reais do plano de contas do Tiny e os fornecedores reais (multi-fornecedor), e se mantêm estáveis após cada `sync-tiny-payables` (não voltam a "Outros"/só-Pralana).
+**Depends on**: Phase 51 (backfill de categoria via fila `cat_backfill_queue` + `enrich_drain`/`enrich_harvest`), Phase 60 (DFC alinhada; descoberta de que `supplier` só existia nas OCs)
+**Requirements**: CASHFIX-07 (enriquecimento é fonte única de category/supplier; sync para de sobrescrever), CASHFIX-08 (backfill repovoa as 2011 linhas com categoria + fornecedor)
+**Success Criteria** (what must be TRUE):
+
+  1. `sync-tiny-payables` NÃO escreve mais `category` nem `supplier` no upsert de `cash_outflows` (on-conflict preserva os valores enriquecidos); um sync executado após o backfill não zera nenhuma linha já enriquecida (contagem de `category IS NOT NULL` não cai)
+  2. `enrich_harvest` grava `supplier = contato.nome` além de `category = categoria.descricao` ao processar o detalhe `/contas-pagar/{id}`
+  3. O enqueue (`treasury_cat_enqueue` / função de enfileiramento) re-marca `todo` toda linha de `cash_outflows` com `category IS NULL OR supplier IS NULL`, em vez de `ON CONFLICT DO NOTHING` que pula as `done`
+  4. Após drain do backfill, `cash_outflows` tem ≥ 90% das linhas com `category` não-nula E `supplier` não-nulo (hoje 20/2011); `COUNT(DISTINCT supplier) > 1` e `COUNT(DISTINCT category) > 1`
+  5. Em produção, "Composição de Custos por Mês" mostra ≥ 3 categorias reais (além de "Outros"/"Previsões de compra") e "Exposição por Fornecedor" mostra ≥ 2 fornecedores reais
+  6. Nenhuma regressão na DFC da Phase 60: `get_cashflow` (toggle OFF/ON), reconciliação R$87.105,79 e a Exposição por Fornecedor seguindo o comportamento da Phase 60 (não some/zera)
+
+**Plans**: a definir pelo planner (provável 1 wave — EF `sync-tiny-payables` + migration enrich/enqueue + execução do backfill).
+
+Continuação da Phase 51 + Phase 60. Causa-raiz e estado do banco (1991/2011 com category vazia E supplier nulo) validados em 2026-06-25 com dados live; opção A aprovada pelo Wesley. **Planejada 2026-06-25.**
 
 ---
 
