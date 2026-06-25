@@ -4,11 +4,11 @@ milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
 current_phase: 62
 current_phase_name: reposicao-server-side
-status: verifying
-stopped_at: "Phase 62 (Reposição Server-Side) PLANEJADA 2026-06-25 — 3 plans / 2 waves, plan-checker PASS (2 warnings corrigidos). Pronta p/ /gsd-execute-phase 62. (Phase 61 backfill seguia drenando em paralelo.) Próximo: /gsd-execute-phase 62"
-last_updated: "2026-06-25T21:02:00.695Z"
+status: complete
+stopped_at: "Phase 62 (Reposição Server-Side) EXECUTADA + VERIFICADA (PASS 7/7) 2026-06-25. RPC get_replenishment + tabela replenishment_params aplicadas em prod via MCP (ckcdevcxgvueywivefgx); validado: 116 anúncios Pé Vermeio, 29 sugeridos, gatilho cortando 87, anti-IDOR cross-org=0, advisors limpos; módulo TS replenishmentUtils + 203 testes verdes; aba Compra Recomendada em /estoque. DEPLOY DE PRODUÇÃO FEITO: PR #11 mergeado (merge 939bddde) → Vercel prod dpl_H7LC… state=READY target=production. Próximo: validação visual Wesley na aba 'Compra Recomendada' em /estoque + (pendência antiga) Phase 61 backfill."
+last_updated: "2026-06-25T21:10:00.000Z"
 last_activity: 2026-06-25
-last_activity_desc: Phase 62 execution started
+last_activity_desc: Phase 62 executed + verified (PASS 7/7)
 progress:
   total_phases: 11
   completed_phases: 4
