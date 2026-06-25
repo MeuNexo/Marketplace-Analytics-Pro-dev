@@ -257,7 +257,10 @@ Continuação direta da Phase 59. Diagnóstico fechado nesta sessão (2026-06-25
   5. Em produção, "Composição de Custos por Mês" mostra ≥ 3 categorias reais (além de "Outros"/"Previsões de compra") e "Exposição por Fornecedor" mostra ≥ 2 fornecedores reais
   6. Nenhuma regressão na DFC da Phase 60: `get_cashflow` (toggle OFF/ON), reconciliação R$87.105,79 e a Exposição por Fornecedor seguindo o comportamento da Phase 60 (não some/zera)
 
-**Plans**: a definir pelo planner (provável 1 wave — EF `sync-tiny-payables` + migration enrich/enqueue + execução do backfill).
+**Plans**: 3 plans (3 waves)
+- [ ] 61-01-PLAN.md — Código fonte única: remover category/supplier do upsert da EF sync-tiny-payables + migration enrich_payable_step/enrich_enqueue_new/enrich_harvest (Wave 1, autônomo)
+- [ ] 61-02-PLAN.md — Go-live + prova do risco A1 (preservação no ON CONFLICT, com fallback de trigger) + seed/drain do backfill ≥90% (Wave 2, checkpoints via MCP)
+- [ ] 61-03-PLAN.md — Validação final: estabilidade pós-sync + gráficos em prod (≥3 categorias, ≥2 fornecedores) + no-regressão Phase 60 (R$87.105,79) (Wave 3, checkpoints)
 
 Continuação da Phase 51 + Phase 60. Causa-raiz e estado do banco (1991/2011 com category vazia E supplier nulo) validados em 2026-06-25 com dados live; opção A aprovada pelo Wesley. **Planejada 2026-06-25.**
 
