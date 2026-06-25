@@ -90,6 +90,22 @@ Pesquisa completa em `.planning/research/SUMMARY.md` (HIGH confidence — arquit
 - [x] **VERAC-06**: O Nexo não confunde campos — unidades vendidas ≠ estoque; receita ≠ lucro; Full ≠ total; período passado ≠ projeção futura. Descrições das tools deixam a semântica inequívoca
 - [ ] **VERAC-07**: Bateria de testes cobrindo TODOS os domínios (vendas/faturamento, margem por produto/marca/UF/dia, ads por produto/campanha, estoque/cobertura, caixa/tesouraria, DRE/custos, perguntas, devoluções, reputação, fornecedores, metas, alertas, score) — cada domínio validado contra a fonte-da-verdade do dashboard, com as divergências corrigidas e documentadas
 
+### REPL — Reposição (compra recomendada server-side) (Phase 62, decisão Wesley 2026-06-25)
+
+> **Motivo:** a "Compra Recomendada" atual (`src/lib/analysis/compraUtils.ts` + `CompraRecomendadaPanel.tsx`) calcula no front, usa estoque **digitado à mão**, venda/dia da **curva de preço simulada** (não venda real) e não tem lead time, estoque de segurança, gatilho, MOQ nem custo — sugerindo comprar o que já se tem. Wesley quer "fazer funcionar corretamente": fórmula e correções centralizadas numa RPC server-side (mesmo padrão das Phases 59/60). Escopo v1: sugestão **por anúncio**.
+
+- [ ] **REPL-01**: Cálculo de reposição numa RPC `get_replenishment` server-side (`SECURITY INVOKER`, escopada por org, sem `org_id` em parâmetro — anti-IDOR), paginável; nada de compute pesado no front
+- [ ] **REPL-02**: Estoque atual = `ml_inventory_cache` (tudo no ML: Full + anúncios), read-only da fonte — não digitado pelo usuário
+- [ ] **REPL-03**: Venda/dia = média de vendas REAIS numa janela (default 30d) — não a curva de preço simulada
+- [ ] **REPL-04**: Modelo de ponto de reposição: `ponto = venda_dia×lead_time + estoque_seg`; `alvo = venda_dia×meta_cobertura + estoque_seg`; **só sugere compra quando estoque_atual ≤ ponto** (resolve "sugerir o que já tem")
+- [ ] **REPL-05**: Tabela `replenishment_params` (lead_time, meta_cobertura, safety, MOQ, pack) configurável **global + override por marca/fornecedor**, precedência marca > fornecedor > global
+- [ ] **REPL-06**: Sugestão respeita MOQ (mínimo do fornecedor) e múltiplo de embalagem (arredonda pra cima)
+- [ ] **REPL-07**: Custo nulo — sugere a quantidade mesmo sem custo, mas marca `custo_ausente` e não calcula valor R$ (causa conhecida: marcas de revenda sem custo no Tiny)
+- [ ] **REPL-08**: Sem giro — `venda_dia = 0` na janela → não sugere compra; flag `sem_giro` se houver estoque
+- [ ] **REPL-09**: v1 NÃO desconta compras "a chegar" (OC/trânsito); a tela exibe aviso explícito dessa limitação
+- [ ] **REPL-10**: A tela substitui os inputs digitados por colunas read-only da fonte (estoque, venda/dia, cobertura atual, ponto de reposição, sugestão, valor estimado) + flags + parâmetros usados (com origem global/marca)
+- [ ] **REPL-11**: Testes unitários da fórmula + casos da RPC (normal; estoque>alvo→0; sem giro; custo nulo; arredondamento MOQ/pack; override por marca; fallback sem vendas)
+
 ## v2 Requirements (deferidos)
 
 ### Notificações
