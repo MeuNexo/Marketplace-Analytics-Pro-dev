@@ -20,6 +20,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 - [x] **Phase 57: Nexo Conversacional (Chat Consultor)** — Painel de chat flutuante "Nexo" em todas as telas; multi-turno efêmero; persona COO + TODOS os playbooks embutidos; function-calling read-only escopado por org (anti-IDOR) para puxar dados ao vivo da conta; grounding numérico; kill-switch reusado; guardrails de custo (NEXO-01..07). **MERGEADA PRA PROD (PR #9, merge 670ac8be) junto com Phase 58. Pendente: E2E Wesley logado.**
 - [ ] **Phase 59: Fluxo de Caixa — Correções (Projeção 7d + Sync Contas a Pagar)** — (a) a linha de projeção (média 15d) não infla os primeiros dias: nos primeiros 7 dias segue só o confirmado e, do 8º dia em diante, a média só preenche dias SEM recebimento confirmado; (b) o contas a pagar volta a sincronizar com o Tiny e PERSISTIR ≥1x/dia (hoje congelado em 18/06 — `net.http_post` estoura o timeout default de 5s vs ~15s da EF, e mesmo com 200 não grava). Correção do Fluxo de Caixa da Phase 49 (CASHFIX-01, CASHFIX-02). **Planejada 2026-06-25 — 2 plans (1 wave), plan-checker PASS de 1ª. Pronta p/ `/gsd-execute-phase 59`.**
 - [x] **Phase 58: Nexo — Veracidade & Completude dos Dados** — Corrigir a falta/inconsistência de informação que faz o Nexo afirmar fatos errados (ex: "0 em estoque/ruptura" lendo só o Full, não o consolidado; estoque item-level mascarando variações; sem sinal de frescura). Auditoria fonte-da-verdade das tools vs o que o dashboard mostra; estoque consolidado + por variação; frescura (synced_at); declarar limitação em vez de inventar (VERAC-01..06). **DEPLOYADA (EF nexo-chat v5 + cron billing); re-auditoria VERAC-07 PASS. Pendente: E2E Wesley + rotação de segredos.**
+- [ ] **Phase 60: Alinhamento da DFC (Fluxo de Caixa)** — Fechar a projeção do `/caixa` com a DFC/Tiny do Wesley. (a) ENTRADA: dia 8+ usa `GREATEST(d.inc, v_sma)` para a média R$5.880/dia virar PISO (a cauda do MP com recebimentos minúsculos parava de suprimir a média); (b) SAÍDA: `get_cashflow` ganha parâmetro `p_include_purchase_forecasts BOOLEAN DEFAULT false` — por padrão exclui `category='Previsões de compra'` (reconciliação provada ao centavo: R$99.495,58 − R$12.389,79 previsões = R$87.105,79 = Tiny do Wesley) e resolve a OC383 contada 2x; (c) toggle "Incluir previsões de compra" na UI /caixa. Continuação da Phase 59 (CASHFIX-05, CASHFIX-06). **Planejada 2026-06-25.**
 
 ---
 
@@ -208,6 +209,33 @@ congelamento desde 18/06.
 - [x] 59-02-PLAN.md — CASHFIX-02: EF `sync-tiny-payables` + `EdgeRuntime.waitUntil` (202 imediato) + modo debug síncrono. **Causa-raiz REAL: pg_net derrubava a execução de ~15s aos 5s antes do commit (não os 4 suspects). Provado em prod: congelamento 18/06 quebrado, synced_at avançando, 1991 contas gravadas. EF v5 deployada (prod==repo). Cron funciona sem migration nova**
 
 Contexto/diagnóstico: `phases/59-fluxo-caixa-correcoes/59-CONTEXT.md`
+
+---
+
+### Phase 60: Alinhamento da DFC (Fluxo de Caixa)
+
+**Goal**: A projeção do gráfico de Fluxo de Caixa (`/caixa`) reflete a DFC/Tiny do Wesley — entrada
+projetada de R$5.880/dia como piso (sem a cauda do MP suprimindo a média) e saídas reconciliadas ao
+centavo com o contas a pagar do Tiny, com as "Previsões de compra" controláveis por toggle na UI.
+**Depends on**: Phase 59 (Fluxo de Caixa — Correções; baseline `get_cashflow` regra 7d + CASHFIX-04 pending-only)
+**Requirements**: CASHFIX-05 (entrada piso GREATEST), CASHFIX-06 (toggle previsões de compra)
+**Success Criteria** (what must be TRUE):
+
+  1. Na RPC `get_cashflow`, do 8º dia em diante a linha `accumulated_balance_sma` usa `GREATEST(d.inc, v_sma)`
+     — a média de 15d vira piso; recebimentos confirmados maiores que a média mantêm o real. Dias 1-7 seguem
+     confirmado-only (regra travada na Phase 59, intacta). `daily_projection` no dia 8+ = `GREATEST(0, v_sma - d.inc)`
+  2. `get_cashflow` aceita 4º parâmetro `p_include_purchase_forecasts BOOLEAN DEFAULT false`; com `false` a CTE
+     `exp` filtra `AND COALESCE(category,'') <> 'Previsões de compra'` (além do `status='pending'`); com `true` soma as previsões
+  3. Reconciliação provada: com toggle OFF, soma das saídas em aberto de 05–12/07 = R$87.105,79 (= Tiny do Wesley),
+     e a OC nº 383 deixa de ser contada 2x (some a cópia "previsão" de 09/07, fica a conta real de 11/07)
+  4. A assinatura antiga de 3 args é substituída sem ambiguidade (`DROP FUNCTION public.get_cashflow(uuid,date,date)`
+     antes do `CREATE` de 4 args); `SECURITY INVOKER` + `REVOKE` de PUBLIC/anon + `GRANT` authenticated preservados
+  5. Toggle "Incluir previsões de compra" na página `/caixa` (desligado por padrão) propaga o 4º parâmetro pro RPC;
+     a linha confirmada (`accumulated_balance`) permanece intacta
+
+**Plans**: a definir no planejamento (estimado 2 — backend RPC + frontend toggle)
+
+Continuação direta da Phase 59. Diagnóstico fechado nesta sessão (2026-06-25) com dados live + decisões do Wesley.
 
 ---
 
