@@ -2,24 +2,24 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 61
-current_phase_name: enriquecer-fornecedor-categoria-do-contas-a-pagar
+current_phase: 62
+current_phase_name: reposicao-server-side
 status: executing
 stopped_at: "Phase 62 (Reposição Server-Side) PLANEJADA 2026-06-25 — 3 plans / 2 waves, plan-checker PASS (2 warnings corrigidos). Pronta p/ /gsd-execute-phase 62. (Phase 61 backfill seguia drenando em paralelo.) Próximo: /gsd-execute-phase 62"
-last_updated: "2026-06-25T18:48:15.564Z"
+last_updated: "2026-06-25T20:45:41.934Z"
 last_activity: 2026-06-25
-last_activity_desc: Phase 61 execution started
+last_activity_desc: Phase 62 execution started
 progress:
-  total_phases: 10
+  total_phases: 11
   completed_phases: 3
-  total_plans: 24
-  completed_plans: 18
-  percent: 30
+  total_plans: 27
+  completed_plans: 21
+  percent: 27
 ---
 
 ## ✅ Phase 59 EXECUTADA + PROVADA EM PROD (2026-06-25) — Fluxo de Caixa: Correções (Projeção 7d + Sync Contas a Pagar)
 
-- **Status:** Executing Phase 61
+- **Status:** Ready to execute
 - **CASHFIX-01 (projeção 7d):** migration `20260659000000` aplicada via MCP. Validado por SQL: dias 1-7 a linha âmbar = confirmado (previsão=0, sem inflar); 8º+ média só nos dias sem recebimento. `accumulated_balance` intocado. **Reconciliação DFC:** descoberto que `financial_settings.initial_balance` estava STALE (R$21.676,91 de 19/06) — corrigido p/ R$16.833,14 (abertura 25/06 da DFC do Wesley); resíduo = só a liberação intradiária do MP de hoje. Commits 3022829c (migration) + bf71486d (legenda).
 - **CASHFIX-02 (sync payables):** EF `sync-tiny-payables` v5 deployada via **MCP deploy_edge_function** (não precisou do token CLI do Wesley!). **Causa-raiz REAL ≠ os 4 suspects:** a lógica sempre funcionou (debug-sync provou: 1991 itens, upsert OK); o congelamento era o **pg_net derrubando a execução síncrona de ~15s aos 5s antes do commit**. Fix = `EdgeRuntime.waitUntil` (202 em ~290ms, background persiste). Provado: congelamento 18/06→25/06, synced_at avançando, count(distinct synced_at::date) 1→2, 1991 contas gravadas via chamada cron-style. Commits 0f877492 + 02cc72cd. **Sem migration de cron** (202 rápido basta).
 - ⚠️ **FOLLOW-UP:** `sync-mp-releases` tem o MESMO padrão (EF lenta ~118s, pg_net timeout) — não congelou mas está em risco; vale aplicar o mesmo `waitUntil`.
@@ -107,14 +107,14 @@ See: .planning/PROJECT.md
 
 **Milestone:** v8.0 — Consultor v2 (Inteligência)
 **Core value:** Consultor que explica, prioriza e ajuda a agir — LLM sob demanda + ações com aprovação, sobre o motor determinístico do v1.
-**Current focus:** Phase 61 — enriquecer-fornecedor-categoria-do-contas-a-pagar
+**Current focus:** Phase 62 — reposicao-server-side
 
 ## Current Position
 
-Phase: 61 (enriquecer-fornecedor-categoria-do-contas-a-pagar) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 61
-Last activity: 2026-06-25 — Phase 61 execution started
+Phase: 62 (reposicao-server-side) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-06-25 — Phase 62 execution started
 Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint visual; depois adaptar/executar **Phase 53 com Gemini**.
 
 ### Phase 54 — Wave 1 EXECUTADA (2026-06-24), Wave 2 PENDENTE
@@ -230,6 +230,7 @@ Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint
 | Phase 58-veracidade-completude-dados P03 | 4min | 2 tasks | 3 files |
 | Phase 58 P04 | 6min | 2 tasks | 4 files |
 | Phase 58 P05 | 3min | 1 tasks | 2 files |
+| Phase 62 P01 | 7min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -280,6 +281,7 @@ Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint
 - [Phase ?]: get_inventory: status allow-list (active/paused/all), valor fora do enum cai no default active
 - [Phase ?]: summarizeVariations exportada como função pura para testabilidade e legibilidade
 - [Phase ?]: get_reputation via EF ml-reputation com JWT real; get_goals via ml_targets anti-IDOR por seller_id; userJwt threading 3 elos (index→loop→tools)
+- [Phase ?]: Phase 62-01: get_replenishment é SECURITY INVOKER (RLS org-first enforça isolamento; cross-org provado = 0 linhas); write de replenishment_params só owner/admin; estoque SUM cross-store sem filtro logistic_type
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -327,7 +329,7 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-24T21:30:22.878Z
+Last session: 2026-06-25T20:45:35.504Z
 Stopped at: Phase 51 planned + verified (3 plans, 3 waves)
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
