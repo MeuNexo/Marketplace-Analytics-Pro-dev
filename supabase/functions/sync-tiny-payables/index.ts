@@ -167,11 +167,13 @@ interface TinyPayable {
 
 // ── Buscar contas a pagar paginando (CRÍTICO: sem parâmetro "situacao") ───────
 
+// deno-lint-ignore no-explicit-any
 async function fetchPayables(
   token: string,
   dateFrom: string,
   dateTo: string,
   mlUserId: string,
+  diag?: any,
 ): Promise<TinyPayable[]> {
   let offset = 0;
   const allItems: TinyPayable[] = [];
@@ -197,6 +199,12 @@ async function fetchPayables(
     if (offset === 0) {
       // Suspect 3 — formato de resposta Tiny: logar keys reais retornadas pela API
       console.log(`[sync-tiny-payables] ml_user_id=${mlUserId} raw keys=${Object.keys(data ?? {}).join(",")}, itens=${itens.length}, total=${total}`);
+      if (diag) {
+        diag.rawKeys = Object.keys(data ?? {});
+        diag.firstPageItens = itens.length;
+        diag.total = total;
+        diag.sampleType = Array.isArray(data) ? "array" : typeof data;
+      }
     }
 
     if (offset === 0 && !itens.length && !Array.isArray(data)) {
@@ -221,17 +229,22 @@ async function fetchPayables(
 
 // ── Processar uma loja (ml_user_id) ──────────────────────────────────────────
 
+// deno-lint-ignore no-explicit-any
 async function processLoja(
   mlUserId: string,
   organizationId: string,
   dateFrom: string,
   dateTo: string,
+  diag?: any,
 ): Promise<{ synced: number; errors: number }> {
   const token = await getTinyToken(mlUserId);
   // Suspect 2 — token Tiny: se chegou aqui sem throw, token foi obtido com sucesso
   console.log(`[sync-tiny-payables] ml_user_id=${mlUserId} token obtido OK`);
+  if (diag) diag.tokenOk = true;
 
-  const itens = await fetchPayables(token, dateFrom, dateTo, mlUserId);
+  const itens = await fetchPayables(token, dateFrom, dateTo, mlUserId, diag);
+
+  if (diag) diag.itensFetched = itens.length;
 
   if (!itens.length) {
     console.log(`[sync-tiny-payables] ml_user_id=${mlUserId}: 0 contas a pagar no período`);
@@ -279,6 +292,7 @@ async function processLoja(
 
   // Suspect 4 — upsert engolido: logar rows.length antes do upsert
   console.log(`[sync-tiny-payables] ml_user_id=${mlUserId} rows para upsert=${rows.length}`);
+  if (diag) diag.rowsToUpsert = rows.length;
 
   // UPSERT idempotente por (organization_id, tiny_payable_id)
   // ignoreDuplicates: false → atualiza status (em_aberto→pago) quando reencontrado
@@ -292,6 +306,7 @@ async function processLoja(
   if (upsertErr) {
     // Suspect 4: logar erro completo (schema drift, constraint, service_role_key inválida)
     console.error(`[sync-tiny-payables] ml_user_id=${mlUserId} upsert error:`, upsertErr.message);
+    if (diag) diag.upsertError = upsertErr.message;
     return { synced: 0, errors: rows.length };
   }
 
@@ -301,7 +316,11 @@ async function processLoja(
 
 // ── Background sync (toda a lógica de sync — Pitfall 4: try/catch obrigatório) ─
 
-async function runSync(): Promise<void> {
+// deno-lint-ignore no-explicit-any
+async function runSync(): Promise<any> {
+  // diagnóstico estruturado (retornado no modo debug síncrono)
+  // deno-lint-ignore no-explicit-any
+  const DIAG: any = { tokenRows: 0, lojas: [] };
   try {
     // Calcular janela de datas
     const now      = new Date();
@@ -318,16 +337,19 @@ async function runSync(): Promise<void> {
 
     if (tokErr) {
       console.error("[sync-tiny-payables] Erro ao buscar ml_tokens:", tokErr.message);
-      return;
+      DIAG.tokErr = tokErr.message;
+      return DIAG;
     }
 
     // Observabilidade: Suspect 1 — nº de lojas com Tiny conectado
     const mlUserIds = tokenRows?.map((r: { ml_user_id: string }) => r.ml_user_id) ?? [];
     console.log(`[sync-tiny-payables] tokenRows=${tokenRows?.length ?? 0} lojas com Tiny conectado, ml_user_ids=${JSON.stringify(mlUserIds)}`);
+    DIAG.tokenRows = tokenRows?.length ?? 0;
+    DIAG.mlUserIds = mlUserIds;
 
     if (!tokenRows?.length) {
       console.log("[sync-tiny-payables] Nenhuma loja com Tiny conectado — abortando. Verificar ml_tokens.tiny_access_token.");
-      return;
+      return DIAG;
     }
 
     let totalSynced = 0;
@@ -337,25 +359,36 @@ async function runSync(): Promise<void> {
     for (const row of tokenRows) {
       const mlUserId       = String(row.ml_user_id);
       const organizationId = String(row.organization_id);
+      // deno-lint-ignore no-explicit-any
+      const lojaDiag: any = { ml_user_id: mlUserId, tokenOk: false };
       try {
-        const res = await processLoja(mlUserId, organizationId, dateFrom, dateTo);
+        const res = await processLoja(mlUserId, organizationId, dateFrom, dateTo, lojaDiag);
         lojaResults[mlUserId] = res;
+        lojaDiag.synced = res.synced;
+        lojaDiag.errors = res.errors;
         totalSynced += res.synced;
         totalErrors += res.errors;
       } catch (lojaErr: unknown) {
         const msg = lojaErr instanceof Error ? lojaErr.message : String(lojaErr);
         console.error(`[sync-tiny-payables] ml_user_id=${mlUserId} ERRO:`, msg);
         lojaResults[mlUserId] = { synced: 0, errors: -1 };
+        lojaDiag.threw = msg;
         totalErrors++;
       }
+      DIAG.lojas.push(lojaDiag);
     }
 
+    DIAG.totalSynced = totalSynced;
+    DIAG.totalErrors = totalErrors;
     console.log(`[sync-tiny-payables] runSync concluído. totalSynced=${totalSynced}, totalErrors=${totalErrors}, lojaResults=${JSON.stringify(lojaResults)}`);
+    return DIAG;
   } catch (err: unknown) {
     // Pitfall 4: capturar TODA exceção do background — sem try/catch o processo
     // morre silenciosamente (sem log) quando chamado via EdgeRuntime.waitUntil
     const message = err instanceof Error ? err.message : String(err);
     console.error("[sync-tiny-payables] runSync ERRO não capturado:", message);
+    DIAG.fatalError = message;
+    return DIAG;
   }
 }
 
@@ -370,6 +403,15 @@ serve(async (req: Request) => {
 
   const authError = requireServiceRole(req);
   if (authError) return authError;
+
+  // Modo debug síncrono (CASHFIX-02 Task 2): ?debug=1 roda runSync inline e
+  // devolve o diagnóstico no corpo — permite ao orquestrador provar a causa-raiz
+  // (rawKeys/itens/rows/upsertError) sem depender de logs de console.
+  const isDebug = new URL(req.url).searchParams.get("debug") === "1";
+  if (isDebug) {
+    const diag = await runSync();
+    return jsonResp({ ok: true, mode: "debug-sync", diag }, 200);
+  }
 
   // Desacoplar o pg_net da duração de execução (CASHFIX-02):
   // runSync() processa em background — o caller recebe 202 imediatamente.
