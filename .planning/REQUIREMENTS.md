@@ -10,6 +10,7 @@ Camada aditiva sobre o Consultor v1 (Phase 45, em prod): motor determinístico d
 Pesquisa completa em `.planning/research/SUMMARY.md` (HIGH confidence — arquitetura e pitfalls de inspeção do código real do v1). Requisitos do milestone anterior em `.planning/MILESTONE-v7-SAAS.md` e no histórico do PROJECT.md.
 
 **Decisões fixadas por Wesley (2026-06-23):**
+
 - Ação em 1 clique = **preparar para aprovação** (nunca auto-executar). Regra de plataforma.
 - LLM = **Claude Haiku 4.5, sob demanda + cache por org/dia** (raw fetch no Deno EF; `ANTHROPIC_API_KEY` no vault Pattern B).
 - Score consolidado de múltiplas lojas = **média ponderada por GMV**.
@@ -77,12 +78,26 @@ Pesquisa completa em `.planning/research/SUMMARY.md` (HIGH confidence — arquit
 - [ ] **NEXO-06**: Kill-switch reusa `consultor_config.llm_enabled` — desligado, o painel Nexo fica indisponível
 - [ ] **NEXO-07**: Read-only e com guardrails — o chat não executa mutação no ML (sugere e encaminha para o pipeline de aprovação da Phase 54); cap de tool-calls por turno + timeout para conter custo/latência
 
+### VERAC — Veracidade & Completude dos Dados do Nexo (Phase 58, decisão Wesley 2026-06-24)
+
+> **Motivo:** em testes, o Nexo afirmou fatos errados por **fonte de dado incompleta**, não por falha da IA. Ex.: disse "0 em estoque / ruptura" lendo só o estoque **Full** (`ml_inventory_cache`, `logistic_type=fulfillment`), ignorando CD/consolidado; reportou estoque **item-level** como se fosse por variação; sem sinal de frescura. Wesley quer **certeza ampla em TODOS os domínios**, não só estoque.
+
+- [x] **VERAC-01**: Estoque do Nexo é o CONSOLIDADO (Full + CD/Tiny) quando existir; se só houver Full nesta base, é rotulado explicitamente como "estoque Full" e o Nexo NUNCA afirma "ruptura/0 em estoque" como fato absoluto a partir do Full sozinho
+- [x] **VERAC-02**: Estoque por VARIAÇÃO (tamanho/cor) quando o item tem variações — o Nexo não reporta número item-level como se fosse por SKU/variação
+- [x] **VERAC-03**: Reconciliação fonte-da-verdade — para CADA tool do Nexo, a fonte (tabela/RPC), escopo (Full/total, período) e semântica batem com o que o dashboard mostra para o mesmo indicador; divergências corrigidas
+- [x] **VERAC-04**: Frescura — o Nexo conhece o `synced_at`/recência das fontes e sinaliza quando um dado está defasado, em vez de afirmá-lo como atual
+- [x] **VERAC-05**: Declarar limitação — quando uma tool retorna parcial/vazio, o Nexo diz o que tem e o que falta (ex.: "só tenho o estoque Full") em vez de inventar número ou dizer "não configurado"
+- [x] **VERAC-06**: O Nexo não confunde campos — unidades vendidas ≠ estoque; receita ≠ lucro; Full ≠ total; período passado ≠ projeção futura. Descrições das tools deixam a semântica inequívoca
+- [ ] **VERAC-07**: Bateria de testes cobrindo TODOS os domínios (vendas/faturamento, margem por produto/marca/UF/dia, ads por produto/campanha, estoque/cobertura, caixa/tesouraria, DRE/custos, perguntas, devoluções, reputação, fornecedores, metas, alertas, score) — cada domínio validado contra a fonte-da-verdade do dashboard, com as divergências corrigidas e documentadas
+
 ## v2 Requirements (deferidos)
 
 ### Notificações
+
 - **NOTF-01**: Notificação no Telegram quando uma nova ação proposta entra na fila (infra `nexo_telegram.py` existe)
 
 ### Inteligência avançada
+
 - **LLM-A1**: Modelo Sonnet para análise multi-step / raciocínio quando o caso exigir (v8 usa só Haiku)
 - **SNZ-A1**: Smart snooze — reaparecer ao mudar a métrica, além do TTL nomeado
 
@@ -112,6 +127,7 @@ Mapeada no roadmap v8.0 (2026-06-24).
 | Fundação de dados (transversal) | — | 52 |
 
 **Coverage:**
+
 - v1 requirements: 28 total (LLM 7 / ACT 8 / SNZ 3 / TUNE 5 / STORE 5)
 - Mapped to phases: 28 ✅ (Phase 52 entrega o schema/RPCs base que sustentam todas as trilhas)
 - Unmapped: 0

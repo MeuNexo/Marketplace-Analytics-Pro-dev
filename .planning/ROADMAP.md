@@ -18,6 +18,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 - [ ] **Phase 55: Drill-down Multi-Loja** — Score e insights por loja ML, seletor com badge de saúde, score org = média ponderada por GMV (STORE-01..05).
 - [ ] **Phase 56: Ajuste Fino (Snooze + Limiares na UI)** — Adiar insights (amanhã/semana/30d, server-side) + editor de limiares com presets, preview ao vivo e guardrails (SNZ-01..03, TUNE-01..05).
 - [ ] **Phase 57: Nexo Conversacional (Chat Consultor)** — Painel de chat flutuante "Nexo" em todas as telas; multi-turno efêmero; persona COO + TODOS os playbooks embutidos; function-calling read-only escopado por org (anti-IDOR) para puxar dados ao vivo da conta; grounding numérico; kill-switch reusado; guardrails de custo (NEXO-01..07).
+- [x] **Phase 58: Nexo — Veracidade & Completude dos Dados** — Corrigir a falta/inconsistência de informação que faz o Nexo afirmar fatos errados (ex: "0 em estoque/ruptura" lendo só o Full, não o consolidado; estoque item-level mascarando variações; sem sinal de frescura). Auditoria fonte-da-verdade das tools vs o que o dashboard mostra; estoque consolidado + por variação; frescura (synced_at); declarar limitação em vez de inventar (VERAC-01..06). **DEPLOYADA (EF nexo-chat v5 + cron billing); re-auditoria VERAC-07 PASS. Pendente: E2E Wesley + rotação de segredos.**
 
 ---
 
@@ -38,6 +39,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
   6. `types.ts` atualizado; migrations aplicadas em ckcdevcxgvueywivefgx via MCP; advisors sem erro crítico novo
 
 **Plans**: 2 plans
+
 - [x] 52-01-PLAN.md — 4 migrations (proposed_actions + action_audit_log + llm_analysis_cache + ALTERs + RPC claim_approved_action) aplicadas via MCP em ckcdevcxgvueywivefgx
 - [x] 52-02-PLAN.md — types.ts atualizado manualmente (3 tabelas novas + 5 colunas) + build verde
 
@@ -59,6 +61,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
   7. Kill-switch por org em `consultor_config.llm_enabled` — desligado volta ao consultor determinístico puro
 
 **Plans**: 2 plans
+
 - [x] 53-01-PLAN.md — EF consultor-llm (**Gemini 2.5 Flash** via raw fetch, não Haiku; cache-check first + grounding + numericGuard + upsert) + GEMINI_API_KEY vault + config.toml. EF v4 blindada (verify_jwt=true, sem smoke_token)
 - [x] 53-02-PLAN.md — UI: resumo COO no topo de /vendas + "Explicar" por insight (modo explain na EF) + badge "análise desatualizada" + "Atualizar análise" + kill-switch/fallback caem pro v1
 
@@ -80,6 +83,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
   7. Owner vê histórico de ações executadas com o resultado de cada uma
 
 **Plans**: 3 plans
+
 - [ ] 54-01-PLAN.md — EF `consultor-actions` (executor): 5 mutações ML (PUT /items + PUT /advertising/product_ads/campaigns api-version:2) portadas do Nexo MCP, gate atômico `claim_approved_action` (409), pre-flight + TTL 48h, token-por-org (anti-IDOR), audit ≤4KB, dry_run preview
 - [ ] 54-02-PLAN.md — `useConsultorActions` (queue/badge/propose/dryRun/approve/reject/history paginado) + `actionMapping` (rule_key→action_type) + testes unit
 - [ ] 54-03-PLAN.md — UI no `/consultor`: abas Insights|Fila|Histórico owner-only, `ProposeActionDialog` (diff+impacto), `ActionQueue` (aprovar c/ confirmação, staleness badge), `ActionHistory` + checkpoint visual
@@ -136,7 +140,46 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
   6. Kill-switch reusa `consultor_config.llm_enabled` — desligado, o painel Nexo fica indisponível
   7. Guardrails de custo/latência: cap de tool-calls por turno + timeout; o chat é read-only (não dispara mutação ML — sugere e encaminha pro pipeline da 54)
 
-**Plans**: TBD (a planejar via /gsd-plan-phase 57)
+**Decisões travadas (Wesley 2026-06-24):**
+
+- **Modelo:** chat usa **Gemini 2.5 Pro** (`gemini-2.5-pro:generateContent`, mesmo endpoint/header `x-goog-api-key`, `thinkingConfig.thinkingBudget=0` se truncar) — barra "especialista de verdade". Resumo/explicar da 53 seguem no Flash. Modelo configurável via `consultor_config.llm_model`.
+- **Local:** painel de chat **flutuante** em todas as telas. **Conversa efêmera** (histórico no cliente, sem tabela nova).
+- **Persona + playbooks:** a voz/metodologia vem da skill Nexo em `/root/.claude/skills/nexo/` — `references/strategic_playbooks.md` (Laura/Gabriel/Estela/Rafael) + `references/ads/` (playbooks, benchmarks, pitfalls, glossary). ~49KB total → embutir TUDO no system prompt (cabe no contexto Gemini). O planner deve COPIAR esses arquivos para dentro do repo (ex: `supabase/functions/nexo-chat/playbooks.ts`) — a EF não tem acesso a `/root/.claude`.
+- **Function-calling read-only:** tools que mapeiam a RPCs/dados já existentes em ckcdevcxgvueywivefgx (margem por SKU, sales velocity, ads, estoque crítico, KPIs do dia, insights, DRE). CADA tool filtra por `organization_id` do JWT (anti-IDOR) — nunca org vinda do modelo. Cap de tool-calls por turno + timeout.
+- **Reuso:** mesma base da EF `consultor-llm` (auth JWT + is_org_member, vault `get_app_secret('GEMINI_API_KEY')`, verify_jwt=true, kill-switch `consultor_config.llm_enabled`).
+- **Read-only:** chat NÃO muta o ML; quando sugere ação, encaminha pro pipeline de aprovação da Phase 54.
+
+**Plans**: 4 plans
+
+- [ ] 57-01-PLAN.md — EF nexo-chat: vitest.config include estendido p/ supabase/functions/** (testes de EF rodam de verdade) + playbooks.ts (bundle versionado da skill Nexo) + prompt.ts (persona COO + buildSystemPrompt) + index.ts skeleton (auth→is_org_member→kill-switch→vault→Gemini 2.5 Pro non-streaming, thinkingBudget=-1) + config.toml (NEXO-02/05/06)
+- [ ] 57-02-PLAN.md — Function-calling read-only: tools.ts (12 declarations sem param de org + dispatcher escopado anti-IDOR mapeando às RPCs reais) + loop.ts (runChat cap=5 + timeout 25s) + index.ts resolve mlUserIds server-side (NEXO-03/07)
+- [ ] 57-03-PLAN.md — Frontend: useNexoChat (estado efêmero reenviado a cada turno) + NexoChatPanel (Sheet, render anti-XSS) + NexoChatFab (gate hasMLConnection + kill-switch) montado no LayoutShell (NEXO-01/04)
+- [ ] 57-04-PLAN.md — Checkpoint: deploy da EF nexo-chat (orquestrador) + validação visual/comportamental de Wesley dos NEXO-01..07 (FAB em todas as telas, grounding, anti-IDOR, read-only)
+
+---
+
+### Phase 58: Nexo — Veracidade & Completude dos Dados
+
+**Goal**: O Nexo nunca afirma um fato errado por falta/incompletude de dado. Cada tool reflete a fonte-da-verdade do dashboard (mesma fonte, escopo e semântica), o estoque é consolidado e por variação (ou claramente rotulado), há sinal de frescura, e quando falta dado o Nexo declara a limitação em vez de inventar. Validado por uma bateria de testes em TODOS os domínios — não só estoque.
+**Depends on**: Phase 57 (as 22 tools existem e estão deployadas)
+**Requirements**: VERAC-01, VERAC-02, VERAC-03, VERAC-04, VERAC-05, VERAC-06, VERAC-07
+**Success Criteria** (what must be TRUE):
+
+  1. Auditoria fonte-da-verdade das tools do Nexo vs o que o dashboard mostra (por domínio) documentada; toda divergência de fonte/escopo/semântica corrigida
+  2. Estoque do Nexo = consolidado (Full + CD) quando existir; senão rotulado "Full" e sem afirmar ruptura como fato absoluto; estoque por variação quando o item tem variações
+  3. Sinal de frescura (synced_at) disponível ao Nexo; dado defasado é sinalizado, não afirmado como atual
+  4. Nexo não confunde campos (vendido≠estoque, receita≠lucro, Full≠total, passado≠projeção); descrições das tools inequívocas
+  5. Quando uma tool retorna vazio/parcial, o Nexo declara o que tem/falta (sem inventar, sem "não configurado")
+  6. Bateria de testes E2E por domínio (vendas, margem×4, ads×2, estoque/cobertura, caixa/tesouraria, DRE/custos, perguntas, devoluções, reputação, fornecedores, metas, alertas, score) — todos batendo com a fonte-da-verdade
+
+**Plans**: 5/6 plans executed
+
+- [x] 58-01-PLAN.md — tools.ts ESTOQUE: get_inventory status=active default + agregado + variações esgotadas + rótulo "Full" + synced_at; get_coverage rotulado (VERAC-01/02/04)
+- [x] 58-02-PLAN.md — tools.ts VENDAS/ADS: get_ads_campaigns neutralizada + nova get_ads_account_summary; faturamento/status/top-50/attributed/waterfall rotulados (VERAC-03/06)
+- [x] 58-03-PLAN.md — tools.ts FINANCEIRO: get_dre_monthly via ml_billing_daily mês-calendário + cashflow saldo_hoje + costs descrição; migration cron re-sync ml_billing_daily (VERAC-03/04/06)
+- [x] 58-04-PLAN.md — tools NOVAS: get_reputation (EF ml-reputation) + get_goals (ml_targets por seller_id, anti-IDOR adaptado) + claims/health/questions limpos (VERAC-03/05)
+- [x] 58-05-PLAN.md — prompt.ts: bloco VERACIDADE/FRESCURA/SEMÂNTICA (fonte certa, Full≠total, declarar limitação, sinalizar defasagem) (VERAC-04/05/06)
+- [x] 58-06-PLAN.md — checkpoint: EF nexo-chat v5 DEPLOYADA (script 127kB, smoke 401/200) + cron `billing-daily-resync` aplicado e ATIVO (40 6 * * *) + re-auditoria VERAC-07 4 domínios PASS (58-VERIFICATION.md) + fix inline get_goals.gross_profit. **PENDENTE: validação E2E Wesley logado + rotação dos 2 segredos expostos.** (VERAC-07)
 
 ---
 
@@ -149,7 +192,8 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 | 54. Pipeline de Ações | 0/3 | Planned | - |
 | 55. Drill-down Multi-Loja | 0/? | Not started | - |
 | 56. Snooze + Limiares | 0/? | Not started | - |
-| 57. Nexo Conversacional | 0/? | Not started | - |
+| 57. Nexo Conversacional | 0/4 | Em execução (preview) | - |
+| 58. Veracidade & Completude | 5/6 | In Progress|  |
 
 ## Build Order / Dependências
 

@@ -1,16 +1,32 @@
 ---
 gsd_state_version: 1.0
 milestone: v8.0
-milestone_name: Consultor v2 (Inteligência)
-status: planning
-last_updated: "2026-06-23T23:15:47.482Z"
-last_activity: 2026-06-23
+milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
+current_phase: 58
+current_phase_name: veracidade-completude-dados
+status: executing
+stopped_at: Phase 58 deployada (6 plans) — pendente E2E Wesley + rotação de segredos
+last_updated: "2026-06-25T00:50:00.000Z"
+last_activity: 2026-06-25
+last_activity_desc: Phase 58 executada e deployada (EF nexo-chat v5 + cron billing); VERAC-07 PASS
 progress:
-  total_phases: 0
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 7
+  completed_phases: 2
+  total_plans: 23
+  completed_plans: 23
+  percent: 28
+---
+
+## ✅ Phase 58 EXECUTADA + DEPLOYADA (2026-06-25) — Veracidade & Completude do Nexo
+
+- **6 planos, 6 waves sequenciais** (todos tocam `tools.ts`). 192 testes verdes, build ✓, deno check ✓. 25 tools, anti-IDOR mantido, userJwt propagado index→runChat→loop→dispatchTool (B-1).
+- **Fixes por domínio:** Estoque (get_inventory active default + agregado + variações esgotadas + rótulo Full + synced_at); Ads (get_ads_campaigns neutralizada — cache 100% zerado; nova get_ads_account_summary real); Financeiro (get_dre_monthly via ml_billing_daily mês-calendário = R$34.852,90 ≡ painel; cashflow saldo_hoje; cron re-sync billing); Operacional (get_reputation + get_goals NOVAS; claims/health/questions limpos); prompt.ts bloco VERACIDADE/FRESCURA/SEMÂNTICA.
+- **Re-auditoria VERAC-07 (SQL real Pé Vermeio): 4 domínios PASS** — ver `58-VERIFICATION.md`. Achado novo corrigido inline: `get_goals` lia `lucro_pct`, chave real é `gross_profit` (commit 939cee1d).
+- **DEPLOY (decisão Wesley "deploya já, roto depois"):** EF `nexo-chat` **v5** deployada via CLI (script 127kB; smoke 401 sem auth / 200 OPTIONS). Migration cron `billing-daily-resync` aplicada via MCP — **ATIVA** (`40 6 * * *`, itera por loja, Pattern B vault service_role_key). Resync manual imediato pegou **429 do ML** (transitório — cron das 06:40 reidrata; tool já sinaliza defasagem via coverage_until).
+- ⚠️ **PENDENTE Wesley:** (1) validação E2E logado (get_reputation ao vivo + perguntas reais); (2) **ROTACIONAR GEMINI_API_KEY + SUPABASE_ACCESS_TOKEN** (ambos expostos em chat). EF roda sobre o Gemini key atual até a rotação.
+- **Frontend Phase 57 (chat) ainda em preview** (`preview/phase57-nexo-chat`) — não mergeado pra prod. Para Wesley testar em prod, precisa do merge da UI da 57.
+- Commits locais na `main` (não pushados): 58-01..06 + fix get_goals + VERIFICATION.
+
 ---
 
 ## ✅ Phase 53 FECHADA (2026-06-24) — Camada LLM (Gemini) em produção
@@ -19,7 +35,30 @@ progress:
 - **Validado em preview Vercel** (resumo real Gemini + Explicar + kill-switch demonstrado ligando/desligando `consultor_config.llm_enabled` na Pé Vermeio). Fix de checkpoint: "Explicar" agora some junto com o resumo quando LLM desligada.
 - **MERGEADO PRA PRODUÇÃO** (ver tarefa de merge). Tudo o que entrou junto: Phases 52 (schema/types), 54 Wave 1 (EF/hook inertes — sem UI ainda), limpeza de planning. Único impacto visível = Phase 53.
 - ⚠️ **Wesley: ROTACIONAR a GEMINI_API_KEY** (exposta no transcript) — me manda a nova que eu re-registro no vault via `get_app_secret`.
-- **Próximo:** Phase 57 (Nexo Conversacional) — planejar via GSD. Modelo do chat: **Gemini 2.5 Pro**.
+- **Próximo:** Phase 57 (Nexo Conversacional) — **PLANEJADA** (ver abaixo).
+
+## 🔧 Phase 57 EM EXECUÇÃO (2026-06-24) — Waves 1-2 DONE, deploy pendente
+
+- **Wave 1 (57-01) ✅** — `playbooks.ts` (bundle ~49KB versionado da skill Nexo) + `prompt.ts` (persona COO + buildSystemPrompt) + EF skeleton `index.ts` (auth→is_org_member→kill-switch→vault→Gemini 2.5 Pro) + `vitest.config.ts` inclui `supabase/functions/**`. thinkingBudget=-1.
+- **Wave 2 (57-02 ∥ 57-03) ✅** — 57-02: `tools.ts` (12 declarations sem param de org + dispatchTool anti-IDOR mapeando RPCs reais) + `loop.ts` (runChat cap=5/timeout 25s). **anti-IDOR provado por teste** (org alheia ignorada). 57-03: `useNexoChat` (efêmero) + `NexoChatPanel` (anti-XSS) + `NexoChatFab` montado no LayoutShell (todas as telas), gated por hasMLConnection + kill-switch. **145 testes verdes, build verde, deno check verde.** 16 commits (ecdb5565..ee743ada).
+- **Hardening (ee743ada):** EF só honra `llm_model` gemini* (default da coluna é 'claude-haiku-4-5' → 404 sem guard). consultor_config normalizado p/ gemini-2.5-pro.
+- **Wave 3 (57-04) — EF DEPLOYADA ✅ (2026-06-24):** `nexo-chat` ACTIVE v1, verify_jwt=true em ckcdevcxgvueywivefgx (deploy via CLI com token do Wesley; script 111.8kB c/ playbooks). Smoke: 401 sem auth + 200 OPTIONS (bundle compilou). consultor_config normalizado p/ gemini-2.5-pro. **Preview Vercel:** branch `preview/phase57-nexo-chat`, alias `...-git-pr-3a15c0-...`. **PENDENTE: validação E2E Wesley logado (NEXO-01..07) — "200 com reply" real só autenticado.** Depois: merge→prod (igual à 53) + verifier + fechar fase.
+- ⚠️ Wesley deu SUPABASE_ACCESS_TOKEN no chat (sbp_…) → **REVOGAR** após uso.
+- **Iterações de checkpoint (2026-06-24, em preview):**
+  1. UI: painel virou **popup flutuante** compacto+animado (era Sheet lateral) + **ChatMarkdown** (renderer seguro: negrito/itálico/listas, sem dangerouslySetInnerHTML) + prompt usa markdown leve. Commit 62ff9be0.
+  2. Fix caixa: `get_cashflow` usava janela passada (-30d) → vazio → Nexo dizia "não configurado". Agora janela FUTURA (hoje→+90d) + prompt anti-"não configurado". Commit (tools/prompt).
+  3. **+10 tools (12→22)** p/ "responder qualquer coisa da conta": sales_kpis, margin_by_brand/trend/state, costs_by_month, supplier_exposure, inventory(+search), open_questions, claims, ads_campaigns. Todas anti-IDOR. EF v… redeployada (114.9kB). 20 testes EF verdes.
+- **Pendente:** reaprovação visual Wesley do Nexo turbinado (mesma preview, F5). Depois: merge→prod + verifier + fechar fase.
+- ⚠️ **ROTACIONAR GEMINI_API_KEY** antes do go-live real (vazou no transcript).
+
+## ✅ Phase 57 PLANEJADA (2026-06-24) — Nexo Conversacional (chat consultor)
+
+- **GSD plan-phase completo:** CONTEXT (decisões travadas) + RESEARCH (HIGH) + 4 planos / 3 waves + plan-checker **PASS após 1 revisão**. Commits `0c788415` (context) → `ad0ed513`/`c1cef66e` (planos) → `d6de0929` (revisão do checker).
+- **Waves:** W1 `57-01` (playbooks bundle no repo + EF skeleton: auth→is_org_member→kill-switch→vault→Gemini 2.5 Pro `thinkingBudget=-1` + system prompt persona+playbooks) → W2 `57-02` (function-calling tools + dispatcher anti-IDOR + loop cap=5/timeout) ∥ `57-03` (FAB+Sheet `useNexoChat` em LayoutShell, efêmero) → W3 `57-04` (checkpoint: deploy EF pelo orquestrador + validação E2E Wesley).
+- **Decisões-chave:** Gemini **2.5 Pro** (NÃO aceita thinkingBudget=0 — usa -1); tools mapeiam RPCs REAIS (`get_margin_with_ads_by_product`, `get_consultor_coverage`, `get_cost_waterfall`, etc.); playbooks (~49KB) copiados pro repo (`supabase/functions/nexo-chat/playbooks.ts` — Deno não acessa /root/.claude); anti-IDOR (org do JWT, nunca de args do modelo) como threat model de 1ª classe; read-only (sugere → Phase 54); efêmero (sem tabela). Reusa auth/vault/kill-switch da `consultor-llm`.
+- **Fix do checker:** `vitest.config.ts` precisa incluir `supabase/functions/**/*.test.ts` (senão testes anti-IDOR/loop não rodam) — virou Task 1 do 57-01. get_app_secret('GEMINI_API_KEY') = pré-condição BLOQUEANTE do deploy no 57-04.
+- **Pré-requisito de execução:** EF deploy é checkpoint do orquestrador (gsd-executor sem SUPABASE_ACCESS_TOKEN). **GEMINI_API_KEY no vault precisa estar rotacionada** (a atual vazou).
+- **Próximo:** `/gsd-execute-phase 57`.
 
 ## ✅ Milestone v7.0 FECHADO (2026-06-24) + Phase 46 concluída
 
@@ -52,22 +91,24 @@ See: .planning/PROJECT.md
 
 **Milestone:** v8.0 — Consultor v2 (Inteligência)
 **Core value:** Consultor que explica, prioriza e ajuda a agir — LLM sob demanda + ações com aprovação, sobre o motor determinístico do v1.
-**Current focus:** Definindo requisitos (pesquisa de domínio em andamento).
+**Current focus:** Phase 58 — veracidade-completude-dados
 
 ## Current Position
 
-Phase: **52 (Fundação de Dados v8.0) COMPLETA** — verifier PASSED 6/6, aplicada em prod ckcdevcxgvueywivefgx
-Plan: 52-01 (4 migrations) + 52-02 (types.ts) — ambos completos
-Status: Phase 52 fechada; desbloqueia 53/54/55/56
-Last activity: 2026-06-24 — Phase 52 executada (3 tabelas novas + 5 colunas + RPC atômica INVOKER, advisors sem erro novo, build verde)
+Phase: 58 (veracidade-completude-dados) — EXECUTING
+Plan: 6 of 6
+Status: Ready to execute
+Last activity: 2026-06-24 — Phase 58 execution started
 Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint visual; depois adaptar/executar **Phase 53 com Gemini**.
 
 ### Phase 54 — Wave 1 EXECUTADA (2026-06-24), Wave 2 PENDENTE
+
 - **Wave 1 (backend) DONE:** EF `consultor-actions` **deployada em prod** (ckcdevcxgvueywivefgx, ACTIVE v1, verify_jwt=true) — 5 mutações ML do Nexo MCP, gate atômico antes do ML, anti-IDOR, pre-flight+TTL 48h, audit ≤4KB. Hook `useConsultorActions` + `actionMapping` (14 testes verdes, tsc/build OK). Commit 0a6cdffe. **Nenhuma mutação real disparada** (EF só roda quando a UI da Wave 2 invocar com ação aprovada).
 - **Wave 2 PENDENTE:** `54-03` — UI no /consultor (abas Insights|Fila|Histórico owner-only, ProposeActionDialog diff+impacto, ActionQueue aprovar-c/-confirmação, ActionHistory) + checkpoint visual. Pausado por limite de contexto.
 - **DECISÕES ABERTAS p/ Wesley (54):** D-A4 mapa rule_key→action_type; D-A2 preço-alvo = input owner; D-A3 TTL 48h; D-A1 campo `budget` de ads (confirmar na 1ª execução real).
 
 ### Phase 53 — MUDANÇA DE PROVEDOR: Anthropic → **Gemini** (decisão Wesley 2026-06-24)
+
 - A key será do **Gemini**, não Anthropic. Planos 53-01/53-RESEARCH/ROADMAP/REQUIREMENTS dizem "Claude Haiku 4.5 / api.anthropic.com / cache_control ephemeral". **ADAPTAR antes de executar a 53:** trocar para Gemini (`generativelanguage.googleapis.com/v1beta/models/gemini-2.x:generateContent`, header `x-goog-api-key`, context caching do Gemini ≠ Anthropic ephemeral), modelo `gemini-flash`, secret `GEMINI_API_KEY` no vault. A lógica (cache-check first, grounding, numericGuard, kill-switch) permanece — só muda a camada de chamada ao LLM.
 - **GEMINI VALIDADO em prod (2026-06-24, curl direto):** key funciona, `gemini-2.5-flash` HTTP 200, resumo COO PT-BR limpo sem alucinar números. **CONFIG DE PRODUÇÃO TRAVADA:** endpoint `POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`, header `x-goog-api-key`, body `{system_instruction:{parts:[{text}]}, contents:[{role:'user',parts:[{text}]}], generationConfig:{maxOutputTokens, temperature:0.3, thinkingConfig:{thinkingBudget:0}}}`. **CRÍTICO: `thinkingConfig.thinkingBudget=0`** senão o thinking do 2.5 consome todo o maxOutputTokens (resposta truncada). Resposta em `candidates[0].content.parts[0].text`, `finishReason:'STOP'`.
 - **EF `consultor-llm` DEPLOYADA + TESTADA (2026-06-24, ACTIVE v2):** Gemini funcionando em prod. GEMINI_API_KEY + SMOKE_TOKEN no vault; RPC `get_app_secret` (SECURITY DEFINER service_role-only) lê os secrets. Auth dual (user JWT is_org_member | smoke_token). Smoke-test org `e4150d57` (30 insights): HTTP 200, resumo COO PT-BR, **fallback=false** (numericGuard passou). Commit 2ba612fe.
@@ -76,12 +117,14 @@ Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint
 - ⚠️ **Wesley: ROTACIONAR a GEMINI_API_KEY** (exposta no transcript) — atualizar via `vault` ou pedir pra eu re-registrar.
 
 ### Phases 53 + 54 PLANEJADAS (2026-06-24, plan-checker PASS nas duas)
+
 - **53 (Camada LLM):** 2 plans — 53-01 EF `consultor-llm` (Haiku 4.5, cache-check first, grounding anti-alucinação `numericGuard`, kill-switch) + `ANTHROPIC_API_KEY` vault [BLOCKING]; 53-02 UI resumo COO + Explicar + staleness. Commit 984e33fb.
 - **54 (Pipeline Ações):** 3 plans — 54-01 EF `consultor-actions` (5 mutações ML do zero portadas do Nexo MCP: PUT /items, PUT /advertising/.../campaigns api-version:2; gate claim_approved_action; pre-flight+TTL 48h; token-por-org anti-IDOR; audit ≤4KB) + 54-02 hook+actionMapping + 54-03 UI fila/diff/histórico. Commits ea9ff2f4 + a5639028 (fix item_id).
 - **DECISÕES ABERTAS p/ Wesley (sinalizadas nos planos):** D-A4 mapa rule_key→action_type; D-A2 preço-alvo = input do owner (insight só dá item+impacto); D-A3 TTL 48h; D-A1 campo budget de ads. Confirmar antes/durante execução da 54.
 - **Pré-requisito de execução:** registrar `ANTHROPIC_API_KEY` no vault (53) — orquestrador via MCP. Ambas têm deploy de EF [BLOCKING] (gsd-executor sem Supabase MCP).
 
 ### Phase 52 (2026-06-24) — schema v8.0 em prod
+
 - 3 tabelas novas: `proposed_actions` (state-machine 6 estados text+CHECK + dedup parcial), `action_audit_log` (append-only), `llm_analysis_cache` (org-first key).
 - ALTERs: `insights.snoozed_until`/`snooze_count`, `consultor_config.llm_enabled`/`llm_model`, `consultor_health_snapshots.ml_user_id_key` (+ troca UNIQUE p/ por-loja).
 - RPC `claim_approved_action` SECURITY INVOKER (anti-IDOR) + REVOKE de PUBLIC/anon/authenticated (anti default-EXECUTE).
@@ -103,7 +146,7 @@ Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint
   - HG-01: card "Saldo Mín" → horizonte 30d (decisão Wesley); RPC retorna min_balance (valor) + data do mesmo modelo. −719k/90d → −168k/30d.
   - HG-03: burn_rate só status='paid' (R$185.149) consistente c/ Saída Real (decisão Wesley). Antes R$189.316 (incluía 9 contas vencidas).
 - Migrations prod: treasury_fix_cr01_enrich_drain_security, treasury_fix_hg01_hg03_panel. Arquivo repo: 20260650000200.
-- **STATUS:** push + deploy frontend CONCLUÍDOS (PR#4 merge 69883b00, em prod). Único item aberto = checkpoint visual de Wesley (não bloqueante).
+- **STATUS:** Ready to execute
 
 ### Quick Tasks Completed
 
@@ -166,6 +209,10 @@ Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint
 | Phase 49-fluxo-de-caixa-caixa-real P03 | 15min | 2 tasks | 6 files |
 | Phase 49 P04 | 20 | 2 tasks | 8 files |
 | Phase 51-painel-de-tesouraria-fluxo-de-caixa P03 | 25min | 4 tasks | 4 files |
+| Phase 58-veracidade-completude-dados P01 | 8min | 2 tasks | 2 files |
+| Phase 58-veracidade-completude-dados P03 | 4min | 2 tasks | 3 files |
+| Phase 58 P04 | 6min | 2 tasks | 4 files |
+| Phase 58 P05 | 3min | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -213,6 +260,9 @@ Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint
 - [Phase ?]: cash_outflows com schema Tiny criada no 49-01 compartilhada por 49-05
 - [Phase ?]: release_date e outflow_date como DATE não timestamptz para cálculo de caixa por dia
 - [Phase ?]: Mantido como média das saídas dos últimos 3 meses para diferenciar de Saída Real (30d)
+- [Phase ?]: get_inventory: status allow-list (active/paused/all), valor fora do enum cai no default active
+- [Phase ?]: summarizeVariations exportada como função pura para testabilidade e legibilidade
+- [Phase ?]: get_reputation via EF ml-reputation com JWT real; get_goals via ml_targets anti-IDOR por seller_id; userJwt threading 3 elos (index→loop→tools)
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -260,7 +310,7 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-19T18:27:04.447Z
+Last session: 2026-06-24T21:30:22.878Z
 Stopped at: Phase 51 planned + verified (3 plans, 3 waves)
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
