@@ -172,6 +172,7 @@ Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint
 | 260618-sum | Fluxo de caixa: RPCs consideram contas a pagar de QUALQUER status (paid+pending), futuro-only | 2026-06-18 | 5652ebfa | [260618-sum](./quick/260618-sum-corrigir-rpcs-de-fluxo-de-caixa-consider/) |
 | 260618-sma | Fluxo de caixa: 2ª linha de projeção (média 15d via orders) — AGUARDA validação Wesley | 2026-06-18 | fe19611d | [260618-sma](./quick/260618-sma-segunda-linha-projecao-media-15d/) |
 | 260619-02b | Fluxo de caixa: base da média 15d = bruta−comissão−frete (sem dupla imposto) + rótulo piso ~30d | 2026-06-19 | ddf946c8 | [260619-02b](./quick/260619-02b-trocar-base-da-linha-de-projecao-media-1/) |
+| 260625-ixc | Caixa sempre atualizado: waitUntil na EF sync-mp-releases + cron entradas/saídas a cada 3h. Provado em prod (202, 401, synced_at avançando, crons 0 */3) | 2026-06-25 | 529d55eb | [260625-ixc](./quick/260625-ixc-caixa-sempre-atualizado-waituntil-na-ef-/) |
 
 ### DRE mês-calendário (quick 260613-2p6, 2026-06-13)
 
