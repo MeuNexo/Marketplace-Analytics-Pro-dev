@@ -24,12 +24,20 @@ export interface ProjectedBalanceData {
 /** Quantidade de dias de projeção passados para o RPC */
 const DEFAULT_PROJECTION_DAYS = 120;
 
-export function useProjectedBalance(projectionDays: number = DEFAULT_PROJECTION_DAYS) {
+/**
+ * @param includePurchaseForecasts (CASHFIX-06) Quando false (padrão), a projeção de
+ *   saldo exclui ordens de compra não faturadas (category='Previsões de compra'),
+ *   alinhando com a DFC/Tiny. Propaga o 3º arg da RPC.
+ */
+export function useProjectedBalance(
+  projectionDays: number = DEFAULT_PROJECTION_DAYS,
+  includePurchaseForecasts: boolean = false,
+) {
   const { currentOrg } = useOrganization();
   const orgId = currentOrg?.id ?? null;
 
   return useQuery<ProjectedBalanceData | null>({
-    queryKey: ["cashflow", "projected_balance", orgId, projectionDays] as const,
+    queryKey: ["cashflow", "projected_balance", orgId, projectionDays, includePurchaseForecasts] as const,
     enabled: !!orgId,
     staleTime: 3 * 60 * 1000,
     queryFn: async (): Promise<ProjectedBalanceData | null> => {
@@ -38,6 +46,7 @@ export function useProjectedBalance(projectionDays: number = DEFAULT_PROJECTION_
       const { data, error } = await supabase.rpc("get_projected_balance_summary", {
         p_org_id:         orgId,
         p_projection_days: projectionDays,
+        p_include_purchase_forecasts: includePurchaseForecasts,
       });
 
       if (error) throw error;

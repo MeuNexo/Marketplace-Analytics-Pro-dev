@@ -23,12 +23,18 @@ export interface TreasuryPanelData {
   total_exposicao:  number;
 }
 
-export function useTreasuryPanel() {
+/**
+ * @param includePurchaseForecasts (CASHFIX-06) Quando false (padrão), os indicadores
+ *   de SALDO/PROJEÇÃO (saldo atual, data de alerta, saldo mínimo) excluem as ordens
+ *   de compra não faturadas. A exposição por fornecedor (fornec_30/60/90 e
+ *   total_exposicao) NÃO é afetada — ela é, por natureza, a visão de ordens de compra.
+ */
+export function useTreasuryPanel(includePurchaseForecasts: boolean = false) {
   const { currentOrg } = useOrganization();
   const orgId = currentOrg?.id ?? null;
 
   return useQuery<TreasuryPanelData | null>({
-    queryKey: ["cashflow", "treasury_panel", orgId] as const,
+    queryKey: ["cashflow", "treasury_panel", orgId, includePurchaseForecasts] as const,
     enabled: !!orgId,
     staleTime: 3 * 60 * 1000,
     queryFn: async (): Promise<TreasuryPanelData | null> => {
@@ -36,6 +42,7 @@ export function useTreasuryPanel() {
 
       const { data, error } = await supabase.rpc("get_treasury_panel", {
         p_org_id: orgId,
+        p_include_purchase_forecasts: includePurchaseForecasts,
       });
 
       if (error) throw error;

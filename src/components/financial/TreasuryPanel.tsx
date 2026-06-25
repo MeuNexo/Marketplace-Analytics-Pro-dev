@@ -71,9 +71,16 @@ function BandHeader({ label, colorClass, lineClass }: BandHeaderProps) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function TreasuryPanel() {
-  const { data: treasury, isLoading: loadingTreasury } = useTreasuryPanel();
-  const { data: projected, isLoading: loadingProjected } = useProjectedBalance(90);
+interface TreasuryPanelProps {
+  /** CASHFIX-06: inclui ordens de compra não faturadas nos indicadores de saldo/projeção
+   *  (saldo atual, data de alerta, saldo mínimo, saldo projetado). Default false.
+   *  A exposição por fornecedor não é afetada. */
+  includePurchaseForecasts?: boolean;
+}
+
+export function TreasuryPanel({ includePurchaseForecasts = false }: TreasuryPanelProps = {}) {
+  const { data: treasury, isLoading: loadingTreasury } = useTreasuryPanel(includePurchaseForecasts);
+  const { data: projected, isLoading: loadingProjected } = useProjectedBalance(90, includePurchaseForecasts);
   const { data: settings } = useFinancialSettings();
 
   const isLoading = loadingTreasury || loadingProjected;

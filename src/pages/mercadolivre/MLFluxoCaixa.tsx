@@ -231,7 +231,7 @@ export default function MLFluxoCaixa() {
         <TabsContent value="real" className="space-y-6 mt-0">
           {/* ── Painel de Tesouraria (12 KPIs) + botão Ajustar saldo ── */}
           <div className="flex flex-col gap-4">
-            <TreasuryPanel />
+            <TreasuryPanel includePurchaseForecasts={includePurchaseForecasts} />
 
             {/* Toggle de previsões de compra + botão owner-only de ajuste de saldo */}
             <div className="flex flex-wrap items-center justify-between gap-3">
