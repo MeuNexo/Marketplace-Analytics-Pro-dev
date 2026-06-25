@@ -28,22 +28,35 @@ export interface CashFlowDataPoint {
    */
   accumulated_balance: number;
   /**
-   * Saldo projetado acumulado pela MÉDIA de recebimento dos últimos 15 dias.
-   * Base = (receita_bruta − comissao − frete)/15 por dia − saídas reais. Mesma base do net
-   * que o MP libera (sem descontar imposto/CMV, que já saem pelas contas a pagar do Tiny),
-   * para ficar comparável à linha confirmada e sem dupla-contagem. Cenário "se mantiver a média".
+   * Saldo projetado acumulado (linha âmbar) — regra combinada (CASHFIX-01):
+   * - Dias 1-7 a partir de hoje(BRT): usa apenas o recebimento CONFIRMADO do dia (d.inc),
+   *   sem aplicar média — a venda de hoje já consta nos recebimentos agendados pelo MP.
+   * - A partir do 8º dia: usa o confirmado nos dias COM recebimento (d.inc > 0);
+   *   aplica a média de recebimento dos últimos 15 dias (v_sma) SOMENTE nos dias SEM
+   *   recebimento confirmado (d.inc = 0), preenchendo os "buracos" futuros.
+   * Saídas reais (d.exp) são subtraídas em todos os casos. Cenário "se mantiver a média nos dias vazios".
    */
   accumulated_balance_sma: number;
   /** true se saldo projetado CONFIRMADO neste dia for negativo */
   isNegative: boolean;
 }
 
-export function useCashFlowData(startDate: string, endDate: string) {
+/**
+ * @param includePurchaseForecasts (CASHFIX-06) Quando false (padrão), as saídas
+ *   excluem ordens de compra ainda não faturadas (category='Previsões de compra'),
+ *   alinhando o caixa com o "contas a pagar" do Tiny/DFC. Quando true, soma as
+ *   previsões ("e se eu já comprometer as compras"). Propaga o 4º arg da RPC.
+ */
+export function useCashFlowData(
+  startDate: string,
+  endDate: string,
+  includePurchaseForecasts: boolean = false,
+) {
   const { currentOrg } = useOrganization();
   const orgId = currentOrg?.id ?? null;
 
   return useQuery<CashFlowDataPoint[]>({
-    queryKey: ["cashflow", "series", orgId, startDate, endDate] as const,
+    queryKey: ["cashflow", "series", orgId, startDate, endDate, includePurchaseForecasts] as const,
     enabled: !!orgId && !!startDate && !!endDate,
     staleTime: 3 * 60 * 1000,
     queryFn: async (): Promise<CashFlowDataPoint[]> => {
@@ -56,6 +69,7 @@ export function useCashFlowData(startDate: string, endDate: string) {
         p_org_id:     orgId,
         p_start_date: start,
         p_end_date:   end,
+        p_include_purchase_forecasts: includePurchaseForecasts,
       });
 
       if (seriesError) throw seriesError;

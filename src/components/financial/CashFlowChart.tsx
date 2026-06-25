@@ -187,7 +187,7 @@ export function CashFlowChart({
             <p className="text-sm font-medium">Como meu dinheiro vai evoluir?</p>
             <p className="text-xs text-muted-foreground mt-0.5">
               Linha verde = piso confirmado (só liberações já agendadas pelo MP, ~30d) &nbsp;|&nbsp;
-              Linha âmbar tracejada = projeção pela média de vendas dos últimos 15 dias
+              Linha âmbar tracejada = projeção: confirmado nos primeiros 7 dias; média 15d só nos dias sem recebimento a partir do 8º dia
             </p>
           </div>
 
@@ -235,7 +235,7 @@ export function CashFlowChart({
               wrapperStyle={{ fontSize: "12px", paddingTop: "8px" }}
               formatter={(value) => {
                 if (value === "accumulated_balance")     return "Saldo confirmado (piso ~30d)";
-                if (value === "accumulated_balance_sma") return "Projeção média de vendas 15d";
+                if (value === "accumulated_balance_sma") return "Projeção (confirmado 7d + média 15d nos buracos)";
                 if (value === "cenario")                 return "Cenário simulado";
                 return value;
               }}

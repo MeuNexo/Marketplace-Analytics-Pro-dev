@@ -18,7 +18,10 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 - [ ] **Phase 55: Drill-down Multi-Loja** — Score e insights por loja ML, seletor com badge de saúde, score org = média ponderada por GMV (STORE-01..05).
 - [ ] **Phase 56: Ajuste Fino (Snooze + Limiares na UI)** — Adiar insights (amanhã/semana/30d, server-side) + editor de limiares com presets, preview ao vivo e guardrails (SNZ-01..03, TUNE-01..05).
 - [x] **Phase 57: Nexo Conversacional (Chat Consultor)** — Painel de chat flutuante "Nexo" em todas as telas; multi-turno efêmero; persona COO + TODOS os playbooks embutidos; function-calling read-only escopado por org (anti-IDOR) para puxar dados ao vivo da conta; grounding numérico; kill-switch reusado; guardrails de custo (NEXO-01..07). **MERGEADA PRA PROD (PR #9, merge 670ac8be) junto com Phase 58. Pendente: E2E Wesley logado.**
+- [ ] **Phase 59: Fluxo de Caixa — Correções (Projeção 7d + Sync Contas a Pagar)** — (a) a linha de projeção (média 15d) não infla os primeiros dias: nos primeiros 7 dias segue só o confirmado e, do 8º dia em diante, a média só preenche dias SEM recebimento confirmado; (b) o contas a pagar volta a sincronizar com o Tiny e PERSISTIR ≥1x/dia (hoje congelado em 18/06 — `net.http_post` estoura o timeout default de 5s vs ~15s da EF, e mesmo com 200 não grava). Correção do Fluxo de Caixa da Phase 49 (CASHFIX-01, CASHFIX-02). **Planejada 2026-06-25 — 2 plans (1 wave), plan-checker PASS de 1ª. Pronta p/ `/gsd-execute-phase 59`.**
 - [x] **Phase 58: Nexo — Veracidade & Completude dos Dados** — Corrigir a falta/inconsistência de informação que faz o Nexo afirmar fatos errados (ex: "0 em estoque/ruptura" lendo só o Full, não o consolidado; estoque item-level mascarando variações; sem sinal de frescura). Auditoria fonte-da-verdade das tools vs o que o dashboard mostra; estoque consolidado + por variação; frescura (synced_at); declarar limitação em vez de inventar (VERAC-01..06). **DEPLOYADA (EF nexo-chat v5 + cron billing); re-auditoria VERAC-07 PASS. Pendente: E2E Wesley + rotação de segredos.**
+- [ ] **Phase 60: Alinhamento da DFC (Fluxo de Caixa)** — Fechar a projeção do `/caixa` com a DFC/Tiny do Wesley. (a) ENTRADA: dia 8+ usa `GREATEST(d.inc, v_sma)` para a média R$5.880/dia virar PISO (a cauda do MP com recebimentos minúsculos parava de suprimir a média); (b) SAÍDA: `get_cashflow` ganha parâmetro `p_include_purchase_forecasts BOOLEAN DEFAULT false` — por padrão exclui `category='Previsões de compra'` (reconciliação provada ao centavo: R$99.495,58 − R$12.389,79 previsões = R$87.105,79 = Tiny do Wesley) e resolve a OC383 contada 2x; (c) toggle "Incluir previsões de compra" na UI /caixa. Continuação da Phase 59 (CASHFIX-05, CASHFIX-06). **Planejada 2026-06-25.**
+- [ ] **Phase 61: Enriquecer Fornecedor + Categoria do Contas a Pagar** — Os gráficos **Composição de Custos por Mês** (só "Outros" + "Previsões de compra", sem categorias reais) e **Exposição por Fornecedor** (só Pralana) só funcionaram 1x e voltaram a quebrar. Causa-raiz: em `cash_outflows`, 1991/2011 linhas têm `category` vazia E `supplier` nulo. O endpoint Tiny `/contas-pagar` (LISTA) NÃO traz categoria nem fornecedor — só o DETALHE `/contas-pagar/{id}` traz (`categoria.descricao` + `contato.nome`). O `sync-tiny-payables` lê só a lista → grava NULL e, a cada sync, **sobrescreve** o que o enriquecimento-detalhe da Phase 51 (fila `cat_backfill_queue` + `enrich_drain`/`enrich_harvest` via pg_net/cron) havia preenchido; o enqueue usa `ON CONFLICT DO NOTHING`, então linhas `done` nunca são re-enriquecidas. Fix (opção A, aprovada): (a) `sync-tiny-payables` para de escrever `category`/`supplier` no upsert → enriquecimento vira fonte única; (b) `enrich_harvest` passa a gravar TAMBÉM `supplier = contato.nome` (hoje só categoria); (c) enqueue re-marca `todo` toda linha com `category IS NULL OR supplier IS NULL`, sobrevivendo a re-syncs; (d) rodar o backfill das ~2011 linhas via fila/cron já existentes (Tiny ~1–2 req/s, drain throttled ~20–30 min, resumível). Continuação da Phase 51 + Phase 60 (CASHFIX-07, CASHFIX-08). **Planejada 2026-06-25.**
 
 ---
 
@@ -183,6 +186,86 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 
 ---
 
+### Phase 59: Fluxo de Caixa — Correções (Projeção 7d + Sync Contas a Pagar)
+
+**Goal**: O gráfico de Fluxo de Caixa não infla mais os primeiros dias com previsão, e o contas a
+pagar volta a sincronizar com o Tiny de forma confiável (≥1x/dia, com persistência real) — sem o
+congelamento desde 18/06.
+**Depends on**: Phase 49 (Fluxo de Caixa) + Phase 50 (Simulador, que herda o baseline)
+**Requirements**: CASHFIX-01 (projeção), CASHFIX-02 (sync payables)
+**Success Criteria** (what must be TRUE):
+
+  1. Na RPC `get_cashflow`, `accumulated_balance_sma` para datas ≤ hoje(BRT)+7 usa só o recebimento
+     confirmado (sem média); do 8º dia em diante usa o confirmado nos dias que têm recebimento e a
+     média de 15d **somente nos dias sem recebimento** — validado no gráfico (primeiros 7 dias sem inflação)
+  2. A linha confirmada e os valores reais (reconciliados ao centavo com a DFC do Wesley) permanecem intactos
+  3. Causa-raiz da não-persistência do `sync-tiny-payables` identificada e corrigida; `net.http_post`
+     com timeout adequado (ou disparo assíncrono) — a EF deixa de ser abortada aos 5s
+  4. `cash_outflows` volta a atualizar: `count(DISTINCT synced_at::date)` cresce dia a dia; total/abertos
+     refletem o Tiny ao vivo
+  5. (opcional, decidir no plano) indicador de "última atualização do contas a pagar" na UI de fluxo de caixa
+
+**Plans**: 2 plans (1 wave — independentes, arquivos disjuntos)
+- [x] 59-01-PLAN.md — CASHFIX-01: RPC `get_cashflow` regra de projeção 7d (CASE em accumulated_balance_sma + daily_projection, data BRT) + legenda/JSDoc frontend. **Aplicada via MCP em prod; validada por SQL (dias 1-7 sem inflação) + reconciliação DFC (saldo inicial corrigido 21.676,91→16.833,14)**
+- [x] 59-02-PLAN.md — CASHFIX-02: EF `sync-tiny-payables` + `EdgeRuntime.waitUntil` (202 imediato) + modo debug síncrono. **Causa-raiz REAL: pg_net derrubava a execução de ~15s aos 5s antes do commit (não os 4 suspects). Provado em prod: congelamento 18/06 quebrado, synced_at avançando, 1991 contas gravadas. EF v5 deployada (prod==repo). Cron funciona sem migration nova**
+
+Contexto/diagnóstico: `phases/59-fluxo-caixa-correcoes/59-CONTEXT.md`
+
+---
+
+### Phase 60: Alinhamento da DFC (Fluxo de Caixa)
+
+**Goal**: A projeção do gráfico de Fluxo de Caixa (`/caixa`) reflete a DFC/Tiny do Wesley — entrada
+projetada de R$5.880/dia como piso (sem a cauda do MP suprimindo a média) e saídas reconciliadas ao
+centavo com o contas a pagar do Tiny, com as "Previsões de compra" controláveis por toggle na UI.
+**Depends on**: Phase 59 (Fluxo de Caixa — Correções; baseline `get_cashflow` regra 7d + CASHFIX-04 pending-only)
+**Requirements**: CASHFIX-05 (entrada piso GREATEST), CASHFIX-06 (toggle previsões de compra)
+**Success Criteria** (what must be TRUE):
+
+  1. Na RPC `get_cashflow`, do 8º dia em diante a linha `accumulated_balance_sma` usa `GREATEST(d.inc, v_sma)`
+     — a média de 15d vira piso; recebimentos confirmados maiores que a média mantêm o real. Dias 1-7 seguem
+     confirmado-only (regra travada na Phase 59, intacta). `daily_projection` no dia 8+ = `GREATEST(0, v_sma - d.inc)`
+  2. `get_cashflow` aceita 4º parâmetro `p_include_purchase_forecasts BOOLEAN DEFAULT false`; com `false` a CTE
+     `exp` filtra `AND COALESCE(category,'') <> 'Previsões de compra'` (além do `status='pending'`); com `true` soma as previsões
+  3. Reconciliação provada: com toggle OFF, soma das saídas em aberto de 05–12/07 = R$87.105,79 (= Tiny do Wesley),
+     e a OC nº 383 deixa de ser contada 2x (some a cópia "previsão" de 09/07, fica a conta real de 11/07)
+  4. A assinatura antiga de 3 args é substituída sem ambiguidade (`DROP FUNCTION public.get_cashflow(uuid,date,date)`
+     antes do `CREATE` de 4 args); `SECURITY INVOKER` + `REVOKE` de PUBLIC/anon + `GRANT` authenticated preservados
+  5. Toggle "Incluir previsões de compra" na página `/caixa` (desligado por padrão) propaga o 4º parâmetro pro RPC;
+     a linha confirmada (`accumulated_balance`) permanece intacta
+
+**Plans**: 2 plans (1 wave — arquivos disjuntos). plan-checker PASS.
+- [x] 60-01-PLAN.md — Backend: migration get_cashflow 4-arg (entrada piso GREATEST + filtro de Previsões de compra). **Aplicada em prod via MCP; reconciliação provada: OFF=87.105,79 / ON=99.495,58 / OC383 1x / chamada 3-args sem ambiguidade**
+- [x] 60-02-PLAN.md — Frontend: toggle "Incluir previsões de compra" (off por padrão) na /fluxo-de-caixa; `useCashFlowData` propaga o 4º arg. **Build verde; commit c910be2f pushado**
+- [x] 60-03 (feedback Wesley) — toggle move também os indicadores de SALDO/PROJEÇÃO (TreasuryPanel saldo/alerta/mín + get_projected_balance_summary), NÃO a Exposição por fornecedor (100% previsões — zeraria). Migration 20260660000200 + hooks/prop. **Provado em prod; commit 9d614b1d pushado.** Descoberta: `supplier` só existe nas OCs (dívida de sync futura)
+
+Continuação direta da Phase 59. Diagnóstico fechado nesta sessão (2026-06-25) com dados live + decisões do Wesley. **Pendente: validação visual do Wesley em /fluxo-de-caixa (curva OFF vs DFC + toggle ao vivo).**
+
+---
+
+### Phase 61: Enriquecer Fornecedor + Categoria do Contas a Pagar
+
+**Goal**: Os gráficos "Composição de Custos por Mês" e "Exposição por Fornecedor" da `/fluxo-de-caixa` passam a mostrar as categorias reais do plano de contas do Tiny e os fornecedores reais (multi-fornecedor), e se mantêm estáveis após cada `sync-tiny-payables` (não voltam a "Outros"/só-Pralana).
+**Depends on**: Phase 51 (backfill de categoria via fila `cat_backfill_queue` + `enrich_drain`/`enrich_harvest`), Phase 60 (DFC alinhada; descoberta de que `supplier` só existia nas OCs)
+**Requirements**: CASHFIX-07 (enriquecimento é fonte única de category/supplier; sync para de sobrescrever), CASHFIX-08 (backfill repovoa as 2011 linhas com categoria + fornecedor)
+**Success Criteria** (what must be TRUE):
+
+  1. `sync-tiny-payables` NÃO escreve mais `category` nem `supplier` no upsert de `cash_outflows` (on-conflict preserva os valores enriquecidos); um sync executado após o backfill não zera nenhuma linha já enriquecida (contagem de `category IS NOT NULL` não cai)
+  2. `enrich_harvest` grava `supplier = contato.nome` além de `category = categoria.descricao` ao processar o detalhe `/contas-pagar/{id}`
+  3. O enqueue (`treasury_cat_enqueue` / função de enfileiramento) re-marca `todo` toda linha de `cash_outflows` com `category IS NULL OR supplier IS NULL`, em vez de `ON CONFLICT DO NOTHING` que pula as `done`
+  4. Após drain do backfill, `cash_outflows` tem ≥ 90% das linhas com `category` não-nula E `supplier` não-nulo (hoje 20/2011); `COUNT(DISTINCT supplier) > 1` e `COUNT(DISTINCT category) > 1`
+  5. Em produção, "Composição de Custos por Mês" mostra ≥ 3 categorias reais (além de "Outros"/"Previsões de compra") e "Exposição por Fornecedor" mostra ≥ 2 fornecedores reais
+  6. Nenhuma regressão na DFC da Phase 60: `get_cashflow` (toggle OFF/ON), reconciliação R$87.105,79 e a Exposição por Fornecedor seguindo o comportamento da Phase 60 (não some/zera)
+
+**Plans**: 3 plans (3 waves)
+- [ ] 61-01-PLAN.md — Código fonte única: remover category/supplier do upsert da EF sync-tiny-payables + migration enrich_payable_step/enrich_enqueue_new/enrich_harvest (Wave 1, autônomo)
+- [ ] 61-02-PLAN.md — Go-live + prova do risco A1 (preservação no ON CONFLICT, com fallback de trigger) + seed/drain do backfill ≥90% (Wave 2, checkpoints via MCP)
+- [ ] 61-03-PLAN.md — Validação final: estabilidade pós-sync + gráficos em prod (≥3 categorias, ≥2 fornecedores) + no-regressão Phase 60 (R$87.105,79) (Wave 3, checkpoints)
+
+Continuação da Phase 51 + Phase 60. Causa-raiz e estado do banco (1991/2011 com category vazia E supplier nulo) validados em 2026-06-25 com dados live; opção A aprovada pelo Wesley. **Planejada 2026-06-25.**
+
+---
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -194,6 +277,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 | 56. Snooze + Limiares | 0/? | Not started | - |
 | 57. Nexo Conversacional | 0/4 | Em execução (preview) | - |
 | 58. Veracidade & Completude | 5/6 | In Progress|  |
+| 59. Fluxo de Caixa — Correções | 2/2 | Executed (provado em prod) | 2026-06-25 |
 
 ## Build Order / Dependências
 

@@ -2,19 +2,35 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 58
-current_phase_name: veracidade-completude-dados
-status: phase_complete
+current_phase: 61
+current_phase_name: enriquecer-fornecedor-categoria-do-contas-a-pagar
+status: executing
 stopped_at: "Phases 57+58 MERGEADAS pra prod (PR #9, merge 670ac8be; Vercel success). Pendente: E2E Wesley logado. Próximo: /gsd-plan-phase 54 (UI fila de ações) ou 55 (multi-loja)"
-last_updated: "2026-06-25T01:05:00.000Z"
+last_updated: "2026-06-25T18:48:15.564Z"
 last_activity: 2026-06-25
-last_activity_desc: Phases 57+58 mergeadas pra prod (chat Nexo no ar); rotação de segredos adiada por Wesley
+last_activity_desc: Phase 61 execution started
 progress:
-  total_phases: 7
-  completed_phases: 2
-  total_plans: 23
-  completed_plans: 23
-  percent: 28
+  total_phases: 10
+  completed_phases: 3
+  total_plans: 24
+  completed_plans: 18
+  percent: 30
+---
+
+## ✅ Phase 59 EXECUTADA + PROVADA EM PROD (2026-06-25) — Fluxo de Caixa: Correções (Projeção 7d + Sync Contas a Pagar)
+
+- **Status:** Executing Phase 61
+- **CASHFIX-01 (projeção 7d):** migration `20260659000000` aplicada via MCP. Validado por SQL: dias 1-7 a linha âmbar = confirmado (previsão=0, sem inflar); 8º+ média só nos dias sem recebimento. `accumulated_balance` intocado. **Reconciliação DFC:** descoberto que `financial_settings.initial_balance` estava STALE (R$21.676,91 de 19/06) — corrigido p/ R$16.833,14 (abertura 25/06 da DFC do Wesley); resíduo = só a liberação intradiária do MP de hoje. Commits 3022829c (migration) + bf71486d (legenda).
+- **CASHFIX-02 (sync payables):** EF `sync-tiny-payables` v5 deployada via **MCP deploy_edge_function** (não precisou do token CLI do Wesley!). **Causa-raiz REAL ≠ os 4 suspects:** a lógica sempre funcionou (debug-sync provou: 1991 itens, upsert OK); o congelamento era o **pg_net derrubando a execução síncrona de ~15s aos 5s antes do commit**. Fix = `EdgeRuntime.waitUntil` (202 em ~290ms, background persiste). Provado: congelamento 18/06→25/06, synced_at avançando, count(distinct synced_at::date) 1→2, 1991 contas gravadas via chamada cron-style. Commits 0f877492 + 02cc72cd. **Sem migration de cron** (202 rápido basta).
+- ⚠️ **FOLLOW-UP:** `sync-mp-releases` tem o MESMO padrão (EF lenta ~118s, pg_net timeout) — não congelou mas está em risco; vale aplicar o mesmo `waitUntil`.
+- ⚠️ **Lição reusável:** EFs lentas chamadas por pg_cron devem usar `EdgeRuntime.waitUntil` (202 imediato) — senão o worker é descartado quando o pg_net abandona aos 5s, antes do commit. Deploy de EF dá pra fazer via MCP `deploy_edge_function` (verify_jwt=false p/ esta).
+- **Plans:** `59-01` (CASHFIX-01 projeção: migration CREATE OR REPLACE get_cashflow base `20260619020000` BRT, CASE em accumulated_balance_sma + daily_projection, accumulated_balance intocado, apply via MCP + validação como checkpoint) · `59-02` (CASHFIX-02 sync: EF sync-tiny-payables debug-first + EdgeRuntime.waitUntil 202, prova de causa-raiz nos logs entre 4 suspects, deploy + prova de persistência — checkpoints do orquestrador).
+- **Origem:** Wesley usando o dashboard de Fluxo de Caixa (Phase 49) achou 2 inconsistências reais. Diagnóstico ao vivo em prod `ckcdevcxgvueywivefgx`.
+- **Issue 1 (Projeção):** linha SMA aplica a média diária (~R$6.486) desde hoje → infla o curto prazo (venda de hoje só vira caixa ~14d depois; já está no confirmado). **Regra travada com Wesley:** primeiros 7 dias = só confirmado (sem previsão); do 8º dia em diante a média entra **só nos dias SEM recebimento confirmado** (dias com recebimento mantêm o real). Fix na RPC `get_cashflow` (CASE na coluna `accumulated_balance_sma`, usando data BRT). Pegar a migration MAIS recente (3 mexem em get_cashflow: 20260619000000/010000/020000). Frontend provavelmente intocado.
+- **Issue 2 (Contas a pagar CONGELADO):** `cash_outflows` = 1.960 linhas, `synced_at` = `2026-06-18 19:29` em TODAS (1 dia distinto). Cron `sync-tiny-payables-6h` ATIVO e `succeeded`, mas `net._http_response` mostra **`Timeout of 5000 ms reached`** (timeout default do pg_net) enquanto a EF leva ~15,7s. Agravante: EF retorna **200 em 15,7s mas NÃO grava** (synced_at preso em 18/06) → debug obrigatório (token Tiny vazio? fetch vazio? upsert engolido?). Fix: timeout no `net.http_post` (≥60s) ou EF assíncrona (waitUntil) + provar/corrigir a não-persistência. Manter cadência (6h já basta o "≥1x/dia").
+- **Artefatos:** `phases/59-fluxo-caixa-correcoes/59-CONTEXT.md` + entrada no ROADMAP (Phase 59, CASHFIX-01/02). **Próximo: `/gsd-plan-phase 59`.**
+- Reconciliação ao centavo com a DFC do Wesley (Phase 49) NÃO pode quebrar — só a curva da projeção muda.
+
 ---
 
 ## ✅ Phase 58 EXECUTADA + DEPLOYADA (2026-06-25) — Veracidade & Completude do Nexo
@@ -91,14 +107,14 @@ See: .planning/PROJECT.md
 
 **Milestone:** v8.0 — Consultor v2 (Inteligência)
 **Core value:** Consultor que explica, prioriza e ajuda a agir — LLM sob demanda + ações com aprovação, sobre o motor determinístico do v1.
-**Current focus:** Phase 58 — veracidade-completude-dados
+**Current focus:** Phase 61 — enriquecer-fornecedor-categoria-do-contas-a-pagar
 
 ## Current Position
 
-Phase: 58 (veracidade-completude-dados) — EXECUTING
-Plan: 6 of 6
-Status: Ready to execute
-Last activity: 2026-06-24 — Phase 58 execution started
+Phase: 61 (enriquecer-fornecedor-categoria-do-contas-a-pagar) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 61
+Last activity: 2026-06-25 — Phase 61 execution started
 Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint visual; depois adaptar/executar **Phase 53 com Gemini**.
 
 ### Phase 54 — Wave 1 EXECUTADA (2026-06-24), Wave 2 PENDENTE
@@ -156,6 +172,7 @@ Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint
 | 260618-sum | Fluxo de caixa: RPCs consideram contas a pagar de QUALQUER status (paid+pending), futuro-only | 2026-06-18 | 5652ebfa | [260618-sum](./quick/260618-sum-corrigir-rpcs-de-fluxo-de-caixa-consider/) |
 | 260618-sma | Fluxo de caixa: 2ª linha de projeção (média 15d via orders) — AGUARDA validação Wesley | 2026-06-18 | fe19611d | [260618-sma](./quick/260618-sma-segunda-linha-projecao-media-15d/) |
 | 260619-02b | Fluxo de caixa: base da média 15d = bruta−comissão−frete (sem dupla imposto) + rótulo piso ~30d | 2026-06-19 | ddf946c8 | [260619-02b](./quick/260619-02b-trocar-base-da-linha-de-projecao-media-1/) |
+| 260625-ixc | Caixa sempre atualizado: waitUntil na EF sync-mp-releases + cron entradas/saídas a cada 3h. Provado em prod (202, 401, synced_at avançando, crons 0 */3) | 2026-06-25 | 529d55eb | [260625-ixc](./quick/260625-ixc-caixa-sempre-atualizado-waituntil-na-ef-/) |
 
 ### DRE mês-calendário (quick 260613-2p6, 2026-06-13)
 
