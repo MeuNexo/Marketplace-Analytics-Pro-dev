@@ -233,7 +233,9 @@ centavo com o contas a pagar do Tiny, com as "Previsões de compra" controlávei
   5. Toggle "Incluir previsões de compra" na página `/caixa` (desligado por padrão) propaga o 4º parâmetro pro RPC;
      a linha confirmada (`accumulated_balance`) permanece intacta
 
-**Plans**: a definir no planejamento (estimado 2 — backend RPC + frontend toggle)
+**Plans**: 2 plans (1 wave — arquivos disjuntos)
+- [ ] 60-01-PLAN.md — Backend: migration get_cashflow 4-arg (entrada piso GREATEST + filtro de Previsões de compra)
+- [ ] 60-02-PLAN.md — Frontend: toggle "Incluir previsões de compra" (off por padrão) na /fluxo-de-caixa
 
 Continuação direta da Phase 59. Diagnóstico fechado nesta sessão (2026-06-25) com dados live + decisões do Wesley.
 
