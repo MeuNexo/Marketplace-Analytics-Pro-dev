@@ -5,16 +5,28 @@ milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem
 current_phase: 58
 current_phase_name: veracidade-completude-dados
 status: executing
-stopped_at: Phase 51 planned + verified (3 plans, 3 waves)
-last_updated: "2026-06-24T21:30:22.906Z"
-last_activity: 2026-06-24
-last_activity_desc: Phase 58 execution started
+stopped_at: Phase 58 deployada (6 plans) — pendente E2E Wesley + rotação de segredos
+last_updated: "2026-06-25T00:50:00.000Z"
+last_activity: 2026-06-25
+last_activity_desc: Phase 58 executada e deployada (EF nexo-chat v5 + cron billing); VERAC-07 PASS
 progress:
   total_phases: 7
-  completed_phases: 1
-  total_plans: 17
-  completed_plans: 13
-  percent: 14
+  completed_phases: 2
+  total_plans: 23
+  completed_plans: 23
+  percent: 28
+---
+
+## ✅ Phase 58 EXECUTADA + DEPLOYADA (2026-06-25) — Veracidade & Completude do Nexo
+
+- **6 planos, 6 waves sequenciais** (todos tocam `tools.ts`). 192 testes verdes, build ✓, deno check ✓. 25 tools, anti-IDOR mantido, userJwt propagado index→runChat→loop→dispatchTool (B-1).
+- **Fixes por domínio:** Estoque (get_inventory active default + agregado + variações esgotadas + rótulo Full + synced_at); Ads (get_ads_campaigns neutralizada — cache 100% zerado; nova get_ads_account_summary real); Financeiro (get_dre_monthly via ml_billing_daily mês-calendário = R$34.852,90 ≡ painel; cashflow saldo_hoje; cron re-sync billing); Operacional (get_reputation + get_goals NOVAS; claims/health/questions limpos); prompt.ts bloco VERACIDADE/FRESCURA/SEMÂNTICA.
+- **Re-auditoria VERAC-07 (SQL real Pé Vermeio): 4 domínios PASS** — ver `58-VERIFICATION.md`. Achado novo corrigido inline: `get_goals` lia `lucro_pct`, chave real é `gross_profit` (commit 939cee1d).
+- **DEPLOY (decisão Wesley "deploya já, roto depois"):** EF `nexo-chat` **v5** deployada via CLI (script 127kB; smoke 401 sem auth / 200 OPTIONS). Migration cron `billing-daily-resync` aplicada via MCP — **ATIVA** (`40 6 * * *`, itera por loja, Pattern B vault service_role_key). Resync manual imediato pegou **429 do ML** (transitório — cron das 06:40 reidrata; tool já sinaliza defasagem via coverage_until).
+- ⚠️ **PENDENTE Wesley:** (1) validação E2E logado (get_reputation ao vivo + perguntas reais); (2) **ROTACIONAR GEMINI_API_KEY + SUPABASE_ACCESS_TOKEN** (ambos expostos em chat). EF roda sobre o Gemini key atual até a rotação.
+- **Frontend Phase 57 (chat) ainda em preview** (`preview/phase57-nexo-chat`) — não mergeado pra prod. Para Wesley testar em prod, precisa do merge da UI da 57.
+- Commits locais na `main` (não pushados): 58-01..06 + fix get_goals + VERIFICATION.
+
 ---
 
 ## ✅ Phase 53 FECHADA (2026-06-24) — Camada LLM (Gemini) em produção
