@@ -817,17 +817,17 @@ A fase tem 4 blocos naturais:
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Wesley cadastrou SKUs por variação no ML?**
+Ambas são verificáveis apenas em runtime e estão **resolvidas por checkpoint nos planos** (descoberta no checkpoint, não pré-execução):
+
+1. **Wesley cadastrou SKUs por variação no ML?** — **RESOLVED:** validada em runtime no checkpoint `63-01 Task 3` (SQL `jsonb_path_query_array(variations,'$[*].seller_custom_field')` após o fix de CMP-01); se `variacoes_com_sku = 0`, o plano escala para o Wesley antes de prosseguir. Caminho de escalonamento explícito no plano.
    - O que sabemos: A EF `ml-inventory` já chama o endpoint correto e retorna `seller_custom_field` por variação.
-   - O que não sabemos: Se o usuário inseriu os dados nas variações do anúncio na plataforma ML.
-   - Recomendação: Verificar após executar o fix de CMP-01 com SQL `SELECT item_id, jsonb_path_query_array(variations, '$[*].seller_custom_field') FROM ml_inventory_cache WHERE organization_id = '7f615df7...' AND has_variations = true LIMIT 10`.
+   - Verificação: `SELECT item_id, jsonb_path_query_array(variations, '$[*].seller_custom_field') FROM ml_inventory_cache WHERE organization_id = '7f615df7-7bac-45e5-8a93-827fb9ddeec7' AND has_variations = true LIMIT 10`.
 
-2. **`ml_orders.variation_id` tem dados históricos reais?**
+2. **`ml_orders.variation_id` tem dados históricos reais?** — **RESOLVED:** validada em runtime no checkpoint `63-01 Task 3` (query de cobertura); o resultado é registrado no SUMMARY como input para o `63-04`. Se a cobertura for baixa, a velocidade por SKU cai para o ramo sem-variação (tratado na RPC).
    - O que sabemos: A coluna existe, o sync grava `prod.variation_id` dos order items. A ML orders API retorna `variation_id` nos order items.
-   - O que não sabemos: A cobertura histórica (quantos pedidos têm variation_id populado vs "").
-   - Recomendação: `SELECT count(*), count(NULLIF(variation_id,'')) FROM ml_orders WHERE organization_id = '7f615df7...' AND data_pedido >= CURRENT_DATE - 60`.
+   - Verificação: `SELECT count(*), count(NULLIF(variation_id,'')) FROM ml_orders WHERE organization_id = '7f615df7-7bac-45e5-8a93-827fb9ddeec7' AND data_pedido >= CURRENT_DATE - 60`.
 
 ---
 
