@@ -16,11 +16,19 @@
 // Autenticação: verify_jwt=false no config.toml; guard interno requireServiceRole().
 // Chamada por pg_cron (Pattern B) a cada 6h.
 //
+// CASHFIX-02 (2026-06-25): Reescrito com EdgeRuntime.waitUntil (202 imediato — elimina
+// o timeout do pg_net de ~5s que abortava antes dos ~15,7s de execução). Toda a lógica
+// movida para runSync() com observabilidade para provar a causa-raiz do silent-no-write.
+//
 // Analog: supabase/functions/sync-tiny-costs/index.ts (padrão EXATO reutilizado)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+// EdgeRuntime é global no runtime Supabase Edge — sem import necessário.
+// Declaração de tipo para satisfazer deno check (premissa A2 do RESEARCH).
+declare const EdgeRuntime: { waitUntil: (p: Promise<unknown>) => void };
 
 const SUPABASE_URL = (Deno.env.get("SUPABASE_URL") ?? "").trim();
 const SERVICE_KEY  = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
@@ -172,18 +180,32 @@ async function fetchPayables(
     // Tiny v3 /contas-pagar pagina por OFFSET — o param `pagina` é IGNORADO
     // (validado em prod: pagina=2 retornava os mesmos 100 itens → loop).
     // CRÍTICO: NÃO enviar "situacao" (A5 do RESEARCH) — filtrar client-side.
+    // CASHFIX-02 Suspect 1: passar dateFrom/dateTo à API Tiny (antes eram ignorados).
     const data = await tinyGet(token, "/contas-pagar", {
-      offset: String(offset),
-      limit:  "100",
+      offset:        String(offset),
+      limit:         "100",
+      dataVencimentoInicial: dateFrom,
+      dataVencimentoFinal:   dateTo,
     });
 
     // A API Tiny v3 retorna: { itens: [...], paginacao: { total } }
+    // Observabilidade: logar raw keys da resposta (detecta Suspect 3 — formato mudou)
     // deno-lint-ignore no-explicit-any
     const itens: any[] = Array.isArray(data) ? data : (data?.itens ?? data?.data ?? []);
     const total: number = data?.paginacao?.total ?? data?.total ?? 0;
 
     if (offset === 0) {
-      console.log(`[sync-tiny-payables] ml_user_id=${mlUserId}: total=${total} contas a pagar no Tiny`);
+      // Suspect 3 — formato de resposta Tiny: logar keys reais retornadas pela API
+      console.log(`[sync-tiny-payables] ml_user_id=${mlUserId} raw keys=${Object.keys(data ?? {}).join(",")}, itens=${itens.length}, total=${total}`);
+    }
+
+    if (offset === 0 && !itens.length && !Array.isArray(data)) {
+      // Log adicional: se data tem conteúdo mas itens vazio, revelar estrutura
+      console.log(`[sync-tiny-payables] ml_user_id=${mlUserId} AVISO: itens vazio — data keys acima indicam o formato real da resposta Tiny`);
+    }
+
+    if (offset > 0) {
+      console.log(`[sync-tiny-payables] ml_user_id=${mlUserId} paginação offset=${offset}, itens nesta página=${itens.length}`);
     }
 
     if (!itens.length) break;
@@ -206,6 +228,9 @@ async function processLoja(
   dateTo: string,
 ): Promise<{ synced: number; errors: number }> {
   const token = await getTinyToken(mlUserId);
+  // Suspect 2 — token Tiny: se chegou aqui sem throw, token foi obtido com sucesso
+  console.log(`[sync-tiny-payables] ml_user_id=${mlUserId} token obtido OK`);
+
   const itens = await fetchPayables(token, dateFrom, dateTo, mlUserId);
 
   if (!itens.length) {
@@ -252,6 +277,9 @@ async function processLoja(
     return { synced: 0, errors: 0 };
   }
 
+  // Suspect 4 — upsert engolido: logar rows.length antes do upsert
+  console.log(`[sync-tiny-payables] ml_user_id=${mlUserId} rows para upsert=${rows.length}`);
+
   // UPSERT idempotente por (organization_id, tiny_payable_id)
   // ignoreDuplicates: false → atualiza status (em_aberto→pago) quando reencontrado
   const { error: upsertErr } = await sb
@@ -262,6 +290,7 @@ async function processLoja(
     });
 
   if (upsertErr) {
+    // Suspect 4: logar erro completo (schema drift, constraint, service_role_key inválida)
     console.error(`[sync-tiny-payables] ml_user_id=${mlUserId} upsert error:`, upsertErr.message);
     return { synced: 0, errors: rows.length };
   }
@@ -270,21 +299,16 @@ async function processLoja(
   return { synced: rows.length, errors: 0 };
 }
 
-// ── Main handler ──────────────────────────────────────────────────────────────
+// ── Background sync (toda a lógica de sync — Pitfall 4: try/catch obrigatório) ─
 
-serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-
-  const authError = requireServiceRole(req);
-  if (authError) return authError;
-
+async function runSync(): Promise<void> {
   try {
     // Calcular janela de datas
-    const now     = new Date();
+    const now      = new Date();
     const dateFrom = new Date(now.getTime() - DAYS_BACK    * 86400000).toISOString().slice(0, 10);
     const dateTo   = new Date(now.getTime() + DAYS_FORWARD * 86400000).toISOString().slice(0, 10);
 
-    console.log(`[sync-tiny-payables] Iniciando sync. Janela: ${dateFrom} → ${dateTo}`);
+    console.log(`[sync-tiny-payables] runSync iniciando. Janela: ${dateFrom} → ${dateTo}`);
 
     // MULTI-TENANT: buscar todas as lojas com Tiny conectado
     const { data: tokenRows, error: tokErr } = await sb
@@ -292,12 +316,19 @@ serve(async (req: Request) => {
       .select("ml_user_id, organization_id")
       .not("tiny_access_token", "is", null);
 
-    if (tokErr) throw new Error(`Erro ao buscar ml_tokens: ${tokErr.message}`);
-    if (!tokenRows?.length) {
-      return jsonResp({ ok: true, msg: "Nenhuma loja com Tiny conectado", synced: 0 });
+    if (tokErr) {
+      console.error("[sync-tiny-payables] Erro ao buscar ml_tokens:", tokErr.message);
+      return;
     }
 
-    console.log(`[sync-tiny-payables] ${tokenRows.length} loja(s) com Tiny conectado`);
+    // Observabilidade: Suspect 1 — nº de lojas com Tiny conectado
+    const mlUserIds = tokenRows?.map((r: { ml_user_id: string }) => r.ml_user_id) ?? [];
+    console.log(`[sync-tiny-payables] tokenRows=${tokenRows?.length ?? 0} lojas com Tiny conectado, ml_user_ids=${JSON.stringify(mlUserIds)}`);
+
+    if (!tokenRows?.length) {
+      console.log("[sync-tiny-payables] Nenhuma loja com Tiny conectado — abortando. Verificar ml_tokens.tiny_access_token.");
+      return;
+    }
 
     let totalSynced = 0;
     let totalErrors = 0;
@@ -319,18 +350,29 @@ serve(async (req: Request) => {
       }
     }
 
-    return jsonResp({
-      ok: true,
-      synced:       totalSynced,
-      errors:       totalErrors,
-      lojas:        tokenRows.length,
-      loja_results: lojaResults,
-      window:       { from: dateFrom, to: dateTo },
-      msg:          `${totalSynced} saídas sincronizadas em cash_outflows (source='tiny')`,
-    });
+    console.log(`[sync-tiny-payables] runSync concluído. totalSynced=${totalSynced}, totalErrors=${totalErrors}, lojaResults=${JSON.stringify(lojaResults)}`);
   } catch (err: unknown) {
+    // Pitfall 4: capturar TODA exceção do background — sem try/catch o processo
+    // morre silenciosamente (sem log) quando chamado via EdgeRuntime.waitUntil
     const message = err instanceof Error ? err.message : String(err);
-    console.error("[sync-tiny-payables] ERROR:", message);
-    return jsonResp({ error: message }, 500);
+    console.error("[sync-tiny-payables] runSync ERRO não capturado:", message);
   }
+}
+
+// ── Main handler ──────────────────────────────────────────────────────────────
+// CASHFIX-02: serve() responde 202 imediatamente via EdgeRuntime.waitUntil(runSync()).
+// O pg_net do cron recebe 202 em <200ms → nunca mais "Timeout of 5000ms reached".
+// A lógica de sync continua em background por até 150s (free tier).
+// requireServiceRole() permanece ANTES do waitUntil (T-59-04: auth não pode mover).
+
+serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  const authError = requireServiceRole(req);
+  if (authError) return authError;
+
+  // Desacoplar o pg_net da duração de execução (CASHFIX-02):
+  // runSync() processa em background — o caller recebe 202 imediatamente.
+  EdgeRuntime.waitUntil(runSync());
+  return jsonResp({ ok: true, msg: "sync enqueued" }, 202);
 });
