@@ -4,11 +4,11 @@ milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
 current_phase: 58
 current_phase_name: veracidade-completude-dados
-status: executing
-stopped_at: Phase 58 deployada (6 plans) — pendente E2E Wesley + rotação de segredos
-last_updated: "2026-06-25T00:50:00.000Z"
+status: phase_complete
+stopped_at: "Phases 57+58 MERGEADAS pra prod (PR #9, merge 670ac8be; Vercel success). Pendente: E2E Wesley logado. Próximo: /gsd-plan-phase 54 (UI fila de ações) ou 55 (multi-loja)"
+last_updated: "2026-06-25T01:05:00.000Z"
 last_activity: 2026-06-25
-last_activity_desc: Phase 58 executada e deployada (EF nexo-chat v5 + cron billing); VERAC-07 PASS
+last_activity_desc: Phases 57+58 mergeadas pra prod (chat Nexo no ar); rotação de segredos adiada por Wesley
 progress:
   total_phases: 7
   completed_phases: 2
