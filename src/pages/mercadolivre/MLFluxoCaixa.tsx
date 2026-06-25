@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { CashFlowChart } from "@/components/financial/CashFlowChart";
@@ -169,6 +170,9 @@ export default function MLFluxoCaixa() {
   const isOwner = currentOrg?.role === "owner";
 
   const [adjustOpen, setAdjustOpen] = useState(false);
+  // CASHFIX-06: incluir/excluir ordens de compra não faturadas ("Previsões de compra").
+  // OFF (padrão) = caixa alinhado com o contas a pagar do Tiny/DFC.
+  const [includePurchaseForecasts, setIncludePurchaseForecasts] = useState(false);
 
   const { data: financialSettings } = useFinancialSettings();
 
@@ -184,6 +188,7 @@ export default function MLFluxoCaixa() {
   const { data: cashFlowData, isLoading: chartLoading } = useCashFlowData(
     startDate,
     endDate,
+    includePurchaseForecasts,
   );
 
   const isPageLoading = !currentOrg;
@@ -228,9 +233,24 @@ export default function MLFluxoCaixa() {
           <div className="flex flex-col gap-4">
             <TreasuryPanel />
 
-            {/* Botão owner-only para ajustar saldo inicial */}
-            {isOwner && (
-              <div className="flex justify-end">
+            {/* Toggle de previsões de compra + botão owner-only de ajuste de saldo */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="include-purchase-forecasts"
+                  checked={includePurchaseForecasts}
+                  onCheckedChange={setIncludePurchaseForecasts}
+                />
+                <Label
+                  htmlFor="include-purchase-forecasts"
+                  className="text-xs text-muted-foreground cursor-pointer"
+                  title="Inclui ordens de compra ainda não faturadas (previsões). Desligado, o caixa reflete só o contas a pagar do Tiny."
+                >
+                  Incluir previsões de compra
+                </Label>
+              </div>
+
+              {isOwner && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -240,8 +260,8 @@ export default function MLFluxoCaixa() {
                   <Settings2 className="w-3.5 h-3.5" />
                   Ajustar saldo de hoje
                 </Button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           {/* ── Gráfico: Como meu dinheiro vai evoluir? ── */}
