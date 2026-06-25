@@ -5,16 +5,16 @@ milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem
 current_phase: 62
 current_phase_name: reposicao-server-side
 status: complete
-stopped_at: "Phase 62 (Reposição Server-Side) EXECUTADA + VERIFICADA (PASS 7/7) 2026-06-25. RPC get_replenishment + tabela replenishment_params aplicadas em prod via MCP (ckcdevcxgvueywivefgx); validado: 116 anúncios Pé Vermeio, 29 sugeridos, gatilho cortando 87, anti-IDOR cross-org=0, advisors limpos; módulo TS replenishmentUtils + 203 testes verdes; aba Compra Recomendada em /estoque. DEPLOY DE PRODUÇÃO FEITO: PR #11 mergeado (merge 939bddde) → Vercel prod dpl_H7LC… state=READY target=production. Próximo: validação visual Wesley na aba 'Compra Recomendada' em /estoque + (pendência antiga) Phase 61 backfill."
-last_updated: "2026-06-25T21:10:00.000Z"
+stopped_at: Phase 63 planned (4 plans, plan-checker PASS)
+last_updated: "2026-06-25T23:53:37.001Z"
 last_activity: 2026-06-25
-last_activity_desc: Phase 62 executed + verified (PASS 7/7)
+last_activity_desc: Phase 62 execution started
 progress:
-  total_phases: 11
+  total_phases: 12
   completed_phases: 4
-  total_plans: 27
+  total_plans: 31
   completed_plans: 23
-  percent: 36
+  percent: 33
 ---
 
 ## ✅ Phase 59 EXECUTADA + PROVADA EM PROD (2026-06-25) — Fluxo de Caixa: Correções (Projeção 7d + Sync Contas a Pagar)
@@ -333,8 +333,10 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-25T21:02:00.677Z
-Stopped at: Phase 51 planned + verified (3 plans, 3 waves)
+**Resume file:** .planning/phases/63-compras-reposi-o-por-sku-p-gina-pr-pria/63-01-PLAN.md
+
+Last session: 2026-06-25T23:53:36.978Z
+Stopped at: Phase 63 planned (4 plans, plan-checker PASS)
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
