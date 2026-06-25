@@ -262,7 +262,6 @@ async function processLoja(
     if (!tinyPayableId) continue; // sem ID = ignorar (não seria idempotente)
 
     const statusNorm = normalizeSituacao(item.situacao);
-    const contato = item.contato ?? {};
 
     // outflow_date: preferir dataPagamento se status='paid' e campo disponível (A7)
     // Fallback: dataVencimento (premissa A7 do RESEARCH)
@@ -275,8 +274,7 @@ async function processLoja(
       outflow_date:    outflowDate,
       amount:          Number(item.valor ?? 0),
       description:     String(item.historico ?? item.descricao ?? "").trim() || `Conta #${tinyPayableId}`,
-      supplier:        String(contato.nome ?? item.nomeFornecedor ?? "").trim() || null,
-      category:        String(item.tipo ?? item.tipoOrdem ?? "").trim() || null,
+      // supplier e category removidos: enriquecimento-detalhe é a fonte única (opção A, CASHFIX-07)
       status:          statusNorm,
       document_number: String(item.numeroDocumento ?? item.numero ?? "").trim() || null,
       source:          "tiny",
