@@ -204,8 +204,8 @@ congelamento desde 18/06.
   5. (opcional, decidir no plano) indicador de "última atualização do contas a pagar" na UI de fluxo de caixa
 
 **Plans**: 2 plans (1 wave — independentes, arquivos disjuntos)
-- [ ] 59-01-PLAN.md — CASHFIX-01: RPC `get_cashflow` regra de projeção 7d (CASE em accumulated_balance_sma + daily_projection, data BRT) + legenda/JSDoc frontend; aplicar via MCP apply_migration (checkpoint orquestrador) + validação SQL/visual
-- [ ] 59-02-PLAN.md — CASHFIX-02: EF `sync-tiny-payables` debug-first (observabilidade) + `EdgeRuntime.waitUntil` (202 imediato, sem timeout pg_net) + fix da causa-raiz do silent-no-write; deploy + prova de persistência por SQL (checkpoints orquestrador)
+- [x] 59-01-PLAN.md — CASHFIX-01: RPC `get_cashflow` regra de projeção 7d (CASE em accumulated_balance_sma + daily_projection, data BRT) + legenda/JSDoc frontend. **Aplicada via MCP em prod; validada por SQL (dias 1-7 sem inflação) + reconciliação DFC (saldo inicial corrigido 21.676,91→16.833,14)**
+- [x] 59-02-PLAN.md — CASHFIX-02: EF `sync-tiny-payables` + `EdgeRuntime.waitUntil` (202 imediato) + modo debug síncrono. **Causa-raiz REAL: pg_net derrubava a execução de ~15s aos 5s antes do commit (não os 4 suspects). Provado em prod: congelamento 18/06 quebrado, synced_at avançando, 1991 contas gravadas. EF v5 deployada (prod==repo). Cron funciona sem migration nova**
 
 Contexto/diagnóstico: `phases/59-fluxo-caixa-correcoes/59-CONTEXT.md`
 
@@ -222,7 +222,7 @@ Contexto/diagnóstico: `phases/59-fluxo-caixa-correcoes/59-CONTEXT.md`
 | 56. Snooze + Limiares | 0/? | Not started | - |
 | 57. Nexo Conversacional | 0/4 | Em execução (preview) | - |
 | 58. Veracidade & Completude | 5/6 | In Progress|  |
-| 59. Fluxo de Caixa — Correções | 0/2 | Planned (plan-checker PASS) | - |
+| 59. Fluxo de Caixa — Correções | 2/2 | Executed (provado em prod) | 2026-06-25 |
 
 ## Build Order / Dependências
 

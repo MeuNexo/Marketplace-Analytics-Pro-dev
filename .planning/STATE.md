@@ -2,24 +2,28 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 58
-current_phase_name: veracidade-completude-dados
-status: phase_complete
+current_phase: 59
+current_phase_name: fluxo-caixa-correcoes
+status: executing
 stopped_at: "Phases 57+58 MERGEADAS pra prod (PR #9, merge 670ac8be; Vercel success). Pendente: E2E Wesley logado. Próximo: /gsd-plan-phase 54 (UI fila de ações) ou 55 (multi-loja)"
-last_updated: "2026-06-25T01:05:00.000Z"
+last_updated: "2026-06-25T12:43:16.396Z"
 last_activity: 2026-06-25
-last_activity_desc: Phases 57+58 mergeadas pra prod (chat Nexo no ar); rotação de segredos adiada por Wesley
+last_activity_desc: Phase 59 execution started
 progress:
-  total_phases: 7
-  completed_phases: 2
-  total_plans: 23
-  completed_plans: 23
-  percent: 28
+  total_phases: 8
+  completed_phases: 1
+  total_plans: 19
+  completed_plans: 13
+  percent: 13
 ---
 
-## 📋 Phase 59 PLANEJADA (2026-06-25) — Fluxo de Caixa: Correções (Projeção 7d + Sync Contas a Pagar)
+## ✅ Phase 59 EXECUTADA + PROVADA EM PROD (2026-06-25) — Fluxo de Caixa: Correções (Projeção 7d + Sync Contas a Pagar)
 
-- **Status:** research (HIGH) + 2 plans (1 wave, paralelos) + **plan-checker PASS de 1ª iteração**. Pronta p/ `/gsd-execute-phase 59`.
+- **Status:** 2/2 plans executados, ambos provados em produção `ckcdevcxgvueywivefgx`. Branch `gsd/phase-59-fluxo-caixa-correcoes` (não mergeado). Pendente: aprovação visual final do Wesley em /caixa + merge PR.
+- **CASHFIX-01 (projeção 7d):** migration `20260659000000` aplicada via MCP. Validado por SQL: dias 1-7 a linha âmbar = confirmado (previsão=0, sem inflar); 8º+ média só nos dias sem recebimento. `accumulated_balance` intocado. **Reconciliação DFC:** descoberto que `financial_settings.initial_balance` estava STALE (R$21.676,91 de 19/06) — corrigido p/ R$16.833,14 (abertura 25/06 da DFC do Wesley); resíduo = só a liberação intradiária do MP de hoje. Commits 3022829c (migration) + bf71486d (legenda).
+- **CASHFIX-02 (sync payables):** EF `sync-tiny-payables` v5 deployada via **MCP deploy_edge_function** (não precisou do token CLI do Wesley!). **Causa-raiz REAL ≠ os 4 suspects:** a lógica sempre funcionou (debug-sync provou: 1991 itens, upsert OK); o congelamento era o **pg_net derrubando a execução síncrona de ~15s aos 5s antes do commit**. Fix = `EdgeRuntime.waitUntil` (202 em ~290ms, background persiste). Provado: congelamento 18/06→25/06, synced_at avançando, count(distinct synced_at::date) 1→2, 1991 contas gravadas via chamada cron-style. Commits 0f877492 + 02cc72cd. **Sem migration de cron** (202 rápido basta).
+- ⚠️ **FOLLOW-UP:** `sync-mp-releases` tem o MESMO padrão (EF lenta ~118s, pg_net timeout) — não congelou mas está em risco; vale aplicar o mesmo `waitUntil`.
+- ⚠️ **Lição reusável:** EFs lentas chamadas por pg_cron devem usar `EdgeRuntime.waitUntil` (202 imediato) — senão o worker é descartado quando o pg_net abandona aos 5s, antes do commit. Deploy de EF dá pra fazer via MCP `deploy_edge_function` (verify_jwt=false p/ esta).
 - **Plans:** `59-01` (CASHFIX-01 projeção: migration CREATE OR REPLACE get_cashflow base `20260619020000` BRT, CASE em accumulated_balance_sma + daily_projection, accumulated_balance intocado, apply via MCP + validação como checkpoint) · `59-02` (CASHFIX-02 sync: EF sync-tiny-payables debug-first + EdgeRuntime.waitUntil 202, prova de causa-raiz nos logs entre 4 suspects, deploy + prova de persistência — checkpoints do orquestrador).
 - **Origem:** Wesley usando o dashboard de Fluxo de Caixa (Phase 49) achou 2 inconsistências reais. Diagnóstico ao vivo em prod `ckcdevcxgvueywivefgx`.
 - **Issue 1 (Projeção):** linha SMA aplica a média diária (~R$6.486) desde hoje → infla o curto prazo (venda de hoje só vira caixa ~14d depois; já está no confirmado). **Regra travada com Wesley:** primeiros 7 dias = só confirmado (sem previsão); do 8º dia em diante a média entra **só nos dias SEM recebimento confirmado** (dias com recebimento mantêm o real). Fix na RPC `get_cashflow` (CASE na coluna `accumulated_balance_sma`, usando data BRT). Pegar a migration MAIS recente (3 mexem em get_cashflow: 20260619000000/010000/020000). Frontend provavelmente intocado.
@@ -103,14 +107,14 @@ See: .planning/PROJECT.md
 
 **Milestone:** v8.0 — Consultor v2 (Inteligência)
 **Core value:** Consultor que explica, prioriza e ajuda a agir — LLM sob demanda + ações com aprovação, sobre o motor determinístico do v1.
-**Current focus:** Phase 58 — veracidade-completude-dados
+**Current focus:** Phase 59 — fluxo-caixa-correcoes
 
 ## Current Position
 
-Phase: 58 (veracidade-completude-dados) — EXECUTING
-Plan: 6 of 6
-Status: Ready to execute
-Last activity: 2026-06-24 — Phase 58 execution started
+Phase: 59 (fluxo-caixa-correcoes) — EXECUTING
+Plan: 1 of 2
+Status: Executing Phase 59
+Last activity: 2026-06-25 — Phase 59 execution started
 Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint visual; depois adaptar/executar **Phase 53 com Gemini**.
 
 ### Phase 54 — Wave 1 EXECUTADA (2026-06-24), Wave 2 PENDENTE
