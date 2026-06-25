@@ -22,7 +22,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 - [x] **Phase 58: Nexo — Veracidade & Completude dos Dados** — Corrigir a falta/inconsistência de informação que faz o Nexo afirmar fatos errados (ex: "0 em estoque/ruptura" lendo só o Full, não o consolidado; estoque item-level mascarando variações; sem sinal de frescura). Auditoria fonte-da-verdade das tools vs o que o dashboard mostra; estoque consolidado + por variação; frescura (synced_at); declarar limitação em vez de inventar (VERAC-01..06). **DEPLOYADA (EF nexo-chat v5 + cron billing); re-auditoria VERAC-07 PASS. Pendente: E2E Wesley + rotação de segredos.**
 - [ ] **Phase 60: Alinhamento da DFC (Fluxo de Caixa)** — Fechar a projeção do `/caixa` com a DFC/Tiny do Wesley. (a) ENTRADA: dia 8+ usa `GREATEST(d.inc, v_sma)` para a média R$5.880/dia virar PISO (a cauda do MP com recebimentos minúsculos parava de suprimir a média); (b) SAÍDA: `get_cashflow` ganha parâmetro `p_include_purchase_forecasts BOOLEAN DEFAULT false` — por padrão exclui `category='Previsões de compra'` (reconciliação provada ao centavo: R$99.495,58 − R$12.389,79 previsões = R$87.105,79 = Tiny do Wesley) e resolve a OC383 contada 2x; (c) toggle "Incluir previsões de compra" na UI /caixa. Continuação da Phase 59 (CASHFIX-05, CASHFIX-06). **Planejada 2026-06-25.**
 - [ ] **Phase 61: Enriquecer Fornecedor + Categoria do Contas a Pagar** — Os gráficos **Composição de Custos por Mês** (só "Outros" + "Previsões de compra", sem categorias reais) e **Exposição por Fornecedor** (só Pralana) só funcionaram 1x e voltaram a quebrar. Causa-raiz: em `cash_outflows`, 1991/2011 linhas têm `category` vazia E `supplier` nulo. O endpoint Tiny `/contas-pagar` (LISTA) NÃO traz categoria nem fornecedor — só o DETALHE `/contas-pagar/{id}` traz (`categoria.descricao` + `contato.nome`). O `sync-tiny-payables` lê só a lista → grava NULL e, a cada sync, **sobrescreve** o que o enriquecimento-detalhe da Phase 51 (fila `cat_backfill_queue` + `enrich_drain`/`enrich_harvest` via pg_net/cron) havia preenchido; o enqueue usa `ON CONFLICT DO NOTHING`, então linhas `done` nunca são re-enriquecidas. Fix (opção A, aprovada): (a) `sync-tiny-payables` para de escrever `category`/`supplier` no upsert → enriquecimento vira fonte única; (b) `enrich_harvest` passa a gravar TAMBÉM `supplier = contato.nome` (hoje só categoria); (c) enqueue re-marca `todo` toda linha com `category IS NULL OR supplier IS NULL`, sobrevivendo a re-syncs; (d) rodar o backfill das ~2011 linhas via fila/cron já existentes (Tiny ~1–2 req/s, drain throttled ~20–30 min, resumível). Continuação da Phase 51 + Phase 60 (CASHFIX-07, CASHFIX-08). **Planejada 2026-06-25.**
-- [x] **Phase 62: Reposição Server-Side (Compra Recomendada correta)** — Substitui a "Compra Recomendada" do front (estoque digitado + venda simulada, sem lead time/segurança/gatilho/MOQ/custo) por uma RPC `get_replenishment` server-side: estoque real (`ml_inventory_cache` Full+anúncios), venda/dia real, ponto de reposição com gatilho, MOQ/embalagem, custo nulo/sem-giro, parâmetros global + por marca/fornecedor. Não sugere mais comprar o que já se tem (REPL-01..11). **Planejada 2026-06-25 — 3 plans (2 waves), plan-checker PASS. Pronta p/ `/gsd-execute-phase 62`.** (completed 2026-06-25)
+- [x] **Phase 62: Reposição Server-Side (Compra Recomendada correta)** — Substitui a "Compra Recomendada" do front (estoque digitado + venda simulada, sem lead time/segurança/gatilho/MOQ/custo) por uma RPC `get_replenishment` server-side: estoque real (`ml_inventory_cache` Full+anúncios), venda/dia real, ponto de reposição com gatilho, MOQ/embalagem, custo nulo/sem-giro, parâmetros global + por marca/fornecedor. Não sugere mais comprar o que já se tem (REPL-01..11). **EXECUTADA + VERIFICADA (PASS 7/7) 2026-06-25 — RPC `get_replenishment` + tabela `replenishment_params` aplicadas em prod via MCP (116 anúncios, 29 sugeridos, gatilho cortando 87, anti-IDOR provado); módulo TS + 203 testes verdes; aba "Compra Recomendada" em /estoque. (completed 2026-06-25)**
 
 ---
 
@@ -302,6 +302,29 @@ Continuação da Phase 51 + Phase 60. Causa-raiz e estado do banco (1991/2011 co
 
 ---
 
+### Phase 63: Compras — Reposição por SKU (página própria)
+
+**Goal**: Evolução da Phase 62. A reposição deixa de ser por anúncio e passa a ser por **SKU/variação** (tamanho/cor), com custos resolvidos por SKU (corrige "custo ausente"), **parâmetros editáveis** por UI (precedência SKU > marca > global), **filtros** na tela, e ganha **página própria `/compras`** (separada de `/estoque`). Inclui a fundação de dados que falta hoje: o sync passa a gravar o **SKU por variação** (estoque) e o **`seller_sku` por item de venda** (velocidade real por SKU).
+**Depends on**: Phase 62 (RPC `get_replenishment`, tabela `replenishment_params`, módulo `replenishmentUtils`)
+**Requirements**: CMP-01 (sync inventário grava SKU por variação), CMP-02 (sync vendas grava `seller_sku`/variação por item), CMP-03 (RPC reposição por SKU — estoque por variação via unnest, venda/dia por SKU; anúncio sem variação = SKU único), CMP-04 (custo casado por SKU corrige "custo ausente"), CMP-05 (params editáveis por UI, precedência SKU>marca>global, write owner/admin), CMP-06 (filtros: marca, status/gatilho, sem giro, com/sem custo, busca título/SKU/tamanho), CMP-07 (rota `/compras` + nav; aba removida de `/estoque`; legacy `compraUtils` intocado), CMP-08 (drill anúncio→variações + exportação), CMP-09 (testes por SKU + anti-IDOR `SECURITY INVOKER` + sem regressão)
+**Success Criteria** (what must be TRUE):
+
+  1. A reposição é calculada **por SKU/variação**: cada linha é uma variação (Cor/Tamanho) com estoque, venda/dia, cobertura, ponto, sugestão e custo próprios; anúncio sem variação aparece como SKU único
+  2. O sync de inventário grava o **SKU da variação** (`seller_custom_field` por variação) e o sync de vendas grava o **`seller_sku`/variação por item de pedido** — venda/dia real por SKU (não rateada)
+  3. **Custo casa por SKU da variação** → a taxa de "custo ausente" cai drasticamente vs. Phase 62 (44/116); custo nulo ainda gera sugestão + flag, sem valor R$
+  4. **Parâmetros editáveis pela UI** (CRUD em `replenishment_params`): global, por marca e **por SKU**, precedência SKU > marca > global; write restrito a owner/admin (RLS mantida)
+  5. A tela tem **filtros** (marca, status/gatilho ativo, sem giro, com/sem custo, busca por título/SKU/tamanho) e drill anúncio→variações; exportação disponível
+  6. Existe a rota **`/compras`** no menu com a Compra Recomendada por SKU; a aba foi **removida de `/estoque`**; o `compraUtils` legado em `/precos-custos` permanece intocado
+  7. RPC por SKU permanece **`SECURITY INVOKER`** (anti-IDOR: org alheia = 0 linhas); testes da fórmula por SKU + casos da RPC verdes; sem regressão de build
+
+**Risco/aberto**: o cache atual mostra `seller_custom_field` da variação **nulo** (amostra MLB3818741753). O researcher DEVE validar na API do ML se o SKU por variação vem no payload antes de fixar CMP-01; se não vier, fallback = ponte via Tiny. `ml_product_daily_cache.seller_sku` está nulo p/ Pé Vermeio → CMP-02 mexe no pipeline de vendas (`mercado-libre-integration`/`sync-ml-orders`).
+
+**Plans**: TBD (rodar `/gsd-plan-phase 63`)
+
+Contexto/decisões: `phases/63-compras-reposicao-por-sku/63-CONTEXT.md`. Org Pé Vermeio = `7f615df7-7bac-45e5-8a93-827fb9ddeec7`; projeto Supabase `ckcdevcxgvueywivefgx`. **Discutida 2026-06-25.**
+
+---
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -314,6 +337,8 @@ Continuação da Phase 51 + Phase 60. Causa-raiz e estado do banco (1991/2011 co
 | 57. Nexo Conversacional | 0/4 | Em execução (preview) | - |
 | 58. Veracidade & Completude | 5/6 | In Progress|  |
 | 59. Fluxo de Caixa — Correções | 2/2 | Executed (provado em prod) | 2026-06-25 |
+| 62. Reposição Server-Side | 3/3 | Complete (prod, aguarda ok visual) | 2026-06-25 |
+| 63. Compras — Reposição por SKU | 0/? | Discussed (CONTEXT) | - |
 
 ## Build Order / Dependências
 
