@@ -280,7 +280,11 @@ Continuação direta da Phase 59. Diagnóstico fechado nesta sessão (2026-06-25
   6. A tela `/estoque` (CompraRecomendadaPanel) consome a RPC: colunas read-only da fonte (estoque, venda/dia, cobertura, ponto, sugestão, valor, flags, params usados) — sem inputs digitados de estoque
   7. Testes unitários da fórmula + casos da RPC verdes (normal; estoque>alvo→0; sem giro; custo nulo; MOQ/pack; override por marca; fallback sem vendas); sem regressão de build
 
-**Plans**: TBD (gsd-planner)
+**Plans**: 3 plans (2 waves)
+
+- [ ] 62-01-PLAN.md — [W1] Backend: migration `replenishment_params` (RLS org-first) + RPC `get_replenishment` (SECURITY INVOKER) + types.ts; apply via MCP + validação SQL [BLOCKING checkpoint] (REPL-01..08)
+- [ ] 62-02-PLAN.md — [W1] Módulo TS puro `replenishmentUtils.ts` + suite vitest (8 casos travados) (REPL-04/05/06/07/08/11)
+- [ ] 62-03-PLAN.md — [W2] Frontend: hook `useReplenishment` + `ReplenishmentPanel.tsx` + aba nova em `/estoque` + aviso "a chegar" (REPL-01/09/10)
 
 Contexto/decisões: `phases/62-reposicao-server-side/62-CONTEXT.md`. Sistema antigo a substituir: `src/lib/analysis/compraUtils.ts` + `src/components/mercadolivre/analise/CompraRecomendadaPanel.tsx`.
 
