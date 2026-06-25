@@ -1730,6 +1730,56 @@ export type Database = {
           },
         ]
       }
+      replenishment_params: {
+        Row: {
+          created_at: string
+          id: string
+          lead_time_dias: number
+          meta_cobertura_dias: number
+          moq: number
+          organization_id: string
+          pack_multiple: number
+          safety_days: number
+          scope: string
+          scope_value: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          lead_time_dias?: number
+          meta_cobertura_dias?: number
+          moq?: number
+          organization_id: string
+          pack_multiple?: number
+          safety_days?: number
+          scope?: string
+          scope_value?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          lead_time_dias?: number
+          meta_cobertura_dias?: number
+          moq?: number
+          organization_id?: string
+          pack_multiple?: number
+          safety_days?: number
+          scope?: string
+          scope_value?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "replenishment_params_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       seller_stores: {
         Row: {
           created_at: string
@@ -1993,6 +2043,35 @@ export type Database = {
       get_org_role: {
         Args: { _org_id: string; _user_id: string }
         Returns: Database["public"]["Enums"]["org_role"]
+      }
+      get_replenishment: {
+        Args: {
+          p_org_id: string
+          p_sales_window_days?: number
+          p_demand_multiplier?: number
+        }
+        Returns: {
+          item_id: string
+          title: string | null
+          brand: string | null
+          logistic_type: string | null
+          estoque_atual: number
+          venda_dia: number
+          cobertura_atual: number | null
+          ponto_reposicao: number
+          alvo: number
+          compra_sugerida: number
+          valor_estimado: number | null
+          custo_ausente: boolean
+          sem_giro: boolean
+          gatilho_ativo: boolean
+          param_lead_time: number
+          param_cobertura: number
+          param_safety: number
+          param_moq: number
+          param_pack: number
+          param_origem: string
+        }[]
       }
       get_user_role: {
         Args: { _user_id: string }
