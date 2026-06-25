@@ -22,6 +22,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 - [x] **Phase 58: Nexo — Veracidade & Completude dos Dados** — Corrigir a falta/inconsistência de informação que faz o Nexo afirmar fatos errados (ex: "0 em estoque/ruptura" lendo só o Full, não o consolidado; estoque item-level mascarando variações; sem sinal de frescura). Auditoria fonte-da-verdade das tools vs o que o dashboard mostra; estoque consolidado + por variação; frescura (synced_at); declarar limitação em vez de inventar (VERAC-01..06). **DEPLOYADA (EF nexo-chat v5 + cron billing); re-auditoria VERAC-07 PASS. Pendente: E2E Wesley + rotação de segredos.**
 - [ ] **Phase 60: Alinhamento da DFC (Fluxo de Caixa)** — Fechar a projeção do `/caixa` com a DFC/Tiny do Wesley. (a) ENTRADA: dia 8+ usa `GREATEST(d.inc, v_sma)` para a média R$5.880/dia virar PISO (a cauda do MP com recebimentos minúsculos parava de suprimir a média); (b) SAÍDA: `get_cashflow` ganha parâmetro `p_include_purchase_forecasts BOOLEAN DEFAULT false` — por padrão exclui `category='Previsões de compra'` (reconciliação provada ao centavo: R$99.495,58 − R$12.389,79 previsões = R$87.105,79 = Tiny do Wesley) e resolve a OC383 contada 2x; (c) toggle "Incluir previsões de compra" na UI /caixa. Continuação da Phase 59 (CASHFIX-05, CASHFIX-06). **Planejada 2026-06-25.**
 - [ ] **Phase 61: Enriquecer Fornecedor + Categoria do Contas a Pagar** — Os gráficos **Composição de Custos por Mês** (só "Outros" + "Previsões de compra", sem categorias reais) e **Exposição por Fornecedor** (só Pralana) só funcionaram 1x e voltaram a quebrar. Causa-raiz: em `cash_outflows`, 1991/2011 linhas têm `category` vazia E `supplier` nulo. O endpoint Tiny `/contas-pagar` (LISTA) NÃO traz categoria nem fornecedor — só o DETALHE `/contas-pagar/{id}` traz (`categoria.descricao` + `contato.nome`). O `sync-tiny-payables` lê só a lista → grava NULL e, a cada sync, **sobrescreve** o que o enriquecimento-detalhe da Phase 51 (fila `cat_backfill_queue` + `enrich_drain`/`enrich_harvest` via pg_net/cron) havia preenchido; o enqueue usa `ON CONFLICT DO NOTHING`, então linhas `done` nunca são re-enriquecidas. Fix (opção A, aprovada): (a) `sync-tiny-payables` para de escrever `category`/`supplier` no upsert → enriquecimento vira fonte única; (b) `enrich_harvest` passa a gravar TAMBÉM `supplier = contato.nome` (hoje só categoria); (c) enqueue re-marca `todo` toda linha com `category IS NULL OR supplier IS NULL`, sobrevivendo a re-syncs; (d) rodar o backfill das ~2011 linhas via fila/cron já existentes (Tiny ~1–2 req/s, drain throttled ~20–30 min, resumível). Continuação da Phase 51 + Phase 60 (CASHFIX-07, CASHFIX-08). **Planejada 2026-06-25.**
+- [x] **Phase 62: Reposição Server-Side (Compra Recomendada correta)** — Substitui a "Compra Recomendada" do front (estoque digitado + venda simulada, sem lead time/segurança/gatilho/MOQ/custo) por uma RPC `get_replenishment` server-side: estoque real (`ml_inventory_cache` Full+anúncios), venda/dia real, ponto de reposição com gatilho, MOQ/embalagem, custo nulo/sem-giro, parâmetros global + por marca/fornecedor. Não sugere mais comprar o que já se tem (REPL-01..11). **Planejada 2026-06-25 — 3 plans (2 waves), plan-checker PASS. Pronta p/ `/gsd-execute-phase 62`.** (completed 2026-06-25)
 
 ---
 
@@ -198,14 +199,18 @@ congelamento desde 18/06.
   1. Na RPC `get_cashflow`, `accumulated_balance_sma` para datas ≤ hoje(BRT)+7 usa só o recebimento
      confirmado (sem média); do 8º dia em diante usa o confirmado nos dias que têm recebimento e a
      média de 15d **somente nos dias sem recebimento** — validado no gráfico (primeiros 7 dias sem inflação)
+
   2. A linha confirmada e os valores reais (reconciliados ao centavo com a DFC do Wesley) permanecem intactos
   3. Causa-raiz da não-persistência do `sync-tiny-payables` identificada e corrigida; `net.http_post`
      com timeout adequado (ou disparo assíncrono) — a EF deixa de ser abortada aos 5s
+
   4. `cash_outflows` volta a atualizar: `count(DISTINCT synced_at::date)` cresce dia a dia; total/abertos
      refletem o Tiny ao vivo
+
   5. (opcional, decidir no plano) indicador de "última atualização do contas a pagar" na UI de fluxo de caixa
 
 **Plans**: 2 plans (1 wave — independentes, arquivos disjuntos)
+
 - [x] 59-01-PLAN.md — CASHFIX-01: RPC `get_cashflow` regra de projeção 7d (CASE em accumulated_balance_sma + daily_projection, data BRT) + legenda/JSDoc frontend. **Aplicada via MCP em prod; validada por SQL (dias 1-7 sem inflação) + reconciliação DFC (saldo inicial corrigido 21.676,91→16.833,14)**
 - [x] 59-02-PLAN.md — CASHFIX-02: EF `sync-tiny-payables` + `EdgeRuntime.waitUntil` (202 imediato) + modo debug síncrono. **Causa-raiz REAL: pg_net derrubava a execução de ~15s aos 5s antes do commit (não os 4 suspects). Provado em prod: congelamento 18/06 quebrado, synced_at avançando, 1991 contas gravadas. EF v5 deployada (prod==repo). Cron funciona sem migration nova**
 
@@ -225,16 +230,21 @@ centavo com o contas a pagar do Tiny, com as "Previsões de compra" controlávei
   1. Na RPC `get_cashflow`, do 8º dia em diante a linha `accumulated_balance_sma` usa `GREATEST(d.inc, v_sma)`
      — a média de 15d vira piso; recebimentos confirmados maiores que a média mantêm o real. Dias 1-7 seguem
      confirmado-only (regra travada na Phase 59, intacta). `daily_projection` no dia 8+ = `GREATEST(0, v_sma - d.inc)`
+
   2. `get_cashflow` aceita 4º parâmetro `p_include_purchase_forecasts BOOLEAN DEFAULT false`; com `false` a CTE
      `exp` filtra `AND COALESCE(category,'') <> 'Previsões de compra'` (além do `status='pending'`); com `true` soma as previsões
+
   3. Reconciliação provada: com toggle OFF, soma das saídas em aberto de 05–12/07 = R$87.105,79 (= Tiny do Wesley),
      e a OC nº 383 deixa de ser contada 2x (some a cópia "previsão" de 09/07, fica a conta real de 11/07)
+
   4. A assinatura antiga de 3 args é substituída sem ambiguidade (`DROP FUNCTION public.get_cashflow(uuid,date,date)`
      antes do `CREATE` de 4 args); `SECURITY INVOKER` + `REVOKE` de PUBLIC/anon + `GRANT` authenticated preservados
+
   5. Toggle "Incluir previsões de compra" na página `/caixa` (desligado por padrão) propaga o 4º parâmetro pro RPC;
      a linha confirmada (`accumulated_balance`) permanece intacta
 
 **Plans**: 2 plans (1 wave — arquivos disjuntos). plan-checker PASS.
+
 - [x] 60-01-PLAN.md — Backend: migration get_cashflow 4-arg (entrada piso GREATEST + filtro de Previsões de compra). **Aplicada em prod via MCP; reconciliação provada: OFF=87.105,79 / ON=99.495,58 / OC383 1x / chamada 3-args sem ambiguidade**
 - [x] 60-02-PLAN.md — Frontend: toggle "Incluir previsões de compra" (off por padrão) na /fluxo-de-caixa; `useCashFlowData` propaga o 4º arg. **Build verde; commit c910be2f pushado**
 - [x] 60-03 (feedback Wesley) — toggle move também os indicadores de SALDO/PROJEÇÃO (TreasuryPanel saldo/alerta/mín + get_projected_balance_summary), NÃO a Exposição por fornecedor (100% previsões — zeraria). Migration 20260660000200 + hooks/prop. **Provado em prod; commit 9d614b1d pushado.** Descoberta: `supplier` só existe nas OCs (dívida de sync futura)
@@ -258,9 +268,35 @@ Continuação direta da Phase 59. Diagnóstico fechado nesta sessão (2026-06-25
   6. Nenhuma regressão na DFC da Phase 60: `get_cashflow` (toggle OFF/ON), reconciliação R$87.105,79 e a Exposição por Fornecedor seguindo o comportamento da Phase 60 (não some/zera)
 
 **Plans**: 3 plans (3 waves)
+
 - [ ] 61-01-PLAN.md — Código fonte única: remover category/supplier do upsert da EF sync-tiny-payables + migration enrich_payable_step/enrich_enqueue_new/enrich_harvest (Wave 1, autônomo)
 - [ ] 61-02-PLAN.md — Go-live + prova do risco A1 (preservação no ON CONFLICT, com fallback de trigger) + seed/drain do backfill ≥90% (Wave 2, checkpoints via MCP)
 - [ ] 61-03-PLAN.md — Validação final: estabilidade pós-sync + gráficos em prod (≥3 categorias, ≥2 fornecedores) + no-regressão Phase 60 (R$87.105,79) (Wave 3, checkpoints)
+
+---
+
+### Phase 62: Reposição Server-Side (Compra Recomendada correta)
+
+**Goal**: A "Compra Recomendada" deixa de calcular no front com estoque digitado e venda simulada, e passa a sair de uma RPC `get_replenishment` server-side que usa estoque real (`ml_inventory_cache`, Full+anúncios), venda/dia real, modelo de ponto de reposição (lead time + meta de cobertura + estoque de segurança) com gatilho, MOQ/embalagem e tratamento de custo nulo/sem-giro — parametrizável global + por marca/fornecedor. Não sugere mais comprar o que já se tem.
+**Depends on**: Phase 58 (estoque consolidado/veracidade — fonte `ml_inventory_cache`)
+**Requirements**: REPL-01 (RPC server-side), REPL-02 (estoque real ML), REPL-03 (venda real), REPL-04 (ponto de reposição + gatilho), REPL-05 (params global+marca/fornecedor), REPL-06 (MOQ/pack), REPL-07 (custo nulo), REPL-08 (sem giro), REPL-09 (sem "a chegar" + aviso), REPL-10 (UI read-only da fonte), REPL-11 (testes)
+**Success Criteria** (what must be TRUE):
+
+  1. RPC `get_replenishment` em prod (`SECURITY INVOKER`, escopada por org, sem `org_id` em parâmetro) retorna por anúncio: venda/dia real, estoque atual (`ml_inventory_cache` Full+anúncios), cobertura atual, ponto de reposição, sugestão de compra e valor estimado — sem cálculo pesado no front
+  2. A sugestão só é > 0 quando `estoque_atual ≤ ponto_reposicao`; um item com estoque acima do alvo retorna compra = 0 (não sugere o que já se tem)
+  3. Venda/dia vem de vendas REAIS na janela (default 30d), não da `priceCurve` simulada; `venda_dia = 0` → compra 0 + flag `sem_giro`
+  4. Tabela `replenishment_params` com lead_time/meta_cobertura/safety/MOQ/pack configurável global + override por marca/fornecedor (precedência marca > fornecedor > global); a sugestão respeita MOQ e múltiplo de embalagem
+  5. Custo nulo → quantidade sugerida mesmo assim, valor R$ omitido + flag `custo_ausente`; a tela mostra aviso fixo de que o v1 NÃO desconta compras a chegar
+  6. A tela `/estoque` (CompraRecomendadaPanel) consome a RPC: colunas read-only da fonte (estoque, venda/dia, cobertura, ponto, sugestão, valor, flags, params usados) — sem inputs digitados de estoque
+  7. Testes unitários da fórmula + casos da RPC verdes (normal; estoque>alvo→0; sem giro; custo nulo; MOQ/pack; override por marca; fallback sem vendas); sem regressão de build
+
+**Plans**: 3/3 plans complete
+
+- [x] 62-01-PLAN.md — [W1] Backend: migration `replenishment_params` (RLS org-first) + RPC `get_replenishment` (SECURITY INVOKER) + types.ts; apply via MCP + validação SQL [BLOCKING checkpoint] (REPL-01..08)
+- [x] 62-02-PLAN.md — [W1] Módulo TS puro `replenishmentUtils.ts` + suite vitest (8 casos travados) (REPL-04/05/06/07/08/11)
+- [x] 62-03-PLAN.md — [W2] Frontend: hook `useReplenishment` + `ReplenishmentPanel.tsx` + aba nova em `/estoque` + aviso "a chegar" (REPL-01/09/10)
+
+Contexto/decisões: `phases/62-reposicao-server-side/62-CONTEXT.md`. Sistema antigo a substituir: `src/lib/analysis/compraUtils.ts` + `src/components/mercadolivre/analise/CompraRecomendadaPanel.tsx`.
 
 Continuação da Phase 51 + Phase 60. Causa-raiz e estado do banco (1991/2011 com category vazia E supplier nulo) validados em 2026-06-25 com dados live; opção A aprovada pelo Wesley. **Planejada 2026-06-25.**
 
