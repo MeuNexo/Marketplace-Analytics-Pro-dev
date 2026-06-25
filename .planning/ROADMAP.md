@@ -236,6 +236,7 @@ centavo com o contas a pagar do Tiny, com as "Previsões de compra" controlávei
 **Plans**: 2 plans (1 wave — arquivos disjuntos). plan-checker PASS.
 - [x] 60-01-PLAN.md — Backend: migration get_cashflow 4-arg (entrada piso GREATEST + filtro de Previsões de compra). **Aplicada em prod via MCP; reconciliação provada: OFF=87.105,79 / ON=99.495,58 / OC383 1x / chamada 3-args sem ambiguidade**
 - [x] 60-02-PLAN.md — Frontend: toggle "Incluir previsões de compra" (off por padrão) na /fluxo-de-caixa; `useCashFlowData` propaga o 4º arg. **Build verde; commit c910be2f pushado**
+- [x] 60-03 (feedback Wesley) — toggle move também os indicadores de SALDO/PROJEÇÃO (TreasuryPanel saldo/alerta/mín + get_projected_balance_summary), NÃO a Exposição por fornecedor (100% previsões — zeraria). Migration 20260660000200 + hooks/prop. **Provado em prod; commit 9d614b1d pushado.** Descoberta: `supplier` só existe nas OCs (dívida de sync futura)
 
 Continuação direta da Phase 59. Diagnóstico fechado nesta sessão (2026-06-25) com dados live + decisões do Wesley. **Pendente: validação visual do Wesley em /fluxo-de-caixa (curva OFF vs DFC + toggle ao vivo).**
 
