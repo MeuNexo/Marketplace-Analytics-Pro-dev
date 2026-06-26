@@ -34,6 +34,36 @@ const currencyFmt = (v: number) =>
 const numFmt = (v: number) =>
   new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(v);
 
+/** "2026-07-27" → "27/jul" (data curta, sem fuso — usa partes da string) */
+function shortDate(iso: string | null): string {
+  if (!iso) return "";
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!m) return "";
+  const meses = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+  return `${m[3]}/${meses[Number(m[2]) - 1] ?? ""}`;
+}
+
+// ── A caminho cell (qtd em OC aberta + data da próxima chegada) ────────────────
+
+function ACaminhoCell({ qtd, data }: { qtd: number; data: string | null }) {
+  if (!qtd || qtd <= 0) return <span className="text-muted-foreground">—</span>;
+  return (
+    <div className="leading-tight">
+      <span className="tabular-nums font-medium text-foreground">{qtd} un</span>
+      {data && (
+        <p className="text-[10px] text-muted-foreground">chega {shortDate(data)}</p>
+      )}
+    </div>
+  );
+}
+
+/** Menor data_proxima_chegada (mais próxima) entre as variações de um grupo */
+function earliestArrival(skus: ReplenishmentSkuRow[]): string | null {
+  const datas = skus.map((s) => s.data_proxima_chegada).filter((d): d is string => !!d);
+  if (datas.length === 0) return null;
+  return datas.sort()[0];
+}
+
 // ── Header with tooltip helper ────────────────────────────────────────────────
 
 function HeaderWithTip({ label, tip }: { label: string; tip: string }) {
@@ -222,6 +252,11 @@ function VariationRow({ sku }: { sku: ReplenishmentSkuRow }) {
         {sku.sku_stock}
       </TableCell>
 
+      {/* A caminho */}
+      <TableCell className="text-xs text-right">
+        <ACaminhoCell qtd={sku.qtd_a_caminho} data={sku.data_proxima_chegada} />
+      </TableCell>
+
       {/* Vende por dia */}
       <TableCell className="text-xs text-right tabular-nums">
         {numFmt(sku.venda_dia)}/d
@@ -318,6 +353,11 @@ function MasterRow({ group, expanded, onToggle }: MasterRowProps) {
       {/* Estoque total */}
       <TableCell className="text-xs text-right tabular-nums font-medium">
         {group.skus.reduce((s, r) => s + r.sku_stock, 0)}
+      </TableCell>
+
+      {/* A caminho total */}
+      <TableCell className="text-xs text-right">
+        <ACaminhoCell qtd={group.total_a_caminho} data={earliestArrival(group.skus)} />
       </TableCell>
 
       {/* Vende por dia (soma) */}
@@ -420,7 +460,13 @@ export function ReplenishmentSkuTable({
             <TableHead className="text-xs text-right">
               <HeaderWithTip
                 label="Estoque"
-                tip="Unidades disponíveis hoje no ML (não desconta compras a chegar)"
+                tip="Unidades disponíveis hoje no ML"
+              />
+            </TableHead>
+            <TableHead className="text-xs text-right">
+              <HeaderWithTip
+                label="A caminho"
+                tip="Unidades já compradas em ordens de compra abertas no Tiny, aguardando recebimento. Essa quantidade é descontada da sugestão de compra."
               />
             </TableHead>
             <TableHead className="text-xs text-right">
@@ -479,6 +525,9 @@ export function ReplenishmentSkuTable({
                   </TableCell>
                   <TableCell className="text-xs text-right tabular-nums font-medium">
                     {sku.sku_stock}
+                  </TableCell>
+                  <TableCell className="text-xs text-right">
+                    <ACaminhoCell qtd={sku.qtd_a_caminho} data={sku.data_proxima_chegada} />
                   </TableCell>
                   <TableCell className="text-xs text-right tabular-nums">
                     {numFmt(sku.venda_dia)}/d

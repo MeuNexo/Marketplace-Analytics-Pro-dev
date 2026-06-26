@@ -2,19 +2,29 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 63
-current_phase_name: compras-reposicao-por-sku
+current_phase: 65
+current_phase_name: compras-estoque-a-chegar
 status: executed-pending-visual-ok
-stopped_at: "Phase 63 (5 planos, incl. 63-05 UX leigos) executada + verificada; backend live em prod; PR #12 atualizado, aguarda SÓ ok visual Wesley + merge"
-last_updated: "2026-06-26T13:30:00.000Z"
+stopped_at: "Phase 65 (Estoque a Chegar) executada + verificada em prod; backend live (tabela+EF+RPC+cron); frontend no branch gsd/phase-65-estoque-a-chegar (PR aberto), aguarda ok visual Wesley + merge"
+last_updated: "2026-06-26T15:05:00.000Z"
 last_activity: 2026-06-26
-last_activity_desc: "Phase 63 completa incl. 63-05 UX clareza leigos (PASS 7/7); PR #12 pronto p/ ok visual + merge"
+last_activity_desc: "Phase 65 Estoque a Chegar: EF sync-tiny-purchase-orders + tabela purchase_orders + RPC com a-caminho + coluna /compras; 208 testes verdes + build ok"
 progress:
   total_phases: 12
   completed_phases: 4
   total_plans: 33
   completed_plans: 28
   percent: 33
+---
+
+## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
+
+- **Status:** backend aplicado+verificado em prod `ckcdevcxgvueywivefgx`; frontend no branch `gsd/phase-65-estoque-a-chegar` (PR aberto). **Pendente: ok visual Wesley em /compras + merge.**
+- **Backend:** tabela `purchase_orders` (migration `20260665000000`, RLS org-first); EF `sync-tiny-purchase-orders` v1 (endpoint Tiny correto = `/ordem-compra` singular; waitUntil 202; `organization_id` no insert); RPC `get_replenishment_by_sku` (migration `20260665000100`, +CTE `incoming_by_sku`, +colunas `qtd_a_caminho`/`data_proxima_chegada`, desconta TODA a qtd a caminho — decisão Wesley); cron `sync-tiny-purchase-orders-daily` (jobid 34, 03:15 UTC).
+- **Prova:** sync 22 OCs/135 SKUs/1.885 un; RPC 93 SKUs a caminho, 80 zeraram sugestão, cobertura parcial preserva gatilho (ex `11011273-CAFE3374G` → ainda sugere 10). tsc 0 + 208 testes + build ok.
+- **Decisão tunável:** "a caminho" = situação `3` (aguardando recebimento); ampliar p/ `2` (aprovada) = 1 linha em `SITUACOES_A_CAMINHO` na EF.
+- Contexto/decisões: `phases/65-compras-estoque-a-chegar/65-CONTEXT.md` + `65-VERIFICATION.md`.
+
 ---
 
 ## 🟡 Phase 63 EXECUTADA — backend live em prod, frontend no PR #12 (2026-06-26) — Compras (Reposição por SKU)

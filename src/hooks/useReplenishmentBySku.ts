@@ -42,6 +42,10 @@ export interface ReplenishmentSkuRow {
   param_moq: number;
   param_pack: number;
   param_origem: "sku" | "marca" | "global";
+  /** Quantidade já comprada e a caminho (OCs em aberto no Tiny) — Phase 65 */
+  qtd_a_caminho: number;
+  /** Data da próxima chegada (menor data_entrega futura das OCs do SKU) — Phase 65 */
+  data_proxima_chegada: string | null;
 }
 
 /**
@@ -63,6 +67,8 @@ export interface GroupedReplenishmentRow {
   any_gatilho_ativo: boolean;
   /** true se ao menos uma variação tiver custo_ausente */
   any_custo_ausente: boolean;
+  /** Soma de qtd_a_caminho de todas as variações do anúncio — Phase 65 */
+  total_a_caminho: number;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -121,6 +127,8 @@ function mapRow(r: Record<string, unknown>): ReplenishmentSkuRow {
     param_moq:                    Number(r.param_moq),
     param_pack:                   Number(r.param_pack),
     param_origem:                 (r.param_origem as "sku" | "marca" | "global") ?? "global",
+    qtd_a_caminho:                Number(r.qtd_a_caminho ?? 0),
+    data_proxima_chegada:         r.data_proxima_chegada != null ? String(r.data_proxima_chegada) : null,
   };
 }
 
@@ -141,6 +149,7 @@ function groupByItem(rows: ReplenishmentSkuRow[]): GroupedReplenishmentRow[] {
         total_valor_estimado:  row.valor_estimado,
         any_gatilho_ativo:     row.gatilho_ativo,
         any_custo_ausente:     row.custo_ausente,
+        total_a_caminho:       row.qtd_a_caminho,
       });
     } else {
       existing.skus.push(row);
@@ -152,6 +161,7 @@ function groupByItem(rows: ReplenishmentSkuRow[]): GroupedReplenishmentRow[] {
           : null;
       if (row.gatilho_ativo) existing.any_gatilho_ativo = true;
       if (row.custo_ausente) existing.any_custo_ausente = true;
+      existing.total_a_caminho += row.qtd_a_caminho;
     }
   }
 
