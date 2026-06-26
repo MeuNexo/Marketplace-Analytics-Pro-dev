@@ -20,7 +20,7 @@ import { Progress } from "@/components/ui/progress";
 import {
   Package, PackageX, AlertTriangle, Boxes, RefreshCw, Search, ExternalLink, Plug,
   ChevronDown, ChevronRight, Clock, DollarSign, TrendingUp, Activity, Truck, BarChart3,
-  ShieldAlert, Eye, Tag, ArrowUp, ArrowDown, ArrowUpDown, CheckCircle2, ShoppingCart,
+  ShieldAlert, Eye, Tag, ArrowUp, ArrowDown, ArrowUpDown, CheckCircle2,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -28,7 +28,6 @@ import {
 } from "recharts";
 import { Link, useSearchParams } from "react-router-dom";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ReplenishmentPanel } from "@/components/mercadolivre/ReplenishmentPanel";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -1027,10 +1026,6 @@ export default function MLEstoque() {
             <TabsList className="h-8 overflow-x-auto no-scrollbar max-w-full">
               <TabsTrigger value="estoque" className="text-xs px-3 h-7">Estoque</TabsTrigger>
               <TabsTrigger value="relatorios" className="text-xs px-3 h-7">Relatórios</TabsTrigger>
-              <TabsTrigger value="compra" className="text-xs px-3 h-7 gap-1">
-                <ShoppingCart className="w-3 h-3" />
-                Compra Recomendada
-              </TabsTrigger>
             </TabsList>
             <Button
               variant="ghost"
@@ -1407,10 +1402,6 @@ export default function MLEstoque() {
         <EstoqueRelatorios items={items} coverageMap={coverageMap} coveragePeriod={coveragePeriod} />
       </TabsContent>
 
-      {/* ═══════════════════ ABA COMPRA RECOMENDADA ═══════════════════ */}
-      <TabsContent value="compra" className="mt-0">
-        <ReplenishmentPanel />
-      </TabsContent>
     </Tabs>
   );
 }

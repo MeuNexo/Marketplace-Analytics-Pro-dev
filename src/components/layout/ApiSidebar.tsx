@@ -16,6 +16,7 @@ import {
   Settings2,
   Handshake,
   ShoppingBag,
+  ShoppingCart,
   Star,
   TrendingUp,
   Users,
@@ -45,6 +46,7 @@ const apiSections: SidebarNavSection[] = [
         children: [
           { icon: ShoppingBag,   label: "Anúncios", path: "/anuncios" },
           { icon: Package,       label: "Estoque",  path: "/estoque"  },
+          { icon: ShoppingCart,  label: "Compras",  path: "/compras"  },
           { icon: ClipboardList, label: "Pedidos",  path: "/pedidos"  },
           { icon: Calculator,    label: "Precificação", path: "/precificacao" },
           { icon: Banknote,     label: "Fluxo de Caixa", path: "/fluxo-de-caixa" },
