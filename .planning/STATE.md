@@ -5,14 +5,14 @@ milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem
 current_phase: 66
 current_phase_name: compras-v2-override-por-fornecedor
 status: executing
-stopped_at: Phase 67 contexto coletado (discuss) — branch gsd/phase-67-calculo-esperto; pronto p/ /gsd-plan-phase 67
-last_updated: "2026-06-26T18:15:50.279Z"
+stopped_at: Phase 67 PLANEJADA (3 planos/2 waves, plan-checker PASS) — pronta p/ /gsd-execute-phase 67; checkpoint de migration via MCP é do orquestrador
+last_updated: "2026-06-26T18:44:39.159Z"
 last_activity: 2026-06-26
 last_activity_desc: Phase 66 execution started
 progress:
   total_phases: 14
   completed_phases: 5
-  total_plans: 35
+  total_plans: 38
   completed_plans: 30
   percent: 36
 ---
@@ -358,10 +358,10 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-**Resume file:** .planning/phases/67-compras-v3-reposi-o-mais-esperta-tend-ncia-lead-time-real/67-CONTEXT.md
+**Resume file:** .planning/phases/67-compras-v3-reposi-o-mais-esperta-tend-ncia-lead-time-real/67-01-PLAN.md
 
-Last session: 2026-06-26T18:15:50.264Z
-Stopped at: Phase 67 contexto coletado (discuss) — branch gsd/phase-67-calculo-esperto; pronto p/ /gsd-plan-phase 67
+Last session: 2026-06-26T18:44:39.135Z
+Stopped at: Phase 67 PLANEJADA (3 planos/2 waves, plan-checker PASS) — pronta p/ /gsd-execute-phase 67; checkpoint de migration via MCP é do orquestrador
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
