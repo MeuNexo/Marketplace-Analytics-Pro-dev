@@ -2,19 +2,32 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 62
-current_phase_name: reposicao-server-side
-status: complete
-stopped_at: Phase 63 planned (4 plans, plan-checker PASS)
-last_updated: "2026-06-26T12:17:09.153Z"
-last_activity: 2026-06-25
-last_activity_desc: Phase 62 execution started
+current_phase: 63
+current_phase_name: compras-reposicao-por-sku
+status: executed-pending-visual-ok
+stopped_at: Phase 63 executada + backend live em prod; PR #12 aberto, aguarda ok visual Wesley + merge
+last_updated: "2026-06-26T12:21:00.000Z"
+last_activity: 2026-06-26
+last_activity_desc: Phase 63 executada (4 planos) — backend aplicado/validado em prod, frontend no PR #12
 progress:
   total_phases: 12
   completed_phases: 4
   total_plans: 31
   completed_plans: 26
   percent: 33
+---
+
+## 🟡 Phase 63 EXECUTADA — backend live em prod, frontend no PR #12 (2026-06-26) — Compras (Reposição por SKU)
+
+- **Status:** 4 planos executados; backend aplicado+validado em prod `ckcdevcxgvueywivefgx`; frontend no branch `gsd/phase-63-compras-reposicao-por-sku` (**PR #12**). **Pendente: ok visual Wesley em /compras + merge.**
+- **63-01 (EF + scope):** `sync-ml-inventory` **v9** deployada via MCP — segundo-passe `/items/{id}/variations/{vid}` enriquece `seller_custom_field` por variação (aditivo, try/catch por variação, CONCURRENCY 20). Migration scope `sku` aplicada (CHECK global/marca/sku). **Gate provado: 811/815 variações com SKU** (era ~0) após sync disparado via fila sync_jobs + process-sync-job.
+- **63-02 (RPC):** `get_replenishment_by_sku` (SECURITY INVOKER, search_path public) aplicada via MCP. 1 linha por variação (jsonb_to_recordset) + 1 por anúncio sem variação; precedência SKU>marca>global>hardcoded(30/60/7/1/1); custo por seller_sku. RPC `get_replenishment` (Phase 62) **intocada** — coexistem.
+- ⚠️ **DESVIO corrigido no checkpoint MCP:** plano/RESEARCH assumiu tabela `ml_orders` — a real é **`orders`** (`data_pedido` TEXT → `::timestamptz::date`; status real só `paid`/`cancelled`/`partially_refunded`, `confirmed` não existe). Schema validado por execute_sql ANTES de aplicar; fix commit `c192939d`. **Lição: executor sem MCP não valida schema — sempre conferir nomes de tabela/coluna/tipo no checkpoint.**
+- **63-03 (frontend, PR #12):** página `/compras` (nav Operações, owner/admin/member); drill anúncio→variações (Collapsible), filtros (marca/gatilho/sem giro/custo/busca), export xlsx, CRUD params (write owner/admin via RLS). Aba "Compra Recomendada" **removida** de /estoque; `compraUtils`/`CompraRecomendadaPanel` (legado /precos-custos) intocados; `ReplenishmentPanel.tsx` preservado.
+- **63-04 (provas, org Pé Vermeio):** 332 linhas por SKU (240 var + 92 sem var); **custo_ausente 77%→11,1%** (Phase 62 era 38%); **anti-IDOR: JWT Pé Vermeio → org Thales = 0 linhas** (own=332); vitest 208/208 + tsc 0 + build ok; advisors sem issue novo da RPC.
+- **Preview:** https://marketplace-analytics-pro-dev-git-gs-40b3ab-xambrafios-projects.vercel.app (aponta p/ Supabase prod — login + dados reais).
+- **PRÓXIMO:** ok visual Wesley em /compras → merge PR #12 → fechar Phase 63.
+
 ---
 
 ## ✅ Phase 59 EXECUTADA + PROVADA EM PROD (2026-06-25) — Fluxo de Caixa: Correções (Projeção 7d + Sync Contas a Pagar)
