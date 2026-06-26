@@ -4,17 +4,17 @@ milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
 current_phase: 62
 current_phase_name: reposicao-server-side
-status: verifying
-stopped_at: "Phase 62 (Reposição Server-Side) PLANEJADA 2026-06-25 — 3 plans / 2 waves, plan-checker PASS (2 warnings corrigidos). Pronta p/ /gsd-execute-phase 62. (Phase 61 backfill seguia drenando em paralelo.) Próximo: /gsd-execute-phase 62"
-last_updated: "2026-06-25T21:02:00.695Z"
+status: complete
+stopped_at: Phase 63 planned (4 plans, plan-checker PASS)
+last_updated: "2026-06-26T13:32:59.889Z"
 last_activity: 2026-06-25
 last_activity_desc: Phase 62 execution started
 progress:
-  total_phases: 11
+  total_phases: 12
   completed_phases: 4
-  total_plans: 27
+  total_plans: 31
   completed_plans: 23
-  percent: 36
+  percent: 33
 ---
 
 ## ✅ Phase 59 EXECUTADA + PROVADA EM PROD (2026-06-25) — Fluxo de Caixa: Correções (Projeção 7d + Sync Contas a Pagar)
@@ -233,6 +233,7 @@ Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint
 | Phase 62 P01 | 7min | 3 tasks | 3 files |
 | Phase 62-reposicao-server-side P02 | 2min | 2 tasks | 2 files |
 | Phase 62-reposicao-server-side P03 | 10 | 3 tasks | 3 files |
+| Phase 64-sync-tiny-costs-completo P01 | 4m | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -286,6 +287,8 @@ Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint
 - [Phase ?]: Phase 62-01: get_replenishment é SECURITY INVOKER (RLS org-first enforça isolamento; cross-org provado = 0 linhas); write de replenishment_params só owner/admin; estoque SUM cross-store sem filtro logistic_type
 - [Phase ?]: TDD RED/GREEN: test file commitado antes da implementação para garantir testes testam algo real
 - [Phase ?]: resolveParams: marca>global>hardcoded espelhando CTE params da RPC; brand param informativo
+- [Phase ?]: serve() is auth-only + 202; all sync logic in runSync() via EdgeRuntime.waitUntil
+- [Phase ?]: CAP_DETAIL=250 + PHASE2_TIMEOUT_MS=120s replaces hardcoded slice(0,80)
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -333,8 +336,10 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-Last session: 2026-06-25T21:02:00.677Z
-Stopped at: Phase 51 planned + verified (3 plans, 3 waves)
+**Resume file:** .planning/phases/63-compras-reposi-o-por-sku-p-gina-pr-pria/63-01-PLAN.md
+
+Last session: 2026-06-26T13:32:46.422Z
+Stopped at: Phase 63 planned (4 plans, plan-checker PASS)
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
