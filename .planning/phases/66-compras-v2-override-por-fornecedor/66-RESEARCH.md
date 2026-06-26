@@ -590,19 +590,21 @@ it("FORN-05 todos null → defaults 30/60/7/1/1, origem='global'", () => {
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **A migration `20260666` está registrada em `supabase_migrations`?**
+> Nenhuma incógnita arquitetural remanescente — as 3 questões são operacionais e estão resolvidas dentro das tasks dos planos (validação em runtime, não em design).
+
+1. **A migration `20260666` está registrada em `supabase_migrations`?** — **(RESOLVED)** validado no plano 66-01 Task 2 via `execute_sql` antes de qualquer reaplicação.
    - O que sabemos: arquivo existe no repo (untracked), efeitos em prod (coluna existe, constraint atualizada)
    - O que é incerto: se o Supabase registrou a migration no tracking table
    - Recomendação: validar via `execute_sql` no primeiro task do plano antes de qualquer outra ação
 
-2. **Quantos fornecedores distintos aparecerão após o re-sync?**
+2. **Quantos fornecedores distintos aparecerão após o re-sync?** — **(RESOLVED)** tratado pelo checkpoint bloqueante D-12/D-13 no plano 66-01 Task 3 (validação dos nomes antes de ligar a precedência).
    - O que sabemos: 22 OCs em prod (Phase 65). Provavelmente 3-10 fornecedores distintos (Pé Vermeio é um seller pequeno)
    - O que é incerto: se os nomes estão limpos (sem duplicatas com casing diferente)
    - Recomendação: checkpoint após re-sync com query de validação (ver Code Examples)
 
-3. **`data_entrega` vs `data_pedido` na agregação de desempate**
+3. **`data_entrega` vs `data_pedido` na agregação de desempate** — **(RESOLVED)** o tiebreaker usa `COALESCE(data_entrega, data_pedido)` (Pattern 1 já faz isso); preenchimento validado na query do checkpoint.
    - O que sabemos: ambas as colunas existem em `purchase_orders` (migration `20260665`)
    - O que é incerto: qual tem maior preenchimento real após o re-sync (EF usa `data` do Tiny para `data_entrega` e `dataPrevista` para `data_pedido`)
    - Recomendação: validar preenchimento na query do checkpoint; se `data_entrega` for rara, usar `COALESCE(data_entrega, data_pedido)` como tiebreaker (Pattern 1 já faz isso)
