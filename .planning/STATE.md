@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 62
-current_phase_name: reposicao-server-side
+current_phase: 63
+current_phase_name: compras-reposicao-por-sku
 status: executed-pending-visual-ok
-stopped_at: "Phase 63 executada + backend live em prod; PR #12 aberto, aguarda ok visual Wesley + merge"
-last_updated: "2026-06-26T12:54:05.603Z"
-last_activity: 2026-06-25
-last_activity_desc: Phase 62 execution started
+stopped_at: "Phase 63 (5 planos, incl. 63-05 UX leigos) executada + verificada; backend live em prod; PR #12 atualizado, aguarda SÓ ok visual Wesley + merge"
+last_updated: "2026-06-26T13:30:00.000Z"
+last_activity: 2026-06-26
+last_activity_desc: "Phase 63 completa incl. 63-05 UX clareza leigos (PASS 7/7); PR #12 pronto p/ ok visual + merge"
 progress:
   total_phases: 12
   completed_phases: 4
-  total_plans: 32
-  completed_plans: 27
+  total_plans: 33
+  completed_plans: 28
   percent: 33
 ---
 
@@ -25,8 +25,9 @@ progress:
 - ⚠️ **DESVIO corrigido no checkpoint MCP:** plano/RESEARCH assumiu tabela `ml_orders` — a real é **`orders`** (`data_pedido` TEXT → `::timestamptz::date`; status real só `paid`/`cancelled`/`partially_refunded`, `confirmed` não existe). Schema validado por execute_sql ANTES de aplicar; fix commit `c192939d`. **Lição: executor sem MCP não valida schema — sempre conferir nomes de tabela/coluna/tipo no checkpoint.**
 - **63-03 (frontend, PR #12):** página `/compras` (nav Operações, owner/admin/member); drill anúncio→variações (Collapsible), filtros (marca/gatilho/sem giro/custo/busca), export xlsx, CRUD params (write owner/admin via RLS). Aba "Compra Recomendada" **removida** de /estoque; `compraUtils`/`CompraRecomendadaPanel` (legado /precos-custos) intocados; `ReplenishmentPanel.tsx` preservado.
 - **63-04 (provas, org Pé Vermeio):** 332 linhas por SKU (240 var + 92 sem var); **custo_ausente 77%→11,1%** (Phase 62 era 38%); **anti-IDOR: JWT Pé Vermeio → org Thales = 0 linhas** (own=332); vitest 208/208 + tsc 0 + build ok; advisors sem issue novo da RPC.
-- **Preview:** https://marketplace-analytics-pro-dev-git-gs-40b3ab-xambrafios-projects.vercel.app (aponta p/ Supabase prod — login + dados reais).
-- **PRÓXIMO:** ok visual Wesley em /compras → merge PR #12 → fechar Phase 63.
+- **63-05 (UX "Clareza para Leigos", 2026-06-26):** Wesley revisou o PR #12 e achou a tela confusa p/ leigos. Brainstorming → direção **"Clarear no lugar"** → planejado+checado+executado+**verificado via GSD (gsd-verifier PASS 7/7)**. SÓ apresentação (RPC/hook/lógica intocados). Entregue: cabeçalhos PT leigo (Produto/Estoque/Vende por dia/Dura quanto/Comprar/Custo estimado) com tooltip `?`; **coluna "O que fazer"** 4 estados (🔴 Comprar N / 🟢 Estoque ok / ⚪ Sem vendas / ⚠️ Falta custo); params viram tooltip discreto (não coluna); diálogo **"Regras de Compra"** com rótulo leigo+ajuda+exemplo por campo (MOQ→"Pedido mínimo do fornecedor", Pack→"Múltiplo de caixa", Lead time→"Tempo de entrega do fornecedor", etc.); mini-resumo de status no topo; filtro "Situação". Commits cc864e3f/7f10531b/4f160a0a. vitest 208/208, tsc 0, build ok. Tudo no MESMO branch/PR #12.
+- **Preview (rebuilda com 63-05):** https://marketplace-analytics-pro-dev-git-gs-40b3ab-xambrafios-projects.vercel.app/compras (aponta p/ Supabase prod — login + dados reais).
+- **PRÓXIMO (retomar em nova sessão):** Wesley dá ok visual em /compras → **merge PR #12** → fechar Phase 63. Backend já está em prod; falta só mesclar o frontend.
 
 ---
 
