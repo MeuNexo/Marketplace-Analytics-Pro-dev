@@ -6,7 +6,7 @@ current_phase: 62
 current_phase_name: reposicao-server-side
 status: complete
 stopped_at: Phase 63 planned (4 plans, plan-checker PASS)
-last_updated: "2026-06-25T23:53:37.001Z"
+last_updated: "2026-06-26T13:32:59.889Z"
 last_activity: 2026-06-25
 last_activity_desc: Phase 62 execution started
 progress:
@@ -233,6 +233,7 @@ Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint
 | Phase 62 P01 | 7min | 3 tasks | 3 files |
 | Phase 62-reposicao-server-side P02 | 2min | 2 tasks | 2 files |
 | Phase 62-reposicao-server-side P03 | 10 | 3 tasks | 3 files |
+| Phase 64-sync-tiny-costs-completo P01 | 4m | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -286,6 +287,8 @@ Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint
 - [Phase ?]: Phase 62-01: get_replenishment é SECURITY INVOKER (RLS org-first enforça isolamento; cross-org provado = 0 linhas); write de replenishment_params só owner/admin; estoque SUM cross-store sem filtro logistic_type
 - [Phase ?]: TDD RED/GREEN: test file commitado antes da implementação para garantir testes testam algo real
 - [Phase ?]: resolveParams: marca>global>hardcoded espelhando CTE params da RPC; brand param informativo
+- [Phase ?]: serve() is auth-only + 202; all sync logic in runSync() via EdgeRuntime.waitUntil
+- [Phase ?]: CAP_DETAIL=250 + PHASE2_TIMEOUT_MS=120s replaces hardcoded slice(0,80)
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -335,7 +338,7 @@ Dashboard atual mostra:
 
 **Resume file:** .planning/phases/63-compras-reposi-o-por-sku-p-gina-pr-pria/63-01-PLAN.md
 
-Last session: 2026-06-25T23:53:36.978Z
+Last session: 2026-06-26T13:32:46.422Z
 Stopped at: Phase 63 planned (4 plans, plan-checker PASS)
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
