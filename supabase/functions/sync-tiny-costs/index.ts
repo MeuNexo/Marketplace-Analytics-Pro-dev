@@ -1,11 +1,17 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// EdgeRuntime é global no runtime Supabase Edge — sem import necessário.
+// Declaração de tipo para satisfazer deno check.
+declare const EdgeRuntime: { waitUntil: (p: Promise<unknown>) => void };
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const TINY_API     = "https://api.tiny.com.br/public-api/v3";
 const RATE_MS      = 1100; // 60 req/min
 const BATCH_SIZE   = 50;
+const CAP_DETAIL         = 250;
+const PHASE2_TIMEOUT_MS  = 120_000;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -129,48 +135,32 @@ async function fetchAllProducts(token: string): Promise<ProductEntry[]> {
   return products;
 }
 
-// ── Main handler ──────────────────────────────────────────────────────────────
+// ── Background sync (toda a lógica de sync — Pitfall 4: try/catch obrigatório) ─
 
-serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-
+async function runSync(mlUserId: string, userId: string | null): Promise<void> {
   try {
-    const authHeader = req.headers.get("Authorization") ?? "";
-    const jwt = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+    console.log(`[sync-tiny-costs] runSync iniciando. mlUserId=${mlUserId}`);
 
-    let userId: string | null = null;
-
-    if (jwt && jwt !== SERVICE_KEY) {
-      const { data: { user } } = await sb.auth.getUser(jwt);
-      if (user) userId = user.id;
-    }
-
-    if (!userId && jwt !== SERVICE_KEY) {
-      return json({ error: "Unauthorized" }, 401);
-    }
-
-    // deno-lint-ignore no-explicit-any
-    let body: Record<string, unknown> = {};
-    try { body = await req.json(); } catch { /* ok */ }
-
-    const mlUserId = (body.ml_user_id as string) ?? null;
-    if (!mlUserId) return json({ error: "ml_user_id obrigatório" }, 400);
-
+    // Derivar scopeUserId: mesma query que serve() fazia antes do refactor
     const { data: tokenRow } = await sb
       .from("ml_tokens")
       .select("user_id")
       .eq("ml_user_id", mlUserId)
       .single();
 
-    const scopeUserId = userId ?? (tokenRow?.user_id as string ?? null);
-    if (!scopeUserId) return json({ error: `ml_user_id ${mlUserId} não encontrado em ml_tokens` }, 404);
+    const scopeUserId = userId ?? ((tokenRow?.user_id as string) ?? null);
+    if (!scopeUserId) {
+      console.error(`[sync-tiny-costs] ml_user_id ${mlUserId} não encontrado em ml_tokens — abortando runSync`);
+      return;
+    }
 
     const tinyToken = await getTinyToken(mlUserId);
 
     // Fetch all products — prices extracted from list when available
     const allProducts = await fetchAllProducts(tinyToken);
     if (allProducts.length === 0) {
-      return json({ ok: true, synced: 0, msg: "Nenhum produto ativo no Tiny" });
+      console.log("[sync-tiny-costs] Nenhum produto ativo no Tiny");
+      return;
     }
 
     // Separate products: those with price from list vs those needing detail call
@@ -201,12 +191,45 @@ serve(async (req: Request) => {
       else { console.error("upsert error:", upsertErr.message); errors += rows.length; }
     }
 
+    // ── Priorização de faltantes (COSTS-02) ──────────────────────────────────
+    // Carregar SKUs já presentes em ml_product_costs para este user.
+    // Ordenar withoutPrice: SKUs ainda ausentes na base primeiro.
+    let existingSkus = new Set<string>();
+    try {
+      const { data: existingRows, error: existingErr } = await sb
+        .from("ml_product_costs")
+        .select("seller_sku")
+        .eq("user_id", scopeUserId);
+
+      if (existingErr) {
+        console.warn("[sync-tiny-costs] Aviso: não foi possível carregar SKUs existentes — usando ordem original.", existingErr.message);
+      } else {
+        // deno-lint-ignore no-explicit-any
+        existingSkus = new Set<string>((existingRows ?? []).map((r: any) => String(r.seller_sku ?? "")).filter(Boolean));
+      }
+    } catch (existingQueryErr: unknown) {
+      const msg = existingQueryErr instanceof Error ? existingQueryErr.message : String(existingQueryErr);
+      console.warn("[sync-tiny-costs] Aviso: exceção ao carregar SKUs existentes — usando ordem original.", msg);
+    }
+
+    // Ordenar in-place: faltantes (não no Set) na frente
+    withoutPrice.sort((a, b) => (existingSkus.has(a.sku) ? 1 : 0) - (existingSkus.has(b.sku) ? 1 : 0));
+
     // ── Phase 2: fetch detail only for products missing price ─────────────────
-    // Each detail call costs 1 API request — sleep between calls to respect rate limit.
-    // Cap at 80 products to stay well within the 150s edge-function timeout.
-    const detailQueue = withoutPrice.slice(0, 80);
+    // Cap elevado (CAP_DETAIL=250) + guarda de tempo (PHASE2_TIMEOUT_MS=120s).
+    // Cada chamada de detalhe custa 1 req — sleep entre chamadas para respeitar RATE_MS.
+    const detailQueue    = withoutPrice.slice(0, CAP_DETAIL);
+    const phase2Skipped  = withoutPrice.length - detailQueue.length;
+    let phase2Processed  = 0;
+    const t0             = Date.now();
 
     for (let i = 0; i < detailQueue.length; i += BATCH_SIZE) {
+      // Guarda de tempo: interromper se orçamento de 120s se esgotou
+      if (Date.now() - t0 > PHASE2_TIMEOUT_MS) {
+        console.log("[sync-tiny-costs] Phase 2 time guard triggered");
+        break;
+      }
+
       const batch = detailQueue.slice(i, i + BATCH_SIZE);
       // deno-lint-ignore no-explicit-any
       const rows: any[] = [];
@@ -234,6 +257,8 @@ serve(async (req: Request) => {
         await sleep(RATE_MS);
       }
 
+      phase2Processed += batch.length;
+
       if (rows.length > 0) {
         const { error: upsertErr } = await sb
           .from("ml_product_costs")
@@ -244,18 +269,47 @@ serve(async (req: Request) => {
       }
     }
 
-    const skippedDetail = withoutPrice.length > 80 ? withoutPrice.length - 80 : 0;
+    console.log(`[sync-tiny-costs] runSync concluído. synced=${synced}, errors=${errors}, phase2Processed=${phase2Processed}, phase2Skipped=${phase2Skipped}`);
+  } catch (err: unknown) {
+    // Pitfall 4: capturar TODA exceção do background — sem try/catch o processo
+    // morre silenciosamente (sem log) quando chamado via EdgeRuntime.waitUntil
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[sync-tiny-costs] runSync ERRO não capturado:", message);
+  }
+}
 
-    return json({
-      ok: true,
-      synced,
-      errors,
-      total_products: allProducts.length,
-      from_list: withPrice.length,
-      from_detail: detailQueue.length - errors,
-      skipped: skippedDetail,
-      msg: `${synced} produtos sincronizados${skippedDetail > 0 ? ` (${skippedDetail} ignorados por limite de tempo)` : ""}`,
-    });
+// ── Main handler ──────────────────────────────────────────────────────────────
+// serve() autentica inline e delega todo o processamento para runSync() via
+// EdgeRuntime.waitUntil — retorna 202 imediatamente para o cron (pg_net não
+// encerra a conexão antes da Fase 2 completar).
+
+serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  try {
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const jwt = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+
+    let userId: string | null = null;
+
+    if (jwt && jwt !== SERVICE_KEY) {
+      const { data: { user } } = await sb.auth.getUser(jwt);
+      if (user) userId = user.id;
+    }
+
+    if (!userId && jwt !== SERVICE_KEY) {
+      return json({ error: "Unauthorized" }, 401);
+    }
+
+    // deno-lint-ignore no-explicit-any
+    let body: Record<string, unknown> = {};
+    try { body = await req.json(); } catch { /* ok */ }
+
+    const mlUserId = (body.ml_user_id as string) ?? null;
+    if (!mlUserId) return json({ error: "ml_user_id obrigatório" }, 400);
+
+    EdgeRuntime.waitUntil(runSync(mlUserId, userId));
+    return json({ ok: true, msg: "sync enqueued" }, 202);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("sync-tiny-costs error:", message);
