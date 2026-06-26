@@ -28,10 +28,11 @@ import { Separator } from "@/components/ui/separator";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useQueryClient } from "@tanstack/react-query";
+import { usePurchaseOrderSuppliers } from "@/hooks/usePurchaseOrderSuppliers";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Scope = "global" | "marca" | "sku";
+type Scope = "global" | "marca" | "sku" | "fornecedor";
 
 interface ReplenishmentParam {
   id: string;
@@ -47,7 +48,7 @@ interface ReplenishmentParam {
 // ── Schema ────────────────────────────────────────────────────────────────────
 
 const paramsSchema = z.object({
-  scope:              z.enum(["global", "marca", "sku"]),
+  scope:              z.enum(["global", "marca", "sku", "fornecedor"]),
   scope_value:        z.string(),
   lead_time_dias:     z.number().int().min(1).max(365),
   meta_cobertura_dias: z.number().int().min(1).max(730),
@@ -69,14 +70,16 @@ const DEFAULTS: Omit<ParamsFormValues, "scope" | "scope_value"> = {
 };
 
 const SCOPE_LABELS: Record<Scope, string> = {
-  global: "Global",
-  marca:  "Por Marca",
-  sku:    "Por SKU",
+  global:     "Global",
+  marca:      "Por Marca",
+  sku:        "Por SKU",
+  fornecedor: "Por Fornecedor",
 };
 
 function scopeValueLabel(scope: Scope): string {
-  if (scope === "global") return "";
-  if (scope === "marca")  return "Nome da Marca";
+  if (scope === "global")     return "";
+  if (scope === "marca")      return "Nome da Marca";
+  if (scope === "fornecedor") return "Fornecedor (das ordens de compra)";
   return "SKU (seller_custom_field)";
 }
 
@@ -91,9 +94,10 @@ interface ParamRowProps {
 
 function ParamRow({ param, canEdit, onEdit, onDelete }: ParamRowProps) {
   const scopeColor: Record<Scope, string> = {
-    sku:    "bg-primary/10 text-primary border-none",
-    marca:  "text-[10px]",
-    global: "",
+    sku:        "bg-primary/10 text-primary border-none",
+    fornecedor: "bg-amber-500/10 text-amber-700 border-none",
+    marca:      "text-[10px]",
+    global:     "",
   };
 
   return (
@@ -151,11 +155,14 @@ interface ParamFormProps {
 }
 
 function ParamForm({ editingParam, canEdit, orgId, onSaved, onCancel }: ParamFormProps) {
+  const { data: suppliers = [], isLoading: loadingSuppliers } = usePurchaseOrderSuppliers();
+
   const {
     register,
     handleSubmit,
     watch,
     control,
+    setValue,
     reset,
     formState: { errors, isSubmitting },
   } = useForm<ParamsFormValues>({
@@ -253,6 +260,7 @@ function ParamForm({ editingParam, canEdit, orgId, onSaved, onCancel }: ParamFor
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="global">Global (todos os produtos)</SelectItem>
+                  <SelectItem value="fornecedor">Por Fornecedor</SelectItem>
                   <SelectItem value="marca">Por Marca</SelectItem>
                   <SelectItem value="sku">Por SKU</SelectItem>
                 </SelectContent>
@@ -260,7 +268,7 @@ function ParamForm({ editingParam, canEdit, orgId, onSaved, onCancel }: ParamFor
             )}
           />
           <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
-            O mais específico prevalece — Por SKU substitui Marca, que substitui Global.
+            O mais específico prevalece — Por SKU supera Por Fornecedor, que supera Por Marca, que supera Global.
           </p>
         </div>
 
@@ -268,11 +276,44 @@ function ParamForm({ editingParam, canEdit, orgId, onSaved, onCancel }: ParamFor
         {scope !== "global" && (
           <div className="space-y-1 col-span-2 sm:col-span-1">
             <Label className="text-xs">{scopeValueLabel(scope)}</Label>
-            <Input
-              {...register("scope_value")}
-              className="h-8 text-xs"
-              placeholder={scope === "marca" ? "ex: Pralana" : "ex: 020491CA35GRX"}
-            />
+
+            {scope === "fornecedor" ? (
+              /* Dropdown obrigatório para fornecedor — garante match exato com purchase_orders.fornecedor (D-10, T-66-08) */
+              loadingSuppliers ? (
+                <Skeleton className="h-8 w-full rounded-md" />
+              ) : suppliers.length === 0 ? (
+                <p className="text-[10px] text-muted-foreground leading-tight py-1">
+                  Nenhum fornecedor encontrado nas ordens de compra. Sincronize as OCs primeiro em Compras.
+                </p>
+              ) : (
+                <Controller
+                  control={control}
+                  name="scope_value"
+                  render={({ field }) => (
+                    <Select
+                      value={field.value}
+                      onValueChange={(v) => setValue("scope_value", v, { shouldValidate: true })}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Selecione o fornecedor…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {suppliers.map((s) => (
+                          <SelectItem key={s} value={s}>{s}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              )
+            ) : (
+              <Input
+                {...register("scope_value")}
+                className="h-8 text-xs"
+                placeholder={scope === "marca" ? "ex: Pralana" : "ex: 020491CA35GRX"}
+              />
+            )}
+
             {errors.scope_value && (
               <p className="text-[10px] text-destructive">{errors.scope_value.message}</p>
             )}
@@ -480,7 +521,7 @@ export function ReplenishmentParamsDialog({ children }: ReplenishmentParamsDialo
           <DialogTitle className="text-sm">Regras de Compra</DialogTitle>
           <DialogDescription className="text-xs">
             Define as regras que calculam quanto comprar de cada produto. O mais específico
-            prevalece: Por SKU supera Por Marca, que supera Global (todos os produtos).
+            prevalece: Por SKU supera Por Fornecedor, que supera Por Marca, que supera Global.
             {!canEdit && " (somente owner/admin podem editar)"}
           </DialogDescription>
         </DialogHeader>

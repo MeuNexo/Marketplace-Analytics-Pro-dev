@@ -148,7 +148,7 @@ describe("resolveParamsBySku", () => {
     const skuRow: Partial<ReplenishmentParams>   = { leadTimeDias: 10, metaCoberturaDias: 30, safetyDays: 3, moq: 12, packMultiple: 6 };
     const marcaRow: Partial<ReplenishmentParams> = { leadTimeDias: 45, metaCoberturaDias: 90, safetyDays: 10, moq: 5, packMultiple: 2 };
     const globalRow: Partial<ReplenishmentParams>= { leadTimeDias: 30, metaCoberturaDias: 60, safetyDays: 7, moq: 1, packMultiple: 1 };
-    const { params, origem } = resolveParamsBySku(skuRow, marcaRow, globalRow);
+    const { params, origem } = resolveParamsBySku(skuRow, null, marcaRow, globalRow);
     expect(origem).toBe("sku");
     expect(params.leadTimeDias).toBe(10);
     expect(params.metaCoberturaDias).toBe(30);
@@ -161,7 +161,7 @@ describe("resolveParamsBySku", () => {
   it("CMP-05 precedência marca: skuRow=null, marcaRow presente → usa marca, origem='marca'", () => {
     const marcaRow: Partial<ReplenishmentParams> = { leadTimeDias: 45, metaCoberturaDias: 90, safetyDays: 10, moq: 5, packMultiple: 2 };
     const globalRow: Partial<ReplenishmentParams>= { leadTimeDias: 30, metaCoberturaDias: 60, safetyDays: 7, moq: 1, packMultiple: 1 };
-    const { params, origem } = resolveParamsBySku(null, marcaRow, globalRow);
+    const { params, origem } = resolveParamsBySku(null, null, marcaRow, globalRow);
     expect(origem).toBe("marca");
     expect(params.leadTimeDias).toBe(45);
     expect(params.metaCoberturaDias).toBe(90);
@@ -173,7 +173,7 @@ describe("resolveParamsBySku", () => {
   // Caso 3: somente globalRow (origem 'global')
   it("CMP-05 somente global: skuRow=null, marcaRow=null, globalRow presente → usa global, origem='global'", () => {
     const globalRow: Partial<ReplenishmentParams> = { leadTimeDias: 20, metaCoberturaDias: 45, safetyDays: 5, moq: 3, packMultiple: 4 };
-    const { params, origem } = resolveParamsBySku(null, null, globalRow);
+    const { params, origem } = resolveParamsBySku(null, null, null, globalRow);
     expect(origem).toBe("global");
     expect(params.leadTimeDias).toBe(20);
     expect(params.metaCoberturaDias).toBe(45);
@@ -184,7 +184,7 @@ describe("resolveParamsBySku", () => {
 
   // Caso 4: nenhum row → origem='global', valores defaults 30/60/7/1/1
   it("CMP-05 todos null: skuRow=null, marcaRow=null, globalRow=null → defaults hardcoded, origem='global'", () => {
-    const { params, origem } = resolveParamsBySku(null, null, null);
+    const { params, origem } = resolveParamsBySku(null, null, null, null);
     expect(origem).toBe("global");
     expect(params.leadTimeDias).toBe(30);
     expect(params.metaCoberturaDias).toBe(60);
@@ -199,7 +199,7 @@ describe("resolveParamsBySku", () => {
     const skuRow: Partial<ReplenishmentParams> = {
       leadTimeDias: 5, metaCoberturaDias: 14, safetyDays: 2, moq: 1, packMultiple: 1,
     };
-    const { params } = resolveParamsBySku(skuRow, null, null);
+    const { params } = resolveParamsBySku(skuRow, null, null, null);
     // estoque=10, vendaDia=2 → ponto=2*(5+2)=14; 10 ≤ 14 → gatilho ativo
     // alvo=2*(14+2)=32; nec=32-10=22; pack=1: 22; max(22,1)=22
     const result = calcReplenishment(10, 2, params);
@@ -207,6 +207,50 @@ describe("resolveParamsBySku", () => {
     expect(result.alvo).toBe(32);
     expect(result.compraSugerida).toBe(22);
     expect(result.gatilhoAtivo).toBe(true);
+  });
+
+  // FORN-05: Caso: fornecedorRow presente, skuRow ausente → usa fornecedor (origem='fornecedor')
+  it("FORN-05 precedência fornecedor: fornecedorRow presente, skuRow=null → usa fornecedor, origem='fornecedor'", () => {
+    const fornecedorRow: Partial<ReplenishmentParams> = { leadTimeDias: 20, metaCoberturaDias: 45, safetyDays: 5, moq: 6, packMultiple: 3 };
+    const marcaRow: Partial<ReplenishmentParams>      = { leadTimeDias: 45, metaCoberturaDias: 90, safetyDays: 10, moq: 5, packMultiple: 2 };
+    const globalRow: Partial<ReplenishmentParams>     = { leadTimeDias: 30, metaCoberturaDias: 60, safetyDays: 7, moq: 1, packMultiple: 1 };
+    const { params, origem } = resolveParamsBySku(null, fornecedorRow, marcaRow, globalRow);
+    expect(origem).toBe("fornecedor");
+    expect(params.leadTimeDias).toBe(20);
+  });
+
+  // FORN-05: Caso: skuRow presente vence fornecedor (sku > fornecedor)
+  it("FORN-05 sku > fornecedor: skuRow presente vence fornecedorRow → origem='sku'", () => {
+    const skuRow: Partial<ReplenishmentParams>        = { leadTimeDias: 5, metaCoberturaDias: 14, safetyDays: 2, moq: 12, packMultiple: 6 };
+    const fornecedorRow: Partial<ReplenishmentParams> = { leadTimeDias: 20, metaCoberturaDias: 45, safetyDays: 5, moq: 6, packMultiple: 3 };
+    const { params, origem } = resolveParamsBySku(skuRow, fornecedorRow, null, null);
+    expect(origem).toBe("sku");
+    expect(params.leadTimeDias).toBe(5);
+  });
+
+  // FORN-05: Caso: fornecedorRow=null (SKU sem OC), marcaRow presente → marca vence (pula fornecedor)
+  it("FORN-05 fornecedor=null pula para marca: fornecedorRow=null, marcaRow presente → origem='marca'", () => {
+    const marcaRow: Partial<ReplenishmentParams>  = { leadTimeDias: 45, metaCoberturaDias: 90, safetyDays: 10, moq: 5, packMultiple: 2 };
+    const globalRow: Partial<ReplenishmentParams> = { leadTimeDias: 30, metaCoberturaDias: 60, safetyDays: 7, moq: 1, packMultiple: 1 };
+    const { params, origem } = resolveParamsBySku(null, null, marcaRow, globalRow);
+    expect(origem).toBe("marca");
+    expect(params.leadTimeDias).toBe(45);
+  });
+
+  // FORN-05: Caso: fornecedorRow presente mas marcaRow ausente → fornecedor vence global
+  it("FORN-05 fornecedor > global: fornecedorRow presente, marcaRow=null → usa fornecedor, origem='fornecedor'", () => {
+    const fornecedorRow: Partial<ReplenishmentParams> = { leadTimeDias: 20, metaCoberturaDias: 45, safetyDays: 5, moq: 6, packMultiple: 3 };
+    const globalRow: Partial<ReplenishmentParams>     = { leadTimeDias: 30, metaCoberturaDias: 60, safetyDays: 7, moq: 1, packMultiple: 1 };
+    const { params, origem } = resolveParamsBySku(null, fornecedorRow, null, globalRow);
+    expect(origem).toBe("fornecedor");
+    expect(params.leadTimeDias).toBe(20);
+  });
+
+  // FORN-05: Caso: todos null → defaults hardcoded (sem regressão)
+  it("FORN-05 todos null → defaults 30/60/7/1/1, origem='global'", () => {
+    const { params, origem } = resolveParamsBySku(null, null, null, null);
+    expect(origem).toBe("global");
+    expect(params.leadTimeDias).toBe(30);
   });
 
 });

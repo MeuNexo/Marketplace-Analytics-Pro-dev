@@ -24,6 +24,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 - [ ] **Phase 61: Enriquecer Fornecedor + Categoria do Contas a Pagar** — Os gráficos **Composição de Custos por Mês** (só "Outros" + "Previsões de compra", sem categorias reais) e **Exposição por Fornecedor** (só Pralana) só funcionaram 1x e voltaram a quebrar. Causa-raiz: em `cash_outflows`, 1991/2011 linhas têm `category` vazia E `supplier` nulo. O endpoint Tiny `/contas-pagar` (LISTA) NÃO traz categoria nem fornecedor — só o DETALHE `/contas-pagar/{id}` traz (`categoria.descricao` + `contato.nome`). O `sync-tiny-payables` lê só a lista → grava NULL e, a cada sync, **sobrescreve** o que o enriquecimento-detalhe da Phase 51 (fila `cat_backfill_queue` + `enrich_drain`/`enrich_harvest` via pg_net/cron) havia preenchido; o enqueue usa `ON CONFLICT DO NOTHING`, então linhas `done` nunca são re-enriquecidas. Fix (opção A, aprovada): (a) `sync-tiny-payables` para de escrever `category`/`supplier` no upsert → enriquecimento vira fonte única; (b) `enrich_harvest` passa a gravar TAMBÉM `supplier = contato.nome` (hoje só categoria); (c) enqueue re-marca `todo` toda linha com `category IS NULL OR supplier IS NULL`, sobrevivendo a re-syncs; (d) rodar o backfill das ~2011 linhas via fila/cron já existentes (Tiny ~1–2 req/s, drain throttled ~20–30 min, resumível). Continuação da Phase 51 + Phase 60 (CASHFIX-07, CASHFIX-08). **Planejada 2026-06-25.**
 - [x] **Phase 62: Reposição Server-Side (Compra Recomendada correta)** — Substitui a "Compra Recomendada" do front (estoque digitado + venda simulada, sem lead time/segurança/gatilho/MOQ/custo) por uma RPC `get_replenishment` server-side: estoque real (`ml_inventory_cache` Full+anúncios), venda/dia real, ponto de reposição com gatilho, MOQ/embalagem, custo nulo/sem-giro, parâmetros global + por marca/fornecedor. Não sugere mais comprar o que já se tem (REPL-01..11). **EXECUTADA + VERIFICADA (PASS 7/7) 2026-06-25 — RPC `get_replenishment` + tabela `replenishment_params` aplicadas em prod via MCP (116 anúncios, 29 sugeridos, gatilho cortando 87, anti-IDOR provado); módulo TS + 203 testes verdes; aba "Compra Recomendada" em /estoque. (completed 2026-06-25)**
 - [x] **Phase 65: Compras — Estoque a Chegar** — A `/compras` passa a considerar as ordens de compra em trânsito do Tiny: nova EF `sync-tiny-purchase-orders` (endpoint `/ordem-compra`, waitUntil) → tabela `purchase_orders` (RLS org-first) + cron diário; a RPC `get_replenishment_by_sku` ganha CTE `incoming_by_sku` e desconta TODA a qtd a caminho da sugestão (decisão Wesley), expondo `qtd_a_caminho`/`data_proxima_chegada`; frontend ganha coluna "A caminho". **EXECUTADA + VERIFICADA 2026-06-26 — backend em prod via MCP (22 OCs/135 SKUs/1.885 un; 93 SKUs a caminho, 80 zeraram sugestão; cobertura parcial preservando gatilho); tsc 0 + 208 testes + build ok. Frontend no PR (aguarda ok visual). (completed 2026-06-26)**
+- [x] **Phase 66: Compras v2 — Override por Fornecedor** — A `/compras` ganha um terceiro nível de parametrização de reposição: **por fornecedor**, entre SKU e marca (precedência `SKU > fornecedor > marca > global`). As ordens de compra do Tiny passam a gravar o **fornecedor** (`contato.nome`) em `purchase_orders`; a RPC `get_replenishment_by_sku` resolve os params do SKU também pelo fornecedor predominante; o frontend ganha CRUD de params por fornecedor (dropdown). Diferido da Phase 62. **EXECUTADA + VERIFICADA (5/5 must-haves) 2026-06-26 — backend em prod via MCP (migration registrada + EF v2 deployada + re-sync 200/200 OCs com fornecedor/6 distintos; RPC 4 níveis provada param_origem='fornecedor', sem regressão, anti-IDOR SECURITY INVOKER, advisors limpos); frontend 213/213 testes + tsc 0 + build ok na branch `gsd/phase-66-override-fornecedor`. Checkpoints D-12/D-13 (nomes) e schema-push aprovados por Wesley. Pendente: ok visual + merge PR. (completed 2026-06-26)**
 
 ---
 
@@ -330,6 +331,32 @@ Continuação da Phase 51 + Phase 60. Causa-raiz e estado do banco (1991/2011 co
 - [ ] 63-04-PLAN.md — [W3] Verificação: testes+build sem regressão + prova SQL (custo ausente cai vs 44/116 + anti-IDOR) + ok visual do Wesley (CMP-09)
 
 Contexto/decisões: `phases/63-compras-reposi-o-por-sku-p-gina-pr-pria/63-CONTEXT.md`. Org Pé Vermeio = `7f615df7-7bac-45e5-8a93-827fb9ddeec7`; projeto Supabase `ckcdevcxgvueywivefgx`. **Planejada 2026-06-25 — 4 plans (waves 1/1/2/3).**
+
+---
+
+### Phase 66: Compras v2 — Override por Fornecedor
+
+**Goal**: A reposição da `/compras` passa a aceitar parâmetros (lead time, meta de cobertura, segurança, MOQ/pack, custo) e overrides **por fornecedor**, inserindo o nível "fornecedor" na precedência hoje existente — de `SKU > marca > global` para **`SKU > fornecedor > marca > global`**. Para isso: (a) as OCs do Tiny gravam o fornecedor (`contato.nome`) em `purchase_orders.fornecedor`; (b) `replenishment_params` aceita `scope='fornecedor'`; (c) a RPC `get_replenishment_by_sku` resolve params pelo fornecedor de origem do SKU; (d) o frontend `/compras` ganha CRUD de params por fornecedor (owner/admin). Diferido da Phase 62 (supplier não existia por item de venda/estoque — só passou a existir nas OCs na Phase 65).
+**Depends on**: Phase 65 (tabela `purchase_orders`, EF `sync-tiny-purchase-orders`, RPC `get_replenishment_by_sku`), Phase 63 (página `/compras`, params SKU>marca>global, `replenishment_params`)
+**Requirements**: FORN-01 (EF grava `fornecedor=contato.nome` nas OCs; coluna em `purchase_orders`), FORN-02 (`replenishment_params` aceita `scope='fornecedor'`), FORN-03 (RPC resolve precedência SKU>fornecedor>marca>global; regra de mapeamento SKU→fornecedor definida na discussão), FORN-04 (frontend CRUD params por fornecedor, owner/admin, precedência exibida), FORN-05 (testes + anti-IDOR SECURITY INVOKER + sem regressão)
+**Success Criteria** (what must be TRUE):
+
+  1. As OCs sincronizadas do Tiny gravam o **fornecedor** (`contato.nome`) em `purchase_orders.fornecedor`; OCs existentes repovoadas por re-sync
+  2. `replenishment_params` aceita `scope='fornecedor'` e o CRUD da `/compras` permite criar/editar/remover params por fornecedor (write owner/admin)
+  3. A RPC `get_replenishment_by_sku` aplica precedência **SKU > fornecedor > marca > global**: um SKU sem param de SKU mas com param do seu fornecedor usa o do fornecedor (não cai direto na marca/global)
+  4. O mapeamento SKU→fornecedor está definido e documentado (ex.: fornecedor da OC mais recente que contém o SKU); SKUs sem OC caem para marca/global sem erro
+  5. RPC permanece **SECURITY INVOKER** (anti-IDOR: org alheia = 0 linhas); testes da precedência (SKU/fornecedor/marca/global + fallback) verdes; sem regressão de build/testes da Phase 63/65
+
+**Risco/aberto**: **mapeamento SKU→fornecedor** — resolvido na discussão (D-01/D-02): **fornecedor predominante** = maior `SUM(quantidade)` por fornecedor nas OCs do SKU; desempate = OC mais recente. SKU sem OC pula o nível fornecedor. Fundação de dados (coluna `fornecedor` + scope) já aplicada em prod mas **não commitada** (migration `20260666000000_fornecedor_scope.sql` untracked) + EF alterada localmente sem deploy — o plano 66-01 commita/deploya isso na branch `gsd/phase-66-override-fornecedor`.
+
+**Plans:** 3 plans (3 waves, sequencial — ordem faseada D-12 com checkpoints bloqueantes)
+
+Plans:
+- [ ] 66-01-PLAN.md — Fundação: commit migration+EF, deploy+re-sync, gate D-12/D-13 (FORN-01, FORN-02) [wave 1]
+- [ ] 66-02-PLAN.md — RPC: CTE fornecedor_by_sku + precedência 4 níveis + get_purchase_order_suppliers (FORN-03, FORN-05) [wave 2]
+- [ ] 66-03-PLAN.md — Frontend: resolveParamsBySku 4 níveis + hook + dropdown no diálogo + testes (FORN-04, FORN-05) [wave 3]
+
+Contexto/decisões: `66-CONTEXT.md` + `66-RESEARCH.md`. Org Pé Vermeio = `7f615df7-7bac-45e5-8a93-827fb9ddeec7`; projeto Supabase `ckcdevcxgvueywivefgx`. **Roadmap criado 2026-06-26 (retomada de sessão interrompida); planejado 2026-06-26.**
 
 ---
 

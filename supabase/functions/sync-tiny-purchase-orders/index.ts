@@ -115,6 +115,7 @@ async function runSync(mlUserId: string): Promise<void> {
         const dataPedido  = toDate(det?.dataPrevista ?? h?.dataPrevista);
         const numero = String(det?.numeroPedido ?? h?.numero ?? "");
         const situacao = String(det?.situacao ?? h?._situacao ?? "");
+        const fornecedor = (String(det?.contato?.nome ?? h?.contato?.nome ?? "").trim().slice(0, 200)) || null;
         // deno-lint-ignore no-explicit-any
         const itens: any[] = det?.itens ?? [];
         for (const it of itens) {
@@ -132,6 +133,7 @@ async function runSync(mlUserId: string): Promise<void> {
             data_entrega: dataEntrega,
             data_pedido: dataPedido,
             situacao,
+            fornecedor,
             preco_unitario: Number(it?.preco ?? 0) || null,
             synced_at: syncAt,
           });

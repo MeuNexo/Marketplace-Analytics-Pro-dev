@@ -40,8 +40,8 @@ export interface ReplenishmentResult {
   custoAusente: boolean;
   /** compraSugerida × custo; null se custoAusente */
   valorEstimado: number | null;
-  /** Origem dos parâmetros usados; 'sku' adicionado Phase 63 */
-  paramOrigem?: "sku" | "marca" | "global";
+  /** Origem dos parâmetros usados; 'fornecedor' adicionado Phase 66 */
+  paramOrigem?: "sku" | "fornecedor" | "marca" | "global";
 }
 
 /**
@@ -106,33 +106,39 @@ export function resolveParams(
 }
 
 /**
- * Resolve parâmetros de reposição com precedência SKU > marca > global > defaults.
- * Espelha a CTE `params` da RPC `get_replenishment_by_sku` (Phase 63-02, CMP-05).
+ * Resolve parâmetros de reposição com precedência SKU > fornecedor > marca > global > defaults.
+ * Espelha a CTE `params` da RPC `get_replenishment_by_sku` (Phase 66-03, FORN-05).
  *
  * Precedência (D-08):
- *   skuRow presente  → origem 'sku'
- *   marcaRow presente → origem 'marca'
- *   globalRow presente → origem 'global'
+ *   skuRow presente        → origem 'sku'
+ *   fornecedorRow presente → origem 'fornecedor' (entre sku e marca)
+ *   marcaRow presente      → origem 'marca'
+ *   globalRow presente     → origem 'global'
  *   nenhum → defaults hardcoded (30/60/7/1/1), origem 'global'
  *
- * @param skuRow   - Linha scope='sku' para o sku_code da variação, ou null
- * @param marcaRow - Linha scope='marca' para a brand do item, ou null
- * @param globalRow - Linha scope='global' da org, ou null
- * @param defaults  - Fallback hardcoded (padrão: REPLENISHMENT_DEFAULTS = 30/60/7/1/1)
- * @returns         - Parâmetros resolvidos + origem ('sku', 'marca' ou 'global')
+ * @param skuRow        - Linha scope='sku' para o sku_code da variação, ou null
+ * @param fornecedorRow - Linha scope='fornecedor' para o fornecedor predominante do SKU, ou null
+ * @param marcaRow      - Linha scope='marca' para a brand do item, ou null
+ * @param globalRow     - Linha scope='global' da org, ou null
+ * @param defaults      - Fallback hardcoded (padrão: REPLENISHMENT_DEFAULTS = 30/60/7/1/1)
+ * @returns             - Parâmetros resolvidos + origem ('sku', 'fornecedor', 'marca' ou 'global')
  */
 export function resolveParamsBySku(
   skuRow: Partial<ReplenishmentParams> | null,
+  fornecedorRow: Partial<ReplenishmentParams> | null,
   marcaRow: Partial<ReplenishmentParams> | null,
   globalRow: Partial<ReplenishmentParams> | null,
   defaults: ReplenishmentParams = REPLENISHMENT_DEFAULTS,
-): { params: ReplenishmentParams; origem: "sku" | "marca" | "global" } {
-  let origem: "sku" | "marca" | "global";
+): { params: ReplenishmentParams; origem: "sku" | "fornecedor" | "marca" | "global" } {
+  let origem: "sku" | "fornecedor" | "marca" | "global";
   let source: Partial<ReplenishmentParams>;
 
   if (skuRow != null) {
     origem = "sku";
     source = skuRow;
+  } else if (fornecedorRow != null) {
+    origem = "fornecedor";
+    source = fornecedorRow;
   } else if (marcaRow != null) {
     origem = "marca";
     source = marcaRow;

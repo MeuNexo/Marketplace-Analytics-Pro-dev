@@ -2,24 +2,24 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 65
-current_phase_name: compras-estoque-a-chegar
-status: executed-pending-visual-ok
-stopped_at: "Phase 65 (Estoque a Chegar) executada + verificada em prod; backend live (tabela+EF+RPC+cron); frontend no branch gsd/phase-65-estoque-a-chegar (PR aberto), aguarda ok visual Wesley + merge"
-last_updated: "2026-06-26T15:05:00.000Z"
+current_phase: 66
+current_phase_name: compras-v2-override-por-fornecedor
+status: executing
+stopped_at: "Phase 66 EXECUTADA + VERIFICADA (5/5). Backend em prod (migrations+EF v2+re-sync 200/200); frontend na branch gsd/phase-66-override-fornecedor (213 testes/tsc0/build ok). Pendente: ok visual Wesley + merge PR"
+last_updated: "2026-06-26T17:55:26.973Z"
 last_activity: 2026-06-26
-last_activity_desc: "Phase 65 Estoque a Chegar: EF sync-tiny-purchase-orders + tabela purchase_orders + RPC com a-caminho + coluna /compras; 208 testes verdes + build ok"
+last_activity_desc: Phase 66 execution started
 progress:
-  total_phases: 12
-  completed_phases: 4
-  total_plans: 33
-  completed_plans: 28
-  percent: 33
+  total_phases: 13
+  completed_phases: 5
+  total_plans: 35
+  completed_plans: 30
+  percent: 38
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
 
-- **Status:** backend aplicado+verificado em prod `ckcdevcxgvueywivefgx`; frontend no branch `gsd/phase-65-estoque-a-chegar` (PR aberto). **Pendente: ok visual Wesley em /compras + merge.**
+- **Status:** Executing Phase 66
 - **Backend:** tabela `purchase_orders` (migration `20260665000000`, RLS org-first); EF `sync-tiny-purchase-orders` v1 (endpoint Tiny correto = `/ordem-compra` singular; waitUntil 202; `organization_id` no insert); RPC `get_replenishment_by_sku` (migration `20260665000100`, +CTE `incoming_by_sku`, +colunas `qtd_a_caminho`/`data_proxima_chegada`, desconta TODA a qtd a caminho — decisão Wesley); cron `sync-tiny-purchase-orders-daily` (jobid 34, 03:15 UTC).
 - **Prova:** sync 22 OCs/135 SKUs/1.885 un; RPC 93 SKUs a caminho, 80 zeraram sugestão, cobertura parcial preserva gatilho (ex `11011273-CAFE3374G` → ainda sugere 10). tsc 0 + 208 testes + build ok.
 - **Decisão tunável:** "a caminho" = situação `3` (aguardando recebimento); ampliar p/ `2` (aprovada) = 1 linha em `SITUACOES_A_CAMINHO` na EF.
@@ -131,14 +131,14 @@ See: .planning/PROJECT.md
 
 **Milestone:** v8.0 — Consultor v2 (Inteligência)
 **Core value:** Consultor que explica, prioriza e ajuda a agir — LLM sob demanda + ações com aprovação, sobre o motor determinístico do v1.
-**Current focus:** Phase 62 — reposicao-server-side
+**Current focus:** Phase 66 — compras-v2-override-por-fornecedor
 
 ## Current Position
 
-Phase: 62 (reposicao-server-side) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
-Last activity: 2026-06-25 — Phase 62 execution started
+Phase: 66 (compras-v2-override-por-fornecedor) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 66
+Last activity: 2026-06-26 — Phase 66 execution started
 Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint visual; depois adaptar/executar **Phase 53 com Gemini**.
 
 ### Phase 54 — Wave 1 EXECUTADA (2026-06-24), Wave 2 PENDENTE
@@ -358,10 +358,10 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-**Resume file:** .planning/phases/63-compras-reposi-o-por-sku-p-gina-pr-pria/63-01-PLAN.md
+**Resume file:** .planning/phases/66-compras-v2-override-por-fornecedor/66-VERIFICATION.md
 
-Last session: 2026-06-26T12:54:05.579Z
-Stopped at: Phase 63 planned (4 plans, plan-checker PASS)
+Last session: 2026-06-26T17:55:26.961Z
+Stopped at: Phase 66 EXECUTADA + VERIFICADA (5/5). Backend em prod (migrations+EF v2+re-sync 200/200); frontend na branch gsd/phase-66-override-fornecedor (213 testes/tsc0/build ok). Pendente: ok visual Wesley + merge PR
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 

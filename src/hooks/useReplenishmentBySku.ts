@@ -41,7 +41,7 @@ export interface ReplenishmentSkuRow {
   param_safety: number;
   param_moq: number;
   param_pack: number;
-  param_origem: "sku" | "marca" | "global";
+  param_origem: "sku" | "fornecedor" | "marca" | "global";
   /** Quantidade já comprada e a caminho (OCs em aberto no Tiny) — Phase 65 */
   qtd_a_caminho: number;
   /** Data da próxima chegada (menor data_entrega futura das OCs do SKU) — Phase 65 */
@@ -126,7 +126,7 @@ function mapRow(r: Record<string, unknown>): ReplenishmentSkuRow {
     param_safety:                 Number(r.param_safety),
     param_moq:                    Number(r.param_moq),
     param_pack:                   Number(r.param_pack),
-    param_origem:                 (r.param_origem as "sku" | "marca" | "global") ?? "global",
+    param_origem:                 (r.param_origem as "sku" | "fornecedor" | "marca" | "global") ?? "global",
     qtd_a_caminho:                Number(r.qtd_a_caminho ?? 0),
     data_proxima_chegada:         r.data_proxima_chegada != null ? String(r.data_proxima_chegada) : null,
   };
