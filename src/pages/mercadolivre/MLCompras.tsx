@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import * as XLSX from "xlsx";
-import { Download, Truck } from "lucide-react";
+import { Download, Truck, Info } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useReplenishmentBySku } from "@/hooks/useReplenishmentBySku";
 import type { GroupedReplenishmentRow, ReplenishmentSkuRow } from "@/hooks/useReplenishmentBySku";
 import { ReplenishmentSkuFilters } from "@/components/mercadolivre/ReplenishmentSkuFilters";
@@ -155,8 +156,8 @@ export default function MLCompras() {
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4 min-w-0">
           <MLPageHeader title="Compras" />
           <div className="flex items-center gap-3 flex-wrap">
-            {/* Phase 67 D-10: Toggle "Cálculo esperto" — espelha padrão MLFluxoCaixa */}
-            <div className="flex items-center gap-2">
+            {/* Phase 67 D-10/D-11: Toggle "Previsão inteligente" + tooltip explicativo */}
+            <div className="flex items-center gap-1.5">
               <Switch
                 id="smart-mode"
                 checked={smartMode}
@@ -165,10 +166,32 @@ export default function MLCompras() {
               <Label
                 htmlFor="smart-mode"
                 className="text-xs text-muted-foreground cursor-pointer"
-                title="Usa tendência recente (EWMA) + sazonalidade histórica da marca para calcular a velocidade de venda, e o prazo real dos seus fornecedores como lead time."
               >
-                Cálculo esperto
+                Previsão inteligente
               </Label>
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="text-muted-foreground hover:text-foreground transition-colors"
+                      aria-label="O que é Previsão inteligente?"
+                    >
+                      <Info className="w-3.5 h-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs text-xs leading-relaxed">
+                    <p className="font-medium mb-1">Previsão inteligente</p>
+                    <p>Em vez da média simples das vendas, estima a demanda olhando:</p>
+                    <ul className="list-disc pl-4 mt-1 space-y-0.5">
+                      <li><b>Tendência:</b> vendas recentes pesam mais (produto acelerando pede mais; esfriando, menos).</li>
+                      <li><b>Sazonalidade:</b> ajusta pelo padrão do mês na marca (ex.: época de rodeio).</li>
+                      <li><b>Prazo real:</b> usa o lead time médio de cada fornecedor, não um valor fixo.</li>
+                    </ul>
+                    <p className="mt-1">Cada parte só entra quando há histórico suficiente; senão usa o cálculo simples (badge <i>“modo simples”</i>). Desligue para comparar.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
             <Button
               variant="outline"
