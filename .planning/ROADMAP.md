@@ -347,9 +347,16 @@ Contexto/decisões: `phases/63-compras-reposi-o-por-sku-p-gina-pr-pria/63-CONTEX
   4. O mapeamento SKU→fornecedor está definido e documentado (ex.: fornecedor da OC mais recente que contém o SKU); SKUs sem OC caem para marca/global sem erro
   5. RPC permanece **SECURITY INVOKER** (anti-IDOR: org alheia = 0 linhas); testes da precedência (SKU/fornecedor/marca/global + fallback) verdes; sem regressão de build/testes da Phase 63/65
 
-**Risco/aberto**: **mapeamento SKU→fornecedor** — um SKU pode ter vindo de mais de uma OC/fornecedor ao longo do tempo; a regra (OC mais recente? fornecedor predominante? cadastro manual?) precisa ser decidida na discussão. Fundação de dados (coluna `fornecedor` + scope) já aplicada em prod mas **não commitada** (migration `20260666000000_fornecedor_scope.sql` untracked) + EF alterada localmente sem deploy — a execução precisa commitar/deployar isso numa branch própria.
+**Risco/aberto**: **mapeamento SKU→fornecedor** — resolvido na discussão (D-01/D-02): **fornecedor predominante** = maior `SUM(quantidade)` por fornecedor nas OCs do SKU; desempate = OC mais recente. SKU sem OC pula o nível fornecedor. Fundação de dados (coluna `fornecedor` + scope) já aplicada em prod mas **não commitada** (migration `20260666000000_fornecedor_scope.sql` untracked) + EF alterada localmente sem deploy — o plano 66-01 commita/deploya isso na branch `gsd/phase-66-override-fornecedor`.
 
-Contexto/decisões: a definir em `66-CONTEXT.md`. Org Pé Vermeio = `7f615df7-7bac-45e5-8a93-827fb9ddeec7`; projeto Supabase `ckcdevcxgvueywivefgx`. **Roadmap criado 2026-06-26 (retomada de sessão interrompida).**
+**Plans:** 3 plans (3 waves, sequencial — ordem faseada D-12 com checkpoints bloqueantes)
+
+Plans:
+- [ ] 66-01-PLAN.md — Fundação: commit migration+EF, deploy+re-sync, gate D-12/D-13 (FORN-01, FORN-02) [wave 1]
+- [ ] 66-02-PLAN.md — RPC: CTE fornecedor_by_sku + precedência 4 níveis + get_purchase_order_suppliers (FORN-03, FORN-05) [wave 2]
+- [ ] 66-03-PLAN.md — Frontend: resolveParamsBySku 4 níveis + hook + dropdown no diálogo + testes (FORN-04, FORN-05) [wave 3]
+
+Contexto/decisões: `66-CONTEXT.md` + `66-RESEARCH.md`. Org Pé Vermeio = `7f615df7-7bac-45e5-8a93-827fb9ddeec7`; projeto Supabase `ckcdevcxgvueywivefgx`. **Roadmap criado 2026-06-26 (retomada de sessão interrompida); planejado 2026-06-26.**
 
 ---
 
