@@ -874,9 +874,11 @@ WITH
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED — validação delegada ao checkpoint 67-01 Task 2, passos 4-6)
 
-1. **Quantas marcas têm >= 12 meses de histórico no bucket?**
+> As 3 questões são **validações de dado em runtime** (não incógnitas de design); cada uma é resolvida por uma query SQL no checkpoint de aplicação da migration (67-01 Task 2), com caminho de correção definido. **(RESOLVED via checkpoint)**
+
+1. **(RESOLVED — checkpoint passo 4)** **Quantas marcas têm >= 12 meses de histórico no bucket?**
    - O que sabemos: o Pé Vermeio começou a sincronizar `orders` em ~março 2026; 12 meses de histórico requereria dados desde março 2025
    - O que está claro: o sazonal provavelmente NÃO vai ligar para a maioria das marcas em junho 2026 (< 12 meses). O EWMA vai ligar normalmente.
    - Recomendação: no checkpoint do plano, executar `SELECT brand, COUNT(DISTINCT EXTRACT(YEAR FROM data_pedido::date)::text || '-' || EXTRACT(MONTH FROM data_pedido::date)::text) FROM orders WHERE organization_id='7f615df7-7bac-45e5-8a93-827fb9ddeec7' AND status='paid' GROUP BY brand ORDER BY 2 DESC LIMIT 20` para confirmar. Se < 12 meses para todas as marcas, o sazonal é um "dead feature" nesta fase (mas correto implementar agora para o futuro).
