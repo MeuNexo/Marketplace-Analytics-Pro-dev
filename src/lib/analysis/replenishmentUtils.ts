@@ -57,7 +57,7 @@ export interface ReplenishmentSkuInput {
   attributeCombinations: Array<{ id: string; name: string; value: string }> | null;
   /** Estoque disponível desta variação */
   estoque: number;
-  /** Venda média diária por SKU (de ml_orders) */
+  /** Venda média diária por SKU (da tabela orders) */
   vendaDia: number;
   /** Custo unitário (null = custo ausente) */
   cost?: number | null;

@@ -6,7 +6,7 @@
 -- Phase: 63-compras-reposicao-por-sku (Plan 63-02)
 --
 -- SECURITY INVOKER (NUNCA DEFINER): a RLS de ml_inventory_cache,
--- ml_orders, ml_product_costs e replenishment_params usa
+-- orders, ml_product_costs e replenishment_params usa
 -- is_org_member(auth.uid(), organization_id), que enforça o
 -- isolamento de tenant mesmo que p_org_id seja de outra org.
 -- Passar p_org_id alheio retorna 0 linhas (anti-IDOR por construção).
@@ -28,9 +28,11 @@
 --          Itens SEM variações: item-level → uma linha (SKU único)
 --          Pitfall 1: has_variations=true mas variations vazio →
 --            jsonb_array_length > 0 protege ramo A; (NOT has_var OR len=0) captura ramo B
--- CTE 2: sales_by_sku — velocidade por SKU via ml_orders (CMP-02, D-04)
+-- CTE 2: sales_by_sku — velocidade por SKU via orders (CMP-02, D-04)
 --          Sem schema change em ml_product_daily_cache
---          Pitfall 2: variation_id NULL (sem variação) casa com o.variation_id = ''
+--          Tabela real é `orders` (NÃO ml_orders). data_pedido é TEXT
+--          (timestamptz serializado) → cast ::timestamptz::date. status real = 'paid'.
+--          Pitfall 2: itens sem variação gravam o.variation_id = '' (vid_null=0)
 -- CTE 3: params — COALESCE sku > marca > global > hardcoded (30/60/7/1/1) por campo
 --          param_origem: 'sku' | 'marca' | 'global' via CASE EXISTS
 -- CTE 4: base — fórmula EXATA da Phase 62 (ponto/alvo/gatilho/MOQ/pack/custo-nulo/sem-giro)
@@ -123,8 +125,12 @@ BEGIN
       AND (i.has_variations = FALSE OR jsonb_array_length(i.variations) = 0)
   ),
   -- --------------------------------------------------------
-  -- CTE 2: velocidade por SKU de ml_orders (CMP-02, D-04)
-  --   ml_orders já tem variation_id → sem schema change em ml_product_daily_cache
+  -- CTE 2: velocidade por SKU da tabela orders (CMP-02, D-04)
+  --   orders já tem variation_id → sem schema change em ml_product_daily_cache
+  --   Tabela real = `orders` (ml_orders inexistente no projeto).
+  --   data_pedido é TEXT (timestamptz serializado, ex '2026-06-26 00:00:00+00')
+  --     → cast ::timestamptz::date para comparar com v_cutoff (DATE).
+  --   status real distinto: paid / cancelled / partially_refunded → conta só 'paid'.
   --   Pitfall 2: items sem variação gravam o.variation_id = '' no sync →
   --     casa via OR (inv.variation_id IS NULL AND o.variation_id = '')
   -- --------------------------------------------------------
@@ -135,15 +141,15 @@ BEGIN
       COALESCE(SUM(o.quantidade), 0)::NUMERIC
         / NULLIF(p_sales_window_days, 0)                   AS avg_daily
     FROM inventory_by_sku inv
-    LEFT JOIN ml_orders o
+    LEFT JOIN orders o
       ON  o.organization_id = p_org_id
       AND o.item_id = inv.item_id
       AND (
         o.variation_id = inv.variation_id
         OR (inv.variation_id IS NULL AND o.variation_id = '')
       )
-      AND o.data_pedido >= v_cutoff
-      AND o.status IN ('paid', 'confirmed')
+      AND o.data_pedido::timestamptz::date >= v_cutoff
+      AND o.status = 'paid'
     GROUP BY inv.item_id, inv.variation_id
   ),
   -- --------------------------------------------------------
