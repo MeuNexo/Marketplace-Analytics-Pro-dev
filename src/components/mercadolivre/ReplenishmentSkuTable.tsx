@@ -1,7 +1,13 @@
 import { useState } from "react";
-import { ChevronRight, Info } from "lucide-react";
+import { ChevronRight, HelpCircle, Info, SlidersHorizontal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Collapsible,
   CollapsibleContent,
@@ -28,6 +34,131 @@ const currencyFmt = (v: number) =>
 const numFmt = (v: number) =>
   new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(v);
 
+// ── Header with tooltip helper ────────────────────────────────────────────────
+
+function HeaderWithTip({ label, tip }: { label: string; tip: string }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      {label}
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="cursor-default">
+              <HelpCircle className="w-3 h-3 text-muted-foreground/60" />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[200px] text-xs text-center">
+            {tip}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </span>
+  );
+}
+
+// ── Acao cell (variacao / SKU unico) ─────────────────────────────────────────
+
+function AcaoCell({ row }: { row: ReplenishmentSkuRow }) {
+  if (row.sem_giro) {
+    return (
+      <span className="text-muted-foreground text-[11px]">
+        ⚪ Sem vendas
+      </span>
+    );
+  }
+  if (row.gatilho_ativo && row.compra_sugerida > 0) {
+    return (
+      <span className="text-destructive text-[11px] font-semibold">
+        🔴 Comprar {row.compra_sugerida}
+      </span>
+    );
+  }
+  if (row.custo_ausente) {
+    return (
+      <Badge variant="outline" className="text-[10px] text-warning border-warning/40">
+        ⚠️ Falta custo
+      </Badge>
+    );
+  }
+  return (
+    <span className="text-[11px]" style={{ color: "var(--kpi-positive)" }}>
+      🟢 Estoque ok
+    </span>
+  );
+}
+
+// ── Acao cell (linha mestre de grupo) ────────────────────────────────────────
+
+function MasterAcaoCell({ group }: { group: GroupedReplenishmentRow }) {
+  if (group.skus.every((s) => s.sem_giro)) {
+    return (
+      <span className="text-muted-foreground text-[11px]">
+        ⚪ Sem vendas
+      </span>
+    );
+  }
+  if (group.any_gatilho_ativo) {
+    return (
+      <span className="text-destructive text-[11px] font-semibold">
+        🔴 Comprar {group.total_compra_sugerida}
+      </span>
+    );
+  }
+  if (group.any_custo_ausente) {
+    return (
+      <Badge variant="outline" className="text-[10px] text-warning border-warning/40">
+        ⚠️ Falta custo
+      </Badge>
+    );
+  }
+  return (
+    <span className="text-[11px]" style={{ color: "var(--kpi-positive)" }}>
+      🟢 Estoque ok
+    </span>
+  );
+}
+
+// ── Params tooltip (icone discreto por linha) ─────────────────────────────────
+
+function ParamsTooltip({ row }: { row: ReplenishmentSkuRow }) {
+  const origemBadge =
+    row.param_origem === "sku" ? (
+      <Badge className="text-[10px] bg-primary/10 text-primary border-none">sku</Badge>
+    ) : row.param_origem === "marca" ? (
+      <Badge variant="outline" className="text-[10px]">marca</Badge>
+    ) : (
+      <Badge variant="secondary" className="text-[10px]">global</Badge>
+    );
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className="p-0.5 text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="Ver regras de reposição"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="text-[11px] space-y-1">
+          <div className="flex items-center gap-1">
+            {origemBadge}
+            <span>Ponto {row.ponto_reposicao}un</span>
+          </div>
+          <div>
+            Entrega {row.param_lead_time}d · Cob {row.param_cobertura}d · Folga {row.param_safety}d
+          </div>
+          <div>
+            Min {row.param_moq} · Caixa {row.param_pack}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 // ── Sub-cells ─────────────────────────────────────────────────────────────────
 
 function CoberturaCell({ row }: { row: ReplenishmentSkuRow }) {
@@ -50,46 +181,6 @@ function ValorEstimadoCell({ row }: { row: ReplenishmentSkuRow }) {
   }
   return (
     <span className="tabular-nums font-medium">{currencyFmt(row.valor_estimado)}</span>
-  );
-}
-
-function FlagsCell({ row }: { row: ReplenishmentSkuRow }) {
-  return (
-    <div className="flex flex-wrap gap-1">
-      {row.sem_giro && (
-        <Badge variant="secondary" className="text-[10px]">
-          sem giro
-        </Badge>
-      )}
-      {row.custo_ausente && (
-        <Badge variant="outline" className="text-[10px] text-warning border-warning/40">
-          custo ausente
-        </Badge>
-      )}
-      {!row.sem_giro && !row.custo_ausente && (
-        <span className="text-muted-foreground text-[11px]">—</span>
-      )}
-    </div>
-  );
-}
-
-function ParamsCell({ row }: { row: ReplenishmentSkuRow }) {
-  const origem =
-    row.param_origem === "sku" ? (
-      <Badge className="text-[10px] bg-primary/10 text-primary border-none">sku</Badge>
-    ) : row.param_origem === "marca" ? (
-      <Badge variant="outline" className="text-[10px]">marca</Badge>
-    ) : (
-      <Badge variant="secondary" className="text-[10px]">global</Badge>
-    );
-  return (
-    <div className="text-[11px] text-muted-foreground space-y-0.5 min-w-[120px]">
-      <div className="flex items-center gap-1">
-        {origem}
-        <span>LT {row.param_lead_time}d · Cob {row.param_cobertura}d · Seg {row.param_safety}d</span>
-      </div>
-      <div>MOQ {row.param_moq} · Pack {row.param_pack}</div>
-    </div>
   );
 }
 
@@ -131,22 +222,17 @@ function VariationRow({ sku }: { sku: ReplenishmentSkuRow }) {
         {sku.sku_stock}
       </TableCell>
 
-      {/* Venda/dia */}
+      {/* Vende por dia */}
       <TableCell className="text-xs text-right tabular-nums">
         {numFmt(sku.venda_dia)}/d
       </TableCell>
 
-      {/* Cobertura */}
+      {/* Dura quanto */}
       <TableCell className="text-xs text-right tabular-nums">
         <CoberturaCell row={sku} />
       </TableCell>
 
-      {/* Ponto reposição */}
-      <TableCell className="text-xs text-right tabular-nums">
-        {sku.ponto_reposicao}
-      </TableCell>
-
-      {/* Sugestão */}
+      {/* Comprar */}
       <TableCell className="text-xs text-right tabular-nums">
         {sku.compra_sugerida > 0 ? (
           <span className="font-semibold text-primary">{sku.compra_sugerida}</span>
@@ -155,19 +241,19 @@ function VariationRow({ sku }: { sku: ReplenishmentSkuRow }) {
         )}
       </TableCell>
 
-      {/* Valor estimado */}
+      {/* Custo estimado */}
       <TableCell className="text-xs text-right">
         <ValorEstimadoCell row={sku} />
       </TableCell>
 
-      {/* Flags */}
+      {/* O que fazer */}
       <TableCell className="text-xs">
-        <FlagsCell row={sku} />
+        <AcaoCell row={sku} />
       </TableCell>
 
-      {/* Parâmetros */}
+      {/* Icone de regras */}
       <TableCell className="text-xs">
-        <ParamsCell row={sku} />
+        <ParamsTooltip row={sku} />
       </TableCell>
     </TableRow>
   );
@@ -188,7 +274,7 @@ function MasterRow({ group, expanded, onToggle }: MasterRowProps) {
     <TableRow
       className={`hover:bg-muted/30 ${group.any_gatilho_ativo ? "bg-primary/5" : ""}`}
     >
-      {/* Anuncio + marca + expand */}
+      {/* Produto + marca + expand */}
       <TableCell className="text-xs">
         <div className="flex items-start gap-1">
           {hasManySkus ? (
@@ -234,18 +320,15 @@ function MasterRow({ group, expanded, onToggle }: MasterRowProps) {
         {group.skus.reduce((s, r) => s + r.sku_stock, 0)}
       </TableCell>
 
-      {/* Venda/dia (soma) */}
+      {/* Vende por dia (soma) */}
       <TableCell className="text-xs text-right tabular-nums text-muted-foreground">
         {numFmt(group.skus.reduce((s, r) => s + r.venda_dia, 0))}/d
       </TableCell>
 
-      {/* Cobertura — deixar em branco para agrupado */}
+      {/* Dura quanto — em branco para agrupado */}
       <TableCell />
 
-      {/* Ponto reposição — deixar em branco */}
-      <TableCell />
-
-      {/* Compra sugerida total */}
+      {/* Comprar total */}
       <TableCell className="text-xs text-right tabular-nums">
         {group.total_compra_sugerida > 0 ? (
           <span className="font-semibold text-primary">{group.total_compra_sugerida}</span>
@@ -254,7 +337,7 @@ function MasterRow({ group, expanded, onToggle }: MasterRowProps) {
         )}
       </TableCell>
 
-      {/* Valor estimado total */}
+      {/* Custo estimado total */}
       <TableCell className="text-xs text-right">
         {group.any_custo_ausente ? (
           <Badge variant="outline" className="text-[10px] text-warning border-warning/40">
@@ -269,26 +352,12 @@ function MasterRow({ group, expanded, onToggle }: MasterRowProps) {
         )}
       </TableCell>
 
-      {/* Flags */}
+      {/* O que fazer (estado agregado) */}
       <TableCell className="text-xs">
-        <div className="flex flex-wrap gap-1">
-          {group.any_gatilho_ativo && (
-            <Badge className="text-[10px] bg-primary/10 text-primary border-none">
-              gatilho
-            </Badge>
-          )}
-          {group.any_custo_ausente && (
-            <Badge variant="outline" className="text-[10px] text-warning border-warning/40">
-              custo ausente
-            </Badge>
-          )}
-          {!group.any_gatilho_ativo && !group.any_custo_ausente && (
-            <span className="text-muted-foreground text-[11px]">—</span>
-          )}
-        </div>
+        <MasterAcaoCell group={group} />
       </TableCell>
 
-      {/* Params — em branco para master row */}
+      {/* Icone de regras — vazio na linha mestre (detalhes nas variacoes) */}
       <TableCell />
     </TableRow>
   );
@@ -342,15 +411,44 @@ export function ReplenishmentSkuTable({
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/40">
-            <TableHead className="text-xs min-w-[220px]">Anúncio / Variação</TableHead>
-            <TableHead className="text-xs text-right">Estoque</TableHead>
-            <TableHead className="text-xs text-right">Venda/dia</TableHead>
-            <TableHead className="text-xs text-right">Cobertura</TableHead>
-            <TableHead className="text-xs text-right">Ponto Rep.</TableHead>
-            <TableHead className="text-xs text-right">Sugestão</TableHead>
-            <TableHead className="text-xs text-right">Valor Est.</TableHead>
-            <TableHead className="text-xs">Flags</TableHead>
-            <TableHead className="text-xs">Parâmetros</TableHead>
+            <TableHead className="text-xs min-w-[220px]">
+              <HeaderWithTip
+                label="Produto"
+                tip="Anúncio no ML; clique para ver os tamanhos e cores disponíveis"
+              />
+            </TableHead>
+            <TableHead className="text-xs text-right">
+              <HeaderWithTip
+                label="Estoque"
+                tip="Unidades disponíveis hoje no ML (não desconta compras a chegar)"
+              />
+            </TableHead>
+            <TableHead className="text-xs text-right">
+              <HeaderWithTip
+                label="Vende por dia"
+                tip="Média de unidades vendidas por dia na janela analisada"
+              />
+            </TableHead>
+            <TableHead className="text-xs text-right">
+              <HeaderWithTip
+                label="Dura quanto"
+                tip="Quantos dias o estoque atual dura no ritmo de venda"
+              />
+            </TableHead>
+            <TableHead className="text-xs text-right">
+              <HeaderWithTip
+                label="Comprar"
+                tip="Quantidade sugerida de compra para atingir o estoque desejado"
+              />
+            </TableHead>
+            <TableHead className="text-xs text-right">
+              <HeaderWithTip
+                label="Custo estimado"
+                tip="Quanto essa compra deve custar (qtd x custo unitário)"
+              />
+            </TableHead>
+            <TableHead className="text-xs">O que fazer</TableHead>
+            <TableHead className="text-xs" />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -389,9 +487,6 @@ export function ReplenishmentSkuTable({
                     <CoberturaCell row={sku} />
                   </TableCell>
                   <TableCell className="text-xs text-right tabular-nums">
-                    {sku.ponto_reposicao}
-                  </TableCell>
-                  <TableCell className="text-xs text-right tabular-nums">
                     {sku.compra_sugerida > 0 ? (
                       <span className="font-semibold text-primary">{sku.compra_sugerida}</span>
                     ) : (
@@ -402,10 +497,10 @@ export function ReplenishmentSkuTable({
                     <ValorEstimadoCell row={sku} />
                   </TableCell>
                   <TableCell className="text-xs">
-                    <FlagsCell row={sku} />
+                    <AcaoCell row={sku} />
                   </TableCell>
                   <TableCell className="text-xs">
-                    <ParamsCell row={sku} />
+                    <ParamsTooltip row={sku} />
                   </TableCell>
                 </TableRow>
               );
