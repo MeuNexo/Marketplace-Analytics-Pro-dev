@@ -5,14 +5,14 @@ milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem
 current_phase: 62
 current_phase_name: reposicao-server-side
 status: executed-pending-visual-ok
-stopped_at: Phase 66 contexto coletado (discuss) — branch gsd/phase-66-override-fornecedor; fundação (migration 20260666 em prod + EF local) não commitada, p/ execução
-last_updated: "2026-06-26T16:43:01.759Z"
+stopped_at: Phase 66 PLANEJADA (3 planos verificados PASS) — pronta p/ /gsd-execute-phase 66; fundação (migration 20260666 em prod + EF local) ainda não commitada/deployada, é o plano 66-01
+last_updated: "2026-06-26T17:07:51.234Z"
 last_activity: 2026-06-25
 last_activity_desc: Phase 62 execution started
 progress:
   total_phases: 13
   completed_phases: 4
-  total_plans: 32
+  total_plans: 35
   completed_plans: 27
   percent: 31
 ---
@@ -358,10 +358,10 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-**Resume file:** .planning/phases/66-compras-v2-override-por-fornecedor/66-CONTEXT.md
+**Resume file:** .planning/phases/66-compras-v2-override-por-fornecedor/66-01-PLAN.md
 
-Last session: 2026-06-26T16:43:01.742Z
-Stopped at: Phase 66 contexto coletado (discuss) — branch gsd/phase-66-override-fornecedor; fundação (migration 20260666 em prod + EF local) não commitada, p/ execução
+Last session: 2026-06-26T17:07:51.216Z
+Stopped at: Phase 66 PLANEJADA (3 planos verificados PASS) — pronta p/ /gsd-execute-phase 66; fundação (migration 20260666 em prod + EF local) ainda não commitada/deployada, é o plano 66-01
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
