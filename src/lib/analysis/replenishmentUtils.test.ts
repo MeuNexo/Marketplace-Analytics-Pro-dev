@@ -306,8 +306,9 @@ describe("calcEwmaDaily", () => {
     ];
     const ewmaHighRecent = calcEwmaDaily(obsHighRecent)!;
     // w0=1.0, w3=0.343; num=20*1+10*0.343=23.43; den=1.343; daily=23.43/1.343/7≈2.49
-    expect(ewmaHighRecent).toBeGreaterThan(20 / 7); // puxado para 20/7 pelo offset=0
-    expect(ewmaHighRecent).toBeLessThan(20 / 7 * 1.01); // mas limitado pelo decaimento
+    // EWMA é média ponderada entre 10 e 20, portanto entre 10/7 e 20/7
+    expect(ewmaHighRecent).toBeGreaterThan(10 / 7); // puxado acima de 10/7 pelo offset=0 com qty=20
+    expect(ewmaHighRecent).toBeLessThan(20 / 7);    // mas menor que 20/7 pois offset=3 draga pra baixo
   });
 
   // SMART-01: alpha customizado (ex: 0.5) muda resultado

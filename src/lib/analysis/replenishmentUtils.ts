@@ -158,6 +158,153 @@ export function resolveParamsBySku(
   return { params, origem };
 }
 
+// ── Phase 67 — Espelho puro da RPC esperta (SMART-01/02/03/04) ───────────────
+// Funções puras que replicam as fórmulas da migration
+// 20260667000100_get_replenishment_by_sku_smart.sql.
+// Constantes idênticas: alpha=0.3/decay=0.7, clamp[0.5,2.5], 12 meses, K≥2, threshold=0.20.
+
+/** Origem do cálculo de venda_dia (espelha coluna venda_dia_origem da RPC). */
+export type VendaDiaOrigem = "ewma_sazonal" | "ewma" | "simples";
+
+/** Origem do lead time (espelha coluna lead_time_origem da RPC). */
+export type LeadTimeOrigem = "fornecedor_real" | "param";
+
+/**
+ * Calcula EWMA diária a partir de vendas semanais com offsets reais.
+ *
+ * Espelha a CTE `ewma_sales` da RPC v7 (SMART-01).
+ * Usa decaimento exponencial POWER(decay, week_offset) onde decay = 1 − alpha.
+ * week_offset=0 é a semana mais recente; offset real preserva espaçamento temporal
+ * (buracos de semanas sem vendas mantidos — não rank).
+ *
+ * @param weeklyObs - Array de {weekOffset, qty} com quantidades vendidas por semana.
+ *                    Deve conter apenas semanas COM vendas (JOIN das orders).
+ * @param alpha     - Fator de suavização (default=0.3 → decay=0.7, half-life≈2 semanas).
+ * @returns EWMA diária (total / 7 dias/semana) ou null se menos de 2 semanas observadas
+ *          (limiar SMART-03/D-09: < 2 semanas → fallback para avg_daily plana).
+ */
+export function calcEwmaDaily(
+  weeklyObs: Array<{ weekOffset: number; qty: number }>,
+  alpha: number = 0.3,
+): number | null {
+  if (weeklyObs.length < 2) return null;
+  const decay = 1 - alpha;
+  let numerator = 0;
+  let denominator = 0;
+  for (const { weekOffset, qty } of weeklyObs) {
+    const w = Math.pow(decay, weekOffset);
+    numerator += qty * w;
+    denominator += w;
+  }
+  return denominator > 0 ? numerator / denominator / 7 : null;
+}
+
+/**
+ * Calcula fator sazonal para um mês dado usando ratio-to-average por marca.
+ *
+ * Espelha a CTE `seasonal_index` da RPC v7 (SMART-01).
+ * Limiar: monthlyAvgs.size < 12 → fallback {factor:1.0, active:false}.
+ * Clamp: [clampMin, clampMax] = [0.5, 2.5] por padrão (D-09).
+ *
+ * @param monthlyAvgs - Map<mesNumber(1-12), avgQtyMonth> para o bucket da marca.
+ *                      avgQtyMonth = total do mês ÷ nº de anos distintos com dados.
+ * @param targetMonth - Mês alvo 1-12 (mês corrente para "comprar agora").
+ * @param clampMin    - Limite inferior do fator (default 0.5).
+ * @param clampMax    - Limite superior do fator (default 2.5).
+ * @returns {factor, active} — active=true somente com >=12 meses distintos e mês presente.
+ */
+export function calcSeasonalFactor(
+  monthlyAvgs: Map<number, number>,
+  targetMonth: number,
+  clampMin: number = 0.5,
+  clampMax: number = 2.5,
+): { factor: number; active: boolean } {
+  if (monthlyAvgs.size < 12) return { factor: 1.0, active: false };
+  const targetAvg = monthlyAvgs.get(targetMonth);
+  if (targetAvg == null) return { factor: 1.0, active: false };
+  const globalAvg =
+    Array.from(monthlyAvgs.values()).reduce((s, v) => s + v, 0) / monthlyAvgs.size;
+  if (globalAvg === 0) return { factor: 1.0, active: false };
+  const raw = targetAvg / globalAvg;
+  return {
+    factor: Math.max(clampMin, Math.min(clampMax, raw)),
+    active: true,
+  };
+}
+
+/**
+ * Determina tendência de venda comparando EWMA recente vs EWMA antiga.
+ *
+ * Espelha o CASE de `tendencia` no SELECT final da RPC v7 (SMART-01/D-01).
+ * Recente = últimas 4 semanas (offset 0-3); Antiga = semanas 5-12 (offset 4-11).
+ * Threshold 20%: >20% crescimento → '↑'; >20% queda → '↓'; entre ou indeterminado → '~'.
+ *
+ * @param ewmaRecentDaily - EWMA diária das 4 semanas mais recentes (null se ausente).
+ * @param ewmaOlderDaily  - EWMA diária das semanas 5-12 (null ou zero se ausente).
+ * @param threshold       - Limiar relativo (default=0.20 = 20%, D-09).
+ * @returns '↑' | '↓' | '~'
+ */
+export function calcTrend(
+  ewmaRecentDaily: number | null,
+  ewmaOlderDaily: number | null,
+  threshold: number = 0.20,
+): "↑" | "↓" | "~" {
+  if (ewmaRecentDaily == null || ewmaOlderDaily == null || ewmaOlderDaily === 0)
+    return "~";
+  const ratio = ewmaRecentDaily / ewmaOlderDaily;
+  if (ratio > 1 + threshold) return "↑";
+  if (ratio < 1 - threshold) return "↓";
+  return "~";
+}
+
+/**
+ * Resolve o lead time com fallback transparente: real via fornecedor ou param.
+ *
+ * Espelha o COALESCE de lead_time_dias na CTE `params` da RPC v7 (SMART-02/SMART-03).
+ * Limiar K≥2 OCs: com < 2 OCs não há distribuição real para calcular mediana.
+ *
+ * @param leadTimeData  - Dados de lead time real: {medianLeadDays, ocCount}.
+ *                        medianLeadDays=null indica que nenhuma OC com datas válidas existe.
+ * @param paramLeadTime - Lead time do param (precedência Phase 66 intocada).
+ * @param smart         - Se false, sempre retorna param (modo simples).
+ * @returns {leadTime, origem} — origem='fornecedor_real' quando usa mediana real.
+ */
+export function resolveSmartLeadTime(
+  leadTimeData: { medianLeadDays: number | null; ocCount: number },
+  paramLeadTime: number,
+  smart: boolean,
+): { leadTime: number; origem: LeadTimeOrigem } {
+  if (
+    smart &&
+    leadTimeData.ocCount >= 2 &&
+    leadTimeData.medianLeadDays != null &&
+    leadTimeData.medianLeadDays > 0
+  ) {
+    return { leadTime: leadTimeData.medianLeadDays, origem: "fornecedor_real" };
+  }
+  return { leadTime: paramLeadTime, origem: "param" };
+}
+
+/**
+ * Resolve a origem do cálculo de venda_dia para exibição de badges.
+ *
+ * Espelha o CASE de `venda_dia_origem` na CTE `sales_smart` da RPC v7 (SMART-03/D-11).
+ *
+ * @param weeksWithSales - Número de semanas com vendas (weeks_with_sales da EWMA).
+ * @param sazonalAtiva   - Se o índice sazonal está ativo para este SKU/marca.
+ * @param smart          - Se o modo esperto está ativado (p_smart=true).
+ * @returns 'ewma_sazonal' | 'ewma' | 'simples'
+ */
+export function resolveVendaDiaOrigem(
+  weeksWithSales: number,
+  sazonalAtiva: boolean,
+  smart: boolean,
+): VendaDiaOrigem {
+  if (smart && weeksWithSales >= 2 && sazonalAtiva) return "ewma_sazonal";
+  if (smart && weeksWithSales >= 2) return "ewma";
+  return "simples";
+}
+
 /**
  * Calcula a sugestão de compra com o modelo de ponto de reposição.
  * Espelha exatamente a fórmula SQL da RPC `get_replenishment` (Phase 62-01).
