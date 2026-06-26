@@ -97,21 +97,28 @@ BEGIN
     ) sub ORDER BY sub.sku_code, sub.total_qty DESC, sub.ultima_data DESC NULLS LAST
   ),
   -- Phase 67 — EWMA semanal por SKU (alpha=0.3 via POWER(0.7,week_offset), lookback 84d)
+  --   FIX: agrega quantidade POR SEMANA antes de ponderar (subquery com GROUP BY
+  --   item/variation/week_offset → week_qty). Sem isso, SUM(qty*w)/SUM(w) virava
+  --   média de qty POR PEDIDO (≈1) e ewma_daily colapsava em ~1/7≈0,14 p/ todos,
+  --   ignorando o volume real. Agora: SUM(week_qty*w)/SUM(w)/7 = taxa diária real.
   ewma_sales AS (
     SELECT inv.item_id, inv.variation_id,
-      SUM(o.quantidade * POWER(0.7, o.week_offset)) / NULLIF(SUM(POWER(0.7, o.week_offset)), 0) / 7.0 AS ewma_daily,
+      SUM(o.week_qty * POWER(0.7, o.week_offset)) / NULLIF(SUM(POWER(0.7, o.week_offset)), 0) / 7.0 AS ewma_daily,
       COUNT(*) AS weeks_with_sales,
-      SUM(o.quantidade * POWER(0.7, o.week_offset)) FILTER (WHERE o.week_offset < 4)
+      SUM(o.week_qty * POWER(0.7, o.week_offset)) FILTER (WHERE o.week_offset < 4)
         / NULLIF(SUM(POWER(0.7, o.week_offset)) FILTER (WHERE o.week_offset < 4), 0) / 7.0 AS ewma_recent_daily,
-      SUM(o.quantidade * POWER(0.7, o.week_offset)) FILTER (WHERE o.week_offset BETWEEN 4 AND 11)
+      SUM(o.week_qty * POWER(0.7, o.week_offset)) FILTER (WHERE o.week_offset BETWEEN 4 AND 11)
         / NULLIF(SUM(POWER(0.7, o.week_offset)) FILTER (WHERE o.week_offset BETWEEN 4 AND 11), 0) / 7.0 AS ewma_older_daily
     FROM inventory_by_sku inv
     LEFT JOIN (
-      SELECT o2.item_id, o2.variation_id, o2.quantidade,
-        FLOOR(EXTRACT(EPOCH FROM (DATE_TRUNC('week', CURRENT_DATE::date) - DATE_TRUNC('week', o2.data_pedido::date))) / (7 * 86400))::INTEGER AS week_offset
+      SELECT o2.item_id, o2.variation_id,
+        FLOOR(EXTRACT(EPOCH FROM (DATE_TRUNC('week', CURRENT_DATE::date) - DATE_TRUNC('week', o2.data_pedido::date))) / (7 * 86400))::INTEGER AS week_offset,
+        SUM(o2.quantidade) AS week_qty
       FROM orders o2
       WHERE o2.organization_id = p_org_id AND v_smart
         AND o2.data_pedido::date >= CURRENT_DATE - 84 AND o2.status = 'paid'
+      GROUP BY o2.item_id, o2.variation_id,
+        FLOOR(EXTRACT(EPOCH FROM (DATE_TRUNC('week', CURRENT_DATE::date) - DATE_TRUNC('week', o2.data_pedido::date))) / (7 * 86400))::INTEGER
     ) o ON o.item_id = inv.item_id
        AND (o.variation_id = inv.variation_id OR (inv.variation_id IS NULL AND o.variation_id = ''))
     GROUP BY inv.item_id, inv.variation_id
