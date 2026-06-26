@@ -162,6 +162,25 @@ function ParamsTooltip({ row }: { row: ReplenishmentSkuRow }) {
       <Badge variant="secondary" className="text-[10px]">global</Badge>
     );
 
+  // Phase 67 D-11 — badges de transparência por dimensão
+  const tendenciaBadge = row.tendencia === "↑"
+    ? <Badge className="text-[10px] bg-green-500/10 text-green-600 border-none">↑ Alta</Badge>
+    : row.tendencia === "↓"
+    ? <Badge className="text-[10px] bg-destructive/10 text-destructive border-none">↓ Queda</Badge>
+    : <Badge variant="secondary" className="text-[10px]">~ Estável</Badge>;
+
+  const vendaOrigemBadge =
+    row.venda_dia_origem === "ewma_sazonal"
+      ? <Badge className="text-[10px] bg-primary/10 text-primary border-none">EWMA + saz.</Badge>
+      : row.venda_dia_origem === "ewma"
+      ? <Badge variant="outline" className="text-[10px]">EWMA</Badge>
+      : <Badge variant="secondary" className="text-[10px]">Simples</Badge>;
+
+  const leadTimeBadge =
+    row.lead_time_origem === "fornecedor_real" && row.lead_time_real != null
+      ? <Badge variant="outline" className="text-[10px] border-green-500/50 text-green-600">Prazo real {row.lead_time_real}d</Badge>
+      : <Badge variant="secondary" className="text-[10px]">Prazo fixo {row.param_lead_time}d</Badge>;
+
   return (
     <TooltipProvider>
       <Tooltip>
@@ -174,16 +193,35 @@ function ParamsTooltip({ row }: { row: ReplenishmentSkuRow }) {
             <SlidersHorizontal className="w-3.5 h-3.5" />
           </button>
         </TooltipTrigger>
-        <TooltipContent className="text-[11px] space-y-1">
+        <TooltipContent className="text-[11px] space-y-1.5 max-w-[220px]">
+          {/* Parâmetros de reposição (existentes) */}
           <div className="flex items-center gap-1">
             {origemBadge}
             <span>Ponto {row.ponto_reposicao}un</span>
           </div>
           <div>
-            Entrega {row.param_lead_time}d · Cob {row.param_cobertura}d · Folga {row.param_safety}d
+            Cob {row.param_cobertura}d · Folga {row.param_safety}d
           </div>
           <div>
             Min {row.param_moq} · Caixa {row.param_pack}
+          </div>
+          {/* Phase 67 D-11 — badges de transparência do cálculo esperto */}
+          <div className="border-t border-border/40 pt-1 space-y-1">
+            <div className="flex items-center gap-1 flex-wrap">
+              {vendaOrigemBadge}
+              {tendenciaBadge}
+            </div>
+            {row.fator_sazonal != null && (
+              <div>
+                <Badge variant="outline" className="text-[10px]">
+                  Sazonal ×{row.fator_sazonal.toFixed(2)}
+                </Badge>
+              </div>
+            )}
+            <div>{leadTimeBadge}</div>
+            {row.venda_dia_origem === "simples" && (
+              <div className="text-[10px] text-muted-foreground italic">modo simples</div>
+            )}
           </div>
         </TooltipContent>
       </Tooltip>
