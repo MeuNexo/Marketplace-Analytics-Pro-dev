@@ -111,7 +111,7 @@ function ParamRow({ param, canEdit, onEdit, onDelete }: ParamRowProps) {
           )}
         </div>
         <p className="text-[11px] text-muted-foreground mt-1">
-          LT {param.lead_time_dias}d · Cob {param.meta_cobertura_dias}d · Seg {param.safety_days}d · MOQ {param.moq} · Pack {param.pack_multiple}
+          Entrega {param.lead_time_dias}d · Est. desejado {param.meta_cobertura_dias}d · Folga {param.safety_days}d · Min. {param.moq}un · Caixa {param.pack_multiple}
         </p>
       </div>
       {canEdit && (
@@ -240,9 +240,9 @@ function ParamForm({ editingParam, canEdit, orgId, onSaved, onCancel }: ParamFor
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
-        {/* Scope */}
+        {/* Aplicar a (Scope) */}
         <div className="space-y-1 col-span-2 sm:col-span-1">
-          <Label className="text-xs">Escopo</Label>
+          <Label className="text-xs">Aplicar a</Label>
           <Controller
             control={control}
             name="scope"
@@ -252,13 +252,16 @@ function ParamForm({ editingParam, canEdit, orgId, onSaved, onCancel }: ParamFor
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="global">Global (padrão)</SelectItem>
+                  <SelectItem value="global">Global (todos os produtos)</SelectItem>
                   <SelectItem value="marca">Por Marca</SelectItem>
                   <SelectItem value="sku">Por SKU</SelectItem>
                 </SelectContent>
               </Select>
             )}
           />
+          <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+            O mais específico prevalece — Por SKU substitui Marca, que substitui Global.
+          </p>
         </div>
 
         {/* Scope value (only when not global) */}
@@ -280,9 +283,9 @@ function ParamForm({ editingParam, canEdit, orgId, onSaved, onCancel }: ParamFor
       <Separator />
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        {/* Lead time */}
+        {/* Tempo de entrega do fornecedor */}
         <div className="space-y-1">
-          <Label className="text-xs">Lead time (dias)</Label>
+          <Label className="text-xs">Tempo de entrega do fornecedor</Label>
           <Input
             type="number" min={1} max={365}
             {...register("lead_time_dias", { valueAsNumber: true })}
@@ -291,11 +294,14 @@ function ParamForm({ editingParam, canEdit, orgId, onSaved, onCancel }: ParamFor
           {errors.lead_time_dias && (
             <p className="text-[10px] text-destructive">{errors.lead_time_dias.message}</p>
           )}
+          <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+            Dias entre fazer o pedido e a mercadoria chegar. Ex.: 30 dias para fornecedor nacional.
+          </p>
         </div>
 
-        {/* Meta cobertura */}
+        {/* Estoque desejado (dias) */}
         <div className="space-y-1">
-          <Label className="text-xs">Meta cobertura (dias)</Label>
+          <Label className="text-xs">Estoque desejado (dias)</Label>
           <Input
             type="number" min={1} max={730}
             {...register("meta_cobertura_dias", { valueAsNumber: true })}
@@ -304,11 +310,14 @@ function ParamForm({ editingParam, canEdit, orgId, onSaved, onCancel }: ParamFor
           {errors.meta_cobertura_dias && (
             <p className="text-[10px] text-destructive">{errors.meta_cobertura_dias.message}</p>
           )}
+          <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+            Para quantos dias de venda você quer ter estoque disponível. Ex.: 60 dias equivalem a 2 meses.
+          </p>
         </div>
 
-        {/* Safety */}
+        {/* Folga de segurança (dias) */}
         <div className="space-y-1">
-          <Label className="text-xs">Safety (dias)</Label>
+          <Label className="text-xs">Folga de segurança (dias)</Label>
           <Input
             type="number" min={0} max={60}
             {...register("safety_days", { valueAsNumber: true })}
@@ -317,11 +326,14 @@ function ParamForm({ editingParam, canEdit, orgId, onSaved, onCancel }: ParamFor
           {errors.safety_days && (
             <p className="text-[10px] text-destructive">{errors.safety_days.message}</p>
           )}
+          <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+            Dias extras de estoque para imprevistos de atraso ou pico de vendas. Ex.: 7 dias.
+          </p>
         </div>
 
-        {/* MOQ */}
+        {/* Pedido mínimo do fornecedor */}
         <div className="space-y-1">
-          <Label className="text-xs">MOQ (mínimo)</Label>
+          <Label className="text-xs">Pedido mínimo do fornecedor</Label>
           <Input
             type="number" min={1}
             {...register("moq", { valueAsNumber: true })}
@@ -330,11 +342,14 @@ function ParamForm({ editingParam, canEdit, orgId, onSaved, onCancel }: ParamFor
           {errors.moq && (
             <p className="text-[10px] text-destructive">{errors.moq.message}</p>
           )}
+          <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+            Quantidade mínima por pedido imposta pelo fornecedor. Use 1 se não há mínimo.
+          </p>
         </div>
 
-        {/* Pack */}
+        {/* Múltiplo de caixa */}
         <div className="space-y-1">
-          <Label className="text-xs">Pack (múltiplo)</Label>
+          <Label className="text-xs">Múltiplo de caixa</Label>
           <Input
             type="number" min={1}
             {...register("pack_multiple", { valueAsNumber: true })}
@@ -343,6 +358,9 @@ function ParamForm({ editingParam, canEdit, orgId, onSaved, onCancel }: ParamFor
           {errors.pack_multiple && (
             <p className="text-[10px] text-destructive">{errors.pack_multiple.message}</p>
           )}
+          <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+            Fornecedor entrega em caixas fechadas de X unidades. Use 1 para compra avulsa.
+          </p>
         </div>
       </div>
 
@@ -459,10 +477,10 @@ export function ReplenishmentParamsDialog({ children }: ReplenishmentParamsDialo
 
       <DialogContent className="max-w-xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-sm">Parâmetros de Reposição</DialogTitle>
+          <DialogTitle className="text-sm">Regras de Compra</DialogTitle>
           <DialogDescription className="text-xs">
-            Precedência: SKU &gt; Marca &gt; Global. Parâmetros globais se aplicam a todos os
-            SKUs sem configuração específica.
+            Define as regras que calculam quanto comprar de cada produto. O mais específico
+            prevalece: Por SKU supera Por Marca, que supera Global (todos os produtos).
             {!canEdit && " (somente owner/admin podem editar)"}
           </DialogDescription>
         </DialogHeader>
@@ -475,8 +493,7 @@ export function ReplenishmentParamsDialog({ children }: ReplenishmentParamsDialo
             </div>
           ) : params.length === 0 ? (
             <p className="text-xs text-muted-foreground py-2">
-              Nenhum parâmetro configurado. Os valores padrão serão usados:
-              LT 30d · Cob 60d · Seg 7d · MOQ 1 · Pack 1
+              Nenhuma regra configurada. Os valores padrão serão usados: Entrega 30d · Estoque desejado 60d · Folga 7d · Min. 1 · Caixa 1.
             </p>
           ) : (
             <div className="space-y-2">
