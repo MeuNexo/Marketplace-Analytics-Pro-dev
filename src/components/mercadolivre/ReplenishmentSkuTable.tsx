@@ -154,6 +154,8 @@ function ParamsTooltip({ row }: { row: ReplenishmentSkuRow }) {
   const origemBadge =
     row.param_origem === "sku" ? (
       <Badge className="text-[10px] bg-primary/10 text-primary border-none">sku</Badge>
+    ) : row.param_origem === "fornecedor" ? (
+      <Badge variant="outline" className="text-[10px] border-amber-500/50 text-amber-600">fornecedor</Badge>
     ) : row.param_origem === "marca" ? (
       <Badge variant="outline" className="text-[10px]">marca</Badge>
     ) : (
