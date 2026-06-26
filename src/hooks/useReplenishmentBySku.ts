@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrganization } from "@/contexts/OrganizationContext";
+import type { VendaDiaOrigem, LeadTimeOrigem } from "@/lib/analysis/replenishmentUtils";
 
 // ── Tipos exportados ───────────────────────────────────────────────────────────
 
@@ -46,6 +47,16 @@ export interface ReplenishmentSkuRow {
   qtd_a_caminho: number;
   /** Data da próxima chegada (menor data_entrega futura das OCs do SKU) — Phase 65 */
   data_proxima_chegada: string | null;
+  /** Como venda_dia foi calculado — Phase 67 (p_smart) */
+  venda_dia_origem: VendaDiaOrigem;
+  /** Origem do lead time — Phase 67 */
+  lead_time_origem: LeadTimeOrigem;
+  /** Tendência recente vs anterior — Phase 67 */
+  tendencia: "↑" | "↓" | "~";
+  /** Fator sazonal aplicado (null se não aplicado) — Phase 67 */
+  fator_sazonal: number | null;
+  /** Mediana real de lead time em dias (null se fornecedor sem OCs suficientes) — Phase 67 */
+  lead_time_real: number | null;
 }
 
 /**
@@ -129,6 +140,12 @@ function mapRow(r: Record<string, unknown>): ReplenishmentSkuRow {
     param_origem:                 (r.param_origem as "sku" | "fornecedor" | "marca" | "global") ?? "global",
     qtd_a_caminho:                Number(r.qtd_a_caminho ?? 0),
     data_proxima_chegada:         r.data_proxima_chegada != null ? String(r.data_proxima_chegada) : null,
+    // Phase 67 — 5 colunas de transparência (Pitfall 5: acesso via Record<string,unknown> com fallback seguro)
+    venda_dia_origem:             ((r.venda_dia_origem as string) ?? "simples") as VendaDiaOrigem,
+    lead_time_origem:             ((r.lead_time_origem as string) ?? "param") as LeadTimeOrigem,
+    tendencia:                    ((r.tendencia as string) ?? "~") as "↑" | "↓" | "~",
+    fator_sazonal:                r.fator_sazonal != null ? Number(r.fator_sazonal) : null,
+    lead_time_real:               r.lead_time_real != null ? Number(r.lead_time_real) : null,
   };
 }
 
@@ -179,15 +196,17 @@ function groupByItem(rows: ReplenishmentSkuRow[]): GroupedReplenishmentRow[] {
  *
  * @param salesWindowDays  - Janela de venda em dias (default 30)
  * @param demandMultiplier - Multiplicador de campanha (default 1.0)
+ * @param smartMode        - Ativa cálculo esperto EWMA+sazonal+lead time real (default true) — Phase 67 D-10
  */
 export function useReplenishmentBySku(
   salesWindowDays = 30,
   demandMultiplier = 1.0,
+  smartMode = true,
 ) {
   const { currentOrg } = useOrganization();
 
   return useQuery({
-    queryKey: ["get_replenishment_by_sku", currentOrg?.id, salesWindowDays, demandMultiplier] as const,
+    queryKey: ["get_replenishment_by_sku", currentOrg?.id, salesWindowDays, demandMultiplier, smartMode] as const,
     queryFn: async (): Promise<{ rows: ReplenishmentSkuRow[]; grouped: GroupedReplenishmentRow[] }> => {
       if (!currentOrg?.id) return { rows: [], grouped: [] };
 
@@ -195,6 +214,7 @@ export function useReplenishmentBySku(
         p_org_id:             currentOrg.id,
         p_sales_window_days:  salesWindowDays,
         p_demand_multiplier:  demandMultiplier,
+        p_smart:              smartMode,   // Phase 67 — EXPLÍCITO; nunca undefined (Pitfall 1)
       });
 
       if (error) throw error;
