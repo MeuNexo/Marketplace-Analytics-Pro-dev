@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 65
-current_phase_name: compras-estoque-a-chegar
+current_phase: 62
+current_phase_name: reposicao-server-side
 status: executed-pending-visual-ok
-stopped_at: "Phase 65 (Estoque a Chegar) executada + verificada em prod; backend live (tabela+EF+RPC+cron); frontend no branch gsd/phase-65-estoque-a-chegar (PR aberto), aguarda ok visual Wesley + merge"
-last_updated: "2026-06-26T15:05:00.000Z"
-last_activity: 2026-06-26
-last_activity_desc: "Phase 65 Estoque a Chegar: EF sync-tiny-purchase-orders + tabela purchase_orders + RPC com a-caminho + coluna /compras; 208 testes verdes + build ok"
+stopped_at: Phase 66 contexto coletado (discuss) — branch gsd/phase-66-override-fornecedor; fundação (migration 20260666 em prod + EF local) não commitada, p/ execução
+last_updated: "2026-06-26T16:43:01.759Z"
+last_activity: 2026-06-25
+last_activity_desc: Phase 62 execution started
 progress:
-  total_phases: 12
+  total_phases: 13
   completed_phases: 4
-  total_plans: 33
-  completed_plans: 28
-  percent: 33
+  total_plans: 32
+  completed_plans: 27
+  percent: 31
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
@@ -358,10 +358,10 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-**Resume file:** .planning/phases/63-compras-reposi-o-por-sku-p-gina-pr-pria/63-01-PLAN.md
+**Resume file:** .planning/phases/66-compras-v2-override-por-fornecedor/66-CONTEXT.md
 
-Last session: 2026-06-26T12:54:05.579Z
-Stopped at: Phase 63 planned (4 plans, plan-checker PASS)
+Last session: 2026-06-26T16:43:01.742Z
+Stopped at: Phase 66 contexto coletado (discuss) — branch gsd/phase-66-override-fornecedor; fundação (migration 20260666 em prod + EF local) não commitada, p/ execução
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
