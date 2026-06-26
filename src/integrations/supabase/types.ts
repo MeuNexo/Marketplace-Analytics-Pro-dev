@@ -2073,6 +2073,38 @@ export type Database = {
           param_origem: string
         }[]
       }
+      get_replenishment_by_sku: {
+        Args: {
+          p_org_id: string
+          p_sales_window_days?: number
+          p_demand_multiplier?: number
+        }
+        Returns: {
+          item_id: string
+          variation_id: string | null
+          title: string | null
+          brand: string | null
+          sku_code: string | null
+          attribute_combinations: Json | null
+          logistic_type: string | null
+          sku_stock: number
+          venda_dia: number
+          cobertura_atual: number | null
+          ponto_reposicao: number
+          alvo: number
+          compra_sugerida: number
+          valor_estimado: number | null
+          custo_ausente: boolean
+          sem_giro: boolean
+          gatilho_ativo: boolean
+          param_lead_time: number
+          param_cobertura: number
+          param_safety: number
+          param_moq: number
+          param_pack: number
+          param_origem: string
+        }[]
+      }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]

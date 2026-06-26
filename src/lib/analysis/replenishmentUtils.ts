@@ -40,8 +40,27 @@ export interface ReplenishmentResult {
   custoAusente: boolean;
   /** compraSugerida × custo; null se custoAusente */
   valorEstimado: number | null;
-  /** Origem dos parâmetros usados ('marca' | 'global'), se resolvido via resolveParams */
-  paramOrigem?: "marca" | "global";
+  /** Origem dos parâmetros usados; 'sku' adicionado Phase 63 */
+  paramOrigem?: "sku" | "marca" | "global";
+}
+
+/**
+ * Tipo de entrada para reposição por SKU/variação (Phase 63).
+ * Estende os campos base com informações de variação ML.
+ */
+export interface ReplenishmentSkuInput {
+  /** ID de variação ML (null para anúncios sem variação) */
+  variationId: string | null;
+  /** seller_custom_field da variação (ponte para ml_product_costs.seller_sku) */
+  skuCode: string | null;
+  /** Atributos da variação: Cor/Tamanho [{id, name, value}] */
+  attributeCombinations: Array<{ id: string; name: string; value: string }> | null;
+  /** Estoque disponível desta variação */
+  estoque: number;
+  /** Venda média diária por SKU (da tabela orders) */
+  vendaDia: number;
+  /** Custo unitário (null = custo ausente) */
+  cost?: number | null;
 }
 
 // ── Defaults hardcoded (espelha COALESCE da RPC: marca > global > 30/60/7/1/1) ──
@@ -74,6 +93,53 @@ export function resolveParams(
 ): { params: ReplenishmentParams; origem: "marca" | "global" } {
   const origem: "marca" | "global" = marcaRow != null ? "marca" : "global";
   const source: Partial<ReplenishmentParams> = marcaRow ?? globalRow ?? {};
+
+  const params: ReplenishmentParams = {
+    leadTimeDias:      source.leadTimeDias      ?? defaults.leadTimeDias,
+    metaCoberturaDias: source.metaCoberturaDias ?? defaults.metaCoberturaDias,
+    safetyDays:        source.safetyDays        ?? defaults.safetyDays,
+    moq:               source.moq               ?? defaults.moq,
+    packMultiple:      source.packMultiple      ?? defaults.packMultiple,
+  };
+
+  return { params, origem };
+}
+
+/**
+ * Resolve parâmetros de reposição com precedência SKU > marca > global > defaults.
+ * Espelha a CTE `params` da RPC `get_replenishment_by_sku` (Phase 63-02, CMP-05).
+ *
+ * Precedência (D-08):
+ *   skuRow presente  → origem 'sku'
+ *   marcaRow presente → origem 'marca'
+ *   globalRow presente → origem 'global'
+ *   nenhum → defaults hardcoded (30/60/7/1/1), origem 'global'
+ *
+ * @param skuRow   - Linha scope='sku' para o sku_code da variação, ou null
+ * @param marcaRow - Linha scope='marca' para a brand do item, ou null
+ * @param globalRow - Linha scope='global' da org, ou null
+ * @param defaults  - Fallback hardcoded (padrão: REPLENISHMENT_DEFAULTS = 30/60/7/1/1)
+ * @returns         - Parâmetros resolvidos + origem ('sku', 'marca' ou 'global')
+ */
+export function resolveParamsBySku(
+  skuRow: Partial<ReplenishmentParams> | null,
+  marcaRow: Partial<ReplenishmentParams> | null,
+  globalRow: Partial<ReplenishmentParams> | null,
+  defaults: ReplenishmentParams = REPLENISHMENT_DEFAULTS,
+): { params: ReplenishmentParams; origem: "sku" | "marca" | "global" } {
+  let origem: "sku" | "marca" | "global";
+  let source: Partial<ReplenishmentParams>;
+
+  if (skuRow != null) {
+    origem = "sku";
+    source = skuRow;
+  } else if (marcaRow != null) {
+    origem = "marca";
+    source = marcaRow;
+  } else {
+    origem = "global";
+    source = globalRow ?? {};
+  }
 
   const params: ReplenishmentParams = {
     leadTimeDias:      source.leadTimeDias      ?? defaults.leadTimeDias,

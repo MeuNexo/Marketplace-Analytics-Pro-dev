@@ -2,19 +2,33 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 62
-current_phase_name: reposicao-server-side
-status: complete
-stopped_at: Phase 63 planned (4 plans, plan-checker PASS)
-last_updated: "2026-06-26T13:32:59.889Z"
-last_activity: 2026-06-25
-last_activity_desc: Phase 62 execution started
+current_phase: 63
+current_phase_name: compras-reposicao-por-sku
+status: executed-pending-visual-ok
+stopped_at: "Phase 63 (5 planos, incl. 63-05 UX leigos) executada + verificada; backend live em prod; PR #12 atualizado, aguarda SÓ ok visual Wesley + merge"
+last_updated: "2026-06-26T13:30:00.000Z"
+last_activity: 2026-06-26
+last_activity_desc: "Phase 63 completa incl. 63-05 UX clareza leigos (PASS 7/7); PR #12 pronto p/ ok visual + merge"
 progress:
   total_phases: 12
   completed_phases: 4
-  total_plans: 31
-  completed_plans: 23
+  total_plans: 33
+  completed_plans: 28
   percent: 33
+---
+
+## 🟡 Phase 63 EXECUTADA — backend live em prod, frontend no PR #12 (2026-06-26) — Compras (Reposição por SKU)
+
+- **Status:** 4 planos executados; backend aplicado+validado em prod `ckcdevcxgvueywivefgx`; frontend no branch `gsd/phase-63-compras-reposicao-por-sku` (**PR #12**). **Pendente: ok visual Wesley em /compras + merge.**
+- **63-01 (EF + scope):** `sync-ml-inventory` **v9** deployada via MCP — segundo-passe `/items/{id}/variations/{vid}` enriquece `seller_custom_field` por variação (aditivo, try/catch por variação, CONCURRENCY 20). Migration scope `sku` aplicada (CHECK global/marca/sku). **Gate provado: 811/815 variações com SKU** (era ~0) após sync disparado via fila sync_jobs + process-sync-job.
+- **63-02 (RPC):** `get_replenishment_by_sku` (SECURITY INVOKER, search_path public) aplicada via MCP. 1 linha por variação (jsonb_to_recordset) + 1 por anúncio sem variação; precedência SKU>marca>global>hardcoded(30/60/7/1/1); custo por seller_sku. RPC `get_replenishment` (Phase 62) **intocada** — coexistem.
+- ⚠️ **DESVIO corrigido no checkpoint MCP:** plano/RESEARCH assumiu tabela `ml_orders` — a real é **`orders`** (`data_pedido` TEXT → `::timestamptz::date`; status real só `paid`/`cancelled`/`partially_refunded`, `confirmed` não existe). Schema validado por execute_sql ANTES de aplicar; fix commit `c192939d`. **Lição: executor sem MCP não valida schema — sempre conferir nomes de tabela/coluna/tipo no checkpoint.**
+- **63-03 (frontend, PR #12):** página `/compras` (nav Operações, owner/admin/member); drill anúncio→variações (Collapsible), filtros (marca/gatilho/sem giro/custo/busca), export xlsx, CRUD params (write owner/admin via RLS). Aba "Compra Recomendada" **removida** de /estoque; `compraUtils`/`CompraRecomendadaPanel` (legado /precos-custos) intocados; `ReplenishmentPanel.tsx` preservado.
+- **63-04 (provas, org Pé Vermeio):** 332 linhas por SKU (240 var + 92 sem var); **custo_ausente 77%→11,1%** (Phase 62 era 38%); **anti-IDOR: JWT Pé Vermeio → org Thales = 0 linhas** (own=332); vitest 208/208 + tsc 0 + build ok; advisors sem issue novo da RPC.
+- **63-05 (UX "Clareza para Leigos", 2026-06-26):** Wesley revisou o PR #12 e achou a tela confusa p/ leigos. Brainstorming → direção **"Clarear no lugar"** → planejado+checado+executado+**verificado via GSD (gsd-verifier PASS 7/7)**. SÓ apresentação (RPC/hook/lógica intocados). Entregue: cabeçalhos PT leigo (Produto/Estoque/Vende por dia/Dura quanto/Comprar/Custo estimado) com tooltip `?`; **coluna "O que fazer"** 4 estados (🔴 Comprar N / 🟢 Estoque ok / ⚪ Sem vendas / ⚠️ Falta custo); params viram tooltip discreto (não coluna); diálogo **"Regras de Compra"** com rótulo leigo+ajuda+exemplo por campo (MOQ→"Pedido mínimo do fornecedor", Pack→"Múltiplo de caixa", Lead time→"Tempo de entrega do fornecedor", etc.); mini-resumo de status no topo; filtro "Situação". Commits cc864e3f/7f10531b/4f160a0a. vitest 208/208, tsc 0, build ok. Tudo no MESMO branch/PR #12.
+- **Preview (rebuilda com 63-05):** https://marketplace-analytics-pro-dev-git-gs-40b3ab-xambrafios-projects.vercel.app/compras (aponta p/ Supabase prod — login + dados reais).
+- **PRÓXIMO (retomar em nova sessão):** Wesley dá ok visual em /compras → **merge PR #12** → fechar Phase 63. Backend já está em prod; falta só mesclar o frontend.
+
 ---
 
 ## ✅ Phase 59 EXECUTADA + PROVADA EM PROD (2026-06-25) — Fluxo de Caixa: Correções (Projeção 7d + Sync Contas a Pagar)
@@ -233,7 +247,7 @@ Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint
 | Phase 62 P01 | 7min | 3 tasks | 3 files |
 | Phase 62-reposicao-server-side P02 | 2min | 2 tasks | 2 files |
 | Phase 62-reposicao-server-side P03 | 10 | 3 tasks | 3 files |
-| Phase 64-sync-tiny-costs-completo P01 | 4m | 1 tasks | 1 files |
+| Phase 63 P03 | 387 | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -287,8 +301,6 @@ Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint
 - [Phase ?]: Phase 62-01: get_replenishment é SECURITY INVOKER (RLS org-first enforça isolamento; cross-org provado = 0 linhas); write de replenishment_params só owner/admin; estoque SUM cross-store sem filtro logistic_type
 - [Phase ?]: TDD RED/GREEN: test file commitado antes da implementação para garantir testes testam algo real
 - [Phase ?]: resolveParams: marca>global>hardcoded espelhando CTE params da RPC; brand param informativo
-- [Phase ?]: serve() is auth-only + 202; all sync logic in runSync() via EdgeRuntime.waitUntil
-- [Phase ?]: CAP_DETAIL=250 + PHASE2_TIMEOUT_MS=120s replaces hardcoded slice(0,80)
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -338,7 +350,7 @@ Dashboard atual mostra:
 
 **Resume file:** .planning/phases/63-compras-reposi-o-por-sku-p-gina-pr-pria/63-01-PLAN.md
 
-Last session: 2026-06-26T13:32:46.422Z
+Last session: 2026-06-26T12:54:05.579Z
 Stopped at: Phase 63 planned (4 plans, plan-checker PASS)
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
