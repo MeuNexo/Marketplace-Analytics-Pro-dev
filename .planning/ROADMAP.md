@@ -319,9 +319,9 @@ Continuação da Phase 51 + Phase 60. Causa-raiz e estado do banco (1991/2011 co
 
 **Risco/aberto**: o cache atual mostra `seller_custom_field` da variação **nulo** (amostra MLB3818741753). O researcher DEVE validar na API do ML se o SKU por variação vem no payload antes de fixar CMP-01; se não vier, fallback = ponte via Tiny. `ml_product_daily_cache.seller_sku` está nulo p/ Pé Vermeio → CMP-02 mexe no pipeline de vendas (`mercado-libre-integration`/`sync-ml-orders`).
 
-**Plans**: 4 plans (3 waves)
+**Plans**: 1/4 plans executed
 
-- [ ] 63-01-PLAN.md — [W1] Fundação de dados: segundo-passe per-variação no `sync-ml-inventory` (grava `seller_custom_field` por variação) + migration CHECK `scope='sku'`; deploy EF + apply via MCP + validação SQL (CMP-01, CMP-05)
+- [x] 63-01-PLAN.md — [W1] Fundação de dados: segundo-passe per-variação no `sync-ml-inventory` (grava `seller_custom_field` por variação) + migration CHECK `scope='sku'`; deploy EF + apply via MCP + validação SQL (CMP-01, CMP-05)
 - [ ] 63-02-PLAN.md — [W1] Motor backend: RPC `get_replenishment_by_sku` (SECURITY INVOKER, unnest jsonb + venda via `ml_orders` + custo por SKU + params SKU>marca>global) + `resolveParamsBySku`/testes + types + hook `useReplenishmentBySku`; apply via MCP + anti-IDOR (CMP-02/03/04/05/09)
 - [ ] 63-03-PLAN.md — [W2] Frontend `/compras`: página + tabela com drill anúncio→variações + filtros + export xlsx + CRUD de params (owner/admin) + rota/nav; remove aba de `/estoque` (CMP-05/06/07/08)
 - [ ] 63-04-PLAN.md — [W3] Verificação: testes+build sem regressão + prova SQL (custo ausente cai vs 44/116 + anti-IDOR) + ok visual do Wesley (CMP-09)
@@ -343,7 +343,7 @@ Contexto/decisões: `phases/63-compras-reposi-o-por-sku-p-gina-pr-pria/63-CONTEX
 | 58. Veracidade & Completude | 5/6 | In Progress|  |
 | 59. Fluxo de Caixa — Correções | 2/2 | Executed (provado em prod) | 2026-06-25 |
 | 62. Reposição Server-Side | 3/3 | Complete (prod, aguarda ok visual) | 2026-06-25 |
-| 63. Compras — Reposição por SKU | 0/4 | Planned | - |
+| 63. Compras — Reposição por SKU | 1/4 | In Progress|  |
 
 ## Build Order / Dependências
 
