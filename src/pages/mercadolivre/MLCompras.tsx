@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import * as XLSX from "xlsx";
-import { AlertTriangle, Download } from "lucide-react";
+import { Download, Truck } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -165,14 +165,13 @@ export default function MLCompras() {
         </div>
       </div>
 
-      {/* ── Aviso REPL-09: v1 não desconta compras a chegar / itens em trânsito ── */}
-      <Alert className="border-warning/40 bg-warning/5">
-        <AlertTriangle className="h-4 w-4 text-warning" />
+      {/* ── Nota: a sugestão já desconta o estoque a chegar (Phase 65) ── */}
+      <Alert className="border-primary/30 bg-primary/5">
+        <Truck className="h-4 w-4 text-primary" />
         <AlertDescription className="text-sm">
-          <strong>Limitação v1:</strong> esta sugestão de compra considera apenas o estoque
-          atual no Mercado Livre. Compras a chegar (ordens de compra em trânsito){" "}
-          <strong>não são descontadas</strong>. Verifique seu estoque em trânsito antes de
-          confirmar o pedido.
+          A sugestão de compra já <strong>desconta o estoque a chegar</strong> — as ordens de
+          compra abertas no Tiny (aguardando recebimento) aparecem na coluna{" "}
+          <strong>A caminho</strong> e reduzem a quantidade sugerida.
         </AlertDescription>
       </Alert>
 
