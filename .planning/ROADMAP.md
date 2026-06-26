@@ -365,6 +365,13 @@ Contexto/decisões: `66-CONTEXT.md` + `66-RESEARCH.md`. Org Pé Vermeio = `7f615
 
 **Goal**: A "Compra Recomendada" da `/compras` fica mais precisa ao substituir a **média simples** da janela de vendas (e o **lead time fixo** dos params) por sinais melhores: (a) velocidade de venda ponderada por **tendência** (peso maior em períodos recentes) e/ou **sazonalidade**, em vez de média plana; (b) opcionalmente, **lead time real por fornecedor** derivado do histórico de OCs (intervalo `data_pedido`→`data_entrega`), em vez do parâmetro fixo. Mantém toda a fundação das Phases 62/63/65/66 (RPC `get_replenishment_by_sku`, params por escopo, a chegar, override fornecedor) — é melhoria do **motor de cálculo**, não da fundação de dados.
 **Depends on**: Phase 66 (RPC `get_replenishment_by_sku` 4 níveis), Phase 65 (`purchase_orders` com `data_pedido`/`data_entrega`/`fornecedor` — fonte do lead time real)
+**Plans:** 3 plans (2 waves)
+
+Plans:
+- [ ] 67-01-PLAN.md — RPC `get_replenishment_by_sku` v7: `p_smart` + CTEs `ewma_sales`/`seasonal_index`/`lead_time_by_fornecedor` + 5 colunas de transparência + checkpoint de aplicação/validação via MCP (wave 1)
+- [ ] 67-02-PLAN.md — Espelho TS testável (`replenishmentUtils`): EWMA/sazonal/tendência/lead-time real + fallbacks com vitest (wave 2)
+- [ ] 67-03-PLAN.md — Frontend: hook `p_smart` + toggle "Cálculo esperto" + badges de transparência na `/compras` + checkpoint visual (wave 2)
+
 **Requirements**: SMART-01 (velocidade esperta = EWMA/recência + índice sazonal no nível marca/categoria, aplicado ao SKU), SMART-02 (lead time real por fornecedor = mediana do intervalo `data_pedido`→`data_entrega` das OCs em trânsito, reusando `fornecedor_by_sku`, fallback no param), SMART-03 (fallback transparente por dimensão + sinal "modo simples"; cada camada liga só com base suficiente, nunca inventa), SMART-04 (toggle "Cálculo esperto" on por padrão + badges de transparência; espelho TS testável + sem regressão + RPC SECURITY INVOKER anti-IDOR)
 **Success Criteria** (what must be TRUE):
 
