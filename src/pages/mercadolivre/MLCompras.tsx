@@ -92,11 +92,11 @@ function exportToXlsx(rows: ReplenishmentSkuRow[]) {
     "SKU":           r.sku_code ?? "",
     "Cor/Tamanho":   r.attribute_combinations_label,
     "Estoque":       r.sku_stock,
-    "Venda/dia":     r.venda_dia,
-    "Cobertura(d)":  r.cobertura_atual ?? "",
-    "Ponto Rep.":    r.ponto_reposicao,
-    "Sugestão":      r.compra_sugerida,
-    "Valor Est.":    r.valor_estimado ?? "",
+    "Vende por dia":      r.venda_dia,
+    "Dura quanto (dias)": r.cobertura_atual ?? "",
+    "Ponto de recompra":  r.ponto_reposicao,
+    "Comprar (qtd)":      r.compra_sugerida,
+    "Custo estimado":     r.valor_estimado ?? "",
     "Custo ausente": r.custo_ausente ? "Sim" : "Não",
     "Sem giro":      r.sem_giro ? "Sim" : "Não",
     "Params":        `LT${r.param_lead_time} Cob${r.param_cobertura} Seg${r.param_safety} MOQ${r.param_moq} Pack${r.param_pack}`,
@@ -135,6 +135,13 @@ export default function MLCompras() {
 
   /** Re-grouped for the table */
   const filteredGrouped = useMemo(() => regroupRows(filteredRows), [filteredRows]);
+
+  /** Contagem de status para o mini-resumo */
+  const statusCounts = useMemo(() => ({
+    parComprar: filteredRows.filter((r) => r.gatilho_ativo).length,
+    ok:         filteredRows.filter((r) => !r.gatilho_ativo && !r.sem_giro).length,
+    semGiro:    filteredRows.filter((r) => r.sem_giro).length,
+  }), [filteredRows]);
 
   return (
     <div className="space-y-5">
@@ -183,7 +190,26 @@ export default function MLCompras() {
                 </span>
               )}
             </CardTitle>
+          </div>
 
+          {!isLoading && allRows.length > 0 && (
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px]">
+              <span className={statusCounts.parComprar > 0 ? "text-destructive font-medium" : "text-muted-foreground"}>
+                🔴 {statusCounts.parComprar} para comprar
+              </span>
+              <span
+                className={statusCounts.ok > 0 ? "font-medium" : "text-muted-foreground"}
+                style={statusCounts.ok > 0 ? { color: "var(--kpi-positive)" } : undefined}
+              >
+                🟢 {statusCounts.ok} ok
+              </span>
+              <span className="text-muted-foreground">
+                ⚪ {statusCounts.semGiro} sem giro
+              </span>
+            </div>
+          )}
+
+          <div>
             <ReplenishmentSkuFilters
               brands={brands}
               filterBrand={filterBrand}

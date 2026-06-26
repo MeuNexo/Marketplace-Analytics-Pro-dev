@@ -72,17 +72,17 @@ export function ReplenishmentSkuFilters({
         </Select>
       </div>
 
-      {/* Status / Gatilho */}
+      {/* Situação */}
       <div className="flex items-center gap-1.5">
-        <Label className="text-xs text-muted-foreground whitespace-nowrap">Status</Label>
+        <Label className="text-xs text-muted-foreground whitespace-nowrap">Situação</Label>
         <Select value={filterStatus} onValueChange={(v) => onStatus(v as FilterStatus)}>
           <SelectTrigger className="w-40 h-8 text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos</SelectItem>
-            <SelectItem value="gatilho">Gatilho ativo</SelectItem>
-            <SelectItem value="sem_giro">Sem giro</SelectItem>
+            <SelectItem value="gatilho">Precisa comprar</SelectItem>
+            <SelectItem value="sem_giro">Sem vendas</SelectItem>
           </SelectContent>
         </Select>
       </div>
