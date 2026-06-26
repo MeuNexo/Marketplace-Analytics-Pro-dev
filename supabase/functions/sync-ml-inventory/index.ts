@@ -129,8 +129,11 @@ async function checkAndIncrementQuota(sb: ReturnType<typeof createClient>, organ
   return null;
 }
 
+// NOTE: ML returns seller_custom_field as "" (empty string), not null, when the SKU
+// lives only in the SELLER_SKU attribute. `??` would short-circuit on "" and never reach
+// the attribute — so use `||` semantics (empty string = missing) and fall back to the attr.
 const resolveSku = (obj: any): string | null =>
-  obj.seller_custom_field
+  (obj.seller_custom_field || null)
     ?? (obj.attributes as any[] | undefined)?.find((a: any) => a.id === "SELLER_SKU")?.value_name
     ?? null;
 
@@ -238,38 +241,39 @@ serve(async (req) => {
   }
 
   // Second pass: enrich variation-level SKUs.
-  // Neither multi-get nor full item GET (/items/{id}) returns variation.seller_custom_field
-  // per variation. Only GET /items/{id}/variations/{variationId} returns the full payload
-  // (including seller_custom_field and the SELLER_SKU attribute). Fetch concurrently,
-  // capped at 20 in-flight. Iterate over ALL variations regardless of the has_variations
-  // flag — an item with exactly 1 variation has has_variations=false but still has
-  // variations[0] to enrich (D-02 / CMP-01).
-  const variationFetches: Array<{ rowIdx: number; varIdx: number }> = [];
-  for (let ri = 0; ri < rows.length; ri++) {
-    if (rows[ri].variations.length > 0) {
-      for (let vi = 0; vi < rows[ri].variations.length; vi++) {
-        variationFetches.push({ rowIdx: ri, varIdx: vi });
-      }
-    }
-  }
-  if (variationFetches.length > 0) {
-    console.log(`sync-ml-inventory: second-pass — ${variationFetches.length} variation(s) to enrich`);
-    const CONCURRENCY = 20;
-    for (let i = 0; i < variationFetches.length; i += CONCURRENCY) {
-      const batch = variationFetches.slice(i, i + CONCURRENCY);
+  // The variation SKU lives in the SELLER_SKU attribute. The multi-get does not return
+  // it per variation, and GET /items/{id}/variations/{variationId} returns attributes:[]
+  // EMPTY — so that endpoint silently misses SKUs that exist only as the attribute
+  // (e.g. MLB4587613312 "Arizona Vi Rodeio": 12011666PTO3360M/P/G/GG). The correct
+  // endpoint is GET /items/{id}?include_attributes=all, whose variations[] carry both
+  // seller_custom_field AND the full attributes[] (incl. SELLER_SKU). One call per item
+  // (cheaper and correct vs. one per variation). Iterate over ALL items with variations
+  // regardless of has_variations — a 1-variation item still has variations[0] (D-02 / CMP-01).
+  const itemsToEnrich = rows.filter((r) => r.variations.length > 0);
+  if (itemsToEnrich.length > 0) {
+    console.log(`sync-ml-inventory: second-pass — ${itemsToEnrich.length} item(s) to enrich`);
+    const CONCURRENCY = 10;
+    for (let i = 0; i < itemsToEnrich.length; i += CONCURRENCY) {
+      const batch = itemsToEnrich.slice(i, i + CONCURRENCY);
       await Promise.all(
-        batch.map(async ({ rowIdx, varIdx }) => {
-          const row = rows[rowIdx];
-          const variation = row.variations[varIdx];
+        batch.map(async (row) => {
           try {
-            const fullVar = await mlFetch(
-              `/items/${row.item_id}/variations/${variation.variation_id}`,
+            const fullItem = await mlFetch(
+              `/items/${row.item_id}?include_attributes=all`,
               access_token,
             );
-            variation.seller_custom_field =
-              resolveSku(fullVar) ?? variation.seller_custom_field;
+            const varMap = new Map<string, any>(
+              (fullItem.variations || []).map((v: any) => [String(v.id), v]),
+            );
+            for (const variation of row.variations) {
+              const fullVar = varMap.get(String(variation.variation_id));
+              if (fullVar) {
+                variation.seller_custom_field =
+                  resolveSku(fullVar) ?? variation.seller_custom_field;
+              }
+            }
           } catch (e) {
-            console.warn(`Variation SKU fetch failed ${row.item_id}/${variation.variation_id}:`, e);
+            console.warn(`Item SKU enrich failed ${row.item_id}:`, e);
           }
         }),
       );
