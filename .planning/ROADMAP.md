@@ -365,8 +365,14 @@ Contexto/decisões: `66-CONTEXT.md` + `66-RESEARCH.md`. Org Pé Vermeio = `7f615
 
 **Goal**: A "Compra Recomendada" da `/compras` fica mais precisa ao substituir a **média simples** da janela de vendas (e o **lead time fixo** dos params) por sinais melhores: (a) velocidade de venda ponderada por **tendência** (peso maior em períodos recentes) e/ou **sazonalidade**, em vez de média plana; (b) opcionalmente, **lead time real por fornecedor** derivado do histórico de OCs (intervalo `data_pedido`→`data_entrega`), em vez do parâmetro fixo. Mantém toda a fundação das Phases 62/63/65/66 (RPC `get_replenishment_by_sku`, params por escopo, a chegar, override fornecedor) — é melhoria do **motor de cálculo**, não da fundação de dados.
 **Depends on**: Phase 66 (RPC `get_replenishment_by_sku` 4 níveis), Phase 65 (`purchase_orders` com `data_pedido`/`data_entrega`/`fornecedor` — fonte do lead time real)
-**Requirements**: a definir na discussão/SPEC (provisório: SMART-01 tendência/sazonalidade na velocidade; SMART-02 lead time real por fornecedor; SMART-03 robustez com histórico curto/fallback; SMART-04 testes + sem regressão + anti-IDOR).
-**Success Criteria** (what must be TRUE): a derivar após a discussão.
+**Requirements**: SMART-01 (velocidade esperta = EWMA/recência + índice sazonal no nível marca/categoria, aplicado ao SKU), SMART-02 (lead time real por fornecedor = mediana do intervalo `data_pedido`→`data_entrega` das OCs em trânsito, reusando `fornecedor_by_sku`, fallback no param), SMART-03 (fallback transparente por dimensão + sinal "modo simples"; cada camada liga só com base suficiente, nunca inventa), SMART-04 (toggle "Cálculo esperto" on por padrão + badges de transparência; espelho TS testável + sem regressão + RPC SECURITY INVOKER anti-IDOR)
+**Success Criteria** (what must be TRUE):
+
+  1. Com o toggle "Cálculo esperto" ON, `venda_dia` da RPC reflete EWMA (recência) + ajuste sazonal (índice mensal marca/categoria) quando há base; OFF reproduz exatamente a média plana atual
+  2. O lead time usado é a mediana real por fornecedor (das OCs em trânsito) quando há OCs; sem OC → cai no param (precedência da Phase 66 mantida)
+  3. Cada camada esperta (EWMA/sazonal/lead-time) tem fallback independente para o cálculo simples quando falta dado; a tela sinaliza "modo simples" por SKU
+  4. A tela mostra os sinais (tendência ↑↓, ajuste sazonal, lead time real vs param) via badges/tooltip
+  5. RPC permanece SECURITY INVOKER (anti-IDOR); espelho TS (`replenishmentUtils`) cobre EWMA/sazonal/lead-time/fallbacks com testes; tsc/build/suite sem regressão das Phases 62-66
 
 **Risco/aberto**: Pé Vermeio é seller pequeno → histórico curto pode limitar sazonalidade confiável; definir fallback (cair na média simples quando dados insuficientes). Escolher o método (tendência linear / EWMA vs sazonalidade explícita) e a fonte de lead time (ex.: mediana do intervalo das OCs por fornecedor) na discussão.
 
