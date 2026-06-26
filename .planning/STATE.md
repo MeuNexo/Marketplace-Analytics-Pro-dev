@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 63
-current_phase_name: compras-reposicao-por-sku
+current_phase: 62
+current_phase_name: reposicao-server-side
 status: executed-pending-visual-ok
-stopped_at: Phase 63 executada + backend live em prod; PR #12 aberto, aguarda ok visual Wesley + merge
-last_updated: "2026-06-26T12:21:00.000Z"
-last_activity: 2026-06-26
-last_activity_desc: Phase 63 executada (4 planos) — backend aplicado/validado em prod, frontend no PR #12
+stopped_at: "Phase 63 executada + backend live em prod; PR #12 aberto, aguarda ok visual Wesley + merge"
+last_updated: "2026-06-26T12:54:05.603Z"
+last_activity: 2026-06-25
+last_activity_desc: Phase 62 execution started
 progress:
   total_phases: 12
   completed_phases: 4
-  total_plans: 31
-  completed_plans: 26
+  total_plans: 32
+  completed_plans: 27
   percent: 33
 ---
 
@@ -349,7 +349,7 @@ Dashboard atual mostra:
 
 **Resume file:** .planning/phases/63-compras-reposi-o-por-sku-p-gina-pr-pria/63-01-PLAN.md
 
-Last session: 2026-06-26T12:17:00.737Z
+Last session: 2026-06-26T12:54:05.579Z
 Stopped at: Phase 63 planned (4 plans, plan-checker PASS)
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
