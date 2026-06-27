@@ -1,6 +1,6 @@
 ---
 slug: incoming-by-sku-double-count
-status: fixing
+status: resolved
 trigger: |
   Dupla-contagem do "a caminho" (qtd_a_caminho) na RPC get_replenishment_by_sku. O CTE
   incoming_by_sku agrega por SKU (GROUP BY po.sku) e o join com inventory_by_sku é por
@@ -9,7 +9,9 @@ trigger: |
   compra_sugerida / gatilho_ativo. Corrigir a duplicação sem regressão no caso de SKU em
   um anúncio só.
 created: 2026-06-26
-updated: 2026-06-26
+updated: 2026-06-27
+resolved: 2026-06-27
+deploy: DEPLOYADO em prod via MCP apply_migration (get_replenishment_by_sku_collapse_per_sku) — verificado na função viva (295 linhas, dup SKUs 1x, smart 159 ativos, INVOKER ok)
 ---
 
 # Debug: incoming-by-sku-double-count
