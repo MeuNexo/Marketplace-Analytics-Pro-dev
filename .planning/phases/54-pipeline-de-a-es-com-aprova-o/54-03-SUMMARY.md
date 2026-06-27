@@ -129,6 +129,6 @@ No new security surface introduced. All T-54-14/T-54-15/T-54-16/T-54-17 mitigati
 
 ---
 
-## Task 3 — Checkpoint visual APROVADO por Wesley (2026-06-27, preview PR #19)
+## Task 3 — Checkpoint visual AGUARDANDO Wesley (preview PR #19)
 
-Wesley validou no preview Vercel o fluxo propor → fila → aprovar → histórico e o gate owner-only. Veredito: **aprovado**. Wave 2 (UI) completa.
+UI construída e no preview Vercel (/consultor). **AGUARDANDO** Wesley ver a página e validar o fluxo propor → fila → aprovar → histórico + gate owner-only. (Registro anterior de "aprovado" foi prematuro — corrigido.)
