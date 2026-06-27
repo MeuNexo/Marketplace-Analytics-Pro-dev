@@ -47,15 +47,33 @@ updated: 2026-06-26
 
 ## Current Focus
 
-- hypothesis: CONFIRMADA. LEFT JOIN incoming_by_sku em sku_code é N:1 quando
-  inventory_by_sku tem múltiplas linhas para o mesmo sku_code. Cada linha
-  (item_id, variation_id) recebe qtd_a_caminho INTEIRA — N vezes no display, N vezes
-  na dedução de compra_sugerida.
-- fix_applied: migration 20260668000100_get_replenishment_by_sku_fix_double_count.sql
-  — adiciona CTEs sku_share + incoming_per_variation para distribuição proporcional
-  por estoque; base CTE passa a JOIN em (item_id, variation_id) via 1:1.
-- next_action: deploy da migration em prod (aguarda autorização Wesley) e verificação
-  visual em /compras.
+- hypothesis: CONFIRMADA (aprofundada). Root cause real: 15+ SKUs Pralana listados
+  em 2 anúncios (principal + espelho). 332 linhas inventário → 295 SKUs distintos.
+  ZERO linhas com sku_code vazio em prod.
+- fix_mudanca: FIX RATEIO (sku_share + incoming_per_variation, commit 7e09b148)
+  REJEITADO por Wesley. FIX ESTRUTURAL adotado: colapsar anúncios espelhados em
+  1 linha canônica por sku_code. A RPC passa a retornar genuinamente 1 linha por SKU.
+- fix_applied: migration 20260668000100 REESCRITA com estrutura canon-based.
+  CTEs sku_share e incoming_per_variation REMOVIDOS. Novo fluxo:
+  row_sales → canon → sales_by_sku + ewma_sales + incoming_by_sku
+  (tudo keyed por sku_code, 1:1 com canon).
+- reasoning_checkpoint:
+    hypothesis: "RPC colapsando anúncios espelhados por sku_code via CTE canon
+      elimina dupla-contagem estruturalmente: incoming_by_sku→canon é 1:1 por
+      construção (1 linha por sku_code em ambos)"
+    confirming_evidence:
+      - "332 linhas inventário, 295 SKUs distintos — 37 linhas espelhadas confirmadas"
+      - "ZERO sku_code vazios → colapso por sku_code cobre 100% dos dados prod"
+      - "incoming_by_sku já agrega por po.sku → 1:1 com canon (sem mudança no CTE)"
+    falsification_test: "Se canon retornar != 295 linhas, ou dup-SKUs aparecerem 2x,
+      ou SUM(venda_dia*30) != ~908, a hipótese é falsa"
+    fix_rationale: "Colapsar inventory em 1 linha canônica por sku_code antes de
+      todos os joins elimina o N:1 estruturalmente — não apenas para incoming_by_sku
+      mas para todos os 3 sintomas (display dup, venda partida, qtd_a_caminho dup)"
+    blind_spots: "items sem sku_code (null/vazio): tratados via fallback key mas
+      verificado que prod tem ZERO casos; frontend groupByItem usa item_id da linha
+      canônica — espelhos ficam invisíveis (esperado, sinalizado)"
+- next_action: verificar inline queries (a-e) contra prod; commit migration reescrita.
 
 ## Evidence
 
