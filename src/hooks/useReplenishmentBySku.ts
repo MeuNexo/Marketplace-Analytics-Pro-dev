@@ -57,6 +57,10 @@ export interface ReplenishmentSkuRow {
   fator_sazonal: number | null;
   /** Mediana real de lead time em dias (null se fornecedor sem OCs suficientes) — Phase 67 */
   lead_time_real: number | null;
+  /** Venda diária simples = média da janela (a espinha que decide a compra) — Phase 68 */
+  venda_simples: number;
+  /** Venda diária inteligente = EWMA × sazonal (boost-only); null quando sem sinal — Phase 68 */
+  venda_inteligente: number | null;
 }
 
 /**
@@ -146,6 +150,9 @@ function mapRow(r: Record<string, unknown>): ReplenishmentSkuRow {
     tendencia:                    ((r.tendencia as string) ?? "~") as "↑" | "↓" | "~",
     fator_sazonal:                r.fator_sazonal != null ? Number(r.fator_sazonal) : null,
     lead_time_real:               r.lead_time_real != null ? Number(r.lead_time_real) : null,
+    // Phase 68 — exibe OS DOIS indicadores (simples = espinha; inteligente = EWMA×sazonal só em alta confiança)
+    venda_simples:                Number(r.venda_simples ?? 0),
+    venda_inteligente:            r.venda_inteligente == null ? null : Number(r.venda_inteligente),
   };
 }
 
