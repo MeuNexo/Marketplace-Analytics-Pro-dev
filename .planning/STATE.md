@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 67
-current_phase_name: compras-v3-reposi-o-mais-esperta-tend-ncia-lead-time-real
-status: awaiting-visual-ok
-stopped_at: "Trilha /compras (Phases 62-68) TODA MERGEADA em prod (PRs #11-#17 MERGED em 26/06; quick 260627-1z0 commit 5c0820ec na main). main == origin/main. NÃO há merge pendente. Resta APENAS o ok visual do Wesley em /compras."
+current_phase: 69
+current_phase_name: reposicao-de-esgotados-demanda-censurada
+status: planned
+stopped_at: "Phase 69 PLANEJADA + plan-checker PASS (0 blockers). 2 planos / 2 waves no branch gsd/phase-69-reposicao-esgotados. Trata os 83 SKUs esgotados-sem-venda (demanda censurada): híbrido por recência 90d/365d + estimativa melhor-ritmo 30d/180d. Pronta p/ /gsd-execute-phase 69. (Trilha 62-68 já em prod; resta ok visual /compras.)"
 last_updated: "2026-06-26T19:36:37.847Z"
 last_activity: 2026-06-26
 last_activity_desc: Phase 67 execution started
