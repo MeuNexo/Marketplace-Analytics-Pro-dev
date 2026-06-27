@@ -64,6 +64,46 @@ function earliestArrival(skus: ReplenishmentSkuRow[]): string | null {
   return datas.sort()[0];
 }
 
+// ── Vende por dia cell (decisão em destaque + os dois indicadores) ────────────
+
+/**
+ * Mostra a DECISÃO final (venda_dia) em destaque e, abaixo, os dois indicadores
+ * que a originaram: simples (espinha) e inteligente (EWMA×sazonal). Quando a
+ * inteligente assumiu (venda_dia_origem ≠ 'simples'), exibe badge "Previsão
+ * inteligente ↑"; caso contrário badge "Simples". Phase 68.
+ */
+function VendaDiaCell({ row }: { row: ReplenishmentSkuRow }) {
+  const inteligenteAssumiu = row.venda_dia_origem !== "simples";
+
+  return (
+    <div className="leading-tight">
+      {/* Decisão final em destaque */}
+      <span className="tabular-nums font-medium text-foreground">
+        {numFmt(row.venda_dia)}/d
+      </span>
+
+      {/* Os dois indicadores, menores e em muted */}
+      <p className="text-[10px] text-muted-foreground tabular-nums">
+        Simples {numFmt(row.venda_simples)} · Intel{" "}
+        {row.venda_inteligente == null ? "—" : numFmt(row.venda_inteligente)}
+      </p>
+
+      {/* Badge de origem da decisão */}
+      <div className="mt-0.5">
+        {inteligenteAssumiu ? (
+          <Badge className="text-[9px] bg-green-500/10 text-green-600 border-none">
+            Previsão inteligente ↑
+          </Badge>
+        ) : (
+          <Badge variant="secondary" className="text-[9px]">
+            Simples
+          </Badge>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Header with tooltip helper ────────────────────────────────────────────────
 
 function HeaderWithTip({ label, tip }: { label: string; tip: string }) {
@@ -162,6 +202,25 @@ function ParamsTooltip({ row }: { row: ReplenishmentSkuRow }) {
       <Badge variant="secondary" className="text-[10px]">global</Badge>
     );
 
+  // Phase 67 D-11 — badges de transparência por dimensão
+  const tendenciaBadge = row.tendencia === "↑"
+    ? <Badge className="text-[10px] bg-green-500/10 text-green-600 border-none">↑ Alta</Badge>
+    : row.tendencia === "↓"
+    ? <Badge className="text-[10px] bg-destructive/10 text-destructive border-none">↓ Queda</Badge>
+    : <Badge variant="secondary" className="text-[10px]">~ Estável</Badge>;
+
+  const vendaOrigemBadge =
+    row.venda_dia_origem === "ewma_sazonal"
+      ? <Badge className="text-[10px] bg-primary/10 text-primary border-none">EWMA + saz.</Badge>
+      : row.venda_dia_origem === "ewma"
+      ? <Badge variant="outline" className="text-[10px]">EWMA</Badge>
+      : <Badge variant="secondary" className="text-[10px]">Simples</Badge>;
+
+  const leadTimeBadge =
+    row.lead_time_origem === "fornecedor_real" && row.lead_time_real != null
+      ? <Badge variant="outline" className="text-[10px] border-green-500/50 text-green-600">Prazo real {row.lead_time_real}d</Badge>
+      : <Badge variant="secondary" className="text-[10px]">Prazo fixo {row.param_lead_time}d</Badge>;
+
   return (
     <TooltipProvider>
       <Tooltip>
@@ -174,16 +233,35 @@ function ParamsTooltip({ row }: { row: ReplenishmentSkuRow }) {
             <SlidersHorizontal className="w-3.5 h-3.5" />
           </button>
         </TooltipTrigger>
-        <TooltipContent className="text-[11px] space-y-1">
+        <TooltipContent className="text-[11px] space-y-1.5 max-w-[220px]">
+          {/* Parâmetros de reposição (existentes) */}
           <div className="flex items-center gap-1">
             {origemBadge}
             <span>Ponto {row.ponto_reposicao}un</span>
           </div>
           <div>
-            Entrega {row.param_lead_time}d · Cob {row.param_cobertura}d · Folga {row.param_safety}d
+            Cob {row.param_cobertura}d · Folga {row.param_safety}d
           </div>
           <div>
             Min {row.param_moq} · Caixa {row.param_pack}
+          </div>
+          {/* Phase 67 D-11 — badges de transparência do cálculo esperto */}
+          <div className="border-t border-border/40 pt-1 space-y-1">
+            <div className="flex items-center gap-1 flex-wrap">
+              {vendaOrigemBadge}
+              {tendenciaBadge}
+            </div>
+            {row.fator_sazonal != null && (
+              <div>
+                <Badge variant="outline" className="text-[10px]">
+                  Sazonal ×{row.fator_sazonal.toFixed(2)}
+                </Badge>
+              </div>
+            )}
+            <div>{leadTimeBadge}</div>
+            {row.venda_dia_origem === "simples" && (
+              <div className="text-[10px] text-muted-foreground italic">modo simples</div>
+            )}
           </div>
         </TooltipContent>
       </Tooltip>
@@ -259,9 +337,11 @@ function VariationRow({ sku }: { sku: ReplenishmentSkuRow }) {
         <ACaminhoCell qtd={sku.qtd_a_caminho} data={sku.data_proxima_chegada} />
       </TableCell>
 
-      {/* Vende por dia */}
-      <TableCell className="text-xs text-right tabular-nums">
-        {numFmt(sku.venda_dia)}/d
+      {/* Vende por dia (decisão + dois indicadores) */}
+      <TableCell className="text-xs text-right">
+        <div className="flex justify-end">
+          <VendaDiaCell row={sku} />
+        </div>
       </TableCell>
 
       {/* Dura quanto */}
@@ -531,8 +611,10 @@ export function ReplenishmentSkuTable({
                   <TableCell className="text-xs text-right">
                     <ACaminhoCell qtd={sku.qtd_a_caminho} data={sku.data_proxima_chegada} />
                   </TableCell>
-                  <TableCell className="text-xs text-right tabular-nums">
-                    {numFmt(sku.venda_dia)}/d
+                  <TableCell className="text-xs text-right">
+                    <div className="flex justify-end">
+                      <VendaDiaCell row={sku} />
+                    </div>
                   </TableCell>
                   <TableCell className="text-xs text-right tabular-nums">
                     <CoberturaCell row={sku} />

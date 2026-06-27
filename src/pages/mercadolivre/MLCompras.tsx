@@ -1,9 +1,12 @@
 import { useMemo, useState } from "react";
 import * as XLSX from "xlsx";
-import { Download, Truck } from "lucide-react";
+import { Download, Truck, Info } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useReplenishmentBySku } from "@/hooks/useReplenishmentBySku";
 import type { GroupedReplenishmentRow, ReplenishmentSkuRow } from "@/hooks/useReplenishmentBySku";
 import { ReplenishmentSkuFilters } from "@/components/mercadolivre/ReplenishmentSkuFilters";
@@ -111,7 +114,10 @@ function exportToXlsx(rows: ReplenishmentSkuRow[]) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function MLCompras() {
-  const { data, isLoading, error } = useReplenishmentBySku();
+  // Phase 67 D-10: toggle "Cálculo esperto" — ON por padrão; propaga p_smart para a RPC
+  const [smartMode, setSmartMode] = useState(true);
+
+  const { data, isLoading, error } = useReplenishmentBySku(30, 1.0, smartMode);
 
   const [filterBrand,  setFilterBrand]  = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
@@ -149,7 +155,44 @@ export default function MLCompras() {
       <div className="sticky -top-4 md:-top-6 lg:-top-8 z-20 -mx-4 md:-mx-6 lg:-mx-8 -mt-4 md:-mt-6 lg:-mt-8 px-4 md:px-6 lg:px-8 pb-4 pt-4 bg-background/95 backdrop-blur-sm border-b border-border/40">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4 min-w-0">
           <MLPageHeader title="Compras" />
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Phase 67 D-10/D-11: Toggle "Previsão inteligente" + tooltip explicativo */}
+            <div className="flex items-center gap-1.5">
+              <Switch
+                id="smart-mode"
+                checked={smartMode}
+                onCheckedChange={setSmartMode}
+              />
+              <Label
+                htmlFor="smart-mode"
+                className="text-xs text-muted-foreground cursor-pointer"
+              >
+                Previsão inteligente
+              </Label>
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="text-muted-foreground hover:text-foreground transition-colors"
+                      aria-label="O que é Previsão inteligente?"
+                    >
+                      <Info className="w-3.5 h-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs text-xs leading-relaxed">
+                    <p className="font-medium mb-1">Previsão inteligente</p>
+                    <p>Em vez da média simples das vendas, estima a demanda olhando:</p>
+                    <ul className="list-disc pl-4 mt-1 space-y-0.5">
+                      <li><b>Tendência:</b> vendas recentes pesam mais (produto acelerando pede mais; esfriando, menos).</li>
+                      <li><b>Sazonalidade:</b> ajusta pelo padrão do mês na marca (ex.: época de rodeio).</li>
+                      <li><b>Prazo real:</b> usa o lead time médio de cada fornecedor, não um valor fixo.</li>
+                    </ul>
+                    <p className="mt-1">Cada parte só entra quando há histórico suficiente; senão usa o cálculo simples (badge <i>“modo simples”</i>). Desligue para comparar.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
             <Button
               variant="outline"
               size="sm"

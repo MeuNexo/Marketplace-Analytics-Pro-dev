@@ -25,6 +25,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 - [x] **Phase 62: Reposição Server-Side (Compra Recomendada correta)** — Substitui a "Compra Recomendada" do front (estoque digitado + venda simulada, sem lead time/segurança/gatilho/MOQ/custo) por uma RPC `get_replenishment` server-side: estoque real (`ml_inventory_cache` Full+anúncios), venda/dia real, ponto de reposição com gatilho, MOQ/embalagem, custo nulo/sem-giro, parâmetros global + por marca/fornecedor. Não sugere mais comprar o que já se tem (REPL-01..11). **EXECUTADA + VERIFICADA (PASS 7/7) 2026-06-25 — RPC `get_replenishment` + tabela `replenishment_params` aplicadas em prod via MCP (116 anúncios, 29 sugeridos, gatilho cortando 87, anti-IDOR provado); módulo TS + 203 testes verdes; aba "Compra Recomendada" em /estoque. (completed 2026-06-25)**
 - [x] **Phase 65: Compras — Estoque a Chegar** — A `/compras` passa a considerar as ordens de compra em trânsito do Tiny: nova EF `sync-tiny-purchase-orders` (endpoint `/ordem-compra`, waitUntil) → tabela `purchase_orders` (RLS org-first) + cron diário; a RPC `get_replenishment_by_sku` ganha CTE `incoming_by_sku` e desconta TODA a qtd a caminho da sugestão (decisão Wesley), expondo `qtd_a_caminho`/`data_proxima_chegada`; frontend ganha coluna "A caminho". **EXECUTADA + VERIFICADA 2026-06-26 — backend em prod via MCP (22 OCs/135 SKUs/1.885 un; 93 SKUs a caminho, 80 zeraram sugestão; cobertura parcial preservando gatilho); tsc 0 + 208 testes + build ok. Frontend no PR (aguarda ok visual). (completed 2026-06-26)**
 - [x] **Phase 66: Compras v2 — Override por Fornecedor** — A `/compras` ganha um terceiro nível de parametrização de reposição: **por fornecedor**, entre SKU e marca (precedência `SKU > fornecedor > marca > global`). As ordens de compra do Tiny passam a gravar o **fornecedor** (`contato.nome`) em `purchase_orders`; a RPC `get_replenishment_by_sku` resolve os params do SKU também pelo fornecedor predominante; o frontend ganha CRUD de params por fornecedor (dropdown). Diferido da Phase 62. **EXECUTADA + VERIFICADA (5/5 must-haves) 2026-06-26 — backend em prod via MCP (migration registrada + EF v2 deployada + re-sync 200/200 OCs com fornecedor/6 distintos; RPC 4 níveis provada param_origem='fornecedor', sem regressão, anti-IDOR SECURITY INVOKER, advisors limpos); frontend 213/213 testes + tsc 0 + build ok na branch `gsd/phase-66-override-fornecedor`. Checkpoints D-12/D-13 (nomes) e schema-push aprovados por Wesley. Pendente: ok visual + merge PR. (completed 2026-06-26)**
+- [x] **Phase 67: Compras v3 — Reposição mais esperta (tendência + lead time real)** — A reposição da `/compras` deixa de usar só a média simples e o lead time fixo: velocidade = **EWMA (recência) + índice sazonal marca/mês**; lead time = **mediana real por fornecedor** das OCs; cada camada com **fallback transparente** + toggle "Cálculo esperto" + badges. **EXECUTADA + VERIFICADA (6/7 must-haves; 7º = ok visual pendente) 2026-06-26 — RPC v7 `p_smart` em prod via MCP: não-regressão p_smart=FALSE=Phase 66 (off_nao_simples=0); EWMA 171 SKUs, sazonal ATIVA 284 (13 meses de dados, fatores 0.93–1.68), lead-time-real 93; anti-IDOR SECURITY INVOKER; advisors limpos. Espelho TS + 33 testes (246/246); toggle+badges na /compras (tsc 0, build ok). 3 desvios corrigidos no checkpoint (DROP overload 3-arg ambíguo; p_smart DEFAULT FALSE; #variable_conflict use_column). Pendente: ok visual + merge PR. (completed 2026-06-26)**
 
 ---
 
@@ -357,6 +358,32 @@ Plans:
 - [ ] 66-03-PLAN.md — Frontend: resolveParamsBySku 4 níveis + hook + dropdown no diálogo + testes (FORN-04, FORN-05) [wave 3]
 
 Contexto/decisões: `66-CONTEXT.md` + `66-RESEARCH.md`. Org Pé Vermeio = `7f615df7-7bac-45e5-8a93-827fb9ddeec7`; projeto Supabase `ckcdevcxgvueywivefgx`. **Roadmap criado 2026-06-26 (retomada de sessão interrompida); planejado 2026-06-26.**
+
+---
+
+### Phase 67: Compras v3 — Reposição mais esperta (tendência + lead time real)
+
+**Goal**: A "Compra Recomendada" da `/compras` fica mais precisa ao substituir a **média simples** da janela de vendas (e o **lead time fixo** dos params) por sinais melhores: (a) velocidade de venda ponderada por **tendência** (peso maior em períodos recentes) e/ou **sazonalidade**, em vez de média plana; (b) opcionalmente, **lead time real por fornecedor** derivado do histórico de OCs (intervalo `data_pedido`→`data_entrega`), em vez do parâmetro fixo. Mantém toda a fundação das Phases 62/63/65/66 (RPC `get_replenishment_by_sku`, params por escopo, a chegar, override fornecedor) — é melhoria do **motor de cálculo**, não da fundação de dados.
+**Depends on**: Phase 66 (RPC `get_replenishment_by_sku` 4 níveis), Phase 65 (`purchase_orders` com `data_pedido`/`data_entrega`/`fornecedor` — fonte do lead time real)
+**Plans:** 3 plans (2 waves)
+
+Plans:
+- [ ] 67-01-PLAN.md — RPC `get_replenishment_by_sku` v7: `p_smart` + CTEs `ewma_sales`/`seasonal_index`/`lead_time_by_fornecedor` + 5 colunas de transparência + checkpoint de aplicação/validação via MCP (wave 1)
+- [ ] 67-02-PLAN.md — Espelho TS testável (`replenishmentUtils`): EWMA/sazonal/tendência/lead-time real + fallbacks com vitest (wave 2)
+- [ ] 67-03-PLAN.md — Frontend: hook `p_smart` + toggle "Cálculo esperto" + badges de transparência na `/compras` + checkpoint visual (wave 2)
+
+**Requirements**: SMART-01 (velocidade esperta = EWMA/recência + índice sazonal no nível marca/categoria, aplicado ao SKU), SMART-02 (lead time real por fornecedor = mediana do intervalo `data_pedido`→`data_entrega` das OCs em trânsito, reusando `fornecedor_by_sku`, fallback no param), SMART-03 (fallback transparente por dimensão + sinal "modo simples"; cada camada liga só com base suficiente, nunca inventa), SMART-04 (toggle "Cálculo esperto" on por padrão + badges de transparência; espelho TS testável + sem regressão + RPC SECURITY INVOKER anti-IDOR)
+**Success Criteria** (what must be TRUE):
+
+  1. Com o toggle "Cálculo esperto" ON, `venda_dia` da RPC reflete EWMA (recência) + ajuste sazonal (índice mensal marca/categoria) quando há base; OFF reproduz exatamente a média plana atual
+  2. O lead time usado é a mediana real por fornecedor (das OCs em trânsito) quando há OCs; sem OC → cai no param (precedência da Phase 66 mantida)
+  3. Cada camada esperta (EWMA/sazonal/lead-time) tem fallback independente para o cálculo simples quando falta dado; a tela sinaliza "modo simples" por SKU
+  4. A tela mostra os sinais (tendência ↑↓, ajuste sazonal, lead time real vs param) via badges/tooltip
+  5. RPC permanece SECURITY INVOKER (anti-IDOR); espelho TS (`replenishmentUtils`) cobre EWMA/sazonal/lead-time/fallbacks com testes; tsc/build/suite sem regressão das Phases 62-66
+
+**Risco/aberto**: Pé Vermeio é seller pequeno → histórico curto pode limitar sazonalidade confiável; definir fallback (cair na média simples quando dados insuficientes). Escolher o método (tendência linear / EWMA vs sazonalidade explícita) e a fonte de lead time (ex.: mediana do intervalo das OCs por fornecedor) na discussão.
+
+Contexto/decisões: a definir em `67-CONTEXT.md`. Org Pé Vermeio = `7f615df7-7bac-45e5-8a93-827fb9ddeec7`; projeto Supabase `ckcdevcxgvueywivefgx`. **Roadmap criado 2026-06-26.**
 
 ---
 
