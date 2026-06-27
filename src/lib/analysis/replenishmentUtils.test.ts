@@ -3,6 +3,7 @@ import {
   calcReplenishment, resolveParams, resolveParamsBySku, REPLENISHMENT_DEFAULTS,
   calcEwmaDaily, calcSeasonalFactor, calcTrend,
   resolveSmartLeadTime, resolveVendaDiaOrigem,
+  decideVendaDia, seasonalBoostOnly,
 } from "./replenishmentUtils";
 import type { ReplenishmentParams } from "./replenishmentUtils";
 
@@ -526,6 +527,77 @@ describe("resolveVendaDiaOrigem", () => {
   // SMART-01: exato limiar weeks=2 com sazonal → 'ewma_sazonal'
   it("SMART-01 limiar exato weeks=2 com sazonal → 'ewma_sazonal'", () => {
     expect(resolveVendaDiaOrigem(2, true, true)).toBe("ewma_sazonal");
+  });
+
+});
+
+// ─── decideVendaDia (Phase 68 — motor alta confiança) ─────────────────────────
+
+describe("decideVendaDia", () => {
+
+  // (a) inteligente ASSUME com todas as condições verdadeiras
+  it("PH68 (a) assume: inteligente>simples + trendUp + weeks=3 + lead=60 → usa inteligente", () => {
+    const r = decideVendaDia({ simples: 1.0, inteligente: 1.8, trendUp: true, weeksWithSales: 3, leadTime: 60 });
+    expect(r.aplicaInteligente).toBe(true);
+    expect(r.vendaDia).toBe(1.8);
+  });
+
+  // (b) NÃO assume se lead>60 → cai na simples (lead longo não persegue pico)
+  it("PH68 (b) lead>60: demais condições ok mas leadTime=61 → cai na simples", () => {
+    const r = decideVendaDia({ simples: 1.0, inteligente: 1.8, trendUp: true, weeksWithSales: 3, leadTime: 61 });
+    expect(r.aplicaInteligente).toBe(false);
+    expect(r.vendaDia).toBe(1.0);
+  });
+
+  // (c) NÃO assume se inteligente < simples (só puxa pra cima)
+  it("PH68 (c) inteligente<simples: 0.8<1.0 → cai na simples (boost-only)", () => {
+    const r = decideVendaDia({ simples: 1.0, inteligente: 0.8, trendUp: true, weeksWithSales: 5, leadTime: 30 });
+    expect(r.aplicaInteligente).toBe(false);
+    expect(r.vendaDia).toBe(1.0);
+  });
+
+  // NÃO assume se tendência não é de alta
+  it("PH68 sem trendUp: trendUp=false → cai na simples", () => {
+    const r = decideVendaDia({ simples: 1.0, inteligente: 2.0, trendUp: false, weeksWithSales: 5, leadTime: 30 });
+    expect(r.aplicaInteligente).toBe(false);
+    expect(r.vendaDia).toBe(1.0);
+  });
+
+  // NÃO assume se weeks<3 (pouco histórico)
+  it("PH68 weeks<3: weeksWithSales=2 → cai na simples", () => {
+    const r = decideVendaDia({ simples: 1.0, inteligente: 2.0, trendUp: true, weeksWithSales: 2, leadTime: 30 });
+    expect(r.aplicaInteligente).toBe(false);
+    expect(r.vendaDia).toBe(1.0);
+  });
+
+  // NÃO assume se inteligente=null (sem sinal)
+  it("PH68 inteligente=null: sem sinal → cai na simples", () => {
+    const r = decideVendaDia({ simples: 1.5, inteligente: null, trendUp: true, weeksWithSales: 5, leadTime: 30 });
+    expect(r.aplicaInteligente).toBe(false);
+    expect(r.vendaDia).toBe(1.5);
+  });
+
+});
+
+// ─── seasonalBoostOnly (Phase 68 — sazonal nunca corta) ───────────────────────
+
+describe("seasonalBoostOnly", () => {
+
+  // (d) sazonal NUNCA < 1,0 — fator abaixo de 1 vira 1,0
+  it("PH68 (d) clamp: fator 0.6 → 1.0 (nunca corta)", () => {
+    expect(seasonalBoostOnly(0.6)).toBe(1.0);
+  });
+
+  it("PH68 (d) clamp: fator null → 1.0", () => {
+    expect(seasonalBoostOnly(null)).toBe(1.0);
+  });
+
+  it("PH68 boost preservado: fator 1.8 → 1.8 (só soma)", () => {
+    expect(seasonalBoostOnly(1.8)).toBe(1.8);
+  });
+
+  it("PH68 exato 1.0 → 1.0", () => {
+    expect(seasonalBoostOnly(1.0)).toBe(1.0);
   });
 
 });
