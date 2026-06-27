@@ -25,6 +25,7 @@ import type {
   GroupedReplenishmentRow,
   ReplenishmentSkuRow,
 } from "@/hooks/useReplenishmentBySku";
+import { isDemandaEstimada } from "@/lib/analysis/replenishmentUtils";
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -129,6 +130,41 @@ function HeaderWithTip({ label, tip }: { label: string; tip: string }) {
 // ── Acao cell (variacao / SKU unico) ─────────────────────────────────────────
 
 function AcaoCell({ row }: { row: ReplenishmentSkuRow }) {
+  // Phase 69 — esgotados são classificados PRIMEIRO (antes da lógica de giro normal)
+  if (row.status_esgotado === "descontinuar") {
+    return (
+      <span className="text-muted-foreground text-[11px]">
+        ⚫ Descontinuar?
+      </span>
+    );
+  }
+  if (row.status_esgotado === "revisar_esgotado") {
+    return (
+      <span className="text-[11px] text-warning font-medium">
+        ⚠️ Revisar (parado)
+      </span>
+    );
+  }
+  if (row.status_esgotado === "repor_esgotado") {
+    return (
+      <div className="space-y-0.5">
+        <span className="text-destructive text-[11px] font-semibold">
+          🔴 Repor {row.compra_sugerida}
+        </span>
+        {isDemandaEstimada(row.venda_dia_origem) && (
+          <div>
+            <Badge
+              variant="outline"
+              className="text-[9px] border-amber-500/50 text-amber-600 leading-tight"
+            >
+              estoque zerado · demanda estimada pelo histórico ({numFmt(row.venda_dia)}/d)
+            </Badge>
+          </div>
+        )}
+      </div>
+    );
+  }
+  // com_giro → lógica existente intocada
   if (row.sem_giro) {
     return (
       <span className="text-muted-foreground text-[11px]">
@@ -160,6 +196,48 @@ function AcaoCell({ row }: { row: ReplenishmentSkuRow }) {
 // ── Acao cell (linha mestre de grupo) ────────────────────────────────────────
 
 function MasterAcaoCell({ group }: { group: GroupedReplenishmentRow }) {
+  // Phase 69 — estado agregado esgotados: repor > revisar > descontinuar (antes da lógica de giro)
+  const hasReporEsgotado    = group.skus.some((s) => s.status_esgotado === "repor_esgotado");
+  const hasRevisarEsgotado  = group.skus.some((s) => s.status_esgotado === "revisar_esgotado");
+  const hasDescontinuar     = group.skus.some((s) => s.status_esgotado === "descontinuar");
+  const hasEstimadaDemand   = group.skus.some(
+    (s) => s.status_esgotado === "repor_esgotado" && isDemandaEstimada(s.venda_dia_origem),
+  );
+
+  if (hasReporEsgotado) {
+    return (
+      <div className="space-y-0.5">
+        <span className="text-destructive text-[11px] font-semibold">
+          🔴 Repor (esgotado) {group.total_compra_sugerida > 0 ? group.total_compra_sugerida : ""}
+        </span>
+        {hasEstimadaDemand && (
+          <div>
+            <Badge
+              variant="outline"
+              className="text-[9px] border-amber-500/50 text-amber-600 leading-tight"
+            >
+              demanda estimada pelo histórico
+            </Badge>
+          </div>
+        )}
+      </div>
+    );
+  }
+  if (hasRevisarEsgotado) {
+    return (
+      <span className="text-[11px] text-warning font-medium">
+        ⚠️ Revisar (parado)
+      </span>
+    );
+  }
+  if (hasDescontinuar) {
+    return (
+      <span className="text-muted-foreground text-[11px]">
+        ⚫ Descontinuar?
+      </span>
+    );
+  }
+  // Lógica de giro normal intocada
   if (group.skus.every((s) => s.sem_giro)) {
     return (
       <span className="text-muted-foreground text-[11px]">
