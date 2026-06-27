@@ -1,49 +1,24 @@
 -- ============================================================
--- Phase 68 — Reposição por SKU real (colapsa anúncios espelhados)
+-- Phase 68 — Reposição por SKU real (colapsa anúncios espelhados) + PERF sob RLS
 --
--- ROOT CAUSE APROFUNDADO (debug incoming-by-sku-double-count):
---   332 linhas no inventário → 295 SKUs distintos. 15+ SKUs Pralana
---   listados em 2 anúncios (principal + espelho): estoque físico é
---   idêntico em 13/15 pares. A versão rateio (sku_share + incoming_per_variation,
---   commit 7e09b148) foi rejeitada pelo Wesley — fix estrutural adotado.
+-- ROOT CAUSE 1 (estrutural): a RPC não era genuinamente por-SKU — 1 linha por
+--   (item_id,variation_id). 15+ SKUs Pralana em 2 anúncios (principal+espelho) com
+--   estoque espelhado e vendas partidas → a-caminho dobrado + estoque dobrado +
+--   linha duplicada. Fix: colapsa em 1 linha canônica por sku_code (CTEs row_sales +
+--   canon via ROW_NUMBER por mais-vendido; sales/ewma/incoming re-keyed em canon).
 --
--- FIX ESTRUTURAL (colapso por SKU real):
---   A RPC passa a retornar 1 linha GENUINAMENTE por SKU, colapsando os
---   anúncios que compartilham o mesmo sku_code numa única linha canônica.
+-- ROOT CAUSE 2 (performance sob RLS): a versão estrutural ainda usava ~7.4k subqueries
+--   correlacionadas no CTE params (295 linhas × ~25) + LATERAL de custo por linha (295).
+--   Como postgres (RLS off) rodava em ~0,9s, mas sob o role `authenticated` cada subquery
+--   re-executa com a policy is_org_member → smart=true ESTOURAVA o statement_timeout de 8s
+--   → /compras não carregava. Fix: pré-carregar replenishment_params e ml_product_costs
+--   UMA vez (CTEs params_lookup / costs_by_sku / costs_by_item MATERIALIZED) e resolver a
+--   precedência (sku>fornecedor>marca>global) via LEFT JOINs. Resultado: smart=true sob
+--   RLS caiu de >8s (timeout) para ~2,5s.
 --
---   1. inventory_by_sku:  1 linha por (item_id, variation_id) — igual antes.
---   2. row_sales:         venda por (item_id, variation_id) na janela;
---                         match por (item,variation) via orders — sem regressão
---                         (NÃO por o.sku — evita perder 34un c/ SKU histórico trocado).
---   3. canon:             ROW_NUMBER() OVER (PARTITION BY sku_code ORDER BY
---                         row_sales DESC NULLS LAST, sku_stock DESC, item_id) = 1
---                         → 1 linha por sku_code (anúncio principal = mais vendas).
---                         Para sku_code NULL/vazio: cada (item_id,variation_id)
---                         é seu próprio grupo (fallback key).
---   4. sales_by_sku:      SUM(row_sales de TODAS as linhas do sku_code) / janela
---                         → avg_daily por sku_code (soma espelhos; total preservado).
---   5. ewma_sales:        subquery agrega orders por (item,variation,week_offset) como
---                         hoje → mapeia (item,variation)→sku_code via inventory_by_sku
---                         → re-agrega por (sku_code,week_offset) somando espelhos por
---                         semana → EWMA por sku_code. Junta na canon por sku_code.
---   6. seasonal_index:    nível marca — inalterado; junta na canon por brand.
---   7. lead_time/forn:    inalterados; junta na canon por sku_code/fornecedor.
---   8. params:            inalterado (sku>fornecedor>marca>global);
---                         usa sku_code/brand da canon.
---   9. incoming_by_sku:   1:1 com canon por sku_code → zero dupla-contagem.
---                         CTEs sku_share e incoming_per_variation REMOVIDOS.
---  10. cost:              join por seller_sku=sku_code — inalterado.
---  11. base + SELECT:     1 linha por SKU canônica.
---
--- INVARIANTES MANTIDOS:
---   - SECURITY INVOKER (anti-IDOR)
---   - Assinatura 4-arg idêntica (p_org_id, p_sales_window_days,
---     p_demand_multiplier, p_smart) — compatível com frontend sem alteração
---   - #variable_conflict use_column + todos os refs qualificados
---   - Colunas de saída idênticas (nenhuma adição/remoção)
---   - Ordem ORDER BY idêntica
---   - Total de vendas preservado (soma espelhos por sku_code)
---   - qtd_a_caminho: UMA contagem por SKU (join 1:1 canon→incoming_by_sku)
+-- INVARIANTES: SECURITY INVOKER (anti-IDOR), assinatura 4-arg, colunas de saída e ORDER BY
+--   idênticos, #variable_conflict use_column. Precedência de params e fallback de custo
+--   preservados (mesma semântica das subqueries, agora via join+COALESCE).
 -- ============================================================
 
 DROP FUNCTION IF EXISTS public.get_replenishment_by_sku(UUID, INTEGER, NUMERIC, BOOLEAN);
@@ -75,8 +50,7 @@ DECLARE
 BEGIN
   RETURN QUERY
   WITH
-  -- 1. Inventário: 1 linha por (item_id, variation_id)
-  inventory_by_sku AS (
+  inventory_by_sku AS MATERIALIZED (
     SELECT
       i.item_id, i.title, i.brand, i.logistic_type,
       v.variation_id, v.attribute_combinations,
@@ -96,8 +70,25 @@ BEGIN
     WHERE i.organization_id = p_org_id AND i.status = 'active'
       AND (i.has_variations = FALSE OR jsonb_array_length(i.variations) = 0)
   ),
-  -- 2. Venda por (item_id, variation_id) na janela
-  --    Match por (item,variation) — sem regressão (NÃO por o.sku)
+  -- Pré-carga ÚNICA dos parâmetros (elimina ~7.4k subqueries correlacionadas sob RLS)
+  params_lookup AS MATERIALIZED (
+    SELECT rp.scope, rp.scope_value, rp.lead_time_dias, rp.meta_cobertura_dias,
+           rp.safety_days, rp.moq, rp.pack_multiple
+    FROM replenishment_params rp WHERE rp.organization_id = p_org_id
+  ),
+  -- Pré-carga ÚNICA dos custos (elimina LATERAL por linha sob RLS)
+  costs_by_sku AS MATERIALIZED (
+    SELECT DISTINCT ON (c.seller_sku) c.seller_sku, c.cost
+    FROM ml_product_costs c
+    WHERE c.organization_id = p_org_id AND c.seller_sku IS NOT NULL AND c.seller_sku <> ''
+    ORDER BY c.seller_sku, c.updated_at DESC NULLS LAST
+  ),
+  costs_by_item AS MATERIALIZED (
+    SELECT DISTINCT ON (c.item_id) c.item_id, c.cost
+    FROM ml_product_costs c
+    WHERE c.organization_id = p_org_id
+    ORDER BY c.item_id, c.updated_at DESC NULLS LAST
+  ),
   row_sales AS (
     SELECT
       inv.item_id, inv.variation_id, inv.title, inv.brand, inv.logistic_type,
@@ -111,8 +102,6 @@ BEGIN
     GROUP BY inv.item_id, inv.variation_id, inv.title, inv.brand, inv.logistic_type,
       inv.attribute_combinations, inv.sku_code, inv.sku_stock
   ),
-  -- 3. Linha canônica: 1 por sku_code (anúncio mais vendido = principal).
-  --    Para sku_code NULL/vazio: cada (item_id,variation_id) é seu próprio grupo.
   canon AS (
     SELECT
       rs.item_id, rs.variation_id, rs.title, rs.brand, rs.logistic_type,
@@ -131,8 +120,6 @@ BEGIN
     ) rs
     WHERE rs.rn = 1
   ),
-  -- 4. Venda por sku_code: soma TODOS os anúncios do SKU (espelhos incluídos)
-  --    → total de vendas preservado; atribuído à linha canônica
   sales_by_sku AS (
     SELECT rs.sku_code,
       SUM(rs.total_qty) / NULLIF(p_sales_window_days::NUMERIC, 0) AS avg_daily
@@ -140,7 +127,6 @@ BEGIN
     WHERE rs.sku_code IS NOT NULL AND rs.sku_code <> ''
     GROUP BY rs.sku_code
   ),
-  -- 5. OCs em trânsito por sku_code — agora 1:1 com canon (sem dupla-contagem)
   incoming_by_sku AS (
     SELECT po.sku AS sku_code, SUM(po.quantidade)::INTEGER AS qtd_a_caminho,
       COALESCE(MIN(po.data_entrega) FILTER (WHERE po.data_entrega >= CURRENT_DATE),
@@ -157,12 +143,6 @@ BEGIN
       GROUP BY po.sku, po.fornecedor
     ) sub ORDER BY sub.sku_code, sub.total_qty DESC, sub.ultima_data DESC NULLS LAST
   ),
-  -- 6. EWMA semanal por sku_code (alpha=0.3 via POWER(0.7,week_offset), lookback 84d)
-  --    Passo interno: agrega orders por (item_id,variation_id,week_offset) casando por
-  --    (item,variation) como antes (preserva matching, sem regressão).
-  --    Mapeamento: (item,variation)→sku_code via inventory_by_sku.
-  --    Re-agrega por (sku_code,week_offset) somando espelhos por semana.
-  --    EWMA roda sobre (sku_code,week) → 1 resultado por sku_code.
   ewma_sales AS (
     SELECT sku_week.sku_code,
       SUM(sku_week.week_qty * POWER(0.7, sku_week.week_offset)) / NULLIF(SUM(POWER(0.7, sku_week.week_offset)), 0) / 7.0 AS ewma_daily,
@@ -172,7 +152,6 @@ BEGIN
       SUM(sku_week.week_qty * POWER(0.7, sku_week.week_offset)) FILTER (WHERE sku_week.week_offset BETWEEN 4 AND 11)
         / NULLIF(SUM(POWER(0.7, sku_week.week_offset)) FILTER (WHERE sku_week.week_offset BETWEEN 4 AND 11), 0) / 7.0 AS ewma_older_daily
     FROM (
-      -- Mapeia (item,variation,week) → (sku_code,week) somando espelhos
       SELECT inv.sku_code, var_wk.week_offset, SUM(var_wk.week_qty) AS week_qty
       FROM inventory_by_sku inv
       JOIN (
@@ -191,8 +170,6 @@ BEGIN
     ) sku_week
     GROUP BY sku_week.sku_code
   ),
-  -- 7. Índice sazonal por marca/mês (ratio-to-average, >=12 meses, clamp [0.5,2.5])
-  --    Inalterado; junta na canon por brand
   seasonal_index AS (
     WITH brand_by_item AS (
       SELECT DISTINCT mic.item_id, mic.brand FROM ml_inventory_cache mic
@@ -216,8 +193,6 @@ BEGIN
       (st.months_covered >= 12) AS sazonal_ativa
     FROM stats st WHERE st.mes = EXTRACT(MONTH FROM CURRENT_DATE)::INTEGER
   ),
-  -- 8. Lead time real por fornecedor (mediana, guard data_entrega>=data_pedido)
-  --    Inalterado; junta na canon por fornecedor
   lead_time_by_fornecedor AS (
     SELECT po.fornecedor,
       ROUND(percentile_cont(0.5) WITHIN GROUP (ORDER BY (po.data_entrega - po.data_pedido)))::INTEGER AS median_lead_days,
@@ -229,8 +204,6 @@ BEGIN
       AND po.data_entrega >= po.data_pedido
     GROUP BY po.fornecedor
   ),
-  -- 9. Composição de venda efetiva por sku_code:
-  --    EWMA×sazonal → EWMA → média plana (fallback). Tudo keyed por sku_code.
   sales_smart AS (
     SELECT c.sku_code, c.item_id, c.variation_id, c.brand,
       CASE
@@ -250,60 +223,31 @@ BEGIN
     LEFT JOIN ewma_sales es ON es.sku_code = c.sku_code
     LEFT JOIN seasonal_index si ON si.brand = c.brand
   ),
-  -- 10. Parâmetros por sku_code (sku>fornecedor>marca>global)
-  --     Usa sku_code/brand da canon; forn e lead_time inalterados
   params AS (
     SELECT c.sku_code, c.item_id, c.variation_id,
       COALESCE(
         CASE WHEN v_smart AND lf.median_lead_days IS NOT NULL AND lf.oc_count >= 2 THEN lf.median_lead_days ELSE NULL END,
-        (SELECT rp.lead_time_dias FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'sku' AND rp.scope_value = COALESCE(c.sku_code, '') LIMIT 1),
-        (SELECT rp.lead_time_dias FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'fornecedor' AND rp.scope_value = forn.fornecedor LIMIT 1),
-        (SELECT rp.lead_time_dias FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'marca' AND rp.scope_value = COALESCE(c.brand, '') LIMIT 1),
-        (SELECT rp.lead_time_dias FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'global' LIMIT 1),
-        30
+        p_sku.lead_time_dias, p_forn.lead_time_dias, p_marca.lead_time_dias, p_global.lead_time_dias, 30
       ) AS lead_time_dias,
-      COALESCE(
-        (SELECT rp.meta_cobertura_dias FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'sku' AND rp.scope_value = COALESCE(c.sku_code, '') LIMIT 1),
-        (SELECT rp.meta_cobertura_dias FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'fornecedor' AND rp.scope_value = forn.fornecedor LIMIT 1),
-        (SELECT rp.meta_cobertura_dias FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'marca' AND rp.scope_value = COALESCE(c.brand, '') LIMIT 1),
-        (SELECT rp.meta_cobertura_dias FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'global' LIMIT 1),
-        60
-      ) AS meta_cobertura_dias,
-      COALESCE(
-        (SELECT rp.safety_days FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'sku' AND rp.scope_value = COALESCE(c.sku_code, '') LIMIT 1),
-        (SELECT rp.safety_days FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'fornecedor' AND rp.scope_value = forn.fornecedor LIMIT 1),
-        (SELECT rp.safety_days FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'marca' AND rp.scope_value = COALESCE(c.brand, '') LIMIT 1),
-        (SELECT rp.safety_days FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'global' LIMIT 1),
-        7
-      ) AS safety_days,
-      COALESCE(
-        (SELECT rp.moq FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'sku' AND rp.scope_value = COALESCE(c.sku_code, '') LIMIT 1),
-        (SELECT rp.moq FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'fornecedor' AND rp.scope_value = forn.fornecedor LIMIT 1),
-        (SELECT rp.moq FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'marca' AND rp.scope_value = COALESCE(c.brand, '') LIMIT 1),
-        (SELECT rp.moq FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'global' LIMIT 1),
-        1
-      ) AS moq,
-      COALESCE(
-        (SELECT rp.pack_multiple FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'sku' AND rp.scope_value = COALESCE(c.sku_code, '') LIMIT 1),
-        (SELECT rp.pack_multiple FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'fornecedor' AND rp.scope_value = forn.fornecedor LIMIT 1),
-        (SELECT rp.pack_multiple FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'marca' AND rp.scope_value = COALESCE(c.brand, '') LIMIT 1),
-        (SELECT rp.pack_multiple FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'global' LIMIT 1),
-        1
-      ) AS pack_multiple,
+      COALESCE(p_sku.meta_cobertura_dias, p_forn.meta_cobertura_dias, p_marca.meta_cobertura_dias, p_global.meta_cobertura_dias, 60) AS meta_cobertura_dias,
+      COALESCE(p_sku.safety_days, p_forn.safety_days, p_marca.safety_days, p_global.safety_days, 7) AS safety_days,
+      COALESCE(p_sku.moq, p_forn.moq, p_marca.moq, p_global.moq, 1) AS moq,
+      COALESCE(p_sku.pack_multiple, p_forn.pack_multiple, p_marca.pack_multiple, p_global.pack_multiple, 1) AS pack_multiple,
       CASE
-        WHEN EXISTS (SELECT 1 FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'sku' AND rp.scope_value = COALESCE(c.sku_code, '')) THEN 'sku'
-        WHEN forn.fornecedor IS NOT NULL AND EXISTS (SELECT 1 FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'fornecedor' AND rp.scope_value = forn.fornecedor) THEN 'fornecedor'
-        WHEN EXISTS (SELECT 1 FROM replenishment_params rp WHERE rp.organization_id = p_org_id AND rp.scope = 'marca' AND rp.scope_value = COALESCE(c.brand, '')) THEN 'marca'
+        WHEN p_sku.scope IS NOT NULL THEN 'sku'
+        WHEN forn.fornecedor IS NOT NULL AND p_forn.scope IS NOT NULL THEN 'fornecedor'
+        WHEN p_marca.scope IS NOT NULL THEN 'marca'
         ELSE 'global'
       END AS param_origem,
       lf.median_lead_days AS lead_time_real, lf.oc_count AS lead_time_oc_count
     FROM canon c
     LEFT JOIN fornecedor_by_sku forn ON forn.sku_code = c.sku_code
     LEFT JOIN lead_time_by_fornecedor lf ON lf.fornecedor = forn.fornecedor
+    LEFT JOIN params_lookup p_sku    ON p_sku.scope = 'sku'        AND p_sku.scope_value = COALESCE(c.sku_code, '')
+    LEFT JOIN params_lookup p_forn   ON p_forn.scope = 'fornecedor' AND p_forn.scope_value = forn.fornecedor
+    LEFT JOIN params_lookup p_marca  ON p_marca.scope = 'marca'    AND p_marca.scope_value = COALESCE(c.brand, '')
+    LEFT JOIN params_lookup p_global ON p_global.scope = 'global'
   ),
-  -- 11. base: 1 linha por SKU (a canônica).
-  --     incoming_by_sku → canon é 1:1 por sku_code → sem dupla-contagem.
-  --     sku_stock da canon = estoque do anúncio principal (conservador).
   base AS (
     SELECT
       c.item_id, c.variation_id, c.title, c.brand, c.sku_code,
@@ -319,7 +263,7 @@ BEGIN
         WHEN (c.sku_stock + COALESCE(inc.qtd_a_caminho, 0))::NUMERIC > ss.avg_daily * p_demand_multiplier * (pr.lead_time_dias + pr.safety_days)::NUMERIC THEN 0
         ELSE GREATEST(CEIL(GREATEST(0, ss.avg_daily * p_demand_multiplier * (pr.meta_cobertura_dias + pr.safety_days)::NUMERIC - (c.sku_stock + COALESCE(inc.qtd_a_caminho, 0))::NUMERIC) / NULLIF(pr.pack_multiple, 0)) * pr.pack_multiple, pr.moq)::INTEGER
       END AS compra_sugerida,
-      cl.cost AS cost_val,
+      COALESCE(clk.cost, cli.cost) AS cost_val,
       pr.lead_time_dias, pr.meta_cobertura_dias, pr.safety_days, pr.moq, pr.pack_multiple, pr.param_origem,
       ss.venda_dia_origem, ss.ewma_recent_daily, ss.ewma_older_daily, ss.si_fator_sazonal, ss.si_sazonal_ativa,
       pr.lead_time_real, pr.lead_time_oc_count
@@ -327,11 +271,8 @@ BEGIN
     LEFT JOIN sales_smart ss ON ss.item_id = c.item_id AND ss.variation_id IS NOT DISTINCT FROM c.variation_id
     JOIN params pr ON pr.item_id = c.item_id AND pr.variation_id IS NOT DISTINCT FROM c.variation_id
     LEFT JOIN incoming_by_sku inc ON inc.sku_code = c.sku_code
-    LEFT JOIN LATERAL (
-      SELECT cost FROM ml_product_costs
-      WHERE organization_id = p_org_id AND (seller_sku = c.sku_code OR (c.sku_code IS NULL AND item_id = c.item_id))
-      ORDER BY updated_at DESC NULLS LAST LIMIT 1
-    ) cl ON TRUE
+    LEFT JOIN costs_by_sku  clk ON clk.seller_sku = c.sku_code
+    LEFT JOIN costs_by_item cli ON c.sku_code IS NULL AND cli.item_id = c.item_id
   )
   SELECT
     b.item_id, b.variation_id, b.title, b.brand, b.sku_code,
