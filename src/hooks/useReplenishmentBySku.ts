@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrganization } from "@/contexts/OrganizationContext";
-import type { VendaDiaOrigem, LeadTimeOrigem } from "@/lib/analysis/replenishmentUtils";
+import type { VendaDiaOrigem, LeadTimeOrigem, StatusEsgotado } from "@/lib/analysis/replenishmentUtils";
 
 // ── Tipos exportados ───────────────────────────────────────────────────────────
 
@@ -61,6 +61,8 @@ export interface ReplenishmentSkuRow {
   venda_simples: number;
   /** Venda diária inteligente = EWMA × sazonal (boost-only); null quando sem sinal — Phase 68 */
   venda_inteligente: number | null;
+  /** Balde de recência para esgotados — Phase 69 (ESGOT-01) */
+  status_esgotado: StatusEsgotado;
 }
 
 /**
@@ -153,6 +155,8 @@ function mapRow(r: Record<string, unknown>): ReplenishmentSkuRow {
     // Phase 68 — exibe OS DOIS indicadores (simples = espinha; inteligente = EWMA×sazonal só em alta confiança)
     venda_simples:                Number(r.venda_simples ?? 0),
     venda_inteligente:            r.venda_inteligente == null ? null : Number(r.venda_inteligente),
+    // Phase 69 — balde de recência para esgotados (ESGOT-01); fallback seguro 'com_giro' quando ausente
+    status_esgotado:              ((r.status_esgotado as string) ?? "com_giro") as StatusEsgotado,
   };
 }
 

@@ -2078,6 +2078,7 @@ export type Database = {
           p_org_id: string
           p_sales_window_days?: number
           p_demand_multiplier?: number
+          p_smart?: boolean
         }
         Returns: {
           item_id: string
@@ -2103,6 +2104,7 @@ export type Database = {
           param_moq: number
           param_pack: number
           param_origem: string
+          status_esgotado: string
         }[]
       }
       get_user_role: {
