@@ -163,8 +163,11 @@ export function resolveParamsBySku(
 // 20260667000100_get_replenishment_by_sku_smart.sql.
 // Constantes idênticas: alpha=0.3/decay=0.7, clamp[0.5,2.5], 12 meses, K≥2, threshold=0.20.
 
-/** Origem do cálculo de venda_dia (espelha coluna venda_dia_origem da RPC). */
-export type VendaDiaOrigem = "ewma_sazonal" | "ewma" | "simples";
+/**
+ * Origem do cálculo de venda_dia (espelha coluna venda_dia_origem da RPC).
+ * 'historico_esgotado' adicionado na Phase 69 (ESGOT-02) para SKUs resgatados.
+ */
+export type VendaDiaOrigem = "ewma_sazonal" | "ewma" | "simples" | "historico_esgotado";
 
 /** Origem do lead time (espelha coluna lead_time_origem da RPC). */
 export type LeadTimeOrigem = "fornecedor_real" | "param";
@@ -449,4 +452,145 @@ export function calcReplenishment(
     custoAusente,
     valorEstimado,
   };
+}
+
+// ── Phase 69 — Espelho puro do motor de esgotados (ESGOT-01/ESGOT-02) ─────────
+// Funções puras que replicam a classificação por recência (status_esgotado) e a
+// estimativa "melhor ritmo 30d/180d" introduzidas pela migration
+// 20260669000000_get_replenishment_by_sku_esgotados.sql.
+// Não alteram nenhuma assinatura de função existente.
+
+/**
+ * Balde de recência para SKUs esgotados.
+ *
+ * Implementa ESGOT-01 (classificação) espelhando a CTE `sales_history_by_sku`
+ * e o CASE de status_esgotado da RPC v9.
+ *
+ * Valores:
+ *   'com_giro'         — SKU tem estoque ou venda recente (30d) — fluxo normal intocado.
+ *   'repor_esgotado'   — Esgotado, última venda ≤ 90 dias.
+ *   'revisar_esgotado' — Esgotado, última venda entre 91 e 365 dias.
+ *   'descontinuar'     — Esgotado, última venda > 365 dias ou nunca vendeu (null).
+ */
+export type StatusEsgotado =
+  | "com_giro"
+  | "repor_esgotado"
+  | "revisar_esgotado"
+  | "descontinuar";
+
+// ── Constantes (espelham os literais da RPC — ESGOT-01/ESGOT-02) ──────────────
+
+/** Dias de recência máxima para o balde 'repor_esgotado' (≤ 90 dias). */
+export const RECENCY_REPOR_DAYS = 90;
+
+/** Dias de recência máxima para o balde 'revisar_esgotado' (91–365 dias). */
+export const RECENCY_REVISAR_DAYS = 365;
+
+/** Janela em dias usada como numerador da taxa diária estimada. */
+export const BEST_WINDOW_DAYS = 30;
+
+/** Lookback máximo em dias para o cálculo de melhor janela. */
+export const BEST_LOOKBACK_DAYS = 180;
+
+/** Mínimo de dias distintos com venda para usar a melhor janela (anti-pico). */
+export const MIN_DISTINCT_SALE_DAYS = 2;
+
+/** Janela conservadora em dias (fallback anti-pico). */
+export const CONSERVATIVE_DAYS = 90;
+
+// ── Funções exportadas ─────────────────────────────────────────────────────────
+
+/**
+ * Classifica um SKU no balde de recência de esgotados.
+ *
+ * Espelha o CASE `status_esgotado` na CTE `sales_history_by_sku` da RPC v9
+ * (ESGOT-01). A lógica é idêntica aos cortes 90/365 usados pelo SQL.
+ *
+ * @param skuStock    - Estoque atual da variação/SKU.
+ * @param venda30d    - Quantidade vendida nos últimos 30 dias (janela padrão).
+ * @param lastSaleDays - Dias desde a última venda; null se nunca vendeu.
+ * @returns StatusEsgotado — balde de recência.
+ */
+export function classifyStatusEsgotado(input: {
+  skuStock: number;
+  venda30d: number;
+  lastSaleDays: number | null;
+}): StatusEsgotado {
+  const { skuStock, venda30d, lastSaleDays } = input;
+
+  // Tem estoque ou vendeu recentemente → giro normal (RPC: não entra nas CTEs de esgotado)
+  if (skuStock > 0 || venda30d > 0) return "com_giro";
+
+  // Esgotado (skuStock=0 && venda30d=0): classifica pela recência
+  if (lastSaleDays == null || lastSaleDays > RECENCY_REVISAR_DAYS) return "descontinuar";
+  if (lastSaleDays <= RECENCY_REPOR_DAYS) return "repor_esgotado";
+  return "revisar_esgotado"; // 91–365
+}
+
+/**
+ * Estima a taxa de venda diária pelo melhor ritmo histórico.
+ *
+ * Espelha a CTE `best_rate_by_sku` da RPC v9 (ESGOT-02). Usa uma janela
+ * deslizante de BEST_WINDOW_DAYS (30d) dentro de BEST_LOOKBACK_DAYS (180d)
+ * para encontrar o pico de demanda. Proteção anti-pico: exige ao menos
+ * MIN_DISTINCT_SALE_DAYS (2) dias distintos com venda.
+ *
+ * Retorna a taxa diária e a origem:
+ *   'historico_esgotado' — quando a melhor janela é válida e > 0.
+ *   'conservador'        — quando anti-pico ativa ou não há vendas (fallback sum90d/90).
+ *
+ * @param dailySales      - Dias com vendas: [{dayOffset, qty}] onde dayOffset=0 é hoje.
+ *                          Offsets ≥ BEST_LOOKBACK_DAYS (180) são ignorados.
+ * @param distinctSaleDays - Número de dias distintos com venda no lookback de 180d.
+ * @param sum90d           - Soma de qty vendida nos últimos 90 dias (para o fallback).
+ */
+export function estimateBestRate(input: {
+  dailySales: Array<{ dayOffset: number; qty: number }>;
+  distinctSaleDays: number;
+  sum90d: number;
+}): { vendaDia: number; origem: "historico_esgotado" | "conservador" } {
+  const { dailySales, distinctSaleDays, sum90d } = input;
+
+  // Anti-pico: sem dias distintos suficientes → conservador
+  if (distinctSaleDays < MIN_DISTINCT_SALE_DAYS) {
+    return { vendaDia: sum90d / CONSERVATIVE_DAYS, origem: "conservador" };
+  }
+
+  // Filtra apenas vendas dentro do lookback de 180d
+  const eligible = dailySales.filter((d) => d.dayOffset < BEST_LOOKBACK_DAYS);
+
+  // Janela deslizante: máxima soma de qty em qualquer janela de 30d consecutivos
+  // Tenta todas as janelas [a, a + BEST_WINDOW_DAYS - 1] com a de 0 a (180-30)=150
+  let bestSum = 0;
+  const maxStart = BEST_LOOKBACK_DAYS - BEST_WINDOW_DAYS; // 150
+  for (let a = 0; a <= maxStart; a++) {
+    const windowEnd = a + BEST_WINDOW_DAYS; // exclusivo
+    const windowSum = eligible
+      .filter((d) => d.dayOffset >= a && d.dayOffset < windowEnd)
+      .reduce((s, d) => s + d.qty, 0);
+    if (windowSum > bestSum) bestSum = windowSum;
+  }
+
+  if (bestSum <= 0) {
+    return { vendaDia: sum90d / CONSERVATIVE_DAYS, origem: "conservador" };
+  }
+
+  return { vendaDia: bestSum / BEST_WINDOW_DAYS, origem: "historico_esgotado" };
+}
+
+/**
+ * Indica se a demanda diária exibida é estimada (vs. real/observada).
+ *
+ * Espelha o CASE de transparência da RPC v9 (ESGOT-03). Retorna `true`
+ * exclusivamente para `'historico_esgotado'` — a única origem em que a
+ * demanda não vem de vendas reais recentes, mas do melhor ritmo histórico.
+ *
+ * Usado pelo badge "demanda estimada pelo histórico" na coluna Venda/dia
+ * da tela /compras (ESGOT-03).
+ *
+ * @param vendaDiaOrigem - Origem do cálculo de venda_dia (VendaDiaOrigem).
+ * @returns true sse vendaDiaOrigem === 'historico_esgotado'.
+ */
+export function isDemandaEstimada(vendaDiaOrigem: VendaDiaOrigem): boolean {
+  return vendaDiaOrigem === "historico_esgotado";
 }

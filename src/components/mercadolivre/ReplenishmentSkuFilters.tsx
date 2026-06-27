@@ -11,7 +11,13 @@ import {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type FilterStatus = "all" | "gatilho" | "sem_giro";
+export type FilterStatus =
+  | "all"
+  | "gatilho"
+  | "sem_giro"
+  | "repor_esgotado"
+  | "revisar_esgotado"
+  | "descontinuar";
 export type FilterCusto  = "all" | "com" | "sem";
 
 export interface ReplenishmentSkuFiltersProps {
@@ -83,6 +89,9 @@ export function ReplenishmentSkuFilters({
             <SelectItem value="all">Todos</SelectItem>
             <SelectItem value="gatilho">Precisa comprar</SelectItem>
             <SelectItem value="sem_giro">Sem vendas</SelectItem>
+            <SelectItem value="repor_esgotado">🔴 Repor esgotado</SelectItem>
+            <SelectItem value="revisar_esgotado">⚠️ Revisar parado</SelectItem>
+            <SelectItem value="descontinuar">⚫ Descontinuar?</SelectItem>
           </SelectContent>
         </Select>
       </div>

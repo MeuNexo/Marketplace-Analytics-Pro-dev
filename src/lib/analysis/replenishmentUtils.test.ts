@@ -4,6 +4,8 @@ import {
   calcEwmaDaily, calcSeasonalFactor, calcTrend,
   resolveSmartLeadTime, resolveVendaDiaOrigem,
   decideVendaDia, seasonalBoostOnly,
+  // Phase 69 — novos símbolos (ESGOT-01/ESGOT-02)
+  classifyStatusEsgotado, estimateBestRate, isDemandaEstimada,
 } from "./replenishmentUtils";
 import type { ReplenishmentParams } from "./replenishmentUtils";
 
@@ -598,6 +600,160 @@ describe("seasonalBoostOnly", () => {
 
   it("PH68 exato 1.0 → 1.0", () => {
     expect(seasonalBoostOnly(1.0)).toBe(1.0);
+  });
+
+});
+
+// ─── classifyStatusEsgotado (Phase 69 — ESGOT-01) ────────────────────────────
+
+describe("classifyStatusEsgotado", () => {
+
+  // com_giro: tem estoque
+  it("ESGOT-01 com_giro: skuStock=10, venda30d=0 → 'com_giro' (tem estoque)", () => {
+    expect(classifyStatusEsgotado({ skuStock: 10, venda30d: 0, lastSaleDays: null })).toBe("com_giro");
+  });
+
+  // com_giro: tem venda recente (mesmo sem estoque)
+  it("ESGOT-01 com_giro: skuStock=0, venda30d=5 → 'com_giro' (tem venda recente)", () => {
+    expect(classifyStatusEsgotado({ skuStock: 0, venda30d: 5, lastSaleDays: 90 })).toBe("com_giro");
+  });
+
+  // com_giro: ambos > 0
+  it("ESGOT-01 com_giro: skuStock=1, venda30d=3 → 'com_giro'", () => {
+    expect(classifyStatusEsgotado({ skuStock: 1, venda30d: 3, lastSaleDays: 10 })).toBe("com_giro");
+  });
+
+  // repor_esgotado: exatamente 90 dias (limite do balde)
+  it("ESGOT-01 repor_esgotado: esgotado + lastSaleDays=90 → 'repor_esgotado' (limite exato)", () => {
+    expect(classifyStatusEsgotado({ skuStock: 0, venda30d: 0, lastSaleDays: 90 })).toBe("repor_esgotado");
+  });
+
+  // repor_esgotado: 30 dias (dentro do balde)
+  it("ESGOT-01 repor_esgotado: esgotado + lastSaleDays=30 → 'repor_esgotado'", () => {
+    expect(classifyStatusEsgotado({ skuStock: 0, venda30d: 0, lastSaleDays: 30 })).toBe("repor_esgotado");
+  });
+
+  // repor_esgotado: 1 dia
+  it("ESGOT-01 repor_esgotado: esgotado + lastSaleDays=1 → 'repor_esgotado'", () => {
+    expect(classifyStatusEsgotado({ skuStock: 0, venda30d: 0, lastSaleDays: 1 })).toBe("repor_esgotado");
+  });
+
+  // revisar_esgotado: exatamente 91 dias (limite do próximo balde)
+  it("ESGOT-01 revisar_esgotado: esgotado + lastSaleDays=91 → 'revisar_esgotado' (limite exato)", () => {
+    expect(classifyStatusEsgotado({ skuStock: 0, venda30d: 0, lastSaleDays: 91 })).toBe("revisar_esgotado");
+  });
+
+  // revisar_esgotado: exatamente 365 dias (limite superior)
+  it("ESGOT-01 revisar_esgotado: esgotado + lastSaleDays=365 → 'revisar_esgotado' (limite exato)", () => {
+    expect(classifyStatusEsgotado({ skuStock: 0, venda30d: 0, lastSaleDays: 365 })).toBe("revisar_esgotado");
+  });
+
+  // revisar_esgotado: 180 dias (dentro do balde)
+  it("ESGOT-01 revisar_esgotado: esgotado + lastSaleDays=180 → 'revisar_esgotado'", () => {
+    expect(classifyStatusEsgotado({ skuStock: 0, venda30d: 0, lastSaleDays: 180 })).toBe("revisar_esgotado");
+  });
+
+  // descontinuar: 366 dias (acima do limite)
+  it("ESGOT-01 descontinuar: esgotado + lastSaleDays=366 → 'descontinuar'", () => {
+    expect(classifyStatusEsgotado({ skuStock: 0, venda30d: 0, lastSaleDays: 366 })).toBe("descontinuar");
+  });
+
+  // descontinuar: lastSaleDays=null (nunca vendeu)
+  it("ESGOT-01 descontinuar: esgotado + lastSaleDays=null → 'descontinuar'", () => {
+    expect(classifyStatusEsgotado({ skuStock: 0, venda30d: 0, lastSaleDays: null })).toBe("descontinuar");
+  });
+
+  // descontinuar: muito antigo
+  it("ESGOT-01 descontinuar: esgotado + lastSaleDays=1000 → 'descontinuar'", () => {
+    expect(classifyStatusEsgotado({ skuStock: 0, venda30d: 0, lastSaleDays: 1000 })).toBe("descontinuar");
+  });
+
+});
+
+// ─── estimateBestRate (Phase 69 — ESGOT-02) ──────────────────────────────────
+
+describe("estimateBestRate", () => {
+
+  // distinctSaleDays >= 2, best window > 0 → historico_esgotado
+  it("ESGOT-02 historico: distinctDays=3, vendas em 3 dias → best/30, origem='historico_esgotado'", () => {
+    // dias 0,1,2 com qty=10 cada → best window [0,29] = 30 → vendaDia=30/30=1
+    const sales = [
+      { dayOffset: 0, qty: 10 },
+      { dayOffset: 1, qty: 10 },
+      { dayOffset: 2, qty: 10 },
+    ];
+    const result = estimateBestRate({ dailySales: sales, distinctSaleDays: 3, sum90d: 30 });
+    expect(result.origem).toBe("historico_esgotado");
+    expect(result.vendaDia).toBeCloseTo(30 / 30, 6); // 1.0/d
+  });
+
+  // anti-pico: distinctSaleDays < 2 → conservador (sum90d/90)
+  it("ESGOT-02 anti-pico: distinctDays=1 (1 dia com 100 un) → sum90d/90, origem='conservador'", () => {
+    const sales = [{ dayOffset: 0, qty: 100 }];
+    const result = estimateBestRate({ dailySales: sales, distinctSaleDays: 1, sum90d: 100 });
+    expect(result.origem).toBe("conservador");
+    expect(result.vendaDia).toBeCloseTo(100 / 90, 6);
+  });
+
+  // best window selects peak: 50 em window 0-29, 10 em window 30-59
+  it("ESGOT-02 pico: melhor janela [0-29] com 50 un vence janela [30-59] com 10 → best=50, vendaDia=50/30", () => {
+    // 2 dias com venda na janela 0-29 → distinctSaleDays >= 2
+    const sales = [
+      { dayOffset: 5,  qty: 30 },  // dentro da janela 0-29
+      { dayOffset: 10, qty: 20 },  // dentro da janela 0-29; soma=50 nessa janela
+      { dayOffset: 35, qty: 10 },  // dentro da janela 30-64 mas não na 0-29
+    ];
+    const result = estimateBestRate({ dailySales: sales, distinctSaleDays: 3, sum90d: 60 });
+    expect(result.origem).toBe("historico_esgotado");
+    // melhor janela tem 50 unidades → vendaDia = 50/30
+    expect(result.vendaDia).toBeCloseTo(50 / 30, 5);
+  });
+
+  // best window = 0 → conservador (sem vendas nos 180 dias, mas distinctDays poderia ser >= 2 por bug de dados)
+  it("ESGOT-02 sem vendas: dailySales=[] → best=0, cai em conservador", () => {
+    const result = estimateBestRate({ dailySales: [], distinctSaleDays: 0, sum90d: 0 });
+    expect(result.origem).toBe("conservador");
+    expect(result.vendaDia).toBe(0); // 0/90 = 0
+  });
+
+  // distinctSaleDays=0 → conservador mesmo com dailySales contendo dados (defesa extra)
+  it("ESGOT-02 anti-pico distinctDays=0 → conservador", () => {
+    const result = estimateBestRate({ dailySales: [{ dayOffset: 5, qty: 50 }], distinctSaleDays: 0, sum90d: 50 });
+    expect(result.origem).toBe("conservador");
+  });
+
+  // janelas fora dos 180 dias são ignoradas (offset >= 180)
+  it("ESGOT-02 offset fora dos 180d: dayOffset=200 ignorado, best=0 → conservador", () => {
+    const sales = [
+      { dayOffset: 200, qty: 100 },
+      { dayOffset: 205, qty: 100 },
+    ];
+    const result = estimateBestRate({ dailySales: sales, distinctSaleDays: 2, sum90d: 0 });
+    // offsets >=180 não entram na janela; best=0 → cai na conservadora
+    expect(result.origem).toBe("conservador");
+    expect(result.vendaDia).toBe(0);
+  });
+
+});
+
+// ─── isDemandaEstimada (Phase 69 — ESGOT-03) ─────────────────────────────────
+
+describe("isDemandaEstimada", () => {
+
+  it("ESGOT-03 historico_esgotado → true", () => {
+    expect(isDemandaEstimada("historico_esgotado")).toBe(true);
+  });
+
+  it("ESGOT-03 ewma_sazonal → false", () => {
+    expect(isDemandaEstimada("ewma_sazonal")).toBe(false);
+  });
+
+  it("ESGOT-03 ewma → false", () => {
+    expect(isDemandaEstimada("ewma")).toBe(false);
+  });
+
+  it("ESGOT-03 simples → false", () => {
+    expect(isDemandaEstimada("simples")).toBe(false);
   });
 
 });

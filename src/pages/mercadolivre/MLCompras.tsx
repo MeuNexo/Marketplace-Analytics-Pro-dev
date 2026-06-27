@@ -33,6 +33,12 @@ function applyFilters(
     result = result.filter((r) => r.gatilho_ativo);
   } else if (filterStatus === "sem_giro") {
     result = result.filter((r) => r.sem_giro);
+  } else if (filterStatus === "repor_esgotado") {
+    result = result.filter((r) => r.status_esgotado === "repor_esgotado");
+  } else if (filterStatus === "revisar_esgotado") {
+    result = result.filter((r) => r.status_esgotado === "revisar_esgotado");
+  } else if (filterStatus === "descontinuar") {
+    result = result.filter((r) => r.status_esgotado === "descontinuar");
   }
   if (filterCusto === "com") {
     result = result.filter((r) => !r.custo_ausente);
@@ -69,6 +75,7 @@ function regroupRows(rows: ReplenishmentSkuRow[]): GroupedReplenishmentRow[] {
         total_valor_estimado:  row.valor_estimado,
         any_gatilho_ativo:     row.gatilho_ativo,
         any_custo_ausente:     row.custo_ausente,
+        total_a_caminho:       row.qtd_a_caminho,
       });
     } else {
       existing.skus.push(row);
@@ -79,6 +86,7 @@ function regroupRows(rows: ReplenishmentSkuRow[]): GroupedReplenishmentRow[] {
           : null;
       if (row.gatilho_ativo)  existing.any_gatilho_ativo = true;
       if (row.custo_ausente)  existing.any_custo_ausente = true;
+      existing.total_a_caminho += row.qtd_a_caminho;
     }
   }
 
@@ -144,9 +152,12 @@ export default function MLCompras() {
 
   /** Contagem de status para o mini-resumo */
   const statusCounts = useMemo(() => ({
-    parComprar: filteredRows.filter((r) => r.gatilho_ativo).length,
-    ok:         filteredRows.filter((r) => !r.gatilho_ativo && !r.sem_giro).length,
-    semGiro:    filteredRows.filter((r) => r.sem_giro).length,
+    parComprar:      filteredRows.filter((r) => r.gatilho_ativo && r.status_esgotado === "com_giro").length,
+    reporEsgotado:   filteredRows.filter((r) => r.status_esgotado === "repor_esgotado").length,
+    revisarEsgotado: filteredRows.filter((r) => r.status_esgotado === "revisar_esgotado").length,
+    descontinuar:    filteredRows.filter((r) => r.status_esgotado === "descontinuar").length,
+    ok:              filteredRows.filter((r) => r.status_esgotado === "com_giro" && !r.gatilho_ativo && !r.sem_giro).length,
+    semGiro:         filteredRows.filter((r) => r.sem_giro).length,
   }), [filteredRows]);
 
   return (
@@ -239,6 +250,21 @@ export default function MLCompras() {
               <span className={statusCounts.parComprar > 0 ? "text-destructive font-medium" : "text-muted-foreground"}>
                 🔴 {statusCounts.parComprar} para comprar
               </span>
+              {statusCounts.reporEsgotado > 0 && (
+                <span className="text-destructive font-medium">
+                  🔴 {statusCounts.reporEsgotado} repor esgotado
+                </span>
+              )}
+              {statusCounts.revisarEsgotado > 0 && (
+                <span className="text-warning font-medium">
+                  ⚠️ {statusCounts.revisarEsgotado} revisar parado
+                </span>
+              )}
+              {statusCounts.descontinuar > 0 && (
+                <span className="text-muted-foreground">
+                  ⚫ {statusCounts.descontinuar} descontinuar?
+                </span>
+              )}
               <span
                 className={statusCounts.ok > 0 ? "font-medium" : "text-muted-foreground"}
                 style={statusCounts.ok > 0 ? { color: "var(--kpi-positive)" } : undefined}
