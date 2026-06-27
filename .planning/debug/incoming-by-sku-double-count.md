@@ -123,7 +123,71 @@ fix: |
      AND ipv.variation_id IS NOT DISTINCT FROM inv.variation_id
      → join 1:1, sem duplicação. SECURITY INVOKER mantido.
 
-verification: pendente (deploy em prod aguarda autorização Wesley)
+verification: |
+  Queries de verificação inline preparadas (salvas em scratchpad e abaixo).
+  MCP execute_sql indisponível no sub-agente; verificação a ser feita via MCP
+  da sessão principal (project ckcdevcxgvueywivefgx):
+  - check_abc: combined_verify.sql (canvas/rowcount + dup SKUs + total vendas)
+  - check_d: verify_ewma.sql (EWMA populado com p_smart=true)
+  - check_e: get_advisors (SECURITY INVOKER = sem função vulnerável)
+  Commit 07a11af9 branch gsd/phase-67-calculo-esperto — NÃO deployado em prod.
+
+  QUERIES INLINE DE VERIFICAÇÃO:
+
+  -- CHECK (a,b,c): inventory rows, canon rows, dup SKUs, total vendas
+  WITH inventory_by_sku AS (
+    SELECT i.item_id, v.variation_id, v.seller_custom_field AS sku_code, v.available_quantity AS sku_stock,
+      i.title, i.brand, i.logistic_type, v.attribute_combinations
+    FROM ml_inventory_cache i
+    CROSS JOIN LATERAL jsonb_to_recordset(i.variations) AS v(
+      variation_id TEXT, attribute_combinations JSONB, available_quantity INTEGER, sold_quantity INTEGER, seller_custom_field TEXT)
+    WHERE i.organization_id='7f615df7-7bac-45e5-8a93-827fb9ddeec7' AND i.status='active'
+      AND i.has_variations=TRUE AND jsonb_array_length(i.variations)>0
+    UNION ALL
+    SELECT i.item_id, NULL::TEXT, i.seller_custom_field, i.available_quantity,
+      i.title, i.brand, i.logistic_type, NULL::JSONB
+    FROM ml_inventory_cache i
+    WHERE i.organization_id='7f615df7-7bac-45e5-8a93-827fb9ddeec7' AND i.status='active'
+      AND (i.has_variations=FALSE OR jsonb_array_length(i.variations)=0)
+  ),
+  row_sales AS (
+    SELECT inv.*, COALESCE(SUM(o.quantidade),0)::NUMERIC AS total_qty
+    FROM inventory_by_sku inv
+    LEFT JOIN orders o ON o.organization_id='7f615df7-7bac-45e5-8a93-827fb9ddeec7'
+      AND o.item_id=inv.item_id
+      AND (o.variation_id=inv.variation_id OR (inv.variation_id IS NULL AND o.variation_id=''))
+      AND o.data_pedido::timestamptz::date>=(CURRENT_DATE-30) AND o.status='paid'
+    GROUP BY inv.item_id, inv.variation_id, inv.sku_code, inv.sku_stock,
+      inv.title, inv.brand, inv.logistic_type, inv.attribute_combinations
+  ),
+  canon AS (
+    SELECT rs.item_id, rs.variation_id, rs.sku_code, rs.sku_stock
+    FROM (SELECT rs2.*, ROW_NUMBER() OVER (
+      PARTITION BY CASE WHEN rs2.sku_code IS NOT NULL AND rs2.sku_code<>''
+                        THEN rs2.sku_code ELSE rs2.item_id||'::'||COALESCE(rs2.variation_id,'') END
+      ORDER BY rs2.total_qty DESC NULLS LAST, rs2.sku_stock DESC, rs2.item_id) AS rn FROM row_sales rs2) rs
+    WHERE rs.rn=1
+  ),
+  sales_agg AS (SELECT rs.sku_code, SUM(rs.total_qty) AS t FROM row_sales rs WHERE rs.sku_code IS NOT NULL AND rs.sku_code<>'' GROUP BY rs.sku_code),
+  inc AS (SELECT po.sku AS sku_code, SUM(po.quantidade)::INTEGER AS qtd FROM purchase_orders po WHERE po.organization_id='7f615df7-7bac-45e5-8a93-827fb9ddeec7' GROUP BY po.sku),
+  dup AS (
+    SELECT inv.sku_code, COUNT(*) AS cnt, MAX(inc.qtd) AS qtd_a_caminho
+    FROM inventory_by_sku inv LEFT JOIN inc ON inc.sku_code=inv.sku_code
+    WHERE inv.sku_code IN ('18012849BRA3315G','11011273-CAFE3374G','12011666PTO3360P','18012849BRA3315GG','12012422-CAFE3274P')
+    GROUP BY inv.sku_code
+  )
+  SELECT
+    (SELECT COUNT(*) FROM inventory_by_sku) AS a_inv_rows,
+    (SELECT COUNT(DISTINCT sku_code) FROM inventory_by_sku WHERE sku_code IS NOT NULL AND sku_code<>'') AS a_distinct_skus,
+    (SELECT COUNT(*) FROM canon) AS a_canon_rows,
+    (SELECT SUM(t) FROM sales_agg) AS c_total_vendas_30d,
+    (SELECT SUM(qtd) FROM inc) AS c_total_a_caminho,
+    (SELECT json_agg(json_build_object('sku',sku_code,'inv_cnt',cnt,'a_caminho',qtd_a_caminho)) FROM dup) AS b_dup_skus;
+  --
+  -- Esperado: a_inv_rows=332, a_distinct_skus=295, a_canon_rows=295
+  -- b_dup_skus: cada sku com inv_cnt=2, a_caminho=valor real (ex: 18012849BRA3315G→11, não 22)
+  -- c_total_vendas_30d ≈ 908, c_total_a_caminho = total OCs real
 
 files_changed:
   - supabase/migrations/20260668000100_get_replenishment_by_sku_fix_double_count.sql
+  - .planning/debug/incoming-by-sku-double-count.md
