@@ -4,12 +4,17 @@ import { XCircle, AlertTriangle, Info, Activity, Loader2, X, Sparkles, Zap } fro
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useConsultorInsights } from "@/hooks/useConsultorInsights";
 import type { InsightRow, ScoreBand } from "@/hooks/useConsultorInsights";
+import { useOrganization } from "@/contexts/OrganizationContext";
+import { useConsultorActions } from "@/hooks/useConsultorActions";
 import { RULE_TO_ACTION } from "@/lib/consultor/actionMapping";
 import { ProposeActionDialog } from "@/components/mercadolivre/ProposeActionDialog";
+import { ActionQueue } from "@/components/mercadolivre/ActionQueue";
+import { ActionHistory } from "@/components/mercadolivre/ActionHistory";
 
 // ─── Score band helpers (D-10) ────────────────────────────────────────────────
 
@@ -204,6 +209,13 @@ export default function MLConsultor() {
   const { insights, score, scoreDelta, scoreBand, pillars, loading, syncing, dismiss, explain, summaryDisabled } =
     useConsultorInsights();
 
+  // ── Owner gate for Fila/Histórico (ACT-02 / T-54-14) ────────────────────
+  const { orgRole } = useOrganization();
+  const isOwner = orgRole === "owner";
+
+  // ── Pending count for owner badge (ACT-02) ───────────────────────────────
+  const { pendingCount } = useConsultorActions();
+
   // ── Propose-action dialog state (Task 1 — ACT-01) ────────────────────────
   const [proposingInsight, setProposingInsight] = useState<InsightRow | null>(null);
 
@@ -222,9 +234,11 @@ export default function MLConsultor() {
       ? "text-destructive"
       : "";
 
-  return (
+  // ── Insights content (preserved from original, goes inside "Insights" tab) ──
+
+  const insightsList = (
     <div className="space-y-5">
-      {/* ── Score header (D-10) ──────────────────────────────────────────── */}
+      {/* ── Score header (D-10) ───────────────────────────────────────────── */}
       <Card className="border-primary/20 shadow-[var(--shadow-glow)]">
         <CardContent className="py-4 flex flex-col gap-4">
           <div className="flex items-center gap-3 flex-wrap">
@@ -316,15 +330,70 @@ export default function MLConsultor() {
           </div>
         )}
       </div>
+    </div>
+  );
 
-      {/* ── ProposeActionDialog (Task 1 — ACT-01) ─────────────────────────── */}
+  // ── For non-owner: render insights only (no tabs, no queue leak) ─────────
+
+  if (!isOwner) {
+    return (
+      <div className="space-y-5">
+        {insightsList}
+        {proposingInsight && (
+          <ProposeActionDialog
+            insight={proposingInsight}
+            open={!!proposingInsight}
+            onOpenChange={(open) => { if (!open) setProposingInsight(null); }}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // ── For owner: Tabs with Insights | Fila | Histórico (ACT-02) ────────────
+
+  return (
+    <div className="space-y-5">
+      <Tabs defaultValue="insights">
+        <TabsList className="mb-4">
+          <TabsTrigger value="insights">Insights</TabsTrigger>
+          {/* Fila tab with pending count badge (ACT-02 / T-54-14) */}
+          <TabsTrigger value="fila" className="flex items-center gap-1.5">
+            Fila
+            {pendingCount > 0 && (
+              <Badge
+                variant="outline"
+                className="h-4 min-w-4 px-1 text-[10px] leading-4 bg-[hsl(var(--warning))]/10 text-[hsl(var(--warning))] border-[hsl(var(--warning))]/30"
+              >
+                {pendingCount}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="historico">Histórico</TabsTrigger>
+        </TabsList>
+
+        {/* Insights tab: preserves score header + insights list (ACT-02 no regression) */}
+        <TabsContent value="insights" className="mt-0">
+          {insightsList}
+        </TabsContent>
+
+        {/* Fila tab: pending/approved actions with approve/reject (ACT-03) */}
+        <TabsContent value="fila" className="mt-0">
+          <ActionQueue />
+        </TabsContent>
+
+        {/* Histórico tab: done/failed with result_summary (ACT-08) */}
+        <TabsContent value="historico" className="mt-0">
+          <ActionHistory />
+        </TabsContent>
+      </Tabs>
+
+      {/* ── ProposeActionDialog (ACT-01) ─────────────────────────────────── */}
       {proposingInsight && (
         <ProposeActionDialog
           insight={proposingInsight}
           open={!!proposingInsight}
-          onOpenChange={(open) => {
-            if (!open) setProposingInsight(null);
-          }}
+          onOpenChange={(open) => { if (!open) setProposingInsight(null); }}
         />
       )}
     </div>
