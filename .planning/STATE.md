@@ -4,8 +4,8 @@ milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
 current_phase: 69
 current_phase_name: reposicao-de-esgotados-demanda-censurada
-status: executing
-stopped_at: "Phase 69 PLANEJADA + plan-checker PASS (0 blockers). 2 planos / 2 waves no branch gsd/phase-69-reposicao-esgotados. Trata os 83 SKUs esgotados-sem-venda (demanda censurada): híbrido por recência 90d/365d + estimativa melhor-ritmo 30d/180d. Pronta p/ /gsd-execute-phase 69. (Trilha 62-68 já em prod; resta ok visual /compras.)"
+status: executed-awaiting-visual-ok
+stopped_at: "Phase 69 EXECUTADA + VERIFICADA (5/5) 2026-06-27. Backend EM PROD (migration 20260669000000 via MCP): status_esgotado 4 baldes + estimativa melhor-ritmo set-based (2,1s<8s). Prova: 29 repor_esgotado resgatados (+232un/R$21.219), com_giro=baseline (zero regressão), revisar/descontinuar compra 0, anti-IDOR 0. Frontend na branch gsd/phase-69-reposicao-esgotados (278/278 testes, tsc 0, build ok). PENDENTE: ok visual Wesley em /compras (badge+filtro) + merge PR. Trilha 62-68 também já em prod."
 last_updated: "2026-06-27T18:40:25.238Z"
 last_activity: 2026-06-27
 last_activity_desc: Phase 69 execution started
