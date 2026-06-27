@@ -21,6 +21,7 @@ export const roleAccess: Record<string, OrgRole[]> = {
   "/metas": OPERATIONAL,
   "/precificacao": OPERATIONAL,
   "/compras": OPERATIONAL,
+  "/consultor": OPERATIONAL,
   "/fluxo-de-caixa": OPERATIONAL,
   "/organizacao": ORG_ADMIN,
   "/sellers": OWNER_ONLY,
