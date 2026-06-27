@@ -26,6 +26,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 - [x] **Phase 65: Compras — Estoque a Chegar** — A `/compras` passa a considerar as ordens de compra em trânsito do Tiny: nova EF `sync-tiny-purchase-orders` (endpoint `/ordem-compra`, waitUntil) → tabela `purchase_orders` (RLS org-first) + cron diário; a RPC `get_replenishment_by_sku` ganha CTE `incoming_by_sku` e desconta TODA a qtd a caminho da sugestão (decisão Wesley), expondo `qtd_a_caminho`/`data_proxima_chegada`; frontend ganha coluna "A caminho". **EXECUTADA + VERIFICADA 2026-06-26 — backend em prod via MCP (22 OCs/135 SKUs/1.885 un; 93 SKUs a caminho, 80 zeraram sugestão; cobertura parcial preservando gatilho); tsc 0 + 208 testes + build ok. Frontend no PR (aguarda ok visual). (completed 2026-06-26)**
 - [x] **Phase 66: Compras v2 — Override por Fornecedor** — A `/compras` ganha um terceiro nível de parametrização de reposição: **por fornecedor**, entre SKU e marca (precedência `SKU > fornecedor > marca > global`). As ordens de compra do Tiny passam a gravar o **fornecedor** (`contato.nome`) em `purchase_orders`; a RPC `get_replenishment_by_sku` resolve os params do SKU também pelo fornecedor predominante; o frontend ganha CRUD de params por fornecedor (dropdown). Diferido da Phase 62. **EXECUTADA + VERIFICADA (5/5 must-haves) 2026-06-26 — backend em prod via MCP (migration registrada + EF v2 deployada + re-sync 200/200 OCs com fornecedor/6 distintos; RPC 4 níveis provada param_origem='fornecedor', sem regressão, anti-IDOR SECURITY INVOKER, advisors limpos); frontend 213/213 testes + tsc 0 + build ok na branch `gsd/phase-66-override-fornecedor`. Checkpoints D-12/D-13 (nomes) e schema-push aprovados por Wesley. Pendente: ok visual + merge PR. (completed 2026-06-26)**
 - [x] **Phase 67: Compras v3 — Reposição mais esperta (tendência + lead time real)** — A reposição da `/compras` deixa de usar só a média simples e o lead time fixo: velocidade = **EWMA (recência) + índice sazonal marca/mês**; lead time = **mediana real por fornecedor** das OCs; cada camada com **fallback transparente** + toggle "Cálculo esperto" + badges. **EXECUTADA + VERIFICADA (6/7 must-haves; 7º = ok visual pendente) 2026-06-26 — RPC v7 `p_smart` em prod via MCP: não-regressão p_smart=FALSE=Phase 66 (off_nao_simples=0); EWMA 171 SKUs, sazonal ATIVA 284 (13 meses de dados, fatores 0.93–1.68), lead-time-real 93; anti-IDOR SECURITY INVOKER; advisors limpos. Espelho TS + 33 testes (246/246); toggle+badges na /compras (tsc 0, build ok). 3 desvios corrigidos no checkpoint (DROP overload 3-arg ambíguo; p_smart DEFAULT FALSE; #variable_conflict use_column). Pendente: ok visual + merge PR. (completed 2026-06-26)**
+- [ ] **Phase 69: Reposição de esgotados (demanda censurada)** — SKUs esgotados (estoque 0) que não venderam nos últimos 30d ficam com `venda_dia=0` → `compra_sugerida=0` e somem da compra, mesmo tendo demanda real (83 SKUs hoje na Pé Vermeio, dos quais 70 venderam no último ano). Tratamento **híbrido por recência**: vendeu ≤90d → `repor_esgotado` (estima venda/dia pelo **melhor ritmo de 30d dentro de 180d** + proteção anti-pico ≥2 dias com venda; reusa ponto/alvo/MOQ/pack/a-caminho); vendeu 90–365d → `revisar_esgotado` (sinaliza, sem quantidade); sem venda há +1 ano → `descontinuar` (fora da compra). RPC `get_replenishment_by_sku` ganha `status_esgotado` + `venda_dia_origem='historico_esgotado'` (SECURITY INVOKER mantido); `/compras` ganha os 3 estados na coluna "O que fazer" + badge "demanda estimada pelo histórico" + opções no filtro Situação. Continuação da trilha /compras (62–68). Spec: `docs/superpowers/specs/2026-06-27-reposicao-esgotados-design.md`. **Planejada 2026-06-27.**
 
 ---
 
@@ -384,6 +385,31 @@ Plans:
 **Risco/aberto**: Pé Vermeio é seller pequeno → histórico curto pode limitar sazonalidade confiável; definir fallback (cair na média simples quando dados insuficientes). Escolher o método (tendência linear / EWMA vs sazonalidade explícita) e a fonte de lead time (ex.: mediana do intervalo das OCs por fornecedor) na discussão.
 
 Contexto/decisões: a definir em `67-CONTEXT.md`. Org Pé Vermeio = `7f615df7-7bac-45e5-8a93-827fb9ddeec7`; projeto Supabase `ckcdevcxgvueywivefgx`. **Roadmap criado 2026-06-26.**
+
+---
+
+### Phase 69: Reposição de esgotados (demanda censurada)
+
+**Goal**: SKUs esgotados (estoque 0) que não venderam nos últimos 30 dias **justamente porque estavam esgotados** ficam com `venda_dia=0` → `compra_sugerida=0` e somem da lista de compra, mesmo tendo demanda real (83 SKUs hoje na Pé Vermeio, 70 venderam no último ano). A `/compras` passa a tratar esses casos com um esquema **híbrido por recência**, estimando a demanda pelo melhor ritmo histórico em vez de descartar o SKU. É melhoria do **motor de cálculo** sobre a fundação das Phases 62–68 (RPC `get_replenishment_by_sku`) — não mexe na fundação de dados.
+**Depends on**: Phase 67 (RPC `get_replenishment_by_sku` v7 `p_smart` + colunas de transparência), Phase 65 (`purchase_orders` — a-caminho)
+**Plans:** 2 plans (2 waves)
+
+Plans:
+- [ ] 69-01-PLAN.md — RPC `get_replenishment_by_sku`: CTE de classificação por recência (`status_esgotado`) + estimativa "melhor ritmo 30d/180d" com proteção anti-pico + `venda_dia_origem='historico_esgotado'`; SECURITY INVOKER mantido; aplicação/validação via MCP (wave 1)
+- [ ] 69-02-PLAN.md — Frontend `/compras`: 3 estados na coluna "O que fazer" + badge "demanda estimada pelo histórico" + opções no filtro Situação; espelho TS `replenishmentUtils` + vitest; sem regressão (wave 2)
+
+**Requirements**: ESGOT-01 (classificação por recência: `repor_esgotado` ≤90d / `revisar_esgotado` 90–365d / `descontinuar` >365d, parametrizável), ESGOT-02 (estimativa de venda/dia = melhor janela de 30d dentro de 180d ÷ 30, com proteção anti-pico ≥2 dias com venda; reusa ponto/alvo/MOQ/pack/a-caminho), ESGOT-03 (transparência: `status_esgotado` + `venda_dia_origem='historico_esgotado'` na RPC; badge + filtro na tela distinguindo demanda estimada de real), ESGOT-04 (RPC SECURITY INVOKER anti-IDOR mantido; espelho TS + testes; sem regressão das Phases 62–68)
+**Success Criteria** (what must be TRUE):
+
+  1. SKUs esgotados que venderam ≤90d voltam a aparecer com `compra_sugerida > 0`, com venda/dia estimada pelo melhor ritmo histórico (não pela média zerada dos 30d)
+  2. SKUs que venderam 90–365d aparecem como `revisar_esgotado` (sinalizados, sem quantidade sugerida)
+  3. SKUs sem venda há +1 ano marcados `descontinuar`, fora do total de compra
+  4. A tela `/compras` distingue visualmente demanda estimada de demanda real (badge "estoque zerado · demanda estimada pelo histórico")
+  5. RPC permanece SECURITY INVOKER (anti-IDOR provado = 0 linhas cross-org); espelho TS cobre classificação + estimativa; tsc/build/vitest sem regressão das Phases 62–68
+
+**Risco/aberto**: estimativa por "melhor ritmo" pode superdimensionar um pico isolado → proteção anti-pico (≥2 dias com venda) cai na média conservadora. Cortes 90d/365d e janela 180d parametrizáveis para calibração.
+
+Contexto/decisões: `docs/superpowers/specs/2026-06-27-reposicao-esgotados-design.md` (spec aprovado por Wesley) → `69-CONTEXT.md`. Org Pé Vermeio = `7f615df7-7bac-45e5-8a93-827fb9ddeec7`; Supabase `ckcdevcxgvueywivefgx`. **Roadmap criado 2026-06-27.**
 
 ---
 

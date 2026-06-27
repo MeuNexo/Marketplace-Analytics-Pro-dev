@@ -4,8 +4,8 @@ milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
 current_phase: 67
 current_phase_name: compras-v3-reposi-o-mais-esperta-tend-ncia-lead-time-real
-status: executing
-stopped_at: "Phase 67 EXECUTADA + VERIFICADA (6/7). RPC esperta em prod (não-regressão provada; EWMA/sazonal/lead-time ativos); frontend na branch (246 testes). Pendente: ok visual + merge PR"
+status: awaiting-visual-ok
+stopped_at: "Trilha /compras (Phases 62-68) TODA MERGEADA em prod (PRs #11-#17 MERGED em 26/06; quick 260627-1z0 commit 5c0820ec na main). main == origin/main. NÃO há merge pendente. Resta APENAS o ok visual do Wesley em /compras."
 last_updated: "2026-06-26T19:36:37.847Z"
 last_activity: 2026-06-26
 last_activity_desc: Phase 67 execution started
@@ -139,7 +139,7 @@ Phase: 67 (compras-v3-reposi-o-mais-esperta-tend-ncia-lead-time-real) — EXECUT
 Plan: 1 of 3
 Status: Executing Phase 67
 Last activity: 2026-06-27 — Completed quick task 260627-1z0 (alvo order-up-to fix, deployado em prod)
-Next: **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) + checkpoint visual; depois adaptar/executar **Phase 53 com Gemini**.
+Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
 
 ### Phase 54 — Wave 1 EXECUTADA (2026-06-24), Wave 2 PENDENTE
 
