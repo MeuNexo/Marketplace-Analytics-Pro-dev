@@ -305,6 +305,63 @@ export function resolveVendaDiaOrigem(
   return "simples";
 }
 
+// ── Phase 68 — Motor "simples=espinha; inteligente só em ALTA CONFIANÇA" ───────
+// Espelha o CASE `aplica_inteligente` + `venda_base` da RPC v8
+// (migration 20260668000200_get_replenishment_by_sku_engine_max_confidence.sql).
+
+/**
+ * Aplica o fator sazonal em modo BOOST-ONLY: só pode SOMAR, nunca cortar.
+ *
+ * Espelha `GREATEST(1.0, COALESCE(si.fator_sazonal, 1.0))` da RPC v8. O fator
+ * atual é estimado sobre ~1 ano de histórico — não-confiável para reduzir a
+ * demanda; por isso clamp inferior em 1,0 (ver project_garment_compras_v2_roadmap).
+ *
+ * @param fatorSazonal - Fator sazonal bruto (null → tratado como 1.0).
+ * @returns fator clamp ≥ 1,0 (nunca corta).
+ */
+export function seasonalBoostOnly(fatorSazonal: number | null): number {
+  return Math.max(1.0, fatorSazonal ?? 1.0);
+}
+
+/**
+ * Decide a venda diária final: a SIMPLES (média da janela) é a espinha que
+ * decide a compra por padrão; a INTELIGENTE (EWMA × sazonal-boost) só ASSUME
+ * (puxa pra cima) quando TODAS as condições de alta confiança são verdadeiras.
+ *
+ * Espelha o CASE `aplica_inteligente` + `venda_base` da RPC v8.
+ *
+ * Condições para a inteligente assumir (Phase 68):
+ *   (1) inteligente != null
+ *   (2) inteligente > simples (upside — só puxa pra cima)
+ *   (3) trendUp = tendência de alta (ewma_recent > ewma_older × 1,20)
+ *   (4) weeksWithSales >= 3
+ *   (5) leadTime <= 60 (lead curto/médio recebe a mercadoria "quente"; lead longo
+ *       — ex.: Pralana 70/72 — não persegue o pico, usa a taxa estrutural simples)
+ *
+ * @returns {vendaDia, aplicaInteligente} — vendaDia = inteligente quando assume, senão simples.
+ */
+export function decideVendaDia(input: {
+  simples: number;
+  inteligente: number | null;
+  trendUp: boolean;
+  weeksWithSales: number;
+  leadTime: number;
+}): { vendaDia: number; aplicaInteligente: boolean } {
+  const { simples, inteligente, trendUp, weeksWithSales, leadTime } = input;
+
+  const aplicaInteligente =
+    inteligente != null &&
+    inteligente > simples &&
+    trendUp &&
+    weeksWithSales >= 3 &&
+    leadTime <= 60;
+
+  return {
+    vendaDia: aplicaInteligente ? (inteligente as number) : simples,
+    aplicaInteligente,
+  };
+}
+
 /**
  * Calcula a sugestão de compra com o modelo de ponto de reposição.
  * Espelha exatamente a fórmula SQL da RPC `get_replenishment` (Phase 62-01).
