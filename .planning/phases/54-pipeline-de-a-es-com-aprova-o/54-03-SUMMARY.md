@@ -126,3 +126,9 @@ No new security surface introduced. All T-54-14/T-54-15/T-54-16/T-54-17 mitigati
 ---
 *Phase: 54-pipeline-de-a-es-com-aprova-o*
 *Completed: 2026-06-27*
+
+---
+
+## Task 3 — Checkpoint visual APROVADO por Wesley (2026-06-27, preview PR #19)
+
+Wesley validou no preview Vercel o fluxo propor → fila → aprovar → histórico e o gate owner-only. Veredito: **aprovado**. Wave 2 (UI) completa.
