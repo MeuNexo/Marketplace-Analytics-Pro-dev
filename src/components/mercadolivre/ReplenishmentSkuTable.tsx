@@ -64,6 +64,46 @@ function earliestArrival(skus: ReplenishmentSkuRow[]): string | null {
   return datas.sort()[0];
 }
 
+// ── Vende por dia cell (decisão em destaque + os dois indicadores) ────────────
+
+/**
+ * Mostra a DECISÃO final (venda_dia) em destaque e, abaixo, os dois indicadores
+ * que a originaram: simples (espinha) e inteligente (EWMA×sazonal). Quando a
+ * inteligente assumiu (venda_dia_origem ≠ 'simples'), exibe badge "Previsão
+ * inteligente ↑"; caso contrário badge "Simples". Phase 68.
+ */
+function VendaDiaCell({ row }: { row: ReplenishmentSkuRow }) {
+  const inteligenteAssumiu = row.venda_dia_origem !== "simples";
+
+  return (
+    <div className="leading-tight">
+      {/* Decisão final em destaque */}
+      <span className="tabular-nums font-medium text-foreground">
+        {numFmt(row.venda_dia)}/d
+      </span>
+
+      {/* Os dois indicadores, menores e em muted */}
+      <p className="text-[10px] text-muted-foreground tabular-nums">
+        Simples {numFmt(row.venda_simples)} · Intel{" "}
+        {row.venda_inteligente == null ? "—" : numFmt(row.venda_inteligente)}
+      </p>
+
+      {/* Badge de origem da decisão */}
+      <div className="mt-0.5">
+        {inteligenteAssumiu ? (
+          <Badge className="text-[9px] bg-green-500/10 text-green-600 border-none">
+            Previsão inteligente ↑
+          </Badge>
+        ) : (
+          <Badge variant="secondary" className="text-[9px]">
+            Simples
+          </Badge>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Header with tooltip helper ────────────────────────────────────────────────
 
 function HeaderWithTip({ label, tip }: { label: string; tip: string }) {
@@ -297,9 +337,11 @@ function VariationRow({ sku }: { sku: ReplenishmentSkuRow }) {
         <ACaminhoCell qtd={sku.qtd_a_caminho} data={sku.data_proxima_chegada} />
       </TableCell>
 
-      {/* Vende por dia */}
-      <TableCell className="text-xs text-right tabular-nums">
-        {numFmt(sku.venda_dia)}/d
+      {/* Vende por dia (decisão + dois indicadores) */}
+      <TableCell className="text-xs text-right">
+        <div className="flex justify-end">
+          <VendaDiaCell row={sku} />
+        </div>
       </TableCell>
 
       {/* Dura quanto */}
@@ -569,8 +611,10 @@ export function ReplenishmentSkuTable({
                   <TableCell className="text-xs text-right">
                     <ACaminhoCell qtd={sku.qtd_a_caminho} data={sku.data_proxima_chegada} />
                   </TableCell>
-                  <TableCell className="text-xs text-right tabular-nums">
-                    {numFmt(sku.venda_dia)}/d
+                  <TableCell className="text-xs text-right">
+                    <div className="flex justify-end">
+                      <VendaDiaCell row={sku} />
+                    </div>
                   </TableCell>
                   <TableCell className="text-xs text-right tabular-nums">
                     <CoberturaCell row={sku} />
