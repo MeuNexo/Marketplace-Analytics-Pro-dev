@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useState } from "react";
-import { XCircle, AlertTriangle, Info, Activity, Loader2, X, Sparkles } from "lucide-react";
+import { XCircle, AlertTriangle, Info, Activity, Loader2, X, Sparkles, Zap } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,8 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useConsultorInsights } from "@/hooks/useConsultorInsights";
 import type { InsightRow, ScoreBand } from "@/hooks/useConsultorInsights";
+import { RULE_TO_ACTION } from "@/lib/consultor/actionMapping";
+import { ProposeActionDialog } from "@/components/mercadolivre/ProposeActionDialog";
 
 // ─── Score band helpers (D-10) ────────────────────────────────────────────────
 
@@ -73,12 +75,14 @@ interface InsightCardProps {
   insight: InsightRow;
   onDismiss: (id: string) => void;
   onExplain?: (id: string) => Promise<string>;
+  onPropose?: (insight: InsightRow) => void;
 }
 
-function InsightCard({ insight, onDismiss, onExplain }: InsightCardProps) {
+function InsightCard({ insight, onDismiss, onExplain, onPropose }: InsightCardProps) {
   const impact = impactLabel(insight.impact_brl);
   const [explaining, setExplaining] = useState(false);
   const [explanation, setExplanation] = useState<string | null>(null);
+  const isActionable = !!RULE_TO_ACTION[insight.rule_key];
 
   const handleExplain = async () => {
     if (!onExplain || explaining) return;
@@ -136,7 +140,7 @@ function InsightCard({ insight, onDismiss, onExplain }: InsightCardProps) {
           </p>
         )}
 
-        {/* Action: "como resolver" — deep-link para a página certa (D-19) + Explicar */}
+        {/* Action: "como resolver" — deep-link para a página certa (D-19) + Explicar + Propor ação */}
         <div className="pt-1 flex items-center gap-2 flex-wrap">
           <Button variant="outline" size="sm" asChild className="h-7 text-xs gap-1.5">
             <Link to={insight.action_href}>{insight.action_label}</Link>
@@ -151,6 +155,18 @@ function InsightCard({ insight, onDismiss, onExplain }: InsightCardProps) {
             >
               {explaining ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
               {explaining ? "Explicando…" : "Explicar"}
+            </Button>
+          )}
+          {/* "Propor ação" — only for insights with a mapped action_type (ACT-01) */}
+          {isActionable && onPropose && (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => onPropose(insight)}
+              className="h-7 text-xs gap-1.5"
+            >
+              <Zap className="h-3 w-3" />
+              Propor ação
             </Button>
           )}
         </div>
@@ -187,6 +203,9 @@ function PillarRow({ label, score }: { label: string; score: number }) {
 export default function MLConsultor() {
   const { insights, score, scoreDelta, scoreBand, pillars, loading, syncing, dismiss, explain, summaryDisabled } =
     useConsultorInsights();
+
+  // ── Propose-action dialog state (Task 1 — ACT-01) ────────────────────────
+  const [proposingInsight, setProposingInsight] = useState<InsightRow | null>(null);
 
   const trendArrow =
     scoreDelta == null
@@ -286,11 +305,28 @@ export default function MLConsultor() {
         ) : (
           <div className="flex flex-col gap-3">
             {insights.map((insight) => (
-              <InsightCard key={insight.id} insight={insight} onDismiss={dismiss} onExplain={summaryDisabled ? undefined : explain} />
+              <InsightCard
+                key={insight.id}
+                insight={insight}
+                onDismiss={dismiss}
+                onExplain={summaryDisabled ? undefined : explain}
+                onPropose={setProposingInsight}
+              />
             ))}
           </div>
         )}
       </div>
+
+      {/* ── ProposeActionDialog (Task 1 — ACT-01) ─────────────────────────── */}
+      {proposingInsight && (
+        <ProposeActionDialog
+          insight={proposingInsight}
+          open={!!proposingInsight}
+          onOpenChange={(open) => {
+            if (!open) setProposingInsight(null);
+          }}
+        />
+      )}
     </div>
   );
 }
