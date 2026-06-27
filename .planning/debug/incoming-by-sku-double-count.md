@@ -98,39 +98,55 @@ updated: 2026-06-26
 ## Resolution
 
 root_cause: |
-  base CTE da RPC get_replenishment_by_sku (v7, migration 20260667000100) faz
-  LEFT JOIN incoming_by_sku inc ON inc.sku_code = inv.sku_code.
-  incoming_by_sku tem 1 linha por sku_code (GROUP BY po.sku).
-  inventory_by_sku tem 1 linha por (item_id, variation_id).
-  Quando N variações/anúncios compartilham o mesmo sku_code, o join retorna N cópias
-  da mesma linha de qtd_a_caminho → cada anúncio recebe o total inteiro do SKU.
-  Impacto: display duplicado (N×qtd exibido total) + compra_sugerida e gatilho_ativo
-  subtraem N× a qtd real → subcompra (compra_sugerida suprimida mais do que deveria).
+  ROOT CAUSE APROFUNDADO (estrutural, não apenas o double-count do "a caminho"):
+  A RPC get_replenishment_by_sku NÃO é genuinamente "por SKU" — ela retorna 1 linha
+  por (item_id, variation_id) do inventário. Em prod (org 7f615df7...): 332 linhas de
+  inventário → 295 SKUs distintos. 15+ SKUs (chapéus Pralana) estão listados em 2
+  anúncios cada (anúncio principal + anúncio espelho). O estoque é o MESMO físico
+  espelhado (idêntico em 13/15 SKUs) e as vendas ficam PARTIDAS entre os 2 anúncios.
+  Três sintomas decorrem disso:
+    1. qtd_a_caminho duplicado: LEFT JOIN incoming_by_sku por sku_code é N:1 →
+       cada anúncio recebia o total inteiro de OCs do SKU.
+    2. estoque/venda fragmentados entre principal e espelho → cobertura e gatilho errados.
+    3. linhas duplicadas no display (o mesmo SKU aparecia 2×).
+  O fix de rateio (commit 7e09b148: sku_share + incoming_per_variation) resolvia só o
+  sintoma (1); foi REJEITADO por Wesley em favor do fix estrutural.
 
 fix: |
-  Migration 20260668000100_get_replenishment_by_sku_fix_double_count.sql:
-  1. incoming_by_sku: mantida como base (total por SKU), campo renomeado para
-     qtd_a_caminho_total.
-  2. sku_share (novo CTE): conta n_var e soma total_stock por sku_code a partir de
-     inventory_by_sku (apenas sku_code não-nulo/não-vazio).
-  3. incoming_per_variation (novo CTE): distribui qtd_a_caminho proporcional ao
-     estoque de cada variação. Regras:
-       - n_var = 1 → inteiro (sem rateio; sem regressão SKU em 1 anúncio)
-       - total_stock = 0 → divisão igual (FLOOR para não exceder total)
-       - total_stock > 0 → ROUND(total * sku_stock / total_stock)
-       - sku_code NULL/vazio → 0
-  4. base CTE: LEFT JOIN incoming_per_variation ipv ON ipv.item_id = inv.item_id
-     AND ipv.variation_id IS NOT DISTINCT FROM inv.variation_id
-     → join 1:1, sem duplicação. SECURITY INVOKER mantido.
+  Migration 20260668000100_get_replenishment_by_sku_fix_double_count.sql
+  (REESCRITA — "Phase 68 — Reposição por SKU real (colapsa anúncios espelhados)"):
+  A RPC passa a colapsar anúncios espelhados em 1 linha canônica por sku_code ANTES de
+  todos os joins, tornando-se genuinamente por-SKU.
+  1. row_sales (novo): venda por (item_id, variation_id) na janela, match orders por
+     (item,variation) — SEM casar por o.sku (evita regressão de SKU histórico trocado).
+  2. canon (novo): ROW_NUMBER() OVER (PARTITION BY sku_code ORDER BY total_qty DESC
+     NULLS LAST, sku_stock DESC, item_id) = 1 → 1 linha canônica por sku_code = o
+     anúncio mais vendido (principal); usa estoque do principal (conservador).
+  3. sales_by_sku: SUM(row_sales) de TODAS as linhas do mesmo sku_code → total de venda
+     preservado (espelhos somados).
+  4. ewma_sales: agrega orders por (item,variation,week) → mapeia p/ sku_code → re-agrega
+     por (sku_code, week) → EWMA por sku_code.
+  5. incoming_by_sku → join 1:1 na canon por sku_code → qtd_a_caminho contado UMA vez.
+  6. CTEs sku_share e incoming_per_variation (rateio) REMOVIDOS.
+  Invariantes mantidos: assinatura 4-arg, SECURITY INVOKER (anti-IDOR), colunas de saída
+  idênticas, ORDER BY idêntico.
 
 verification: |
-  Queries de verificação inline preparadas (salvas em scratchpad e abaixo).
-  MCP execute_sql indisponível no sub-agente; verificação a ser feita via MCP
-  da sessão principal (project ckcdevcxgvueywivefgx):
-  - check_abc: combined_verify.sql (canvas/rowcount + dup SKUs + total vendas)
-  - check_d: verify_ewma.sql (EWMA populado com p_smart=true)
-  - check_e: get_advisors (SECURITY INVOKER = sem função vulnerável)
-  Commit 07a11af9 branch gsd/phase-67-calculo-esperto — NÃO deployado em prod.
+  Verificação read-only executada via MCP execute_sql (project ckcdevcxgvueywivefgx,
+  org 7f615df7-7bac-45e5-8a93-827fb9ddeec7) usando CTEs inline equivalentes ao corpo da
+  migration (NÃO modificou a função em prod). Resultados 2026-06-27:
+  (a) PASS — 332 linhas inventário → 295 SKUs distintos → 295 linhas canônicas (colapso ok).
+  (b) PASS — 5 SKUs dup cada 1× com inv_count=2; qtd_a_caminho contado uma vez:
+      18012849BRA3315G=11 (não 22), 11011273-CAFE3374G=52, 12011666PTO3360P=10,
+      18012849BRA3315GG=20, 12012422-CAFE3274P=4.
+  (c) PASS — SUM(a_caminho) total = 1885 un (= total real de OCs); SUM(vendas 30d) = 887
+      (matched a inventário ativo; sem regressão — mesma base de match da v7).
+  (d) PASS — p_smart: EWMA populado em 200 SKUs (159 com EWMA ativo ≥2 semanas) →
+      não caiu em fallback simples.
+  (e) PASS — get_advisors: nenhuma advisory de SECURITY DEFINER em
+      get_replenishment_by_sku → SECURITY INVOKER mantido.
+  Commits 07a11af9 (migration) + e7dbdeb7 (debug) branch gsd/phase-67-calculo-esperto.
+  NÃO deployado em prod — função viva continua sendo a v7 (20260667000100).
 
   QUERIES INLINE DE VERIFICAÇÃO:
 
