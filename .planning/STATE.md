@@ -4,22 +4,22 @@ milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
 current_phase: 69
 current_phase_name: reposicao-de-esgotados-demanda-censurada
-status: planned
+status: executing
 stopped_at: "Phase 69 PLANEJADA + plan-checker PASS (0 blockers). 2 planos / 2 waves no branch gsd/phase-69-reposicao-esgotados. Trata os 83 SKUs esgotados-sem-venda (demanda censurada): híbrido por recência 90d/365d + estimativa melhor-ritmo 30d/180d. Pronta p/ /gsd-execute-phase 69. (Trilha 62-68 já em prod; resta ok visual /compras.)"
-last_updated: "2026-06-26T19:36:37.847Z"
-last_activity: 2026-06-26
-last_activity_desc: Phase 67 execution started
+last_updated: "2026-06-27T18:40:25.238Z"
+last_activity: 2026-06-27
+last_activity_desc: Phase 69 execution started
 progress:
-  total_phases: 14
+  total_phases: 15
   completed_phases: 6
-  total_plans: 38
+  total_plans: 40
   completed_plans: 33
-  percent: 43
+  percent: 40
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
 
-- **Status:** Executing Phase 67
+- **Status:** Executing Phase 69
 - **Backend:** tabela `purchase_orders` (migration `20260665000000`, RLS org-first); EF `sync-tiny-purchase-orders` v1 (endpoint Tiny correto = `/ordem-compra` singular; waitUntil 202; `organization_id` no insert); RPC `get_replenishment_by_sku` (migration `20260665000100`, +CTE `incoming_by_sku`, +colunas `qtd_a_caminho`/`data_proxima_chegada`, desconta TODA a qtd a caminho — decisão Wesley); cron `sync-tiny-purchase-orders-daily` (jobid 34, 03:15 UTC).
 - **Prova:** sync 22 OCs/135 SKUs/1.885 un; RPC 93 SKUs a caminho, 80 zeraram sugestão, cobertura parcial preserva gatilho (ex `11011273-CAFE3374G` → ainda sugere 10). tsc 0 + 208 testes + build ok.
 - **Decisão tunável:** "a caminho" = situação `3` (aguardando recebimento); ampliar p/ `2` (aprovada) = 1 linha em `SITUACOES_A_CAMINHO` na EF.
@@ -131,14 +131,14 @@ See: .planning/PROJECT.md
 
 **Milestone:** v8.0 — Consultor v2 (Inteligência)
 **Core value:** Consultor que explica, prioriza e ajuda a agir — LLM sob demanda + ações com aprovação, sobre o motor determinístico do v1.
-**Current focus:** Phase 67 — compras-v3-reposi-o-mais-esperta-tend-ncia-lead-time-real
+**Current focus:** Phase 69 — reposicao-de-esgotados-demanda-censurada
 
 ## Current Position
 
-Phase: 67 (compras-v3-reposi-o-mais-esperta-tend-ncia-lead-time-real) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 67
-Last activity: 2026-06-27 — Completed quick task 260627-1z0 (alvo order-up-to fix, deployado em prod)
+Phase: 69 (reposicao-de-esgotados-demanda-censurada) — EXECUTING
+Plan: 1 of 2
+Status: Executing Phase 69
+Last activity: 2026-06-27 — Phase 69 execution started
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
 
 ### Phase 54 — Wave 1 EXECUTADA (2026-06-24), Wave 2 PENDENTE

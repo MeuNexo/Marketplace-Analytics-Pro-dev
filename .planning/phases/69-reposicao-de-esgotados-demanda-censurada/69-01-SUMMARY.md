@@ -165,3 +165,21 @@ Nenhuma superfície nova além do previsto no plano:
 - [x] Nenhuma subquery correlacionada por linha (abordagem self-join).
 - [x] revisar_esgotado e descontinuar mantêm venda_base=0 (compra estruturalmente 0).
 - [x] REVOKE/GRANT com assinatura 4-arg idêntica à base.
+
+---
+
+## Checkpoint Task 2 — APROVADO pelo orquestrador (2026-06-27, prod ckcdevcxgvueywivefgx)
+
+Migration aplicada via MCP `apply_migration` (`{"success":true}`). 5 validações na org Pé Vermeio `7f615df7-…`:
+
+| Validação | Resultado |
+|-----------|-----------|
+| Contagem dos 4 baldes | com_giro 192 · repor_esgotado 29 · revisar_esgotado 59 · descontinuar 13 (total 293) |
+| Resgate dos repor_esgotado | 29 SKUs, 27 com compra>0, 100% `venda_dia_origem='historico_esgotado'`; +232 un / R$21.219 antes invisíveis |
+| revisar/descontinuar fora da compra | 0 linhas com compra>0 (estrutural: venda_base=0) |
+| Anti-IDOR cross-org | user org Thales lendo Pé Vermeio → **0 linhas vazadas** |
+| SECURITY INVOKER | confirmado (`prosecdef=false`) |
+| Performance sob role `authenticated` (statement_timeout 8s) | **Execution Time 2.114s** — set-based OK, sem estouro |
+| Regressão | `com_giro` = 87 compras / 1003 un / R$126.815 = **idêntico ao baseline pré-Phase 69** |
+
+Veredito: **PASS**. Backend live em prod. Pronto para Wave 2 (frontend).
