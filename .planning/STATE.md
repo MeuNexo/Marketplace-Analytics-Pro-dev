@@ -5,8 +5,8 @@ milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem
 current_phase: 72
 current_phase_name: quality-score-issues
 status: executing
-stopped_at: "Phase 69 EXECUTADA + VERIFICADA (5/5) 2026-06-27. Backend EM PROD (migration 20260669000000 via MCP): status_esgotado 4 baldes + estimativa melhor-ritmo set-based (2,1s<8s). Prova: 29 repor_esgotado resgatados (+232un/R$21.219), com_giro=baseline (zero regressão), revisar/descontinuar compra 0, anti-IDOR 0. Frontend MERGEADO via PR #18 → prod (merge da1ace9e, 278/278 testes). ok visual Wesley OK. Phase 69 COMPLETA. Trilha 62-68 também já em prod."
-last_updated: "2026-06-29T13:54:52.485Z"
+stopped_at: None
+last_updated: "2026-06-29T14:00:22.135Z"
 last_activity: 2026-06-29
 last_activity_desc: Phase 72 execution started
 progress:
@@ -365,8 +365,8 @@ Dashboard atual mostra:
 
 **Resume file:** .planning/phases/67-compras-v3-reposi-o-mais-esperta-tend-ncia-lead-time-real/67-VERIFICATION.md
 
-Last session: 2026-06-29T13:54:45.927Z
-Stopped at: Phase 67 EXECUTADA + VERIFICADA (6/7). RPC esperta em prod (não-regressão provada; EWMA/sazonal/lead-time ativos); frontend na branch (246 testes). Pendente: ok visual + merge PR
+Last session: 2026-06-29T14:00:22.111Z
+Stopped at: None
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
