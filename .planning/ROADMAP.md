@@ -470,6 +470,11 @@ Contexto/decisões: `docs/superpowers/specs/2026-06-27-reposicao-esgotados-desig
 
 **Spec**: `docs/superpowers/specs/2026-06-29-anuncio-detail-modal-design.md` (seção 4, Fase B)
 
+**Plans:** 2 plans (2 waves)
+Plans:
+- [ ] 72-01-PLAN.md — EF `ml-listing-health` (Deno): token org-scoped, anti-IDOR, `/item/{id}/performance` + fallback `/health`, normalização score + issues PT-BR; deploy via MCP + smoke (wave 1)
+- [ ] 72-02-PLAN.md — Hook `useMLListingHealth` (lazy on-demand) + subcomponente `ListingIssues` PT-BR no `ListingIndicatorsTab`, com estados loading/vazio/erro (wave 2)
+
 ---
 
 ### Phase 73: Aba Vendas
