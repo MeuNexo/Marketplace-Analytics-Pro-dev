@@ -443,7 +443,9 @@ Contexto/decisões: `docs/superpowers/specs/2026-06-27-reposicao-esgotados-desig
 
 **Spec**: `docs/superpowers/specs/2026-06-29-anuncio-detail-modal-design.md` (seção 5 — Fase A)
 
-**Plans**: a definir pelo planner
+**Plans**: 2 plans (2 waves)
+- [ ] 71-01-PLAN.md — Componentes do modal + utilitários puros (ListingDetailModal/IndicatorsTab/QualityScore + listingHelpers/listingIndicators + testes)
+- [ ] 71-02-PLAN.md — Gatilho na página MLAnuncios.tsx (estado + miniatura/ícone) + refactor de helpers compartilhados
 
 ---
 
