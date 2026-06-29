@@ -4,22 +4,22 @@ milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
 current_phase: 72
 current_phase_name: quality-score-issues
-status: executing
+status: verifying
 stopped_at: None
-last_updated: "2026-06-29T14:00:22.135Z"
+last_updated: "2026-06-29T14:07:59.890Z"
 last_activity: 2026-06-29
 last_activity_desc: Phase 72 execution started
 progress:
   total_phases: 21
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 44
-  completed_plans: 38
-  percent: 38
+  completed_plans: 39
+  percent: 43
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
 
-- **Status:** Ready to execute
+- **Status:** Phase complete — ready for verification
 - **Backend:** tabela `purchase_orders` (migration `20260665000000`, RLS org-first); EF `sync-tiny-purchase-orders` v1 (endpoint Tiny correto = `/ordem-compra` singular; waitUntil 202; `organization_id` no insert); RPC `get_replenishment_by_sku` (migration `20260665000100`, +CTE `incoming_by_sku`, +colunas `qtd_a_caminho`/`data_proxima_chegada`, desconta TODA a qtd a caminho — decisão Wesley); cron `sync-tiny-purchase-orders-daily` (jobid 34, 03:15 UTC).
 - **Prova:** sync 22 OCs/135 SKUs/1.885 un; RPC 93 SKUs a caminho, 80 zeraram sugestão, cobertura parcial preserva gatilho (ex `11011273-CAFE3374G` → ainda sugere 10). tsc 0 + 208 testes + build ok.
 - **Decisão tunável:** "a caminho" = situação `3` (aguardando recebimento); ampliar p/ `2` (aprovada) = 1 linha em `SITUACOES_A_CAMINHO` na EF.
@@ -137,7 +137,7 @@ See: .planning/PROJECT.md
 
 Phase: 72 (quality-score-issues) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-29 — Phase 72 execution started
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
 
@@ -365,7 +365,7 @@ Dashboard atual mostra:
 
 **Resume file:** .planning/phases/67-compras-v3-reposi-o-mais-esperta-tend-ncia-lead-time-real/67-VERIFICATION.md
 
-Last session: 2026-06-29T14:00:22.111Z
+Last session: 2026-06-29T14:07:59.875Z
 Stopped at: None
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
