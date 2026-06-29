@@ -28,6 +28,17 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 - [x] **Phase 67: Compras v3 — Reposição mais esperta (tendência + lead time real)** — A reposição da `/compras` deixa de usar só a média simples e o lead time fixo: velocidade = **EWMA (recência) + índice sazonal marca/mês**; lead time = **mediana real por fornecedor** das OCs; cada camada com **fallback transparente** + toggle "Cálculo esperto" + badges. **EXECUTADA + VERIFICADA (6/7 must-haves; 7º = ok visual pendente) 2026-06-26 — RPC v7 `p_smart` em prod via MCP: não-regressão p_smart=FALSE=Phase 66 (off_nao_simples=0); EWMA 171 SKUs, sazonal ATIVA 284 (13 meses de dados, fatores 0.93–1.68), lead-time-real 93; anti-IDOR SECURITY INVOKER; advisors limpos. Espelho TS + 33 testes (246/246); toggle+badges na /compras (tsc 0, build ok). 3 desvios corrigidos no checkpoint (DROP overload 3-arg ambíguo; p_smart DEFAULT FALSE; #variable_conflict use_column). Pendente: ok visual + merge PR. (completed 2026-06-26)**
 - [x] **Phase 69: Reposição de esgotados (demanda censurada)** — SKUs esgotados (estoque 0) que não venderam nos últimos 30d ficam com `venda_dia=0` → `compra_sugerida=0` e somem da compra, mesmo tendo demanda real (83 SKUs hoje na Pé Vermeio, dos quais 70 venderam no último ano). Tratamento **híbrido por recência**: vendeu ≤90d → `repor_esgotado` (estima venda/dia pelo **melhor ritmo de 30d dentro de 180d** + proteção anti-pico ≥2 dias com venda; reusa ponto/alvo/MOQ/pack/a-caminho); vendeu 90–365d → `revisar_esgotado` (sinaliza, sem quantidade); sem venda há +1 ano → `descontinuar` (fora da compra). RPC `get_replenishment_by_sku` ganha `status_esgotado` + `venda_dia_origem='historico_esgotado'` (SECURITY INVOKER mantido); `/compras` ganha os 3 estados na coluna "O que fazer" + badge "demanda estimada pelo histórico" + opções no filtro Situação. Continuação da trilha /compras (62–68). Spec: `docs/superpowers/specs/2026-06-27-reposicao-esgotados-design.md`. **Planejada 2026-06-27.**
 
+### Milestone — Modal de Detalhe do Anúncio (porte do nexointeligence)
+
+> Replica o `ListingDetailModal` do projeto antigo (clicar anúncio → modal rico com info + ações). Decomposto MVP-first em 6 fases. Spec: `docs/superpowers/specs/2026-06-29-anuncio-detail-modal-design.md`.
+
+- [ ] **Phase 71: Modal de Detalhe — Shell + Indicadores** — Clicar na miniatura/ícone "Ver detalhes" de um anúncio em `MLAnuncios.tsx` abre um Dialog (`max-w-4xl`) com cabeçalho (título, MLB id, badges de variações e tipo de anúncio, "Ver no ML") e a aba **Indicadores** (quality score via `ProductItem.health`, variações com estoque/vendas, breakdown de tipo logístico, KPIs visitas/vendido/estoque/margem) — reusando só dados já carregados, **zero backend novo**. Abas Vendas/Precificação/Avaliações/Histórico aparecem desabilitadas ("em breve"). **Planejada 2026-06-29.**
+- [ ] **Phase 72: Aba Quality Score + Issues** — EF `fetch-ml-listing-health` (API `/items/{id}/health` do ML) enriquece a aba Indicadores com lista de problemas acionáveis.
+- [ ] **Phase 73: Aba Vendas** — Gráfico de vendas por SKU a partir da tabela `orders` existente.
+- [ ] **Phase 74: Aba Precificação** — Reaproveita a calculadora existente (`MLPrecificacao`) embutida no modal.
+- [ ] **Phase 75: Aba Avaliações** — EF de reviews do ML + resumo IA dos comentários.
+- [ ] **Phase 76: Ação "Melhorar com IA" + Histórico de Otimização** — Pipeline IA gera sugestão → aplica via MCP `update_listing_*` **com aprovação** → registra histórico (com revert).
+
 ---
 
 ## Phase Details
@@ -412,6 +423,67 @@ Plans:
 Contexto/decisões: `docs/superpowers/specs/2026-06-27-reposicao-esgotados-design.md` (spec aprovado por Wesley) → `69-CONTEXT.md`. Org Pé Vermeio = `7f615df7-7bac-45e5-8a93-827fb9ddeec7`; Supabase `ckcdevcxgvueywivefgx`. **Roadmap criado 2026-06-27.**
 
 **EXECUTADA + VERIFICADA (5/5) 2026-06-27** — branch `gsd/phase-69-reposicao-esgotados`. Backend (69-01) APLICADO EM PROD via MCP: migration `20260669000000`, RPC com `status_esgotado` (4 baldes) + estimativa melhor-ritmo set-based (self-join, 2,1s<8s) + `venda_dia_origem='historico_esgotado'`. Prova prod (Pé Vermeio): com_giro 192 (87 compras / R$126.815 = **baseline idêntico, zero regressão**); **repor_esgotado 29 → 27 com compra, +232 un / R$21.219 resgatados**; revisar 59 / descontinuar 13 = compra 0; anti-IDOR cross-org 0; SECURITY INVOKER. Frontend (69-02) na branch: espelho TS + 22 testes (278/278), 3 estados na coluna "O que fazer" + badge "demanda estimada pelo histórico" + filtro Situação; tsc 0 + build ok. **MERGEADO PR #18 → prod (2026-06-27, merge da1ace9e); ok visual Wesley OK. Phase 69 COMPLETA.**
+
+---
+
+### Phase 71: Modal de Detalhe do Anúncio — Shell + Indicadores
+
+**Goal**: O lojista clica num anúncio (na miniatura ou num ícone "Ver detalhes") na página de catálogo (`MLAnuncios.tsx`) e abre um Dialog central (`max-w-4xl`) com o cabeçalho do anúncio e uma aba "Indicadores" completa — quality score, variações, tipo logístico e KPIs (visitas/vendido/estoque/margem) — usando SOMENTE dados já carregados em `ProductItem` (zero chamada de backend nova). As demais abas (Vendas, Precificação, Avaliações, Histórico) já aparecem no shell, porém desabilitadas com tooltip "em breve", para as Phases 72–76 encaixarem sem refazer layout.
+**Depends on**: nenhuma (reusa `MLInventoryContext.ProductItem` e helpers já existentes em `MLAnuncios.tsx`)
+**Requirements**: ADM-71 (porte do `ListingDetailModal`, Fase A do milestone)
+**Success Criteria** (what must be TRUE):
+
+  1. Clicar na miniatura OU no ícone "Ver detalhes" de qualquer anúncio abre o modal com os dados daquele anúncio; o expandir-variações e o link do título permanecem funcionando (sem conflito de clique)
+  2. A aba Indicadores mostra quality score (de `ProductItem.health`, com estado "sem dado" quando `null`), lista de variações com estoque/vendido, breakdown de tipo logístico, e KPIs visitas/vendido/estoque/margem — tudo com dados já em memória, sem nenhuma nova request de rede
+  3. As abas Vendas/Precificação/Avaliações/Histórico aparecem renderizadas e desabilitadas, com tooltip "em breve"
+  4. Botão "Ver no ML" abre o anúncio correto (`https://produto.mercadolivre.com.br/<MLB-id>`) em nova aba
+  5. Multi-tenant intacto: o modal só recebe o `ProductItem` já filtrado por org/seller pelo contexto — nenhum dado novo cruza organização
+  6. `tsc` sem erros + `build` ok; testes unitários dos utilitários novos (faixa de quality score; agregação de tipo logístico por variação) passando
+  7. Componentes novos isolados em `src/components/mercadolivre/anuncios/` (`ListingDetailModal.tsx`, `ListingIndicatorsTab.tsx`, `ListingQualityScore.tsx`); a página `MLAnuncios.tsx` só ganha o estado de abertura + o gatilho (não inflar a página)
+
+**Spec**: `docs/superpowers/specs/2026-06-29-anuncio-detail-modal-design.md` (seção 5 — Fase A)
+
+**Plans**: a definir pelo planner
+
+---
+
+### Phase 72: Aba Quality Score + Issues
+
+**Goal**: Nova EF `fetch-ml-listing-health` chama a API `/items/{id}/health` do ML e a aba Indicadores passa a mostrar, além do score, a lista de problemas acionáveis (issues) do anúncio.
+**Depends on**: Phase 71
+**Requirements**: ADM-72
+
+---
+
+### Phase 73: Aba Vendas
+
+**Goal**: A aba Vendas mostra o histórico de vendas por SKU do anúncio num gráfico, a partir da tabela `orders` já existente (query/RPC server-side escopada por org).
+**Depends on**: Phase 71
+**Requirements**: ADM-73
+
+---
+
+### Phase 74: Aba Precificação
+
+**Goal**: A calculadora de precificação já existente (`MLPrecificacao`/hooks de preço-custo) é reaproveitada embutida como aba dentro do modal, no contexto do anúncio clicado.
+**Depends on**: Phase 71
+**Requirements**: ADM-74
+
+---
+
+### Phase 75: Aba Avaliações
+
+**Goal**: Nova(s) EF de reviews do ML traz as avaliações dos compradores do anúncio + um resumo por IA dos comentários, exibidos na aba Avaliações.
+**Depends on**: Phase 71
+**Requirements**: ADM-75
+
+---
+
+### Phase 76: Ação "Melhorar com IA" + Histórico de Otimização
+
+**Goal**: O modal ganha a ação "Melhorar com IA" — pipeline IA gera sugestão de otimização do anúncio (título/descrição/atributos), que o owner aprova e aplica via MCP `update_listing_*` (nunca auto-executa), registrando em tabela de histórico de otimização com possibilidade de revert.
+**Depends on**: Phase 71
+**Requirements**: ADM-76
 
 ---
 
