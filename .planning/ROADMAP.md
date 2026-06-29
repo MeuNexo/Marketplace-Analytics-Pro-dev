@@ -451,9 +451,24 @@ Contexto/decisões: `docs/superpowers/specs/2026-06-27-reposicao-esgotados-desig
 
 ### Phase 72: Aba Quality Score + Issues
 
-**Goal**: Nova EF `fetch-ml-listing-health` chama a API `/items/{id}/health` do ML e a aba Indicadores passa a mostrar, além do score, a lista de problemas acionáveis (issues) do anúncio.
-**Depends on**: Phase 71
+**Goal**: Ao abrir o modal de um anúncio, a aba Indicadores busca AO VIVO (lazy) a saúde detalhada do anúncio via uma nova edge function que chama a API do ML, e mostra — além do score já existente — a lista de problemas acionáveis (issues) daquele anúncio, em PT-BR. Sem tabela nova, sem cron: a EF é invocada on-demand quando o modal abre.
+**Depends on**: Phase 71 (modal + `ListingIndicatorsTab` + `ListingQualityScore`)
 **Requirements**: ADM-72
+**Decisões travadas** (do alinhamento 2026-06-29):
+  - Busca **ao vivo ao abrir o modal** (EF invocada on-demand, com estado de loading), NÃO sync em lote. Sem tabela nova, sem cron.
+  - Issues aparecem **só dentro do modal** (aba Indicadores) — nada na tabela de catálogo nesta fase.
+  - EF chama `GET /item/{id}/performance` (com fallback `GET /items/{id}/health`) da API ML, espelhando a `fetch-ml-listing-health` do projeto antigo `nexointeligence` (referência em `supabase/functions/fetch-ml-listing-health/index.ts` do repo antigo).
+  - Token ML e multi-conta seguindo o padrão das EFs existentes (`ml-inventory`, `ml-token-refresh`); escopo por org/seller (anti-IDOR).
+**Success Criteria** (what must be TRUE):
+
+  1. Nova edge function (Deno) recebe `item_id` (+ `ml_account_id` quando conta vinculada), resolve o token ML org-scoped e retorna a saúde detalhada (score + lista de goals/actions/issues) do anúncio; trata erro/timeout do ML retornando estado explícito (não quebra o modal)
+  2. A aba Indicadores invoca a EF **lazy** ao abrir o modal (só para o anúncio aberto), com estados loading / erro / vazio; o quality score já existente continua funcionando mesmo se a EF falhar
+  3. Os issues são exibidos em PT-BR como lista acionável (o que melhorar no anúncio), dentro do `ListingIndicatorsTab` (reusa/estende `ListingQualityScore` ou um novo subcomponente isolado)
+  4. Multi-tenant/anti-IDOR: a EF só retorna dados de anúncios da org/seller do chamador; nenhuma fuga cross-org
+  5. Nenhuma tabela nova, nenhum cron novo; nenhuma regressão na aba Indicadores da Phase 71
+  6. `tsc` 0 erros + `build` ok; EF deployada via MCP `deploy_edge_function` e testada (smoke) contra um anúncio real
+
+**Spec**: `docs/superpowers/specs/2026-06-29-anuncio-detail-modal-design.md` (seção 4, Fase B)
 
 ---
 
