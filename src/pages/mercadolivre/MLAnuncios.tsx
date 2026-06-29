@@ -1263,7 +1263,14 @@ export default function MLProdutos() {
                   const mads = marginByItem.get(item.id);
                   const mgOp = mads?.lucro_pct;
                   return (
-                    <div key={item.id} className="rounded-lg border border-border bg-card p-3 space-y-1.5">
+                    <div
+                      key={item.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openDetail(item)}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDetail(item); } }}
+                      className="rounded-lg border border-border bg-card p-3 space-y-1.5 cursor-pointer active:bg-muted/50 transition-colors"
+                    >
                       <p className="text-xs font-medium line-clamp-2">{item.title}</p>
                       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                         {([
