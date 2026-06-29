@@ -35,7 +35,7 @@ import {
   ShoppingBag, RefreshCw, Search, ExternalLink, Plug, DollarSign, Tag, TrendingUp, Package,
   ChevronDown, ChevronRight, Receipt, Truck, ArrowUpDown, ArrowUp, ArrowDown,
   BookOpen, CalendarIcon, X, Check, Lightbulb, BarChart2, CheckCircle2, TrendingDown, AlertCircle, Download,
-  Pencil,
+  Pencil, Eye,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Link, useSearchParams } from "react-router-dom";
@@ -47,6 +47,7 @@ import { useMLTaxConfig } from "@/hooks/useMLTaxConfig";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useMLMarginWithAds } from "@/hooks/useMLMarginWithAds";
 import { ImportacaoCustos } from "@/components/mercadolivre/anuncios/ImportacaoCustos";
+import { ListingDetailModal } from "@/components/mercadolivre/anuncios/ListingDetailModal";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer,
   PieChart, Pie, Cell, ComposedChart, Line, Area, ReferenceLine, CartesianGrid,
@@ -569,6 +570,10 @@ export default function MLProdutos() {
   // ── Price Sheet state ──────────────────────────────────────────────────────
   const [priceSheetOpen, setPriceSheetOpen] = useState(false);
   const [priceSheetItem, setPriceSheetItem] = useState<{ id: string; title: string; thumbnail: string; price: number } | null>(null);
+
+  // ── Detail Modal state ──────────────────────────────────────────────────────
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<ProductItem | null>(null);
   const [loadingSuggestion, setLoadingSuggestion] = useState(false);
   const [suggestion, setSuggestion] = useState<MLItemSuggestion | null>(null);
   const [noSuggestion, setNoSuggestion] = useState(false);
@@ -756,6 +761,11 @@ export default function MLProdutos() {
       setLoadingSuggestion(false);
     }
   }, [fetchItemSuggestion]);
+
+  const openDetail = useCallback((item: ProductItem) => {
+    setSelectedItem(item);
+    setDetailModalOpen(true);
+  }, []);
 
   const toggleSort = (field: string) => {
     const asc = `${field}_asc` as SortBy;
@@ -1368,11 +1378,11 @@ export default function MLProdutos() {
                               ) : null}
                             </TableCell>
 
-                            <TableCell className="p-2" onClick={(e) => e.stopPropagation()}>
+                            <TableCell className="p-2 cursor-pointer" onClick={(e) => { e.stopPropagation(); openDetail(item); }} title="Ver detalhes">
                               {item.thumbnail ? (
-                                <img src={item.thumbnail.replace("http://", "https://")} alt="" className="w-10 h-10 rounded object-cover" loading="lazy" />
+                                <img src={item.thumbnail.replace("http://", "https://")} alt="" className="w-10 h-10 rounded object-cover hover:opacity-80 transition-opacity" loading="lazy" />
                               ) : (
-                                <div className="w-10 h-10 rounded bg-muted flex items-center justify-center">
+                                <div className="w-10 h-10 rounded bg-muted flex items-center justify-center hover:bg-muted/70 transition-colors">
                                   <Package className="w-4 h-4 text-muted-foreground" />
                                 </div>
                               )}
@@ -1566,15 +1576,31 @@ export default function MLProdutos() {
                                     )}
                                   </TableCell>
                                   <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="h-7 text-xs px-2 gap-1"
-                                      onClick={() => handleOpenPriceSheet({ id: item.id, title: item.title, thumbnail: item.thumbnail ?? "", price: priceSale })}
-                                    >
-                                      <BarChart2 className="w-3 h-3" />
-                                      Análise
-                                    </Button>
+                                    <div className="flex items-center justify-center gap-1">
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-7 text-xs px-2 gap-1"
+                                        onClick={() => handleOpenPriceSheet({ id: item.id, title: item.title, thumbnail: item.thumbnail ?? "", price: priceSale })}
+                                      >
+                                        <BarChart2 className="w-3 h-3" />
+                                        Análise
+                                      </Button>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-7 w-7 p-0"
+                                            onClick={(e) => { e.stopPropagation(); openDetail(item); }}
+                                            aria-label="Ver detalhes"
+                                          >
+                                            <Eye className="w-3.5 h-3.5" />
+                                          </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top" className="text-xs">Ver detalhes</TooltipContent>
+                                      </Tooltip>
+                                    </div>
                                   </TableCell>
                                 </>
                               );
@@ -2261,6 +2287,12 @@ export default function MLProdutos() {
       suggestion={suggestion}
       noSuggestion={noSuggestion}
       loading={loadingSuggestion}
+    />
+    <ListingDetailModal
+      item={selectedItem}
+      open={detailModalOpen}
+      onOpenChange={setDetailModalOpen}
+      margin={selectedItem ? marginByItem.get(selectedItem.id) : undefined}
     />
     </>
   );
