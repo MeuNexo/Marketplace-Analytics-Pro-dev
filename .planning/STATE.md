@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 72
-current_phase_name: quality-score-issues
+current_phase: 73
+current_phase_name: aba-vendas
 status: verifying
 stopped_at: None
-last_updated: "2026-06-29T14:07:59.890Z"
+last_updated: "2026-06-29T14:49:49.162Z"
 last_activity: 2026-06-29
-last_activity_desc: Phase 72 execution started
+last_activity_desc: Phase 73 execution started
 progress:
   total_phases: 21
-  completed_phases: 9
-  total_plans: 44
-  completed_plans: 39
-  percent: 43
+  completed_phases: 10
+  total_plans: 45
+  completed_plans: 40
+  percent: 48
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
@@ -131,14 +131,14 @@ See: .planning/PROJECT.md
 
 **Milestone:** v8.0 — Consultor v2 (Inteligência)
 **Core value:** Consultor que explica, prioriza e ajuda a agir — LLM sob demanda + ações com aprovação, sobre o motor determinístico do v1.
-**Current focus:** Phase 72 — quality-score-issues
+**Current focus:** Phase 73 — aba-vendas
 
 ## Current Position
 
-Phase: 72 (quality-score-issues) — EXECUTING
-Plan: 2 of 2
+Phase: 73 (aba-vendas) — EXECUTING
+Plan: 1 of 1
 Status: Phase complete — ready for verification
-Last activity: 2026-06-29 — Phase 72 execution started
+Last activity: 2026-06-29 — Phase 73 execution started
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
 
 ### Phase 54 — Wave 1 EXECUTADA (2026-06-24), Wave 2 PENDENTE
@@ -261,6 +261,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | Phase 63 P03 | 387 | 3 tasks | 9 files |
 | Phase 71-modal-de-detalhe-do-an-ncio-shell-indicadores P02 | 10 minutos | 2 tasks | 1 files |
 | Phase 72 P01 | 12min | 1 tasks | 1 files |
+| Phase 73 P01 | 5m | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -316,6 +317,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 - [Phase ?]: resolveParams: marca>global>hardcoded espelhando CTE params da RPC; brand param informativo
 - [Phase ?]: listingBadge (dead code) removida junto ao refactor de helpers locais
 - [Phase ?]: ml-listing-health: score nullable; unavailable retorna null sem quebrar modal
+- [Phase ?]: hook lazy com guard item.id + paginação MAX_ROWS
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -365,7 +367,7 @@ Dashboard atual mostra:
 
 **Resume file:** .planning/phases/67-compras-v3-reposi-o-mais-esperta-tend-ncia-lead-time-real/67-VERIFICATION.md
 
-Last session: 2026-06-29T14:07:59.875Z
+Last session: 2026-06-29T14:49:43.860Z
 Stopped at: None
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
