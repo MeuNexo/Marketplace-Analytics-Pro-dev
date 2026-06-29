@@ -482,6 +482,8 @@ Plans:
 **Goal**: A aba "Vendas" do modal (hoje desabilitada "em breve") passa a mostrar um gráfico do histórico de vendas do anúncio aberto, a partir da tabela `orders` já existente — com toggle **unidades vendidas ↔ receita (R$)** e seletor de janela **30/90 dias**. Busca via query direta no client (RLS org-scoped, sem EF/RPC nova).
 **Depends on**: Phase 71 (modal + abas) ; complementa Phase 72
 **Requirements**: ADM-73
+**Plans**: 1 plan (1 wave)
+  - [ ] 73-01-PLAN.md — util de agregação (+testes vitest), hook lazy `useMLListingSales`, componente `ListingSalesTab` (recharts + toggle + 30/90d) e wiring da aba no modal
 **Decisões travadas** (alinhamento 2026-06-29):
   - Gráfico com **toggle unidades/receita** + **seletor 30/90 dias**.
   - **Query direta** via `supabase.from("orders")` (RLS org-scoped já existe — 2 policies, anti-IDOR pelo RLS; NÃO criar EF/RPC).
