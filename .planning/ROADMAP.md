@@ -479,9 +479,25 @@ Plans:
 
 ### Phase 73: Aba Vendas
 
-**Goal**: A aba Vendas mostra o histórico de vendas por SKU do anúncio num gráfico, a partir da tabela `orders` já existente (query/RPC server-side escopada por org).
-**Depends on**: Phase 71
+**Goal**: A aba "Vendas" do modal (hoje desabilitada "em breve") passa a mostrar um gráfico do histórico de vendas do anúncio aberto, a partir da tabela `orders` já existente — com toggle **unidades vendidas ↔ receita (R$)** e seletor de janela **30/90 dias**. Busca via query direta no client (RLS org-scoped, sem EF/RPC nova).
+**Depends on**: Phase 71 (modal + abas) ; complementa Phase 72
 **Requirements**: ADM-73
+**Decisões travadas** (alinhamento 2026-06-29):
+  - Gráfico com **toggle unidades/receita** + **seletor 30/90 dias**.
+  - **Query direta** via `supabase.from("orders")` (RLS org-scoped já existe — 2 policies, anti-IDOR pelo RLS; NÃO criar EF/RPC).
+  - Filtro: `item_id` = anúncio aberto, `status = 'paid'` (alinhado ao resto do app), agregação por dia somando `quantidade` e `receita_bruta`.
+  - **`data_pedido` é TEXT** → cast para data no agrupamento (lição da Phase 63).
+  - Agrega TODAS as variações do anúncio (gráfico por item_id, não por SKU separado).
+**Success Criteria** (what must be TRUE):
+
+  1. A aba "Vendas" deixa de ficar `disabled`/"em breve" e renderiza um gráfico (recharts) com as vendas do anúncio aberto
+  2. Toggle alterna entre **unidades vendidas/dia** e **receita (R$)/dia**; seletor alterna janela **30 ↔ 90 dias**, refazendo a consulta
+  3. Dados vêm de `orders` via query direta filtrada por `item_id` + `status='paid'`, agregados por dia (cast de `data_pedido` TEXT→date); sem EF/RPC nova
+  4. Estados tratados: loading (skeleton), vazio ("sem vendas no período") e erro — sem quebrar o modal nem as outras abas
+  5. Multi-tenant: a query respeita o RLS org-scoped de `orders` (nenhum dado cross-org); lazy (só busca ao abrir o anúncio / ativar a aba)
+  6. `tsc` 0 erros + `build` ok; testes do(s) utilitário(s) puro(s) de agregação (bucketização por dia, soma) passando
+
+**Spec**: `docs/superpowers/specs/2026-06-29-anuncio-detail-modal-design.md` (seção 4, Fase C)
 
 ---
 
