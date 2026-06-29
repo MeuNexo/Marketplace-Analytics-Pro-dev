@@ -4,14 +4,19 @@ import { KPI_GLOSSARY } from "@/lib/kpi-glossary";
 import { EmptyState } from "@/components/ui/empty-state";
 import { STORE_BADGE_COLORS } from "@/config/storeColors";
 import { useMLInventory } from "@/contexts/MLInventoryContext";
-import type { ProductVariation } from "@/contexts/MLInventoryContext";
+import type { ProductItem, ProductVariation } from "@/contexts/MLInventoryContext";
 import { useMLStore } from "@/contexts/MLStoreContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { format, subDays, startOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import type { DateRange } from "react-day-picker";
-import { LISTING_TYPE_RATES } from "@/data/financialMockData";
+import {
+  getCommissionRate,
+  getListingLabel,
+  currencyFmt,
+  mlListingUrl,
+} from "@/components/mercadolivre/anuncios/listingHelpers";
 import { useMLPrecosCustos, type MLItemSuggestion } from "@/hooks/useMLPrecosCustos";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { Progress } from "@/components/ui/progress";
@@ -64,31 +69,8 @@ const RANKING_QUICK_RANGES = [
 ];
 
 // ─── Financial helpers ────────────────────────────────────────────────────────
-
-function getCommissionRate(listingTypeId: string | null): number {
-  if (!listingTypeId) return LISTING_TYPE_RATES.classic.rate;
-  if (listingTypeId.includes("gold_pro") || listingTypeId.includes("premium")) return LISTING_TYPE_RATES.premium.rate;
-  if (listingTypeId.includes("free")) return LISTING_TYPE_RATES.free.rate;
-  return LISTING_TYPE_RATES.classic.rate;
-}
-
-function getListingLabel(listingTypeId: string | null): string {
-  if (!listingTypeId) return "Clássico";
-  if (listingTypeId.includes("gold_pro") || listingTypeId.includes("premium")) return "Premium";
-  if (listingTypeId.includes("free")) return "Grátis";
-  return "Clássico";
-}
-
-const currencyFmt = (v: number) =>
-  v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-
-const listingBadge = (listingTypeId: string | null, commRate: number) => {
-  const label = getListingLabel(listingTypeId);
-  const pct = (commRate * 100).toFixed(1);
-  if (label === "Premium") return <Badge className="text-[10px] bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-100 px-[4px] py-px">{label} · {pct}%</Badge>;
-  if (label === "Grátis") return <Badge className="text-[10px] bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-100 px-[4px] py-px">{label} · {pct}%</Badge>;
-  return <Badge variant="secondary" className="text-[10px] px-[4px] py-px">{label} · {pct}%</Badge>;
-};
+// getCommissionRate, getListingLabel, currencyFmt e mlListingUrl são importados
+// de @/components/mercadolivre/anuncios/listingHelpers (módulo compartilhado).
 
 type StatusFilter = "all" | "active" | "paused";
 type StockFilter = "all" | "in_stock" | "low" | "out";
@@ -1397,7 +1379,7 @@ export default function MLProdutos() {
                             </TableCell>
 
                             <TableCell>
-                              <a href={`https://produto.mercadolivre.com.br/${item.id.replace(/^(MLB)(\d+)$/, "$1-$2")}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-xs font-medium line-clamp-2 leading-tight hover:underline hover:text-primary transition-colors">
+                              <a href={mlListingUrl(item.id)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-xs font-medium line-clamp-2 leading-tight hover:underline hover:text-primary transition-colors">
                                 {item.title} <ExternalLink className="w-3 h-3 inline mb-0.5 ml-0.5" />
                               </a>
                               <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -1965,7 +1947,7 @@ export default function MLProdutos() {
                               )}
                             </TableCell>
                             <TableCell>
-                              <a href={`https://produto.mercadolivre.com.br/${r.id.replace(/^(MLB)(\d+)$/, "$1-$2")}`} target="_blank" rel="noopener noreferrer" className="text-sm font-medium line-clamp-2 leading-tight hover:underline hover:text-primary transition-colors">
+                              <a href={mlListingUrl(r.id)} target="_blank" rel="noopener noreferrer" className="text-sm font-medium line-clamp-2 leading-tight hover:underline hover:text-primary transition-colors">
                                 {r.title} <ExternalLink className="w-3 h-3 inline mb-0.5 ml-0.5" />
                               </a>
                               <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -2237,7 +2219,7 @@ export default function MLProdutos() {
                               )}
                             </TableCell>
                             <TableCell>
-                              <a href={`https://produto.mercadolivre.com.br/${r.id.replace(/^(MLB)(\d+)$/, "$1-$2")}`} target="_blank" rel="noopener noreferrer" className="text-sm font-medium line-clamp-2 leading-tight hover:underline hover:text-primary transition-colors">
+                              <a href={mlListingUrl(r.id)} target="_blank" rel="noopener noreferrer" className="text-sm font-medium line-clamp-2 leading-tight hover:underline hover:text-primary transition-colors">
                                 {r.title} <ExternalLink className="w-3 h-3 inline mb-0.5 ml-0.5" />
                               </a>
                               <p className="text-xs text-muted-foreground mt-0.5">{r.brand} · {r.id}</p>
