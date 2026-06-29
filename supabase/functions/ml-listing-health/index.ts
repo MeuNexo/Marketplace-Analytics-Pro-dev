@@ -138,8 +138,12 @@ function parsePerformanceResponse(itemId: string, data: any): HealthResult {
       const rules: any[] = Array.isArray(variable.rules) ? variable.rules : [];
 
       for (const rule of rules) {
-        // Issues acionáveis = mode==="OPPORTUNITY" ou status==="PENDING"
-        if (rule.mode !== "OPPORTUNITY" && rule.status !== "PENDING") continue;
+        // Issues acionáveis = status "PENDING" (mode pode ser OPPORTUNITY ou WARNING).
+        // CRÍTICO: status "COMPLETED" são recomendações JÁ CUMPRIDAS pelo anúncio —
+        // NÃO são problemas e devem ser excluídas (ex.: "título deve ter 3 palavras"
+        // num anúncio que já cumpre). O filtro anterior (mode!="OPPORTUNITY" && status!="PENDING")
+        // nunca pulava nada porque todas as regras têm mode="OPPORTUNITY".
+        if (rule.status !== "PENDING") continue;
 
         const ruleKey: string = rule.key ?? "";
         const mapped = GOAL_MAP[ruleKey.toLowerCase()];
