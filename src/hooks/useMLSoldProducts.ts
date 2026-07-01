@@ -1,56 +1,71 @@
 /**
- * Hook de query paginada de orders para a página Produtos Vendidos.
+ * Hook de dados para as páginas Produtos Vendidos e Análise de Preços.
  *
- * Decisões travadas (77-CONTEXT.md / Phase 63/73):
- * - Query direta `supabase.from("orders")` com client autenticado (RLS org-scoped).
- * - Nunca service role, nunca filtro manual de organization_id.
- * - data_pedido é TEXT — passar strings "YYYY-MM-DD" nos filtros .gte/.lte.
- * - Paginação loop com .range() de 1000 (PostgREST trunca em 1000 sem aviso — T-77-02).
- * - Teto de segurança MAX_ROWS = 50.000 para cobrir todos os anúncios de um período longo.
- * - Guard: sem datas ou sem resolvedMLUserIds não dispara fetch (T-77-03 / evita `.in("ml_user_id", [])`).
+ * Busca agregados por anúncio via RPC `orders_sold_products_agg` (SECURITY INVOKER,
+ * RLS org-scoped) em vez de paginar `orders` client-side.
+ *
+ * POR QUE RPC e não paginação (fix pós-preview 2026-07-01 — bugs validados pelo Wesley):
+ * - Só os últimos 30 dias já têm ~55k pedidos pagos; o teto antigo de 50k linhas
+ *   truncava silenciosamente QUALQUER período (quantidades ~10% menores).
+ * - `data_pedido` é TEXT com formatos MISTOS ("YYYY-MM-DD" e "YYYY-MM-DD HH:MI:SS+00");
+ *   o filtro string `.lte("YYYY-MM-DD")` excluía o último dia no formato longo.
+ *   A RPC normaliza com cast `::date`.
+ * - Payload: ~centenas de linhas (1 por anúncio) em vez de dezenas de milhares.
+ *
+ * Decisões travadas mantidas (77-CONTEXT.md / Phases 63/69):
+ * - Client autenticado (RLS org-scoped); nunca service role, nunca organization_id manual.
+ * - RPC SECURITY INVOKER sem parâmetro org, set-based (sem subquery correlacionada).
+ * - Guard: sem datas ou sem resolvedMLUserIds não dispara fetch.
  * - Cleanup anti-stale com flag `cancelled`.
  *
- * Reutiliza o tipo SoldProductRow de soldProductsAgg (forma da linha de orders).
+ * A forma de linha continua SoldProductRow — agora cada linha é o AGREGADO de um
+ * anúncio no período (quantidade/receita_bruta somadas), o que preserva o contrato
+ * de aggregatePvGroups/aggregatePvItems (soma de somas = mesma soma).
  *
- * Phase: 77-pagina-analise-de-anuncios-produtos-vendidos-e-analise-de-pr / Plan 01
+ * Phase: 77-pagina-analise-de-anuncios-produtos-vendidos-e-analise-de-pr / Plan 01 (fix)
  */
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { SoldProductRow } from "@/components/mercadolivre/anuncios/soldProductsAgg";
 
-// ─── Constantes ───────────────────────────────────────────────────────────────
-
-const PAGE     = 1_000;  // limite por página do PostgREST
-const MAX_ROWS = 50_000; // teto de segurança: cobre períodos longos com múltiplos anúncios
-
 // ─── Tipos públicos ───────────────────────────────────────────────────────────
 
 export interface UseMLSoldProductsParams {
-  /** Data de início no formato "YYYY-MM-DD" (TEXT — não Date). Null = não buscar. */
+  /** Data de início no formato "YYYY-MM-DD". Null = não buscar. */
   fromDate: string | null;
-  /** Data de fim no formato "YYYY-MM-DD" (TEXT — não Date). Null = não buscar. */
+  /** Data de fim no formato "YYYY-MM-DD". Null = não buscar. */
   toDate: string | null;
   /** IDs das lojas ML da organização (de useMLStore().resolvedMLUserIds). */
   resolvedMLUserIds: string[];
 }
 
 export interface UseMLSoldProductsResult {
-  /** Todas as linhas acumuladas de orders (status='paid') no período. */
+  /** Uma linha por anúncio: agregado (status='paid') no período. */
   allRows: SoldProductRow[];
-  /** true enquanto carrega (incluindo páginas subsequentes da paginação). */
+  /** true enquanto carrega. */
   isLoading: boolean;
   /** Mensagem de erro ou null se nenhum erro. */
   error: string | null;
 }
 
+/** Linha crua retornada pela RPC orders_sold_products_agg. */
+interface RpcAggRow {
+  item_id: string;
+  titulo: string | null;
+  marca: string | null;
+  quantidade: number | string;
+  receita_bruta: number | string;
+  pedidos: number | string;
+}
+
 // ─── Hook principal ───────────────────────────────────────────────────────────
 
 /**
- * Busca todos os pedidos pagos no período, paginando automaticamente.
+ * Busca os agregados por anúncio dos pedidos pagos no período.
  *
- * Não agrega — retorna linhas brutas para que o componente agregue via
- * `aggregatePvGroups` / `aggregatePvItems` de soldProductsAgg.ts.
+ * Retorna linhas no shape SoldProductRow para que o componente agregue por
+ * marca/categoria via `aggregatePvGroups` / `aggregatePvItems` de soldProductsAgg.ts.
  */
 export function useMLSoldProducts({
   fromDate,
@@ -75,49 +90,46 @@ export function useMLSoldProducts({
     setAllRows([]);
     setError(null);
 
-    async function fetchAll() {
-      let accumulated: SoldProductRow[] = [];
-      let offset = 0;
+    async function fetchAgg() {
+      const { data, error: qErr } = await (supabase.rpc as any)(
+        "orders_sold_products_agg",
+        {
+          _ml_user_ids: resolvedMLUserIds,
+          _from: fromDate,
+          _to: toDate,
+        },
+      );
 
-      // Loop de paginação — PostgREST trunca em 1000 linhas sem aviso (T-77-02)
-      while (!cancelled && accumulated.length < MAX_ROWS) {
-        const { data, error: qErr } = await supabase
-          .from("orders")
-          .select("item_id, titulo, marca, quantidade, receita_bruta, data_pedido, ml_user_id")
-          .eq("status", "paid")
-          .gte("data_pedido", fromDate!)   // data_pedido é TEXT — string "YYYY-MM-DD" funciona
-          .lte("data_pedido", toDate!)
-          .in("ml_user_id", resolvedMLUserIds)  // guard acima garante .length > 0
-          .range(offset, offset + PAGE - 1);
+      if (cancelled) return;
 
-        if (cancelled) return;
-
-        if (qErr) {
-          setError(qErr.message);
-          setIsLoading(false);
-          return;
-        }
-
-        const page = (data ?? []) as SoldProductRow[];
-        accumulated = accumulated.concat(page);
-
-        if (page.length < PAGE) break; // última página — encerra o loop
-        offset += PAGE;
-      }
-
-      if (!cancelled) {
-        setAllRows(accumulated);
+      if (qErr) {
+        setError(qErr.message);
         setIsLoading(false);
+        return;
       }
+
+      const rows: SoldProductRow[] = ((data ?? []) as RpcAggRow[]).map((r) => ({
+        item_id: r.item_id,
+        titulo: r.titulo,
+        marca: r.marca,
+        quantidade: Number(r.quantidade) || 0,
+        receita_bruta: Number(r.receita_bruta) || 0,
+        // Campos de linha de order não se aplicam ao agregado por anúncio:
+        data_pedido: null,
+        ml_user_id: "",
+      }));
+
+      setAllRows(rows);
+      setIsLoading(false);
     }
 
-    fetchAll();
+    fetchAgg();
 
     // Cleanup: cancela setState se o componente for desmontado antes do fetch completar
     return () => {
       cancelled = true;
     };
-  }, [fromDate, toDate, resolvedMLUserIds]); // resolvedMLUserIds é array — se não for estável, o chamador deve memorizá-lo
+  }, [fromDate, toDate, resolvedMLUserIds]); // resolvedMLUserIds é array — o chamador deve memorizá-lo
 
   return { allRows, isLoading, error };
 }

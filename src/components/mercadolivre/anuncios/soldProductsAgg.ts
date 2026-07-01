@@ -11,7 +11,12 @@
 
 // ─── Tipos públicos ───────────────────────────────────────────────────────────
 
-/** Linha crua vinda de `orders`, já filtrada por status='paid'. */
+/**
+ * Linha de venda por anúncio (status='paid'). Desde o fix pós-preview (2026-07-01),
+ * vem PRÉ-AGREGADA por item_id da RPC `orders_sold_products_agg` (quantidade e
+ * receita_bruta já somadas no período; data_pedido/ml_user_id nulos). As funções
+ * abaixo continuam corretas: soma de somas = mesma soma.
+ */
 export interface SoldProductRow {
   item_id: string;
   titulo: string | null;
