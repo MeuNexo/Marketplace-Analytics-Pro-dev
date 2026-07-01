@@ -38,6 +38,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 - [ ] **Phase 74: Aba Precificação** — Reaproveita a calculadora existente (`MLPrecificacao`) embutida no modal.
 - [ ] **Phase 75: Aba Avaliações** — EF de reviews do ML + resumo IA dos comentários.
 - [ ] **Phase 76: Ação "Melhorar com IA" + Histórico de Otimização** — Pipeline IA gera sugestão → aplica via MCP `update_listing_*` **com aprovação** → registra histórico (com revert).
+- [ ] **Phase 77: Produtos Vendidos + Análise de Preços (porte do app oficial)** — Porte do app oficial (zip 2026-07-01) como DOIS itens separados no grupo Dashboard do menu (não sub-abas de MLAnuncios). Independente do modal (71–76).
 
 ---
 
@@ -365,6 +366,7 @@ Contexto/decisões: `phases/63-compras-reposi-o-por-sku-p-gina-pr-pria/63-CONTEX
 **Plans:** 3 plans (3 waves, sequencial — ordem faseada D-12 com checkpoints bloqueantes)
 
 Plans:
+
 - [ ] 66-01-PLAN.md — Fundação: commit migration+EF, deploy+re-sync, gate D-12/D-13 (FORN-01, FORN-02) [wave 1]
 - [ ] 66-02-PLAN.md — RPC: CTE fornecedor_by_sku + precedência 4 níveis + get_purchase_order_suppliers (FORN-03, FORN-05) [wave 2]
 - [ ] 66-03-PLAN.md — Frontend: resolveParamsBySku 4 níveis + hook + dropdown no diálogo + testes (FORN-04, FORN-05) [wave 3]
@@ -380,6 +382,7 @@ Contexto/decisões: `66-CONTEXT.md` + `66-RESEARCH.md`. Org Pé Vermeio = `7f615
 **Plans:** 3 plans (2 waves)
 
 Plans:
+
 - [ ] 67-01-PLAN.md — RPC `get_replenishment_by_sku` v7: `p_smart` + CTEs `ewma_sales`/`seasonal_index`/`lead_time_by_fornecedor` + 5 colunas de transparência + checkpoint de aplicação/validação via MCP (wave 1)
 - [ ] 67-02-PLAN.md — Espelho TS testável (`replenishmentUtils`): EWMA/sazonal/tendência/lead-time real + fallbacks com vitest (wave 2)
 - [ ] 67-03-PLAN.md — Frontend: hook `p_smart` + toggle "Cálculo esperto" + badges de transparência na `/compras` + checkpoint visual (wave 2)
@@ -406,6 +409,7 @@ Contexto/decisões: a definir em `67-CONTEXT.md`. Org Pé Vermeio = `7f615df7-7b
 **Plans:** 2 plans (2 waves)
 
 Plans:
+
 - [ ] 69-01-PLAN.md — RPC `get_replenishment_by_sku`: CTE de classificação por recência (`status_esgotado`) + estimativa "melhor ritmo 30d/180d" com proteção anti-pico + `venda_dia_origem='historico_esgotado'`; SECURITY INVOKER mantido; aplicação/validação via MCP (wave 1)
 - [ ] 69-02-PLAN.md — Frontend `/compras`: 3 estados na coluna "O que fazer" + badge "demanda estimada pelo histórico" + opções no filtro Situação; espelho TS `replenishmentUtils` + vitest; sem regressão (wave 2)
 
@@ -444,6 +448,7 @@ Contexto/decisões: `docs/superpowers/specs/2026-06-27-reposicao-esgotados-desig
 **Spec**: `docs/superpowers/specs/2026-06-29-anuncio-detail-modal-design.md` (seção 5 — Fase A)
 
 **Plans**: 2 plans (2 waves)
+
 - [ ] 71-01-PLAN.md — Componentes do modal + utilitários puros (ListingDetailModal/IndicatorsTab/QualityScore + listingHelpers/listingIndicators + testes)
 - [ ] 71-02-PLAN.md — Gatilho na página MLAnuncios.tsx (estado + miniatura/ícone) + refactor de helpers compartilhados
 
@@ -455,10 +460,12 @@ Contexto/decisões: `docs/superpowers/specs/2026-06-27-reposicao-esgotados-desig
 **Depends on**: Phase 71 (modal + `ListingIndicatorsTab` + `ListingQualityScore`)
 **Requirements**: ADM-72
 **Decisões travadas** (do alinhamento 2026-06-29):
+
   - Busca **ao vivo ao abrir o modal** (EF invocada on-demand, com estado de loading), NÃO sync em lote. Sem tabela nova, sem cron.
   - Issues aparecem **só dentro do modal** (aba Indicadores) — nada na tabela de catálogo nesta fase.
   - EF chama `GET /item/{id}/performance` (com fallback `GET /items/{id}/health`) da API ML, espelhando a `fetch-ml-listing-health` do projeto antigo `nexointeligence` (referência em `supabase/functions/fetch-ml-listing-health/index.ts` do repo antigo).
   - Token ML e multi-conta seguindo o padrão das EFs existentes (`ml-inventory`, `ml-token-refresh`); escopo por org/seller (anti-IDOR).
+
 **Success Criteria** (what must be TRUE):
 
   1. Nova edge function (Deno) recebe `item_id` (+ `ml_account_id` quando conta vinculada), resolve o token ML org-scoped e retorna a saúde detalhada (score + lista de goals/actions/issues) do anúncio; trata erro/timeout do ML retornando estado explícito (não quebra o modal)
@@ -472,6 +479,7 @@ Contexto/decisões: `docs/superpowers/specs/2026-06-27-reposicao-esgotados-desig
 
 **Plans:** 2 plans (2 waves)
 Plans:
+
 - [ ] 72-01-PLAN.md — EF `ml-listing-health` (Deno): token org-scoped, anti-IDOR, `/item/{id}/performance` + fallback `/health`, normalização score + issues PT-BR; deploy via MCP + smoke (wave 1)
 - [ ] 72-02-PLAN.md — Hook `useMLListingHealth` (lazy on-demand) + subcomponente `ListingIssues` PT-BR no `ListingIndicatorsTab`, com estados loading/vazio/erro (wave 2)
 
@@ -483,13 +491,17 @@ Plans:
 **Depends on**: Phase 71 (modal + abas) ; complementa Phase 72
 **Requirements**: ADM-73
 **Plans**: 1 plan (1 wave)
+
   - [ ] 73-01-PLAN.md — util de agregação (+testes vitest), hook lazy `useMLListingSales`, componente `ListingSalesTab` (recharts + toggle + 30/90d) e wiring da aba no modal
+
 **Decisões travadas** (alinhamento 2026-06-29):
+
   - Gráfico com **toggle unidades/receita** + **seletor 30/90 dias**.
   - **Query direta** via `supabase.from("orders")` (RLS org-scoped já existe — 2 policies, anti-IDOR pelo RLS; NÃO criar EF/RPC).
   - Filtro: `item_id` = anúncio aberto, `status = 'paid'` (alinhado ao resto do app), agregação por dia somando `quantidade` e `receita_bruta`.
   - **`data_pedido` é TEXT** → cast para data no agrupamento (lição da Phase 63).
   - Agrega TODAS as variações do anúncio (gráfico por item_id, não por SKU separado).
+
 **Success Criteria** (what must be TRUE):
 
   1. A aba "Vendas" deixa de ficar `disabled`/"em breve" e renderiza um gráfico (recharts) com as vendas do anúncio aberto
@@ -517,55 +529,21 @@ Plans:
 **Depends on**: Phase 71
 **Requirements**: ADM-75
 
----
-
 ### Phase 76: Ação "Melhorar com IA" + Histórico de Otimização
 
 **Goal**: O modal ganha a ação "Melhorar com IA" — pipeline IA gera sugestão de otimização do anúncio (título/descrição/atributos), que o owner aprova e aplica via MCP `update_listing_*` (nunca auto-executa), registrando em tabela de histórico de otimização com possibilidade de revert.
 **Depends on**: Phase 71
 **Requirements**: ADM-76
 
+### Phase 77: Página Análise de Anúncios — Produtos Vendidos + Análise de Preços (porte do app oficial)
+
+**Goal**: Portar da versão oficial do app (código de referência em `/root/garment-glow-official/` — extraído do zip enviado pelo Wesley em 2026-07-01) duas análises hoje ausentes no nosso dash, entregues como **DOIS itens separados no grupo "Dashboard" do menu lateral** (decisão do Wesley 2026-07-01: NÃO replicar como sub-abas de Relatórios em MLAnuncios como no app oficial): (1) **Produtos Vendidos** (rota própria, ex. `/produtos-vendidos`) — painel duplo marcas/categorias (receita+qtd) → produtos vendidos do grupo no período; (2) **Análise de Preços** (rota própria, ex. `/analise-precos`) — porte do componente `PrecoPraticadoReport` (evolução do preço praticado médio/mín/máx por anúncio + volume sobreposto, granularidade dia/semana/mês) com atalho a partir da listagem de anúncios. Menu definido em `src/components/layout/ApiSidebar.tsx` (grupo Dashboard) + rotas em `App.tsx` + `roleAccess.ts` (lição da Phase 54: rota fora do roleAccess = default-deny). Adaptar TODAS as queries ao nosso schema e lições aprendidas: tabela `orders` (não `ml_orders`), `data_pedido` TEXT → cast/slice, `status='paid'`, RLS org-scoped, paginação PostgREST `.range()`, sem subqueries correlacionadas em RPC INVOKER.
+**Depends on**: nenhuma (independente do modal das Phases 71–76; a pasta `components/mercadolivre/analise/` já existe idêntica nos dois projetos)
+**Requirements**: TBD
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 77 to break down)
+
 ---
-
-## Progress
-
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 52. Fundação de Dados v8.0 | 2/2 | Complete | 2026-06-24 |
-| 53. Camada LLM | 2/2 | Complete | 2026-06-24 |
-| 54. Pipeline de Ações | 0/3 | Planned | - |
-| 55. Drill-down Multi-Loja | 0/? | Not started | - |
-| 56. Snooze + Limiares | 0/? | Not started | - |
-| 57. Nexo Conversacional | 0/4 | Em execução (preview) | - |
-| 58. Veracidade & Completude | 5/6 | In Progress|  |
-| 59. Fluxo de Caixa — Correções | 2/2 | Executed (provado em prod) | 2026-06-25 |
-| 62. Reposição Server-Side | 3/3 | Complete (prod, aguarda ok visual) | 2026-06-25 |
-| 63. Compras — Reposição por SKU | 4/5 | In Progress|  |
-
-## Build Order / Dependências
-
-```
-Phase 52 (Fundação de Dados) ──┬── Phase 53 (LLM)        ──┐
-                               ├── Phase 54 (Ações)      ──┤
-                               ├── Phase 55 (Multi-Loja) ──┤ → v8.0
-                               └── Phase 56 (Snooze/Limiares)┘
-```
-
-- **52 bloqueia tudo** (schema + state-machine + RPCs).
-- **53 e 54 podem rodar em paralelo** após a 52 (sem overlap de arquivos: EF/UI distintas).
-- **55** usa o engine da 52 e integra a narrativa da 53 quando presente.
-- **56** depende só da 52 (colunas snoozed_until + limiares em consultor_config).
-- Sugestão de início: **Phase 52** (fundação), depois **53 + 54** em paralelo.
-
-## Traceability
-
-| Trilha | Requisitos | Phase |
-|--------|-----------|-------|
-| LLM | LLM-01..07 (7) | 53 |
-| ACT | ACT-01..08 (8) | 54 |
-| STORE | STORE-01..05 (5) | 55 |
-| SNZ | SNZ-01..03 (3) | 56 |
-| TUNE | TUNE-01..05 (5) | 56 |
-| (base de dados transversal) | — | 52 |
-
-**Coverage:** 28/28 requisitos v1 mapeados (LLM→53, ACT→54, STORE→55, SNZ+TUNE→56; fundação→52). Deferidos v2: NOTF-01, LLM-A1, SNZ-A1.

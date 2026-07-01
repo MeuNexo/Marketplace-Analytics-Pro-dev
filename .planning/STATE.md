@@ -6,15 +6,15 @@ current_phase: 73
 current_phase_name: aba-vendas
 status: verifying
 stopped_at: None
-last_updated: "2026-06-29T14:49:49.162Z"
+last_updated: "2026-07-01T22:14:42.842Z"
 last_activity: 2026-06-29
 last_activity_desc: Phase 73 execution started
 progress:
-  total_phases: 21
+  total_phases: 22
   completed_phases: 10
   total_plans: 45
   completed_plans: 40
-  percent: 48
+  percent: 45
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
@@ -348,6 +348,10 @@ Dashboard atual mostra:
 - ML Claims/Questions API: rate limits e formatos — mitigar portando lógica já validada do Nexo MCP (/root/nexo-mcp/)
 - Stripe em 1 dia é apertado — escopo mínimo: checkout + webhook + portal (sem proration custom)
 - Phases 28/29 (performance) ficam condicionais — só entram no dia 10 (Phase 47) se QA mostrar lentidão real
+
+### Roadmap Evolution
+
+- Phase 77 added: Página Análise de Anúncios: porte Produtos Vendidos + Análise de Preços do app oficial, em página própria do menu
 
 ## Deferred Items
 
