@@ -548,4 +548,15 @@ Plans:
 - [x] 77-02-PLAN.md — UI: porte de PrecoPraticadoReport + páginas MLProdutosVendidos e MLAnalisePrecos
 - [x] 77-03-PLAN.md — Fiação: rotas em App.tsx + roleAccess.ts (default-deny evitado) + 2 itens no menu Dashboard
 
+### Phase 78: Revisao Mobile-First - responsividade e UX 100 por cento no mobile
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 77
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 78 to break down)
+
 ---
