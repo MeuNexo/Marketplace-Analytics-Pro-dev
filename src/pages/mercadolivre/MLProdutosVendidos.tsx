@@ -54,14 +54,25 @@ export default function MLProdutosVendidos() {
     resolvedMLUserIds,
   });
 
-  // ── Map item_id → inventory (thumbnail, category_id, title atual) ─────────
+  // ── Map item_id → inventory (thumbnail, category_id, title atual, estoque) ──
   const itemsMap = useMemo(() => {
     const m = new Map<
       string,
-      { category_id?: string | null; title?: string; thumbnail?: string | null }
+      {
+        category_id?: string | null;
+        title?: string;
+        thumbnail?: string | null;
+        available_quantity?: number;
+      }
     >();
     inventoryItems.forEach((i) => {
-      if (i.id) m.set(i.id, { category_id: i.category_id, title: i.title, thumbnail: i.thumbnail });
+      if (i.id)
+        m.set(i.id, {
+          category_id: i.category_id,
+          title: i.title,
+          thumbnail: i.thumbnail,
+          available_quantity: i.available_quantity,
+        });
     });
     return m;
   }, [inventoryItems]);
