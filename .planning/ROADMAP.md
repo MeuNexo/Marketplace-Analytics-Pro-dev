@@ -38,7 +38,7 @@ Research completo: `.planning/research/SUMMARY.md` (HIGH confidence). Requisitos
 - [ ] **Phase 74: Aba Precificação** — Reaproveita a calculadora existente (`MLPrecificacao`) embutida no modal.
 - [ ] **Phase 75: Aba Avaliações** — EF de reviews do ML + resumo IA dos comentários.
 - [ ] **Phase 76: Ação "Melhorar com IA" + Histórico de Otimização** — Pipeline IA gera sugestão → aplica via MCP `update_listing_*` **com aprovação** → registra histórico (com revert).
-- [ ] **Phase 77: Produtos Vendidos + Análise de Preços (porte do app oficial)** — Porte do app oficial (zip 2026-07-01) como DOIS itens separados no grupo Dashboard do menu (não sub-abas de MLAnuncios). Independente do modal (71–76).
+- [x] **Phase 77: Produtos Vendidos + Análise de Preços (porte do app oficial)** — Porte do app oficial (zip 2026-07-01) como DOIS itens separados no grupo Dashboard do menu (não sub-abas de MLAnuncios). Independente do modal (71–76). (completed 2026-07-01)
 
 ---
 
@@ -540,12 +540,12 @@ Plans:
 **Goal**: Portar da versão oficial do app (código de referência em `/root/garment-glow-official/` — extraído do zip enviado pelo Wesley em 2026-07-01) duas análises hoje ausentes no nosso dash, entregues como **DOIS itens separados no grupo "Dashboard" do menu lateral** (decisão do Wesley 2026-07-01: NÃO replicar como sub-abas de Relatórios em MLAnuncios como no app oficial): (1) **Produtos Vendidos** (rota própria, ex. `/produtos-vendidos`) — painel duplo marcas/categorias (receita+qtd) → produtos vendidos do grupo no período; (2) **Análise de Preços** (rota própria, ex. `/analise-precos`) — porte do componente `PrecoPraticadoReport` (evolução do preço praticado médio/mín/máx por anúncio + volume sobreposto, granularidade dia/semana/mês) com atalho a partir da listagem de anúncios. Menu definido em `src/components/layout/ApiSidebar.tsx` (grupo Dashboard) + rotas em `App.tsx` + `roleAccess.ts` (lição da Phase 54: rota fora do roleAccess = default-deny). Adaptar TODAS as queries ao nosso schema e lições aprendidas: tabela `orders` (não `ml_orders`), `data_pedido` TEXT → cast/slice, `status='paid'`, RLS org-scoped, paginação PostgREST `.range()`, sem subqueries correlacionadas em RPC INVOKER.
 **Depends on**: nenhuma (independente do modal das Phases 71–76; a pasta `components/mercadolivre/analise/` já existe idêntica nos dois projetos)
 **Requirements**: TBD
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 
 - [x] 77-01-PLAN.md — Camada de dados + migration: util soldProductsAgg (+testes), hook useMLSoldProducts, RPC orders_price_timeseries [BLOCKING push no banco real]
 - [x] 77-02-PLAN.md — UI: porte de PrecoPraticadoReport + páginas MLProdutosVendidos e MLAnalisePrecos
-- [ ] 77-03-PLAN.md — Fiação: rotas em App.tsx + roleAccess.ts (default-deny evitado) + 2 itens no menu Dashboard
+- [x] 77-03-PLAN.md — Fiação: rotas em App.tsx + roleAccess.ts (default-deny evitado) + 2 itens no menu Dashboard
 
 ---
