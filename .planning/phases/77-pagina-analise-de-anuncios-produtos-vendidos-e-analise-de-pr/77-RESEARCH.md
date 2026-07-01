@@ -464,19 +464,19 @@ const MLAnalisePrecos    = React.lazy(() => import("./pages/mercadolivre/MLAnali
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Categoria em Produtos Vendidos: usar `orders.marca` + cross-ref `ml_inventory_cache.category_id` ou só exibir Marcas?**
+1. **Categoria em Produtos Vendidos: usar `orders.marca` + cross-ref `ml_inventory_cache.category_id` ou só exibir Marcas?** — RESOLVED: implementar toggle Marca/Categoria; Categoria via cross-ref com `useMLInventory().items` em memória; anúncios ausentes do inventory caem em "Sem categoria".
    - O que sabemos: `orders` não tem `category_id`; `ml_inventory_cache` tem mas requer cross-reference por `item_id` em memória.
    - O que está incerto: Se `useMLInventory().items` cobrirá todos os `item_id` presentes nos orders do período (anúncios pausados/encerrados podem não estar em inventory).
    - Recomendação: Implementar toggle Marca/Categoria; para Categoria, usar cross-ref com `items` em memória (exatamente como o oficial faz com `i.category_id`). Para anúncios não encontrados no inventory, usar "Sem categoria".
 
-2. **Atalho da coluna Preços (`openPriceAnalysis`):**
+2. **Atalho da coluna Preços (`openPriceAnalysis`):** — RESOLVED: deep-link `/analise-precos?item=MLB...` lido via `useSearchParams()`; feature OPCIONAL conforme CONTEXT.md.
    - O oficial implementa um botão na coluna "Preços" da tabela de Produtos Vendidos que abre a Análise de Preços com o anúncio pré-selecionado. No oficial: `window.open(url + "?report=precos&item=MLB...", "_blank")`.
    - Em nosso projeto, a rota seria `/analise-precos?item=MLB...` com `useSearchParams()` para pré-selecionar.
    - Recomendação: Implementar como deep-link `?item=MLB...` se a página de Análise de Preços ler `useSearchParams()` — simples, sem acoplamento. Registrar como opcional (CONTEXT.md: "OPCIONAL").
 
-3. **`orders.titulo` vs `ml_inventory_cache.title` como nome do anúncio:**
+3. **`orders.titulo` vs `ml_inventory_cache.title` como nome do anúncio:** — RESOLVED: usar `ml_inventory_cache.title` via cross-ref quando disponível, com fallback para `orders.titulo`.
    - `orders.titulo` pode estar desatualizado (título pode ter mudado após a venda).
    - `ml_inventory_cache.title` é o título atual.
    - Recomendação: Usar `ml_inventory_cache.title` via cross-ref (via `useMLInventory().items`) quando disponível, com fallback para `orders.titulo`.
