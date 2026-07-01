@@ -1,4 +1,5 @@
 import {
+  BarChart2,
   Banknote,
   Target,
   ClipboardList,
@@ -9,6 +10,7 @@ import {
   Megaphone,
   MessageCircle,
   Package,
+  PackageSearch,
   PackageX,
   Plug,
   Receipt,
@@ -35,7 +37,9 @@ const apiSections: SidebarNavSection[] = [
           { icon: TrendingUp,  label: "Vendas",      path: "/"            },
           { icon: Lightbulb,   label: "Consultor",   path: "/consultor"   },
           { icon: Megaphone,   label: "Publicidade", path: "/publicidade" },
-          { icon: Receipt,     label: "Margem",      path: "/financeiro" },
+          { icon: Receipt,       label: "Margem",             path: "/financeiro"       },
+          { icon: PackageSearch, label: "Produtos Vendidos",  path: "/produtos-vendidos" },
+          { icon: BarChart2,     label: "Análise de Preços",  path: "/analise-precos"   },
         ],
       },
       {
