@@ -134,7 +134,7 @@ export default function MLProdutosVendidos() {
               customRange={filters.customRange}
               period={filters.period}
               onConfirm={handleConfirm}
-              maxDaysBack={90}
+              maxDaysBack={365}
             />
           </div>
         </div>
