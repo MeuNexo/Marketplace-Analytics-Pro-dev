@@ -1037,9 +1037,9 @@ export default function MLPedidos() {
 
       {/* ── Sticky header ── */}
       <div className="sticky -top-4 md:-top-6 lg:-top-8 z-20 -mx-4 md:-mx-6 lg:-mx-8 -mt-4 md:-mt-6 lg:-mt-8 px-4 md:px-6 lg:px-8 pb-4 pt-4 bg-background/95 backdrop-blur-sm border-b border-border/40">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <MLPageHeader title="Pedidos" lastUpdated={lastSyncedAt} />
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <MLPeriodPicker
               periodLabel={periodLabel}
               popoverOpen={popoverOpen}

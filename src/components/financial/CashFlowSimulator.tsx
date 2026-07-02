@@ -237,9 +237,9 @@ export function CashFlowSimulator() {
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
+    <div className="grid gap-4 sm:grid-cols-[300px_1fr] lg:grid-cols-[340px_1fr]">
       {/* ── Coluna de controles ── */}
-      <Card className="h-fit">
+      <Card className="h-fit sm:order-2 lg:order-none">
         <CardContent className="space-y-6 p-4">
           <div className="flex items-center justify-between gap-2">
             <div>
@@ -364,7 +364,7 @@ export function CashFlowSimulator() {
       </Card>
 
       {/* ── Coluna de resultado ── */}
-      <div className="space-y-4">
+      <div className="space-y-4 sm:order-1 lg:order-none">
         {controlsDisabled ? (
           <>
             <Skeleton className="h-28 rounded-xl" />

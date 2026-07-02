@@ -28,6 +28,7 @@ import {
 } from "recharts";
 import { Link, useSearchParams } from "react-router-dom";
 import { EmptyState } from "@/components/ui/empty-state";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -306,7 +307,7 @@ function SubTabCobertura({ items, coverageMap, coveragePeriod }: Pick<Relatorios
           </CardHeader>
           <CardContent className="p-0">
             <div className="max-h-80 overflow-auto">
-              <Table>
+              <Table className="min-w-[500px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="text-xs w-10 pl-3" />
@@ -826,6 +827,7 @@ function SortableHead({ label, sortAsc, sortDesc, current, onSort, className = "
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export default function MLEstoque() {
+  const isMobile = useIsMobile();
   const { items, loading: isLoading, syncing, hasToken, lastUpdated, refresh, syncNow } = useMLInventory();
   // hasToken: null = ainda carregando, false = sem token, true = conectado
   const isConnected = hasToken !== false;
@@ -1202,8 +1204,110 @@ export default function MLEstoque() {
                 <Package className="w-10 h-10 mx-auto mb-2 opacity-30" />
                 <p className="text-sm">{search || brandFilter !== "all" || coverageFilter !== "all" ? "Nenhum produto encontrado" : "Nenhum produto no inventário"}</p>
               </div>
-            ) : (
-              <div className="max-h-[600px] overflow-auto">
+            ) : isMobile ? (
+                /* ── Mobile: stacked cards (dual-layout — lição Phase 71) ── */
+                <div className="space-y-2 p-2">
+                  {filteredItems.map((item) => {
+                    const cd = coverageMap.get(item.id);
+                    const visibleVariationsM = hideOutOfStock
+                      ? item.variations.filter((v) => v.available_quantity > 0)
+                      : item.variations;
+                    const hasVisibleVariationsM = item.has_variations && visibleVariationsM.length > 0;
+                    const isOpenM = expanded.has(item.id);
+                    return (
+                      <div key={item.id} className="rounded-lg border border-border bg-card p-3 space-y-2">
+                        <div className="flex items-start gap-2">
+                          {item.thumbnail ? (
+                            <img src={item.thumbnail} alt="" loading="lazy" decoding="async" className="w-10 h-10 rounded object-cover shrink-0" />
+                          ) : (
+                            <div className="w-10 h-10 rounded bg-muted flex items-center justify-center shrink-0">
+                              <Package className="w-4 h-4 text-muted-foreground" />
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium line-clamp-2 leading-tight">{item.title}</p>
+                            <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                              <span className="text-[10px] text-muted-foreground">{item.id}</span>
+                              {item.seller_custom_field && <Badge variant="outline" className="text-[10px] h-4 px-1">{item.seller_custom_field}</Badge>}
+                            </div>
+                          </div>
+                          <a
+                            href={`https://produto.mercadolivre.com.br/${item.id.replace(/^(MLB)(\d+)$/, "$1-$2")}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-muted-foreground hover:text-foreground shrink-0"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                          <div>
+                            <span className="text-muted-foreground">Preço </span>
+                            <span className="font-medium">{currencyFmt(item.price)}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Estoque </span>
+                            <span className={`font-semibold ${item.available_quantity === 0 ? "text-red-500" : ""}`}>
+                              {numFmt(item.available_quantity)}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Cobertura </span>
+                            <span
+                              className="font-semibold"
+                              style={{ color: cd ? COVERAGE_COLORS[cd.coverage_class] : undefined }}
+                            >
+                              {cd
+                                ? cd.coverage_class === "ruptura"
+                                  ? "Ruptura"
+                                  : cd.coverage_days === null
+                                    ? "Sem giro"
+                                    : `${cd.coverage_days}d`
+                                : "—"}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Saúde </span>
+                            <HealthBar health={item.health} />
+                          </div>
+                        </div>
+                        {/* Paridade dual-layout (lição Phase 71): expansão de variações também no mobile */}
+                        {hasVisibleVariationsM && (
+                          <button
+                            type="button"
+                            onClick={() => toggleExpand(item.id)}
+                            className="flex items-center gap-1 text-xs text-muted-foreground pt-1"
+                          >
+                            {isOpenM ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                            {visibleVariationsM.length} {visibleVariationsM.length === 1 ? "variação" : "variações"}
+                          </button>
+                        )}
+                        {isOpenM && hasVisibleVariationsM && (
+                          <div className="border-t border-border/40 pt-2 space-y-1.5">
+                            {visibleVariationsM.map((v) => (
+                              <div
+                                key={v.variation_id}
+                                className="flex items-center justify-between gap-2 text-xs"
+                              >
+                                <span className="truncate flex-1">
+                                  {v.attribute_combinations?.map((a) => `${a.name}: ${a.value}`).join(" / ") ||
+                                    `Variação ${v.variation_id}`}
+                                </span>
+                                <span
+                                  className={`font-semibold shrink-0 ${v.available_quantity === 0 ? "text-red-500" : ""}`}
+                                >
+                                  {numFmt(v.available_quantity)} un
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+            <div className="max-h-[600px] overflow-auto">
                 <Table>
                   <TableHeader className="sticky top-0 bg-card z-10">
                     <TableRow>

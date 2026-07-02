@@ -664,6 +664,7 @@ export default function MercadoLivre() {
                 disabled={syncing || !connected}
                 className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted hover:text-muted-foreground"
                 aria-label="Atualizar"
+                title="Atualizar dados"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
                 <span className="hidden sm:inline">{syncing ? "Atualizando..." : "Atualizar"}</span>
@@ -674,6 +675,7 @@ export default function MercadoLivre() {
                 onClick={() => setLayoutOpen(true)}
                 className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted hover:text-muted-foreground"
                 aria-label="Personalizar dashboard"
+                title="Personalizar dashboard"
               >
                 <Settings2 className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">Personalizar</span>

@@ -2,9 +2,10 @@ import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CalendarIcon, ChevronDown, Check, X } from "lucide-react";
-import { startOfDay } from "date-fns";
+import { startOfDay, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { QUICK_RANGES, type DateRange } from "@/hooks/useMLFilters";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface MLPeriodPickerProps {
   periodLabel: string;
@@ -19,6 +20,12 @@ interface MLPeriodPickerProps {
   customRange: DateRange;
   period: number;
   onConfirm: () => void;
+  /**
+   * Limite de retrocesso do calendário em dias (ex.: 90 = só permite datas dos
+   * últimos 90 dias). Use em páginas cuja fonte de dados tem histórico limitado
+   * (ex.: tabela `orders` — backfill de 90 dias). Omitido = sem limite.
+   */
+  maxDaysBack?: number;
 }
 
 export function MLPeriodPicker({
@@ -34,7 +41,10 @@ export function MLPeriodPicker({
   customRange,
   period,
   onConfirm,
+  maxDaysBack,
 }: MLPeriodPickerProps) {
+  const isMobile = useIsMobile();
+  const minDate = maxDaysBack ? startOfDay(subDays(new Date(), maxDaysBack)) : null;
   return (
     <Popover
       open={popoverOpen}
@@ -61,8 +71,8 @@ export function MLPeriodPicker({
           <ChevronDown className="w-3 h-3 text-muted-foreground ml-0.5" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-3" align="start">
-        <div className="flex gap-1 mb-3">
+      <PopoverContent className="w-auto max-w-[calc(100vw-1rem)] p-3" align="start">
+        <div className="flex flex-wrap gap-1 mb-3">
           {QUICK_RANGES.map((opt) => (
             <Button
               key={opt.value}
@@ -88,8 +98,8 @@ export function MLPeriodPicker({
             setPendingRange({ from, to });
             setPendingPeriod(null);
           }}
-          disabled={(date) => date > new Date()}
-          numberOfMonths={2}
+          disabled={(date) => date > new Date() || (minDate !== null && date < minDate)}
+          numberOfMonths={isMobile ? 1 : 2}
           locale={ptBR}
           className="pointer-events-auto"
         />

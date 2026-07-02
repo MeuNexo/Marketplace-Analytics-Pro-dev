@@ -305,9 +305,9 @@ export function SimuladorPrecificacao() {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-3 items-start text-sm">
+    <div className="grid grid-cols-1 sm:grid-cols-[1fr_300px] lg:grid-cols-[1fr_340px] gap-3 items-start text-sm">
       {/* ── LEFT: Inputs ─────────────────────────────────────────────────── */}
-      <div className="space-y-3 min-w-0">
+      <div className="space-y-3 min-w-0 sm:order-2 lg:order-none">
         {/* Search / selected product */}
         <Card>
           <CardHeader className="px-4 pt-3 pb-2 space-y-0.5">
@@ -633,7 +633,7 @@ export function SimuladorPrecificacao() {
       </div>
 
       {/* ── RIGHT: Live result ──────────────────────────────────────────── */}
-      <div className="lg:sticky lg:top-14 lg:self-start space-y-2.5">
+      <div className="sm:order-1 lg:order-none lg:sticky lg:top-14 lg:self-start space-y-2.5">
         <Card>
           <CardHeader className="px-4 pt-3 pb-2 space-y-0.5">
             <CardTitle className="text-sm font-medium text-foreground leading-5">Preço de venda</CardTitle>
@@ -754,31 +754,35 @@ function ExtraField({
   onChange: (patch: Partial<ExtraDeduction>) => void;
 }) {
   return (
-    <div className="flex items-center gap-2">
-      <Switch
-        checked={value.enabled}
-        onCheckedChange={(v) => onChange({ enabled: v })}
-        className="h-4 w-7 [&>span]:h-3 [&>span]:w-3 [&>span]:data-[state=checked]:translate-x-3"
-      />
-      <span className={`text-xs flex-1 ${value.enabled ? "text-foreground" : "text-muted-foreground"}`}>{label}</span>
-      <Select
-        value={value.mode}
-        onValueChange={(v) => onChange({ mode: v as DeductionMode })}
-        disabled={!value.enabled}
-      >
-        <SelectTrigger className="w-[70px] h-8"><SelectValue /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value="percent">%</SelectItem>
-          <SelectItem value="amount">R$</SelectItem>
-        </SelectContent>
-      </Select>
-      <Input
-        value={value.value || ""}
-        onChange={(e) => onChange({ value: parseNumber(e.target.value) })}
-        disabled={!value.enabled}
-        placeholder="0"
-        className="w-24 h-8"
-      />
+    <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
+      <div className="flex items-center gap-2">
+        <Switch
+          checked={value.enabled}
+          onCheckedChange={(v) => onChange({ enabled: v })}
+          className="h-4 w-7 [&>span]:h-3 [&>span]:w-3 [&>span]:data-[state=checked]:translate-x-3"
+        />
+        <span className={`text-xs flex-1 ${value.enabled ? "text-foreground" : "text-muted-foreground"}`}>{label}</span>
+      </div>
+      <div className="flex items-center gap-2 sm:ml-auto">
+        <Select
+          value={value.mode}
+          onValueChange={(v) => onChange({ mode: v as DeductionMode })}
+          disabled={!value.enabled}
+        >
+          <SelectTrigger className="w-[70px] h-8"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="percent">%</SelectItem>
+            <SelectItem value="amount">R$</SelectItem>
+          </SelectContent>
+        </Select>
+        <Input
+          value={value.value || ""}
+          onChange={(e) => onChange({ value: parseNumber(e.target.value) })}
+          disabled={!value.enabled}
+          placeholder="0"
+          className="w-24 h-8"
+        />
+      </div>
     </div>
   );
 }

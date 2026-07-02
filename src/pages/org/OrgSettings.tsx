@@ -35,12 +35,14 @@ export default function OrgSettings() {
       </div>
 
       <Tabs value={tab} onValueChange={setTab} className="w-full">
-        <TabsList className="mb-6">
-          <TabsTrigger value="geral">Geral</TabsTrigger>
-          <TabsTrigger value="membros">Membros</TabsTrigger>
-          <TabsTrigger value="convites">Convites</TabsTrigger>
-          <TabsTrigger value="audit">Audit log</TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto -mx-4 px-4 mb-6">
+          <TabsList className="flex-nowrap w-max min-w-full">
+            <TabsTrigger value="geral">Geral</TabsTrigger>
+            <TabsTrigger value="membros">Membros</TabsTrigger>
+            <TabsTrigger value="convites">Convites</TabsTrigger>
+            <TabsTrigger value="audit">Audit log</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="geral">
           <OrgGeneralTab org={currentOrg} canEdit={isOwner} />

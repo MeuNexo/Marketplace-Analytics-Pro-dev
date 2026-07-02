@@ -24,6 +24,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   AlertCircle,
   CheckCircle2,
   Link2,
@@ -978,26 +983,38 @@ export default function Integrations() {
                               )}
                             </span>
                             {store.custom_name && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleResetStoreName(store.ml_user_id)}
-                                title="Voltar ao nome padrão"
-                              >
-                                <X className="w-4 h-4" />
-                              </Button>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleResetStoreName(store.ml_user_id)}
+                                    title="Voltar ao nome padrão"
+                                  >
+                                    <X className="w-4 h-4" />
+                                    <span className="sr-only">Voltar ao nome padrão</span>
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Voltar ao nome padrão</TooltipContent>
+                              </Tooltip>
                             )}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setEditingStoreId(store.ml_user_id);
-                                setEditingStoreName(store.custom_name || store.nickname || "");
-                              }}
-                              title="Renomear loja"
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </Button>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setEditingStoreId(store.ml_user_id);
+                                    setEditingStoreName(store.custom_name || store.nickname || "");
+                                  }}
+                                  title="Renomear loja"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                  <span className="sr-only">Renomear loja</span>
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Renomear loja</TooltipContent>
+                            </Tooltip>
                           </>
                         )}
                       </div>

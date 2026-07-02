@@ -6,6 +6,8 @@ import type { ProductMarginWithAds } from "@/hooks/useMLMarginWithAds";
 import { currencyFmt } from "./listingHelpers";
 import { aggregateLogisticType, logisticTypeLabel } from "./listingIndicators";
 import { ListingQualityScore } from "./ListingQualityScore";
+import { useMLListingHealth } from "./useMLListingHealth";
+import { ListingIssues } from "./ListingIssues";
 
 interface ListingIndicatorsTabProps {
   item: ProductItem;
@@ -42,6 +44,10 @@ function statusLabel(status: string): string {
  */
 export function ListingIndicatorsTab({ item, margin }: ListingIndicatorsTabProps) {
   const logisticBuckets = aggregateLogisticType(item);
+
+  // Fetch on-demand de saúde do anúncio (lazy — invocado só quando o modal está aberto)
+  // Guard: se item._ml_user_id for undefined → status='idle' (sem erro, seção não aparece)
+  const { status: healthStatus, data: healthData } = useMLListingHealth(item);
 
   // ─── Coluna esquerda ────────────────────────────────────────────────────────
 
@@ -124,8 +130,11 @@ export function ListingIndicatorsTab({ item, margin }: ListingIndicatorsTabProps
 
   const rightCol = (
     <div className="flex flex-col gap-4">
-      {/* Scoreboard de qualidade */}
+      {/* Scoreboard de qualidade — intocado (item.health do cache, Phase 71) */}
       <ListingQualityScore health={item.health} />
+
+      {/* Problemas acionáveis ao vivo (Phase 72) — isolado abaixo do quality score */}
+      <ListingIssues status={healthStatus} issues={healthData?.issues ?? []} />
 
       {/* KPIs */}
       <Card>

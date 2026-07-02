@@ -1,0 +1,1 @@
+{"content":"MercadoLibre API rate limits: 1500 requests per minute per seller. Exceeds returns 429 with empty body. No daily limits documented. Per-item health/performance endpoint counts against this per-seller pool.","source":"web","provider":"websearch","confidence":"LOW","fetched_at":"2026-06-29T13:37:14.766Z","ttl":86400000,"kind":"web"}

@@ -117,7 +117,7 @@ export function OrgInvitesTab({ orgId }: { orgId: string }) {
                 </SelectContent>
               </Select>
             </div>
-            <Button onClick={handleCreate} disabled={creating || !email.trim()}>
+            <Button onClick={handleCreate} disabled={creating || !email.trim()} className="w-full md:w-auto">
               {creating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Mail className="w-4 h-4 mr-2" />}
               Enviar convite
             </Button>

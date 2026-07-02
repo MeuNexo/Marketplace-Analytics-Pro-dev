@@ -204,10 +204,11 @@ export default function Sellers() {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
-                        variant="ghost" size="icon" className="h-7 w-7 hover:bg-green-100 dark:hover:bg-green-950"
+                        variant="ghost" size="icon" className="h-9 w-9 hover:bg-green-100 dark:hover:bg-green-950"
                         onClick={() => toggleSellerActive(seller.id)}
                       >
-                        <Power className={`h-3.5 w-3.5 ${seller.is_active ? "text-green-500" : "text-muted-foreground"}`} />
+                        <Power className={`h-4 w-4 ${seller.is_active ? "text-green-500" : "text-muted-foreground"}`} />
+                        <span className="sr-only">{seller.is_active ? "Desativar" : "Ativar"} seller</span>
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>{seller.is_active ? "Desativar" : "Ativar"}</TooltipContent>
@@ -216,8 +217,8 @@ export default function Sellers() {
                   {/* Edit seller name */}
                   <Dialog open={editSellerId === seller.id} onOpenChange={(o) => { if (!o) setEditSellerId(null); }}>
                     <DialogTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-muted" onClick={() => openEditSeller(seller.id, seller.name, seller.logo_url)}>
-                        <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                      <Button variant="ghost" size="icon" className="h-9 w-9 hover:bg-muted" onClick={() => openEditSeller(seller.id, seller.name, seller.logo_url)}>
+                        <Pencil className="h-4 w-4 text-muted-foreground" />
                       </Button>
                     </DialogTrigger>
                     <DialogContent>
@@ -259,8 +260,8 @@ export default function Sellers() {
                   {/* Delete seller */}
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10" disabled={sellers.length <= 1}>
-                        <Trash2 className="h-3.5 w-3.5" />
+                      <Button variant="ghost" size="icon" className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10" disabled={sellers.length <= 1}>
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>

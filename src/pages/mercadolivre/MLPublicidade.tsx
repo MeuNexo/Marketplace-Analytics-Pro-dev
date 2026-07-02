@@ -3,6 +3,7 @@ import {
   ComposedChart, Area, Bar, Line, XAxis, YAxis, CartesianGrid,
   Tooltip as RechartsTooltip, ResponsiveContainer,
 } from "recharts";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { KPI_GLOSSARY } from "@/lib/kpi-glossary";
 
 const tip = (key: keyof typeof KPI_GLOSSARY) => {
@@ -71,6 +72,7 @@ function NotConnected() {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function MLAnuncios() {
+  const isMobile = useIsMobile();
   const [campaignSearch, setCampaignSearch] = useState("");
   const [productSearch, setProductSearch]   = useState("");
   const [productSort, setProductSort]       = useState<{ key: "spend" | "roas" | "clicks" | "attributed_orders" | "attributed_revenue" | "ctr" | "stock" | "acos" | "cvr" | "tacos"; dir: "asc" | "desc" }>({ key: "spend", dir: "desc" });
@@ -638,68 +640,93 @@ export default function MLAnuncios() {
         </div>
 
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border/60 bg-muted/30">
-                  <th className="px-4 py-2.5 pl-6 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Campanha</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Status</th>
-                  {([
-                    ["daily_budget", "Orçamento/dia"],
-                    ["spend", "Gasto"],
-                  ] as const).map(([key, label]) => (
+          {isMobile ? (
+            /* ── Mobile: cards (A-07) ── */
+            <div className="space-y-2 p-3">
+              {filteredCampaigns.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-4">Nenhuma campanha encontrada.</p>
+              ) : (
+                filteredCampaigns.map((c) => (
+                  <div key={c.id} className="rounded-lg border border-border bg-card p-3 space-y-1.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-xs font-medium line-clamp-2">{c.name}</p>
+                      {statusBadge(c.status)}
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                      <div><span className="text-muted-foreground">Gasto </span><span className="font-mono tabular-nums font-medium">{currFmt(c.spend)}</span></div>
+                      <div><span className="text-muted-foreground">ROAS </span>{roasBadge(c.roas)}</div>
+                      <div><span className="text-muted-foreground">Pedidos </span><span className="font-mono tabular-nums">{numFmt(c.attributed_orders)}</span></div>
+                      <div><span className="text-muted-foreground">ACoS </span><span className="font-mono tabular-nums">{c.spend > 0 && c.attributed_revenue > 0 ? pctFmt(Math.round((c.spend / c.attributed_revenue) * 10000) / 100) : "—"}</span></div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          ) : (
+            /* ── Desktop: tabela completa (A-07) ── */
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border/60 bg-muted/30">
+                    <th className="px-4 py-2.5 pl-6 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Campanha</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Status</th>
+                    {([
+                      ["daily_budget", "Orçamento/dia"],
+                      ["spend", "Gasto"],
+                    ] as const).map(([key, label]) => (
+                      <th
+                        key={key}
+                        onClick={() => toggleCampaignSort(key)}
+                        className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
+                      >
+                        <span className="inline-flex items-center gap-1">{label} <CampaignSortIcon k={key} /></span>
+                      </th>
+                    ))}
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Impressões</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Cliques</th>
                     <th
-                      key={key}
-                      onClick={() => toggleCampaignSort(key)}
+                      onClick={() => toggleCampaignSort("ctr")}
                       className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
                     >
-                      <span className="inline-flex items-center gap-1">{label} <CampaignSortIcon k={key} /></span>
+                      <span className="inline-flex items-center gap-1">CTR <CampaignSortIcon k="ctr" /></span>
                     </th>
-                  ))}
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Impressões</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Cliques</th>
-                  <th
-                    onClick={() => toggleCampaignSort("ctr")}
-                    className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
-                  >
-                    <span className="inline-flex items-center gap-1">CTR <CampaignSortIcon k="ctr" /></span>
-                  </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Pedidos</th>
-                  <th
-                    onClick={() => toggleCampaignSort("roas")}
-                    className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
-                  >
-                    <span className="inline-flex items-center gap-1">ROAS <CampaignSortIcon k="roas" /></span>
-                  </th>
-                  <th className="px-4 py-2.5 pr-6 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">ACoS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredCampaigns.map((c, i) => (
-                  <tr
-                    key={c.id}
-                    className={`border-b border-border/40 transition-colors hover:bg-muted/20 ${i % 2 === 0 ? "" : "bg-muted/10"}`}
-                  >
-                    <td className="px-4 py-3 pl-6 font-medium max-w-[200px] truncate">{c.name}</td>
-                    <td className="px-4 py-3">{statusBadge(c.status)}</td>
-                    <td className="px-4 py-3 tabular-nums">{currFmt(c.daily_budget)}</td>
-                    <td className="px-4 py-3 tabular-nums font-medium">{currFmt(c.spend)}</td>
-                    <td className="px-4 py-3 tabular-nums">{numFmt(c.impressions)}</td>
-                    <td className="px-4 py-3 tabular-nums">{numFmt(c.clicks)}</td>
-                    <td className="px-4 py-3 tabular-nums">{pctFmt(c.ctr)}</td>
-                    <td className="px-4 py-3 tabular-nums">{numFmt(c.attributed_orders)}</td>
-                    <td className="px-4 py-3">{roasBadge(c.roas)}</td>
-                    <td className="px-4 py-3 pr-6 text-right text-xs tabular-nums">
-                      {c.spend > 0 && c.attributed_revenue > 0
-                        ? pctFmt(Math.round((c.spend / c.attributed_revenue) * 10000) / 100)
-                        : "—"}
-                    </td>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Pedidos</th>
+                    <th
+                      onClick={() => toggleCampaignSort("roas")}
+                      className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
+                    >
+                      <span className="inline-flex items-center gap-1">ROAS <CampaignSortIcon k="roas" /></span>
+                    </th>
+                    <th className="px-4 py-2.5 pr-6 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">ACoS</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="border-t border-border/60 bg-muted/20 px-6 py-2.5 flex items-center gap-8 text-xs text-muted-foreground">
+                </thead>
+                <tbody>
+                  {filteredCampaigns.map((c, i) => (
+                    <tr
+                      key={c.id}
+                      className={`border-b border-border/40 transition-colors hover:bg-muted/20 ${i % 2 === 0 ? "" : "bg-muted/10"}`}
+                    >
+                      <td className="px-4 py-3 pl-6 font-medium max-w-[200px] truncate">{c.name}</td>
+                      <td className="px-4 py-3">{statusBadge(c.status)}</td>
+                      <td className="px-4 py-3 tabular-nums">{currFmt(c.daily_budget)}</td>
+                      <td className="px-4 py-3 tabular-nums font-medium">{currFmt(c.spend)}</td>
+                      <td className="px-4 py-3 tabular-nums">{numFmt(c.impressions)}</td>
+                      <td className="px-4 py-3 tabular-nums">{numFmt(c.clicks)}</td>
+                      <td className="px-4 py-3 tabular-nums">{pctFmt(c.ctr)}</td>
+                      <td className="px-4 py-3 tabular-nums">{numFmt(c.attributed_orders)}</td>
+                      <td className="px-4 py-3">{roasBadge(c.roas)}</td>
+                      <td className="px-4 py-3 pr-6 text-right text-xs tabular-nums">
+                        {c.spend > 0 && c.attributed_revenue > 0
+                          ? pctFmt(Math.round((c.spend / c.attributed_revenue) * 10000) / 100)
+                          : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="border-t border-border/60 bg-muted/20 px-6 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <span className="font-semibold text-foreground">{filteredCampaigns.length} campanhas</span>
             <span>Gasto total: <strong className="text-foreground tabular-nums">{currFmt(filteredCampaigns.reduce((s, c) => s + c.spend, 0))}</strong></span>
             <span>Impressões: <strong className="text-foreground tabular-nums">{numFmt(filteredCampaigns.reduce((s, c) => s + c.impressions, 0))}</strong></span>
@@ -749,138 +776,172 @@ export default function MLAnuncios() {
           </div>
         </div>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border/60 bg-muted/30">
-                  <th className="px-4 py-2.5 pl-6 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">#</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Produto</th>
-                  {([
-                    ["spend", "Gasto"],
-                    ["clicks", "Cliques"],
-                    ["ctr", "CTR"],
-                    ["attributed_orders", "Pedidos"],
-                    ["attributed_revenue", "Receita ADS"],
-                    ["roas", "ROAS"],
-                  ] as const).map(([key, label]) => (
-                    <th
-                      key={key}
-                      onClick={() => toggleSort(key)}
-                      className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
-                    >
-                      <span className="inline-flex items-center gap-1">
-                        {label} <SortIcon k={key} />
-                      </span>
-                    </th>
-                  ))}
-                  <th
-                    onClick={() => toggleSort("cvr")}
-                    className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
-                  >
-                    <span className="inline-flex items-center gap-1">CVR <SortIcon k="cvr" /></span>
-                  </th>
-                  <th
-                    onClick={() => toggleSort("acos")}
-                    className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
-                  >
-                    <span className="inline-flex items-center gap-1">ACoS <SortIcon k="acos" /></span>
-                  </th>
-                  <th
-                    onClick={() => toggleSort("tacos")}
-                    className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
-                  >
-                    <span className="inline-flex items-center gap-1">TACoS <SortIcon k="tacos" /></span>
-                  </th>
-                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Margem Líq.</th>
-                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Share Ads</th>
-                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">ACoS BE</th>
-                  <th
-                    onClick={() => toggleSort("stock")}
-                    className="px-4 py-2.5 pr-6 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
-                  >
-                    <span className="inline-flex items-center gap-1">Estoque <SortIcon k="stock" /></span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedProducts.length === 0 && (
-                  <tr>
-                    <td colSpan={15} className="px-6 py-8 text-center text-sm text-muted-foreground">
-                      Nenhum produto patrocinado encontrado.
-                    </td>
-                  </tr>
-                )}
-                {pagedProducts.map((p, i) => (
-                  <tr
-                    key={p.item_id}
-                    className={`border-b border-border/40 transition-colors hover:bg-muted/20 ${i % 2 === 0 ? "" : "bg-muted/10"}`}
-                  >
-                    <td className="px-4 py-3 pl-6 text-muted-foreground font-mono text-xs">{pageStart + i + 1}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2.5 min-w-[200px]">
+          {isMobile ? (
+            /* ── Mobile: cards (A-03) ── */
+            <div className="space-y-2 p-3">
+              {pagedProducts.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-4">Nenhum produto patrocinado encontrado.</p>
+              ) : (
+                pagedProducts.map((p, i) => {
+                  const stock = stockByItem.get(p.item_id);
+                  return (
+                    <div key={p.item_id} className="rounded-lg border border-border bg-card p-3 space-y-1.5">
+                      <div className="flex items-start gap-2">
                         {p.thumbnail && (
                           <img src={p.thumbnail} alt={p.title} loading="lazy" decoding="async" className="h-9 w-9 rounded-md object-cover shrink-0 border border-border/50" />
                         )}
-                        <div>
-                          <p className="font-medium leading-tight line-clamp-1 max-w-[200px]">{p.title}</p>
-                          <p className="text-[11px] text-muted-foreground font-mono">{p.item_id}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium line-clamp-2">{p.title}</p>
+                          <p className="text-[11px] font-mono text-muted-foreground">{p.item_id}</p>
                         </div>
+                        <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">#{pageStart + i + 1}</span>
                       </div>
-                    </td>
-                    <td className="px-4 py-3 tabular-nums font-medium">{currFmt(p.spend)}</td>
-                    <td className="px-4 py-3 tabular-nums">{numFmt(p.clicks)}</td>
-                    <td className="px-4 py-3 tabular-nums">{pctFmt(p.ctr)}</td>
-                    <td className="px-4 py-3 tabular-nums">{numFmt(p.attributed_orders)}</td>
-                    <td className="px-4 py-3 tabular-nums">{currFmt(p.attributed_revenue)}</td>
-                    <td className="px-4 py-3">{roasBadge(p.roas)}</td>
-                    <td className="px-4 py-3 text-right text-xs tabular-nums">
-                      {p.cvr != null ? pctFmt(p.cvr) : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right text-xs tabular-nums">
-                      {p.acos != null ? (
-                        <span className={p.acos_breakeven != null && p.acos > p.acos_breakeven ? "text-red-500 font-semibold" : ""}>
-                          {pctFmt(p.acos)}
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                        <div><span className="text-muted-foreground">Gasto </span><span className="font-mono tabular-nums font-medium">{currFmt(p.spend)}</span></div>
+                        <div><span className="text-muted-foreground">ROAS </span>{roasBadge(p.roas)}</div>
+                        <div><span className="text-muted-foreground">ACoS </span><span className={`font-mono tabular-nums ${p.acos != null && p.acos_breakeven != null && p.acos > p.acos_breakeven ? "text-red-500 font-semibold" : ""}`}>{p.acos != null ? pctFmt(p.acos) : "—"}</span></div>
+                        <div><span className="text-muted-foreground">Estoque </span><span className={`font-mono tabular-nums ${stock === 0 ? "text-red-600 font-medium" : stock != null && stock < 5 ? "text-amber-600 font-medium" : ""}`}>{stock !== undefined ? numFmt(stock) : "—"}</span></div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          ) : (
+            /* ── Desktop: tabela completa (A-03) ── */
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border/60 bg-muted/30">
+                    <th className="px-4 py-2.5 pl-6 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">#</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Produto</th>
+                    {([
+                      ["spend", "Gasto"],
+                      ["clicks", "Cliques"],
+                      ["ctr", "CTR"],
+                      ["attributed_orders", "Pedidos"],
+                      ["attributed_revenue", "Receita ADS"],
+                      ["roas", "ROAS"],
+                    ] as const).map(([key, label]) => (
+                      <th
+                        key={key}
+                        onClick={() => toggleSort(key)}
+                        className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          {label} <SortIcon k={key} />
                         </span>
-                      ) : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right text-xs tabular-nums">
-                      {p.tacos != null ? (
-                        <span className={p.tacos > 8 ? "text-red-500 font-semibold" : p.tacos < 4 ? "text-emerald-600" : "text-amber-600"}>
-                          {pctFmt(p.tacos)}
-                        </span>
-                      ) : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right text-xs tabular-nums">
-                      {(() => {
-                        const m = marginMap?.get(p.item_id);
-                        if (m == null) return <span className="text-muted-foreground">—</span>;
-                        return (
-                          <span className={m >= 0 ? "text-emerald-500 font-semibold" : "text-red-500 font-semibold"}>
-                            {m.toFixed(1)}%
-                          </span>
-                        );
-                      })()}
-                    </td>
-                    <td className="px-4 py-3 text-right text-xs tabular-nums text-muted-foreground">
-                      {p.share_ads_pct != null ? pctFmt(p.share_ads_pct) : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right text-xs tabular-nums text-muted-foreground">
-                      {p.acos_breakeven != null ? pctFmt(p.acos_breakeven) : "—"}
-                    </td>
-                    <td className="px-4 py-3 pr-6 tabular-nums">
-                      {(() => {
-                        const stock = stockByItem.get(p.item_id);
-                        if (stock === undefined) return <span className="text-muted-foreground">—</span>;
-                        if (stock === 0) return <span className="text-red-600 font-medium">0</span>;
-                        if (stock < 5) return <span className="text-amber-600 font-medium">{numFmt(stock)}</span>;
-                        return numFmt(stock);
-                      })()}
-                    </td>
+                      </th>
+                    ))}
+                    <th
+                      onClick={() => toggleSort("cvr")}
+                      className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
+                    >
+                      <span className="inline-flex items-center gap-1">CVR <SortIcon k="cvr" /></span>
+                    </th>
+                    <th
+                      onClick={() => toggleSort("acos")}
+                      className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
+                    >
+                      <span className="inline-flex items-center gap-1">ACoS <SortIcon k="acos" /></span>
+                    </th>
+                    <th
+                      onClick={() => toggleSort("tacos")}
+                      className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
+                    >
+                      <span className="inline-flex items-center gap-1">TACoS <SortIcon k="tacos" /></span>
+                    </th>
+                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Margem Líq.</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Share Ads</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">ACoS BE</th>
+                    <th
+                      onClick={() => toggleSort("stock")}
+                      className="px-4 py-2.5 pr-6 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
+                    >
+                      <span className="inline-flex items-center gap-1">Estoque <SortIcon k="stock" /></span>
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {sortedProducts.length === 0 && (
+                    <tr>
+                      <td colSpan={15} className="px-6 py-8 text-center text-sm text-muted-foreground">
+                        Nenhum produto patrocinado encontrado.
+                      </td>
+                    </tr>
+                  )}
+                  {pagedProducts.map((p, i) => (
+                    <tr
+                      key={p.item_id}
+                      className={`border-b border-border/40 transition-colors hover:bg-muted/20 ${i % 2 === 0 ? "" : "bg-muted/10"}`}
+                    >
+                      <td className="px-4 py-3 pl-6 text-muted-foreground font-mono text-xs">{pageStart + i + 1}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2.5 min-w-[200px]">
+                          {p.thumbnail && (
+                            <img src={p.thumbnail} alt={p.title} loading="lazy" decoding="async" className="h-9 w-9 rounded-md object-cover shrink-0 border border-border/50" />
+                          )}
+                          <div>
+                            <p className="font-medium leading-tight line-clamp-1 max-w-[200px]">{p.title}</p>
+                            <p className="text-[11px] text-muted-foreground font-mono">{p.item_id}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 tabular-nums font-medium">{currFmt(p.spend)}</td>
+                      <td className="px-4 py-3 tabular-nums">{numFmt(p.clicks)}</td>
+                      <td className="px-4 py-3 tabular-nums">{pctFmt(p.ctr)}</td>
+                      <td className="px-4 py-3 tabular-nums">{numFmt(p.attributed_orders)}</td>
+                      <td className="px-4 py-3 tabular-nums">{currFmt(p.attributed_revenue)}</td>
+                      <td className="px-4 py-3">{roasBadge(p.roas)}</td>
+                      <td className="px-4 py-3 text-right text-xs tabular-nums">
+                        {p.cvr != null ? pctFmt(p.cvr) : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right text-xs tabular-nums">
+                        {p.acos != null ? (
+                          <span className={p.acos_breakeven != null && p.acos > p.acos_breakeven ? "text-red-500 font-semibold" : ""}>
+                            {pctFmt(p.acos)}
+                          </span>
+                        ) : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right text-xs tabular-nums">
+                        {p.tacos != null ? (
+                          <span className={p.tacos > 8 ? "text-red-500 font-semibold" : p.tacos < 4 ? "text-emerald-600" : "text-amber-600"}>
+                            {pctFmt(p.tacos)}
+                          </span>
+                        ) : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right text-xs tabular-nums">
+                        {(() => {
+                          const m = marginMap?.get(p.item_id);
+                          if (m == null) return <span className="text-muted-foreground">—</span>;
+                          return (
+                            <span className={m >= 0 ? "text-emerald-500 font-semibold" : "text-red-500 font-semibold"}>
+                              {m.toFixed(1)}%
+                            </span>
+                          );
+                        })()}
+                      </td>
+                      <td className="px-4 py-3 text-right text-xs tabular-nums text-muted-foreground">
+                        {p.share_ads_pct != null ? pctFmt(p.share_ads_pct) : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right text-xs tabular-nums text-muted-foreground">
+                        {p.acos_breakeven != null ? pctFmt(p.acos_breakeven) : "—"}
+                      </td>
+                      <td className="px-4 py-3 pr-6 tabular-nums">
+                        {(() => {
+                          const stock = stockByItem.get(p.item_id);
+                          if (stock === undefined) return <span className="text-muted-foreground">—</span>;
+                          if (stock === 0) return <span className="text-red-600 font-medium">0</span>;
+                          if (stock < 5) return <span className="text-amber-600 font-medium">{numFmt(stock)}</span>;
+                          return numFmt(stock);
+                        })()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           {sortedProducts.length > 0 && (
             <div className="border-t border-border/60 bg-muted/20 px-6 py-2.5 flex items-center justify-between flex-wrap gap-3 text-xs text-muted-foreground">
               <div className="flex items-center gap-2">

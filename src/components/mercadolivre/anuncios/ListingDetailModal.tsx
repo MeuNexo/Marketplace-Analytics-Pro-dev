@@ -17,6 +17,7 @@ import {
   mlListingUrl,
 } from "./listingHelpers";
 import { ListingIndicatorsTab } from "./ListingIndicatorsTab";
+import { ListingSalesTab } from "./ListingSalesTab";
 
 interface ListingDetailModalProps {
   item: ProductItem | null;
@@ -101,7 +102,7 @@ export function ListingDetailModal({
 }: ListingDetailModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-full sm:max-w-4xl max-h-[90vh] overflow-y-auto">
         {item && (
           <>
             {/* ── Cabeçalho ─────────────────────────────────────────────── */}
@@ -149,7 +150,7 @@ export function ListingDetailModal({
             <Tabs defaultValue="indicadores" className="mt-4">
               <TabsList className="flex-wrap h-auto gap-1">
                 <TabsTrigger value="indicadores">Indicadores</TabsTrigger>
-                <DisabledTabTrigger value="vendas"       label="Vendas"       />
+                <TabsTrigger value="vendas">Vendas</TabsTrigger>
                 <DisabledTabTrigger value="precificacao" label="Precificação"  />
                 <DisabledTabTrigger value="avaliacoes"   label="Avaliações"   />
                 <DisabledTabTrigger value="historico"    label="Histórico"    />
@@ -159,8 +160,9 @@ export function ListingDetailModal({
                 <ListingIndicatorsTab item={item} margin={margin} />
               </TabsContent>
 
-              {/* Conteúdos futuros — slots reservados para Phases 72–76 */}
-              <TabsContent value="vendas" />
+              <TabsContent value="vendas" className="mt-4">
+                <ListingSalesTab item={item} />
+              </TabsContent>
               <TabsContent value="precificacao" />
               <TabsContent value="avaliacoes" />
               <TabsContent value="historico" />

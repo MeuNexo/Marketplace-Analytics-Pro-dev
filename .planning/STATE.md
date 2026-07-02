@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 71
-current_phase_name: modal-de-detalhe-do-an-ncio-shell-indicadores
-status: executing
-stopped_at: "Phase 69 EXECUTADA + VERIFICADA (5/5) 2026-06-27. Backend EM PROD (migration 20260669000000 via MCP): status_esgotado 4 baldes + estimativa melhor-ritmo set-based (2,1s<8s). Prova: 29 repor_esgotado resgatados (+232un/R$21.219), com_giro=baseline (zero regressão), revisar/descontinuar compra 0, anti-IDOR 0. Frontend MERGEADO via PR #18 → prod (merge da1ace9e, 278/278 testes). ok visual Wesley OK. Phase 69 COMPLETA. Trilha 62-68 também já em prod."
-last_updated: "2026-06-29T12:55:34.633Z"
-last_activity: 2026-06-29
-last_activity_desc: Phase 71 execution started
+current_phase: 78
+current_phase_name: Revisão Mobile-First
+status: complete
+stopped_at: Completed 78-04 (Phase 78 complete)
+last_updated: "2026-07-02T00:33:00.000Z"
+last_activity: 2026-07-02
+last_activity_desc: Phase 78 complete — mobile-first revisão de 10 páginas (4 planos, 78-01..78-04)
 progress:
-  total_phases: 21
-  completed_phases: 8
-  total_plans: 42
-  completed_plans: 37
-  percent: 38
+  total_phases: 23
+  completed_phases: 12
+  total_plans: 52
+  completed_plans: 50
+  percent: 52
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
@@ -131,14 +131,14 @@ See: .planning/PROJECT.md
 
 **Milestone:** v8.0 — Consultor v2 (Inteligência)
 **Core value:** Consultor que explica, prioriza e ajuda a agir — LLM sob demanda + ações com aprovação, sobre o motor determinístico do v1.
-**Current focus:** Phase 71 — modal-de-detalhe-do-an-ncio-shell-indicadores
+**Current focus:** Phase 78 — Revisão Mobile-First
 
 ## Current Position
 
-Phase: 71 (modal-de-detalhe-do-an-ncio-shell-indicadores) — EXECUTING
-Plan: 2 of 2
+Phase: 78 (Revisão Mobile-First) — EXECUTING
+Plan: 4 of 4
 Status: Ready to execute
-Last activity: 2026-06-29 — Phase 71 execution started
+Last activity: 2026-07-02 — Phase 78 execution started
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
 
 ### Phase 54 — Wave 1 EXECUTADA (2026-06-24), Wave 2 PENDENTE
@@ -260,6 +260,12 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | Phase 62-reposicao-server-side P03 | 10 | 3 tasks | 3 files |
 | Phase 63 P03 | 387 | 3 tasks | 9 files |
 | Phase 71-modal-de-detalhe-do-an-ncio-shell-indicadores P02 | 10 minutos | 2 tasks | 1 files |
+| Phase 72 P01 | 12min | 1 tasks | 1 files |
+| Phase 73 P01 | 5m | 3 tasks | 6 files |
+| Phase 77 P01 | 3min | 3 tasks | 4 files |
+| Phase 78 P01 | 2min | 2 tasks | 2 files |
+| Phase 78 P02 | 6min | 3 tasks | 5 files |
+| Phase 78 P03 | 6min | 4 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -314,6 +320,14 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 - [Phase ?]: TDD RED/GREEN: test file commitado antes da implementação para garantir testes testam algo real
 - [Phase ?]: resolveParams: marca>global>hardcoded espelhando CTE params da RPC; brand param informativo
 - [Phase ?]: listingBadge (dead code) removida junto ao refactor de helpers locais
+- [Phase ?]: ml-listing-health: score nullable; unavailable retorna null sem quebrar modal
+- [Phase ?]: hook lazy com guard item.id + paginação MAX_ROWS
+- [Phase ?]: soldProductsAgg é util 100% pura — zero imports de React/Supabase/rede; TDD RED/GREEN 9 testes verdes
+- [Phase ?]: orders_price_timeseries RPC usa SECURITY INVOKER + cast data_pedido::date (TEXT schema) — deploy via MCP apply_migration orquestrador
+- [Phase ?]: Phase 78-01: useIsMobile controla numberOfMonths no MLPeriodPicker (1 no mobile, 2 no desktop) — padrão do projeto
+- [Phase ?]: Phase 78-01: OrganizationSwitcher inline no Header com max-w-[140px] sm:max-w-none — abordagem mínima sem drawer
+- [Phase ?]: BLOCKER B-02 corrigido — dialog não era cortado no mobile
+- [Phase ?]: Paridade dual-layout (lição Phase 71) — ação por item preservada no mobile
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -345,6 +359,11 @@ Dashboard atual mostra:
 - Stripe em 1 dia é apertado — escopo mínimo: checkout + webhook + portal (sem proration custom)
 - Phases 28/29 (performance) ficam condicionais — só entram no dia 10 (Phase 47) se QA mostrar lentidão real
 
+### Roadmap Evolution
+
+- Phase 77 added: Página Análise de Anúncios: porte Produtos Vendidos + Análise de Preços do app oficial, em página própria do menu
+- Phase 78 added: Revisão mobile-first do dashboard inteiro (pedido Wesley 2026-07-01)
+
 ## Deferred Items
 
 | Category | Item | Status | Deferred At |
@@ -361,10 +380,10 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-**Resume file:** .planning/phases/67-compras-v3-reposi-o-mais-esperta-tend-ncia-lead-time-real/67-VERIFICATION.md
+**Resume file:** None
 
-Last session: 2026-06-29T12:55:25.448Z
-Stopped at: Phase 67 EXECUTADA + VERIFICADA (6/7). RPC esperta em prod (não-regressão provada; EWMA/sazonal/lead-time ativos); frontend na branch (246 testes). Pendente: ok visual + merge PR
+Last session: 2026-07-02T00:25:52.706Z
+Stopped at: Completed 78-01
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
