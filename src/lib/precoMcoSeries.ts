@@ -53,6 +53,8 @@ export interface AdsDailyRow {
 /** Ponto da série de MCO pronto para o gráfico. */
 export interface McoSeriesPoint {
   bucket: string;
+  /** Unidades vendidas no bucket (r.qtd) */
+  qtd: number;
   precoUnit: number;
   breakevenUnit: number;
   cmvUnit: number;
@@ -132,6 +134,7 @@ export function computePrecoMcoSeries(
 
     return {
       bucket: r.bucket,
+      qtd: r.qtd,
       precoUnit,
       breakevenUnit,
       cmvUnit: qtd > 0 ? r.cmv / qtd : 0,
