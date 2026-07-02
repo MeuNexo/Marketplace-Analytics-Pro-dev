@@ -138,7 +138,7 @@ See: .planning/PROJECT.md
 Phase: 78 (Revisão Mobile-First) — EXECUTING
 Plan: 4 of 4
 Status: Phase complete — ready for verification
-Last activity: 2026-07-02 — Quick 260702-i8u: unidades+legenda no gráfico da Análise de Preços (Phase 79)
+Last activity: 2026-07-02 - Quick 260702-kfo (cores/legendas nítidas em /analise-precos) concluído; PR #25 indo para produção para validação do Wesley
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
 
 ### Phase 54 — Wave 1 EXECUTADA (2026-06-24), Wave 2 PENDENTE
@@ -199,6 +199,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | 260625-ixc | Caixa sempre atualizado: waitUntil na EF sync-mp-releases + cron entradas/saídas a cada 3h. Provado em prod (202, 401, synced_at avançando, crons 0 */3) | 2026-06-25 | 529d55eb | [260625-ixc](./quick/260625-ixc-caixa-sempre-atualizado-waituntil-na-ef-/) |
 | 260702-i8u | Linha de unidades vendidas + legenda no gráfico de /analise-precos (feedback Wesley Phase 79) | 2026-07-02 | 596fb659 | [260702-i8u](./quick/260702-i8u-linha-de-unidades-vendidas-legendas-no-g/) |
 | 260702-jq4 | Gráfico de /analise-precos dividido em principal+BarChart de unidades; 6 KPI cards com comparativo vs período anterior (%/p.p.) | 2026-07-02 | 5370606f | [260702-jq4](./quick/260702-jq4-grafico-dividido-kpi-comparativo/) |
+| 260702-kfo | Cores/legenda nítidas no gráfico de /analise-precos: tokens --chart-price/breakeven/mco (paleta validada CVD light+dark), legenda 5 itens, chips no tooltip, ticks do eixo MCO% violeta. AGUARDA validação visual Wesley EM PROD | 2026-07-02 | 86dd69d6 | [260702-kfo](./quick/260702-kfo-cores-legendas-grafico-precos/) |
 | 260627-1z0 | Reposição: alvo order-up-to = venda × (GREATEST(cobertura, lead+7) + safety) — corrige cobertura<lead que jogava compra no MOQ. Deployado prod via MCP; total compra 756→1053, 0 SKUs presos no piso. | 2026-06-27 | 5c0820ec | [260627-1z0](./quick/260627-1z0-fix-parametro-reposicao-alvo-order-up-to/) |
 
 ### DRE mês-calendário (quick 260613-2p6, 2026-06-13)
