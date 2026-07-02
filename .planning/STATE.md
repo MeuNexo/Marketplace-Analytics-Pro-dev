@@ -4,17 +4,17 @@ milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
 current_phase: 78
 current_phase_name: Revisão Mobile-First
-status: executing
-stopped_at: Completed 78-01
-last_updated: "2026-07-02T00:25:58.395Z"
+status: complete
+stopped_at: Completed 78-04 (Phase 78 complete)
+last_updated: "2026-07-02T00:33:00.000Z"
 last_activity: 2026-07-02
-last_activity_desc: Phase 78 execution started
+last_activity_desc: Phase 78 complete — mobile-first revisão de 10 páginas (4 planos, 78-01..78-04)
 progress:
   total_phases: 23
-  completed_phases: 11
+  completed_phases: 12
   total_plans: 52
-  completed_plans: 46
-  percent: 48
+  completed_plans: 50
+  percent: 52
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
