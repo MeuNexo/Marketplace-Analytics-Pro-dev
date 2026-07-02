@@ -55,7 +55,7 @@ export function Header({ title, subtitle, showSellerSwitcher = true, showSellerM
             <Menu className="h-5 w-5" />
           </Button>
         )}
-        <div className="hidden sm:block shrink-0">
+        <div className="shrink-0 max-w-[140px] sm:max-w-none">
           <OrganizationSwitcher />
         </div>
         {showSellerMarketplaceBar && !hideStores ? (
