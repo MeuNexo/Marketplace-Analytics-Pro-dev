@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { niceStep, computePrecoFaixas } from "./precoFaixas";
+import { niceStep, computePrecoFaixas, classificarSaude, computeVeredicto, MCO_SAUDAVEL_PCT } from "./precoFaixas";
 import type { McoSeriesPoint } from "./precoMcoSeries";
 
 describe("niceStep", () => {
@@ -82,5 +82,39 @@ describe("computePrecoFaixas", () => {
     expect(r.faixas).toEqual([]);
     expect(r.faixaOtima).toBeNull();
     expect(r.precoRecente).toBeNull();
+  });
+});
+
+describe("classificarSaude", () => {
+  it("prejuízo < 0, apertada [0, threshold), saudável >= threshold", () => {
+    expect(classificarSaude(-0.01)).toBe("prejuizo");
+    expect(classificarSaude(0.02)).toBe("apertada");
+    expect(classificarSaude(MCO_SAUDAVEL_PCT / 100)).toBe("saudavel");
+    expect(classificarSaude(null)).toBe("sem-dados");
+  });
+});
+
+describe("computeVeredicto", () => {
+  const base = {
+    faixas: [], larguraBucket: 5, precoRecente: 60, margemRecentePct: 0.17,
+    totalUnidades: 250, totalMcoRs: 2400,
+  };
+  it("frase de saúde cita preço recente e margem", () => {
+    const r: any = { ...base, faixaOtima: { label: "R$58–62", unidades: 200, mcoRsTotal: 1700, precoMedio: 59 } };
+    const v = computeVeredicto(r, "unidades");
+    expect(v.saude).toBe("saudavel");
+    expect(v.saudeTexto).toContain("60");
+    expect(v.saudeTexto).toContain("17");
+  });
+  it("modo unidades fala de volume; modo lucro fala de R$", () => {
+    const r: any = { ...base, faixaOtima: { label: "R$58–62", unidades: 200, mcoRsTotal: 1700, precoMedio: 59 } };
+    expect(computeVeredicto(r, "unidades").otimoTexto).toMatch(/unidade/i);
+    expect(computeVeredicto(r, "lucro").otimoTexto).toMatch(/R\$/);
+  });
+  it("sem faixa ótima degrada com transparência", () => {
+    const r: any = { ...base, faixaOtima: null, precoRecente: null, margemRecentePct: null };
+    const v = computeVeredicto(r, "unidades");
+    expect(v.saude).toBe("sem-dados");
+    expect(v.otimoTexto.length).toBeGreaterThan(0);
   });
 });

@@ -135,3 +135,54 @@ export function computePrecoFaixas(daily: McoSeriesPoint[], opts: ComputeFaixasO
     totalMcoRs: pts.reduce((s, d) => s + d.mco, 0),
   };
 }
+
+/** Threshold de saúde de margem (%). Constante nomeada — sem LLM. */
+export const MCO_SAUDAVEL_PCT = 5;
+
+export type SaudePreco = "saudavel" | "apertada" | "prejuizo" | "sem-dados";
+
+export interface Veredicto {
+  saude: SaudePreco;
+  saudeTexto: string; // frase 1
+  otimoTexto: string; // frase 2 (depende do mode)
+}
+
+const brl = (n: number) =>
+  n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: n >= 1000 ? 0 : 2 });
+const pct = (frac: number) => `${(frac * 100).toFixed(0)}%`;
+
+/** Classifica saúde de margem: prejuízo < 0, apertada [0, threshold), saudável >= threshold. */
+export function classificarSaude(mcoPct: number | null): SaudePreco {
+  if (mcoPct == null) return "sem-dados";
+  if (mcoPct < 0) return "prejuizo";
+  if (mcoPct < MCO_SAUDAVEL_PCT / 100) return "apertada";
+  return "saudavel";
+}
+
+/** Veredito determinístico (template sobre números, sem LLM) sobre saúde de preço e faixa ótima. */
+export function computeVeredicto(r: FaixasResult, mode: FaixaMode): Veredicto {
+  const saude = classificarSaude(r.margemRecentePct);
+  const rotulo: Record<SaudePreco, string> = {
+    saudavel: "saudável", apertada: "apertada", prejuizo: "no vermelho", "sem-dados": "sem dados",
+  };
+
+  let saudeTexto: string;
+  if (r.precoRecente == null || r.margemRecentePct == null) {
+    saudeTexto = "Ainda não há vendas suficientes para avaliar a saúde do preço atual.";
+  } else {
+    saudeTexto = `No preço mais recente (${brl(r.precoRecente)}) sua margem é ${pct(r.margemRecentePct)} — ${rotulo[saude]}.`;
+  }
+
+  let otimoTexto: string;
+  const f = r.faixaOtima;
+  if (!f) {
+    otimoTexto = "Ainda não há variação de preço suficiente para comparar faixas.";
+  } else if (mode === "unidades") {
+    const m = f.mcoPctMedio != null ? `, ${pct(f.mcoPctMedio)} de margem` : "";
+    otimoTexto = `Você vende mais na faixa ${f.label}: ${f.unidades.toLocaleString("pt-BR")} unidades${m}.`;
+  } else {
+    otimoTexto = `Seu maior lucro veio na faixa ${f.label}: ${brl(f.mcoRsTotal)} no período.`;
+  }
+
+  return { saude, saudeTexto, otimoTexto };
+}
