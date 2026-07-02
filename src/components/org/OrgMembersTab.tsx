@@ -10,7 +10,10 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Loader2, Trash2, Crown, SlidersHorizontal, RefreshCw, Search } from "lucide-react";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Loader2, Trash2, Crown, SlidersHorizontal, RefreshCw, Search, MoreHorizontal } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -36,6 +39,8 @@ export function OrgMembersTab({ orgId, myRole }: { orgId: string; myRole: OrgRol
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [permsTarget, setPermsTarget] = useState<{ id: string; name: string } | null>(null);
+  const [transferTarget, setTransferTarget] = useState<{ userId: string; name: string } | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<{ userId: string; name: string } | null>(null);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<"all" | OrgRole>("all");
 
@@ -183,9 +188,10 @@ export function OrgMembersTab({ orgId, myRole }: { orgId: string; myRole: OrgRol
               const isSelf = m.user_id === user?.id;
               const isMemberOwner = m.role === "owner";
               const initials = (m.full_name ?? "U").split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
+              const hasActions = canManage && !isSelf && !isMemberOwner;
               return (
                 <div key={m.id} className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card">
-                  <Avatar className="h-9 w-9">
+                  <Avatar className="h-9 w-9 shrink-0">
                     <AvatarImage src={m.avatar_url ?? undefined} />
                     <AvatarFallback className="text-xs">{initials}</AvatarFallback>
                   </Avatar>
@@ -197,77 +203,55 @@ export function OrgMembersTab({ orgId, myRole }: { orgId: string; myRole: OrgRol
                   </div>
 
                   {isMemberOwner ? (
-                    <span className="text-xs font-medium text-primary flex items-center gap-1">
+                    <span className="text-xs font-medium text-primary flex items-center gap-1 shrink-0">
                       <Crown className="w-3.5 h-3.5" /> Owner
                     </span>
                   ) : canManage && !isSelf ? (
                     <Select value={m.role} onValueChange={(v) => handleRoleChange(m.user_id, v as OrgRole)} disabled={busyId === m.user_id}>
-                      <SelectTrigger className="h-8 w-28 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="h-8 w-28 shrink-0 text-xs"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {ROLE_OPTIONS.map((r) => <SelectItem key={r} value={r} className="capitalize">{r}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   ) : (
-                    <span className="text-xs text-muted-foreground capitalize">{m.role}</span>
+                    <span className="text-xs text-muted-foreground capitalize shrink-0">{m.role}</span>
                   )}
 
-                  {canManage && !isSelf && m.role === "viewer" && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 px-2 text-xs"
-                      onClick={() =>
-                        setPermsTarget({ id: m.user_id, name: m.full_name ?? "Viewer" })
-                      }
-                    >
-                      <SlidersHorizontal className="w-3.5 h-3.5 mr-1" /> Acesso
-                    </Button>
-                  )}
-
-                  {isOwner && !isSelf && !isMemberOwner && (
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="sm" className="h-8 px-2 text-xs">
-                          <Crown className="w-3.5 h-3.5 mr-1" /> Transferir
+                  {hasActions && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+                          <MoreHorizontal className="w-4 h-4" />
+                          <span className="sr-only">Ações do membro</span>
                         </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Transferir propriedade?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Você deixará de ser Owner e passará a ser Admin. {m.full_name ?? "Este membro"} se tornará o novo Owner.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => handleTransfer(m.user_id)}>Transferir</AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  )}
-
-                  {canManage && !isSelf && !isMemberOwner && (
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10">
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Remover membro?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            {m.full_name ?? "Este membro"} perderá acesso à organização.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => handleRemove(m.user_id)} className="bg-destructive hover:bg-destructive/90">
-                            Remover
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {m.role === "viewer" && (
+                          <DropdownMenuItem
+                            onClick={() => setPermsTarget({ id: m.user_id, name: m.full_name ?? "Viewer" })}
+                          >
+                            <SlidersHorizontal className="w-3.5 h-3.5 mr-2" /> Acesso
+                          </DropdownMenuItem>
+                        )}
+                        {isOwner && (
+                          <>
+                            {m.role === "viewer" && <DropdownMenuSeparator />}
+                            <DropdownMenuItem
+                              onClick={() => setTransferTarget({ userId: m.user_id, name: m.full_name ?? "Este membro" })}
+                            >
+                              <Crown className="w-3.5 h-3.5 mr-2" /> Transferir owner
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => setRemoveTarget({ userId: m.user_id, name: m.full_name ?? "Este membro" })}
+                        >
+                          <Trash2 className="w-3.5 h-3.5 mr-2" /> Remover
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   )}
                 </div>
               );
@@ -286,6 +270,40 @@ export function OrgMembersTab({ orgId, myRole }: { orgId: string; myRole: OrgRol
           memberName={permsTarget.name}
         />
       )}
+
+      {/* Transfer ownership dialog */}
+      <AlertDialog open={!!transferTarget} onOpenChange={(o) => !o && setTransferTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Transferir propriedade?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Você deixará de ser Owner e passará a ser Admin. {transferTarget?.name ?? "Este membro"} se tornará o novo Owner.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { if (transferTarget) { handleTransfer(transferTarget.userId); setTransferTarget(null); } }}>Transferir</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Remove member dialog */}
+      <AlertDialog open={!!removeTarget} onOpenChange={(o) => !o && setRemoveTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remover membro?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {removeTarget?.name ?? "Este membro"} perderá acesso à organização.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { if (removeTarget) { handleRemove(removeTarget.userId); setRemoveTarget(null); } }} className="bg-destructive hover:bg-destructive/90">
+              Remover
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
