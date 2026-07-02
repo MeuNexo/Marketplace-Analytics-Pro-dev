@@ -111,6 +111,7 @@ const ADS_SYNC_COOLDOWN_MS = 10 * 60 * 1000;
 
 type MLAdsResponse = {
   adsAvailable: boolean;
+  syncing?: boolean;   // true = a EF disparou o sync em background; dados chegam na próxima carga
   daily: AdsDailyStat[];
   campaigns: AdsCampaign[];
   products: AdsProductStat[];
@@ -227,7 +228,15 @@ export function useMLAds(opts: UseMLAdsOptions = {}): UseMLAdsResult {
 
       if (force) {
         localStorage.setItem(ADS_SYNC_LS_KEY, String(Date.now()));
-        toast({ title: "Publicidade sincronizada", description: "Dados atualizados com sucesso." });
+        const bgSyncing = results.some((r) => r.syncing);
+        if (bgSyncing) {
+          // A EF busca no ML em background (não trava mais a tela). Avisa e re-lê o
+          // cache uma vez quando o sync provavelmente terminou, para refletir os dados.
+          toast({ title: "Sincronizando publicidade", description: "Buscando no Mercado Livre em segundo plano — os dados atualizam em instantes." });
+          window.setTimeout(() => { fetchAdsData(false); }, 15000);
+        } else {
+          toast({ title: "Publicidade sincronizada", description: "Dados atualizados com sucesso." });
+        }
       }
     } catch (err: any) {
       console.error("useMLAds fetchAdsData error:", err);

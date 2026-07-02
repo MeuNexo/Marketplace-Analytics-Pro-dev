@@ -384,15 +384,23 @@ serve(async (req) => {
       ? Date.now() - new Date(latestDaily.synced_at).getTime()
       : Infinity;
 
-    if (force || cacheAgeMs > CACHE_TTL_MS) {
+    // Sync em BACKGROUND (não bloqueia a resposta). Antes era `await`, o que fazia o
+    // worker ser MORTO pelo runtime (status 546) quando o sync passava do wall-clock
+    // (~110s ao iterar até 90 dias × paginação na API do ML) — o cliente recebia erro
+    // mesmo com o cache válido, e o try/catch não pega (o worker morre por fora).
+    // Agora respondemos o cache na hora e o sync atualiza para a próxima carga.
+    // EdgeRuntime.waitUntil mantém o worker vivo após a resposta; se o bg sync falhar
+    // ou exceder, o cron diário de ads cobre. Ver feedback_garment_orders_date_perf / Phase 59.
+    const triggeredSync = force || cacheAgeMs > CACHE_TTL_MS;
+    if (triggeredSync) {
+      const maxFrom       = subDaysStr(90);
+      const effectiveFrom = dateFrom < maxFrom ? maxFrom : dateFrom;
+      const bg = syncAds(admin, user.id, mlUserId, seller_id, orgId, effectiveFrom, dateTo)
+        .catch((e: any) => console.error("ml-ads bg sync failed:", e?.message ?? e));
       try {
-        const maxFrom       = subDaysStr(90);
-        const effectiveFrom = dateFrom < maxFrom ? maxFrom : dateFrom;
-        await syncAds(admin, user.id, mlUserId, seller_id, orgId, effectiveFrom, dateTo);
-      } catch (e: any) {
-        console.error("ml-ads sync failed:", e.message);
-        // Continua — retorna o que está no cache
-      }
+        // @ts-ignore — EdgeRuntime é global no Supabase Edge Runtime
+        if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) EdgeRuntime.waitUntil(bg);
+      } catch { /* fire-and-forget se indisponível */ }
     }
 
     // Lê dados do cache com filtro de período
@@ -463,6 +471,7 @@ serve(async (req) => {
 
     return json({
       adsAvailable: daily.length > 0 || campaigns.length > 0,
+      syncing: triggeredSync,   // true = sync rodando em background; dados atualizam na próxima carga
       daily,
       campaigns,
       products,
