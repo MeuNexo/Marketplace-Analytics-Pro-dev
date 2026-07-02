@@ -40,6 +40,7 @@ import {
   computeVeredicto,
   classificarSaude,
   COBERTURA_RISCO_DIAS,
+  MIN_DIAS_CONFIANCA,
   type FaixaMode,
   type FaixaPreco,
   type SaudePreco,
@@ -170,11 +171,37 @@ function BarTooltip({ active, payload }: any) {
   );
 }
 
-// Tooltip do histograma de faixas — preço médio, unidades, margem %, MCO R$, receita.
+// Textos de cobertura/giro reusados pelo rótulo da barra e pelo tooltip da faixa
+// (precedência: sem estoque > sem giro > <1 dia > ~N dias). estoqueAtual aqui é o
+// valor ÚNICO do anúncio (mesmo em todas as faixas — cenário hipotético por faixa).
+function giroTexto(f: FaixaPreco): string {
+  return f.giroDia != null
+    ? `${f.giroDia.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}/dia`
+    : "—";
+}
+function coberturaTooltipTexto(f: FaixaPreco & { estoqueAtual?: number | null }): string {
+  const estoque = f.estoqueAtual ?? null;
+  if (estoque == null) return "—";
+  if (estoque <= 0) return "sem estoque";
+  if (f.giroDia == null) return "sem giro";
+  if (f.coberturaDias === 0) return "menos de 1 dia";
+  return `~${f.coberturaDias} dia${f.coberturaDias === 1 ? "" : "s"}`;
+}
+/** Rótulo curto `~Xd` na barra; null quando faixa vazia ou sem cobertura computável. */
+function coberturaBarraTexto(f: FaixaPreco & { estoqueAtual?: number | null }): string | null {
+  if (f.unidades <= 0 || f.coberturaDias == null) return null;
+  const estoque = f.estoqueAtual ?? null;
+  const base = f.coberturaDias === 0 && estoque != null && estoque > 0 ? "<1d" : `~${f.coberturaDias}d`;
+  return f.baixaConfianca ? `${base}?` : base;
+}
+
+// Tooltip do histograma de faixas — preço médio, unidades, margem %, MCO R$, receita,
+// giro/cobertura/estoque (Phase 81) e aviso de baixa confiança.
 function FaixaTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null;
-  const f = payload[0].payload as FaixaPreco & { saude: SaudePreco };
+  const f = payload[0].payload as FaixaPreco & { saude: SaudePreco; estoqueAtual?: number | null };
   const margemNegativa = f.mcoPctMedio != null && f.mcoPctMedio < 0;
+  const coberturaRisco = f.coberturaDias != null && f.coberturaDias < COBERTURA_RISCO_DIAS;
   const Row = ({ k, v, accent, danger }: { k: string; v: string; accent?: boolean; danger?: boolean }) => (
     <p className="flex justify-between gap-6">
       <span className="text-muted-foreground">{k}</span>
@@ -192,6 +219,16 @@ function FaixaTooltip({ active, payload }: any) {
       <Row k="Margem" v={pctFraction(f.mcoPctMedio)} accent={!margemNegativa && f.mcoPctMedio != null} danger={margemNegativa} />
       <Row k="MCO R$" v={brl(f.mcoRsTotal)} accent={f.mcoRsTotal >= 0} danger={f.mcoRsTotal < 0} />
       <Row k="Receita" v={brl(f.receita)} />
+      <div className="mt-1 border-t border-border pt-1">
+        <Row k="Giro" v={giroTexto(f)} />
+        <Row k="Cobertura" v={coberturaTooltipTexto(f)} danger={coberturaRisco} />
+        <Row k="Estoque atual" v={f.estoqueAtual != null ? `${intFmt(f.estoqueAtual)} und` : "—"} />
+      </div>
+      {f.baixaConfianca && (
+        <p className="mt-1 text-[10px] text-warning">
+          só {f.diasNaFaixa} dia{f.diasNaFaixa === 1 ? "" : "s"} de dados — estimativa fraca
+        </p>
+      )}
     </div>
   );
 }
@@ -411,6 +448,12 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
     })),
     [faixasResult],
   );
+  // Preço vigente em risco de ruptura (< COBERTURA_RISCO_DIAS) — colore a frase de
+  // cobertura no cartão-veredito. Não afeta a cor da barra (saúde de margem).
+  const coberturaVigenteRisco = useMemo(() => {
+    const atual = faixasResult.faixas.find((f) => f.isPrecoAtual) ?? null;
+    return atual?.coberturaDias != null && atual.coberturaDias < COBERTURA_RISCO_DIAS;
+  }, [faixasResult]);
 
   const kpis = useMemo(() => {
     const rs = rows ?? [];
@@ -596,6 +639,11 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                   <span>{veredicto.saudeTexto}</span>
                 </p>
                 <p className="pl-4 text-sm text-muted-foreground">{veredicto.otimoTexto}</p>
+                {veredicto.coberturaTexto && (
+                  <p className={cn("pl-4 text-sm", coberturaVigenteRisco ? "text-destructive" : "text-muted-foreground")}>
+                    {veredicto.coberturaTexto}
+                  </p>
+                )}
               </div>
 
               {/* Toggle Unidades ↔ Lucro R$ — troca a altura das barras e o veredito. */}
@@ -640,6 +688,8 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                         const f = faixasChartData[index];
                         if (!f || x == null || y == null || width == null) return null;
                         const cx = Number(x) + Number(width) / 2;
+                        const coberturaTxt = coberturaBarraTexto(f);
+                        const coberturaRisco = f.coberturaDias != null && f.coberturaDias < COBERTURA_RISCO_DIAS;
                         return (
                           <g>
                             {f.isPrecoAtual && (
@@ -650,6 +700,18 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                             <text x={cx} y={Number(y) - 4} textAnchor="middle" fontSize={11} fontWeight={600} fill="hsl(var(--foreground))">
                               {pctFraction(f.mcoPctMedio)}
                             </text>
+                            {/* Rótulo de cobertura (Phase 81) — cor NUNCA é a barra (segue
+                                saúde de margem); vermelho aqui é só o texto de risco de ruptura.
+                                Baixa confiança = tom esmaecido (opacity), sem esconder o dado. */}
+                            {coberturaTxt && (
+                              <text
+                                x={cx} y={Number(y) + 13} textAnchor="middle" fontSize={9.5} fontWeight={500}
+                                fill={coberturaRisco ? "hsl(var(--destructive))" : "hsl(var(--muted-foreground))"}
+                                opacity={f.baixaConfianca ? 0.6 : 1}
+                              >
+                                {coberturaTxt}
+                              </text>
+                            )}
                           </g>
                         );
                       }}
@@ -676,12 +738,16 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                 </div>
               )}
 
-              {/* Rodapé de transparência — descreve a nova visão principal. */}
+              {/* Rodapé de transparência — descreve a nova visão principal + giro/cobertura (Phase 81). */}
               <p className="mt-2 text-[10px] text-muted-foreground text-center">
                 Eixo X = faixas de preço · altura = {faixaMode === "unidades" ? "unidades vendidas" : "lucro (MCO R$) total"} na faixa ·
                 cor = margem (verde saudável / âmbar apertada / vermelho prejuízo, sempre com % no topo) ·
                 faixa vazia = preço não testado no período · barra "+R$X" agrega os preços mais altos (outliers) ·
-                Ads = relatório diário de publicidade (melhor esforço; ausente = 0) · imposto pelo regime configurado
+                Ads = relatório diário de publicidade (melhor esforço; ausente = 0) · imposto pelo regime configurado ·
+                giro = unidades ÷ dias-com-venda naquele preço (velocidade real de venda) ·
+                cobertura = estoque de hoje do anúncio ÷ giro da faixa — cenário hipotético "a esse preço, quanto dura?" ·
+                cobertura em vermelho = risco de ruptura (menos de {COBERTURA_RISCO_DIAS} dias) ·
+                "?" e tom esmaecido = faixa com menos de {MIN_DIAS_CONFIANCA} dias de amostra (estimativa fraca)
               </p>
             </>
           )}
