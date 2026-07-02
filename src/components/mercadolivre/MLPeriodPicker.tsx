@@ -5,6 +5,7 @@ import { CalendarIcon, ChevronDown, Check, X } from "lucide-react";
 import { startOfDay, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { QUICK_RANGES, type DateRange } from "@/hooks/useMLFilters";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface MLPeriodPickerProps {
   periodLabel: string;
@@ -42,6 +43,7 @@ export function MLPeriodPicker({
   onConfirm,
   maxDaysBack,
 }: MLPeriodPickerProps) {
+  const isMobile = useIsMobile();
   const minDate = maxDaysBack ? startOfDay(subDays(new Date(), maxDaysBack)) : null;
   return (
     <Popover
@@ -69,8 +71,8 @@ export function MLPeriodPicker({
           <ChevronDown className="w-3 h-3 text-muted-foreground ml-0.5" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-3" align="start">
-        <div className="flex gap-1 mb-3">
+      <PopoverContent className="w-auto max-w-[calc(100vw-1rem)] p-3" align="start">
+        <div className="flex flex-wrap gap-1 mb-3">
           {QUICK_RANGES.map((opt) => (
             <Button
               key={opt.value}
@@ -97,7 +99,7 @@ export function MLPeriodPicker({
             setPendingPeriod(null);
           }}
           disabled={(date) => date > new Date() || (minDate !== null && date < minDate)}
-          numberOfMonths={2}
+          numberOfMonths={isMobile ? 1 : 2}
           locale={ptBR}
           className="pointer-events-auto"
         />
