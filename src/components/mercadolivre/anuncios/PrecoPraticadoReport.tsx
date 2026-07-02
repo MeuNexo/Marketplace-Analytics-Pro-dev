@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { format, parseISO, differenceInCalendarDays } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Check, ChevronsUpDown, RefreshCw, TrendingUp, Package, BarChart2, DollarSign, Activity, Gauge } from "lucide-react";
 import {
-  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip as RechartsTooltip, ResponsiveContainer,
+  Check, ChevronsUpDown, RefreshCw, TrendingUp, Package, BarChart2,
+  DollarSign, Gauge, Percent, AlertTriangle,
+} from "lucide-react";
+import {
+  ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip as RechartsTooltip, ResponsiveContainer, Legend, BarChart, Bar,
 } from "recharts";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
@@ -15,7 +18,21 @@ import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
 } from "@/components/ui/command";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { KPICard } from "@/components/dashboard/KPICard";
+import {
+  computePrecoMcoSeries,
+  computePreviousWindow,
+  computePriceKpis,
+  percentDelta,
+  pointDelta,
+  type AdsDailyRow,
+  type McoSeriesPoint,
+  type PrecoSeriesRow,
+  type PriceKpis,
+  type SeriesGranularity,
+} from "@/lib/precoMcoSeries";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,18 +41,7 @@ export interface PriceReportProduct {
   title: string;
 }
 
-type Granularity = "day" | "week" | "month";
-type VolumeMetric = "qtd" | "receita";
-
-interface SeriesRow {
-  bucket: string;          // YYYY-MM-DD
-  preco_medio: number;
-  preco_min: number;
-  preco_max: number;
-  qtd: number;
-  total: number;           // receita
-  orders: number;
-}
+type Granularity = SeriesGranularity;
 
 interface Props {
   products: PriceReportProduct[];   // anúncios com vendas no período
@@ -54,6 +60,8 @@ const brl = (v: number) =>
 const brlCompact = (v: number) =>
   v >= 1000 ? `R$ ${(v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}k` : brl(v);
 const intFmt = (v: number) => v.toLocaleString("pt-BR");
+const pctFmt = (v: number | null) =>
+  v == null ? "—" : `${v.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
 
 function bucketLabel(iso: string, g: Granularity): string {
   const d = parseISO(iso);
@@ -65,28 +73,70 @@ const GRANULARITY_LABELS: Record<Granularity, string> = {
   day: "Diária", week: "Semanal", month: "Mensal",
 };
 
-// Tooltip que mostra sempre os três indicadores do período, independente da
-// métrica exibida nas barras.
+// Tooltip com a decomposição por unidade: preço, break-even, MCO R$/un, MCO %
+// e cada componente do custo (transparência total — nada escondido).
 function ChartTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null;
-  const d = payload[0].payload as SeriesRow & { label: string };
-  const Row = ({ k, v, accent }: { k: string; v: string; accent?: boolean }) => (
-    <p className="flex justify-between gap-6">
-      <span className="text-muted-foreground">{k}</span>
-      <span className={cn("font-semibold tabular-nums", accent && "text-primary")}>{v}</span>
+  const d = payload[0].payload as McoSeriesPoint & { label: string };
+  const mcoUnit = d.precoUnit - d.breakevenUnit;
+  const Row = ({ k, v, accent, danger, muted, dotColor }: {
+    k: string; v: string; accent?: boolean; danger?: boolean; muted?: boolean; dotColor?: string;
+  }) => (
+    <p className={cn("flex justify-between gap-6", muted && "text-[10px]")}>
+      <span className="text-muted-foreground flex items-center gap-1.5">
+        {dotColor && (
+          <span
+            className="inline-block w-2 h-2 rounded-full shrink-0"
+            style={{ backgroundColor: dotColor }}
+          />
+        )}
+        {k}
+      </span>
+      <span className={cn(
+        "font-semibold tabular-nums",
+        accent && "text-success", danger && "text-destructive",
+        muted && "font-normal text-muted-foreground",
+      )}>{v}</span>
     </p>
   );
   return (
     <div className="rounded-lg border border-border bg-background px-3 py-2 text-xs shadow-md">
       <p className="mb-1 font-medium">{d.label}</p>
-      <Row k="Preço médio" v={brl(d.preco_medio)} />
-      <Row k="Qtd vendida" v={intFmt(d.qtd)} />
-      <Row k="Receita" v={brl(d.total)} accent />
-      {d.preco_min !== d.preco_max && (
-        <p className="mt-0.5 flex justify-between gap-6 text-[10px] text-muted-foreground">
-          <span>Faixa de preço</span><span>{brl(d.preco_min)} – {brl(d.preco_max)}</span>
+      <Row k="Unidades" v={intFmt(d.qtd)} />
+      <Row k="Preço" v={brl(d.precoUnit)} dotColor="hsl(var(--chart-price))" />
+      <Row k="Break-even" v={brl(d.breakevenUnit)} dotColor="hsl(var(--chart-breakeven))" />
+      <Row k="MCO R$/un" v={brl(mcoUnit)} accent={mcoUnit >= 0} danger={mcoUnit < 0} />
+      <Row k="MCO %" v={pctFmt(d.mcoPct)} accent={(d.mcoPct ?? 0) >= 0 && d.mcoPct != null} danger={(d.mcoPct ?? 0) < 0} dotColor="hsl(var(--chart-mco))" />
+      <div className="mt-1 border-t border-border pt-1">
+        <p className="mb-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">Por unidade</p>
+        <Row k="Custo" v={brl(d.cmvUnit)} muted />
+        <Row k="Comissão" v={brl(d.comissaoUnit)} muted />
+        <Row k="Frete" v={brl(d.freteUnit)} muted />
+        <Row k="Ads" v={brl(d.adsUnit)} muted />
+        <Row k="Imposto" v={brl(d.impostoUnit)} muted />
+      </div>
+      {(d.custoAusente || d.impostoAusente) && (
+        <p className="mt-1 text-[10px] text-warning">
+          {d.custoAusente && "custo ausente em parte das unidades"}
+          {d.custoAusente && d.impostoAusente && " · "}
+          {d.impostoAusente && "imposto ausente em parte das unidades"}
         </p>
       )}
+    </div>
+  );
+}
+
+// Tooltip simples do gráfico de barras — só unidades vendidas do bucket.
+function BarTooltip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload as McoSeriesPoint & { label: string };
+  return (
+    <div className="rounded-lg border border-border bg-background px-3 py-2 text-xs shadow-md">
+      <p className="mb-1 font-medium">{d.label}</p>
+      <p className="flex justify-between gap-6">
+        <span className="text-muted-foreground">Unidades</span>
+        <span className="font-semibold tabular-nums">{intFmt(d.qtd)}</span>
+      </p>
     </div>
   );
 }
@@ -96,8 +146,11 @@ function ChartTooltip({ active, payload }: any) {
 export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, request }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(request?.itemId ?? products[0]?.id ?? null);
   const [granularity, setGranularity] = useState<Granularity>("day");
-  const [volumeMetric, setVolumeMetric] = useState<VolumeMetric>("qtd");
-  const [rows, setRows] = useState<SeriesRow[] | null>(null);
+  const [incluirAds, setIncluirAds] = useState(true);
+  const [rows, setRows] = useState<PrecoSeriesRow[] | null>(null);
+  const [adsDaily, setAdsDaily] = useState<AdsDailyRow[]>([]);
+  const [prevRows, setPrevRows] = useState<PrecoSeriesRow[] | null>(null);
+  const [prevAdsDaily, setPrevAdsDaily] = useState<AdsDailyRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -120,76 +173,183 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
     [products, selectedId],
   );
 
+  // Série de preço/custos por bucket (RPC estendida — 13 colunas). Busca o
+  // período atual e o período anterior (mesma duração, imediatamente antes)
+  // em paralelo, para o comparativo dos KPIs.
   useEffect(() => {
-    if (!selectedId) { setRows(null); return; }
+    if (!selectedId) { setRows(null); setPrevRows(null); return; }
     let cancelled = false;
-    (async () => {
-      setLoading(true);
+    const mapRows = (data: any): PrecoSeriesRow[] =>
+      (data ?? []).map((r: any) => ({
+        bucket: String(r.bucket),
+        qtd: Number(r.qtd ?? 0),
+        total: Number(r.total ?? 0),
+        cmv: Number(r.cmv ?? 0),
+        comissao: Number(r.comissao ?? 0),
+        frete: Number(r.frete ?? 0),
+        qtd_sem_custo: Number(r.qtd_sem_custo ?? 0),
+        impostos: Number(r.impostos ?? 0),
+        qtd_sem_imposto: Number(r.qtd_sem_imposto ?? 0),
+      }));
+    const fetchWindow = (_from: string | null, _to: string | null) =>
       // RPC ainda não presente nos tipos gerados — cast como no restante do projeto.
-      const { data, error } = await (supabase.rpc as any)("orders_price_timeseries", {
+      (supabase.rpc as any)("orders_price_timeseries", {
         _item_id: selectedId,
         _ml_user_ids: mlUserIds && mlUserIds.length > 0 ? mlUserIds : null,
-        _from: fromDate,
-        _to: toDate,
+        _from,
+        _to,
         _granularity: granularity,
       });
+    (async () => {
+      setLoading(true);
+      const prev = computePreviousWindow(fromDate, toDate);
+      const [curRes, prevRes] = await Promise.all([
+        fetchWindow(fromDate, toDate),
+        prev ? fetchWindow(prev.from, prev.to) : Promise.resolve({ data: null, error: null }),
+      ]);
       if (cancelled) return;
-      if (error) {
-        console.warn("orders_price_timeseries:", error.message);
+      if (curRes.error) {
+        console.warn("orders_price_timeseries:", curRes.error.message);
         setRows([]);
       } else {
-        setRows(
-          (data ?? []).map((r: any) => ({
-            bucket: String(r.bucket),
-            preco_medio: Number(r.preco_medio ?? 0),
-            preco_min: Number(r.preco_min ?? 0),
-            preco_max: Number(r.preco_max ?? 0),
-            qtd: Number(r.qtd ?? 0),
-            total: Number(r.total ?? 0),
-            orders: Number(r.orders ?? 0),
-          })),
-        );
+        setRows(mapRows(curRes.data));
+      }
+      if (!prev) {
+        setPrevRows(null);
+      } else if (prevRes.error) {
+        console.warn("orders_price_timeseries (período anterior):", prevRes.error.message);
+        setPrevRows([]);
+      } else {
+        setPrevRows(mapRows(prevRes.data));
       }
       setLoading(false);
     })();
     return () => { cancelled = true; };
   }, [selectedId, mlUserIds, fromDate, toDate, granularity]);
 
+  // Spend diário de ads do item (ml_ads_products_cache — RLS org-first isola;
+  // cobertura ausente => array vazio => ads=0 silencioso). Não depende da
+  // granularidade: a bucketização é feita no util (evita refetch à toa).
+  // Busca o período atual e o anterior em paralelo (comparativo dos KPIs).
+  useEffect(() => {
+    if (!selectedId) { setAdsDaily([]); setPrevAdsDaily([]); return; }
+    let cancelled = false;
+    const mapAds = (data: any): AdsDailyRow[] =>
+      (data ?? [])
+        .filter((r: any) => r.date != null)
+        .map((r: any) => ({ date: String(r.date), spend: Number(r.spend ?? 0) }));
+    const fetchWindow = (_from: string | null, _to: string | null) => {
+      let query = supabase
+        .from("ml_ads_products_cache")
+        .select("spend, date")
+        .eq("item_id", selectedId)
+        .range(0, 4999); // PostgREST trunca em 1000 sem range explícito
+      if (mlUserIds && mlUserIds.length > 0) query = query.in("ml_user_id", mlUserIds);
+      if (_from) query = query.gte("date", _from);
+      if (_to) query = query.lte("date", _to);
+      return query;
+    };
+    (async () => {
+      const prev = computePreviousWindow(fromDate, toDate);
+      const [curRes, prevRes] = await Promise.all([
+        fetchWindow(fromDate, toDate),
+        prev ? fetchWindow(prev.from, prev.to) : Promise.resolve({ data: null, error: null }),
+      ]);
+      if (cancelled) return;
+      if (curRes.error) {
+        console.warn("ml_ads_products_cache:", curRes.error.message);
+        setAdsDaily([]);
+      } else {
+        setAdsDaily(mapAds(curRes.data));
+      }
+      if (!prev) {
+        setPrevAdsDaily([]);
+      } else if (prevRes.error) {
+        console.warn("ml_ads_products_cache (período anterior):", prevRes.error.message);
+        setPrevAdsDaily([]);
+      } else {
+        setPrevAdsDaily(mapAds(prevRes.data));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedId, mlUserIds, fromDate, toDate]);
+
+  // Série de MCO pronta para o gráfico (util puro do 79-01).
+  const serie = useMemo(
+    () => computePrecoMcoSeries(rows ?? [], { adsDaily, incluirAds, granularity }),
+    [rows, adsDaily, incluirAds, granularity],
+  );
+
   const chartData = useMemo(
-    () => (rows ?? []).map((r) => ({ ...r, label: bucketLabel(r.bucket, granularity) })),
-    [rows, granularity],
+    () => serie.map((p) => ({ ...p, label: bucketLabel(p.bucket, granularity) })),
+    [serie, granularity],
   );
 
   const kpis = useMemo(() => {
     const rs = rows ?? [];
-    const qtd = rs.reduce((s, r) => s + r.qtd, 0);
-    const receita = rs.reduce((s, r) => s + r.total, 0);
-    const precoMedio = qtd > 0 ? receita / qtd : 0;
-    const mins = rs.filter((r) => r.preco_min > 0).map((r) => r.preco_min);
-    const precoMin = mins.length ? Math.min(...mins) : 0;
-    const precoMax = rs.length ? Math.max(...rs.map((r) => r.preco_max)) : 0;
-    const variacao = precoMin > 0 ? ((precoMax - precoMin) / precoMin) * 100 : 0;
+    const base = computePriceKpis(rs, { adsDaily, incluirAds, granularity });
 
-    // Número de dias do período (para as médias diárias). Usa o intervalo
-    // selecionado quando definido; senão, o span das datas com vendas.
-    let dias = 1;
-    if (fromDate && toDate) {
-      dias = Math.max(1, differenceInCalendarDays(parseISO(toDate), parseISO(fromDate)) + 1);
-    } else if (rs.length) {
-      const buckets = rs.map((r) => r.bucket).sort();
-      dias = Math.max(1, differenceInCalendarDays(parseISO(buckets[buckets.length - 1]), parseISO(buckets[0])) + 1);
+    // Avisos de dado ausente — não fazem parte do util (não entram no comparativo).
+    const qtdSemCusto = rs.reduce((s, r) => s + r.qtd_sem_custo, 0);
+    const temImpostoAusente = rs.some((r) => r.qtd_sem_imposto > 0);
+
+    return { ...base, qtdSemCusto, temImpostoAusente };
+  }, [rows, adsDaily, incluirAds, granularity]);
+
+  // KPIs do período anterior (mesma duração, imediatamente antes) — comparativo.
+  const prevKpis = useMemo<PriceKpis | null>(
+    () =>
+      prevRows && prevRows.length > 0
+        ? computePriceKpis(prevRows, { adsDaily: prevAdsDaily, incluirAds, granularity })
+        : null,
+    [prevRows, prevAdsDaily, incluirAds, granularity],
+  );
+
+  // Deltas vs período anterior — % para preço/break-even/MCO R$/qtd/receita,
+  // pontos percentuais (p.p.) para MCO %. null quando não há dados anteriores.
+  const deltas = useMemo(() => {
+    if (!prevKpis) return null;
+    return {
+      precoMedio: percentDelta(kpis.precoMedio, prevKpis.precoMedio),
+      breakevenMedio: percentDelta(kpis.breakevenMedio, prevKpis.breakevenMedio),
+      mco: percentDelta(kpis.mco, prevKpis.mco),
+      qtd: percentDelta(kpis.qtd, prevKpis.qtd),
+      receita: percentDelta(kpis.receita, prevKpis.receita),
+      mcoPp: pointDelta(kpis.mcoPct, prevKpis.mcoPct),
+    };
+  }, [kpis, prevKpis]);
+
+  // Texto secundário do comparativo — "—" sem dados anteriores; senão sinal +
+  // valor + unidade (% ou p.p.) colorido conforme direção (neutra quando o
+  // sentido "bom/ruim" é ambíguo, ex.: aumento de preço/break-even).
+  function comparativoNode(
+    delta: number | null,
+    unidade: "pct" | "pp",
+    cor: "direcional" | "neutra",
+  ) {
+    if (delta == null) {
+      return <span className="text-[10px] text-muted-foreground">— vs período anterior</span>;
     }
-    const qtdDiaria = qtd / dias;
-    const receitaDiaria = receita / dias;
-
-    return { qtd, receita, precoMedio, precoMin, precoMax, variacao, qtdDiaria, receitaDiaria };
-  }, [rows, fromDate, toDate]);
+    const sign = delta > 0 ? "+" : "";
+    const valor = delta.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+    const sufixo = unidade === "pp" ? " p.p." : "%";
+    const texto = `${sign}${valor}${sufixo} vs período anterior`;
+    const classeCor =
+      cor === "neutra"
+        ? "text-muted-foreground"
+        : delta > 0
+          ? "text-success"
+          : delta < 0
+            ? "text-destructive"
+            : "text-muted-foreground";
+    return <span className={cn("text-[10px]", classeCor)}>{texto}</span>;
+  }
 
   const hasData = (rows?.length ?? 0) > 0;
 
   return (
     <div className="space-y-4">
-      {/* Controles */}
+      {/* Controles (flex-wrap: paridade mobile/desktop — lição Phase 78) */}
       <div className="flex flex-wrap items-center gap-2">
         {/* Seletor de anúncio */}
         <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
@@ -229,9 +389,8 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
           </PopoverContent>
         </Popover>
 
-        {/* Granularidade + Métrica agrupados (A-08: ficam juntos ao quebrar linha) */}
-        <div className="flex items-center gap-2 ml-auto">
-          {/* Granularidade */}
+        {/* Granularidade + toggle de ads agrupados (wrap responsivo) */}
+        <div className="flex flex-wrap items-center gap-2 ml-auto">
           <ToggleGroup
             type="single" size="sm" value={granularity}
             onValueChange={(v) => v && setGranularity(v as Granularity)}
@@ -244,26 +403,56 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
             ))}
           </ToggleGroup>
 
-          {/* Métrica de volume nas barras */}
-          <ToggleGroup
-            type="single" size="sm" value={volumeMetric}
-            onValueChange={(v) => v && setVolumeMetric(v as VolumeMetric)}
-            className="h-8"
-          >
-            <ToggleGroupItem value="qtd" className="h-7 px-2.5 text-xs">Qtd</ToggleGroupItem>
-            <ToggleGroupItem value="receita" className="h-7 px-2.5 text-xs">Receita</ToggleGroupItem>
-          </ToggleGroup>
+          {/* Toggle "incluir ads" (padrão Switch+Label do ReplenishmentPanel) */}
+          <div className="flex items-center gap-2">
+            <Switch
+              id="incluir-ads"
+              checked={incluirAds}
+              onCheckedChange={setIncluirAds}
+            />
+            <Label htmlFor="incluir-ads" className="text-xs text-muted-foreground cursor-pointer">
+              Incluir publicidade
+            </Label>
+          </div>
         </div>
       </div>
 
-      {/* KPIs */}
+      {/* KPIs — cada card com comparativo vs período anterior (mesma duração) */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <KPICard title="Preço médio (período)" value={brl(kpis.precoMedio)} icon={<DollarSign className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-accent/10 text-accent" />
-        <KPICard title="Faixa de preço" value={kpis.precoMin > 0 ? `${brl(kpis.precoMin)} – ${brl(kpis.precoMax)}` : "—"} subtitle={kpis.variacao > 0 ? `variação ${kpis.variacao.toFixed(0)}%` : undefined} icon={<TrendingUp className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(25,95%,53%)]/10 text-[hsl(25,95%,53%)]" />
-        <KPICard title="Qtd vendida" value={intFmt(kpis.qtd)} icon={<Package className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-primary/10 text-primary" />
-        <KPICard title="Média diária (Qtd)" value={kpis.qtdDiaria.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} icon={<Activity className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(270,70%,50%)]/10 text-[hsl(270,70%,50%)]" />
-        <KPICard title="Receita" value={brl(kpis.receita)} icon={<BarChart2 className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-success/10 text-success" />
-        <KPICard title="Receita média diária" value={brl(kpis.receitaDiaria)} icon={<Gauge className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-sky-500/10 text-sky-500" />
+        <KPICard
+          title="Preço médio" value={brl(kpis.precoMedio)}
+          subtitleNode={comparativoNode(deltas?.precoMedio ?? null, "pct", "neutra")}
+          icon={<DollarSign className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-accent/10 text-accent"
+        />
+        <KPICard
+          title="Break-even médio" value={brl(kpis.breakevenMedio)}
+          subtitleNode={comparativoNode(deltas?.breakevenMedio ?? null, "pct", "neutra")}
+          icon={<Gauge className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(25,95%,53%)]/10 text-[hsl(25,95%,53%)]"
+        />
+        <KPICard
+          title="MCO (R$)" value={brl(kpis.mco)}
+          subtitleNode={comparativoNode(deltas?.mco ?? null, "pct", "direcional")}
+          icon={<TrendingUp className="w-4 h-4" />} variant="minimal" size="compact"
+          iconClassName={kpis.mco >= 0 ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}
+        />
+        <KPICard
+          title="MCO %"
+          value={pctFmt(kpis.mcoPct)}
+          subtitleNode={comparativoNode(deltas?.mcoPp ?? null, "pp", "direcional")}
+          icon={<Percent className="w-4 h-4" />}
+          variant={kpis.mcoPct != null && kpis.mcoPct >= 0 ? "success" : "danger"}
+          size="compact"
+        />
+        <KPICard
+          title="Qtd vendida" value={intFmt(kpis.qtd)}
+          subtitleNode={comparativoNode(deltas?.qtd ?? null, "pct", "direcional")}
+          icon={<Package className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-primary/10 text-primary"
+        />
+        <KPICard
+          title="Receita" value={brl(kpis.receita)}
+          subtitleNode={comparativoNode(deltas?.receita ?? null, "pct", "direcional")}
+          icon={<BarChart2 className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-success/10 text-success"
+        />
       </div>
 
       {/* Gráfico */}
@@ -284,40 +473,126 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
               Sem vendas deste anúncio no período.
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height={340}>
+            <ResponsiveContainer width="100%" height={380}>
               <ComposedChart data={chartData} margin={{ left: 4, right: 8, top: 12, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                 <XAxis dataKey="label" fontSize={11} tick={{ fill: "hsl(var(--muted-foreground))" }} tickMargin={8} />
-                {/* Eixo esquerdo: volume (qtd ou receita) */}
+                {/* Eixo esquerdo: R$/un (preço, break-even e colchão) */}
                 <YAxis
-                  yAxisId="vol" fontSize={11} tick={{ fill: "hsl(var(--muted-foreground))" }}
-                  tickFormatter={(v: number) => (volumeMetric === "receita" ? brlCompact(v) : intFmt(v))}
-                  width={volumeMetric === "receita" ? 56 : 40}
-                />
-                {/* Eixo direito: preço médio (R$) */}
-                <YAxis
-                  yAxisId="preco" orientation="right" fontSize={11} tick={{ fill: "hsl(var(--muted-foreground))" }}
+                  yAxisId="preco" fontSize={11} tick={{ fill: "hsl(var(--muted-foreground))" }}
                   tickFormatter={(v: number) => brlCompact(v)} width={56}
                 />
-                <RechartsTooltip content={<ChartTooltip />} cursor={{ fill: "hsl(var(--muted))", opacity: 0.25 }} />
-                <Bar
-                  yAxisId="vol"
-                  dataKey={volumeMetric === "receita" ? "total" : "qtd"}
-                  name={volumeMetric === "receita" ? "total" : "qtd"}
-                  fill="hsl(var(--primary))" fillOpacity={0.22} radius={[3, 3, 0, 0]} maxBarSize={48}
+                {/* Eixo direito: MCO % */}
+                <YAxis
+                  yAxisId="mco" orientation="right" fontSize={11} tick={{ fill: "hsl(var(--chart-mco))" }}
+                  tickFormatter={(v: number) => `${v.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}%`}
+                  width={44}
+                />
+                <RechartsTooltip content={<ChartTooltip />} cursor={{ stroke: "hsl(var(--muted-foreground))", strokeOpacity: 0.3 }} />
+                {/* Legenda com payload explícito: 5 itens nítidos — 3 linhas
+                    (cores distintas via tokens --chart-*) + 2 bandas de margem.
+                    Wrap responsivo p/ paridade mobile. */}
+                <Legend
+                  verticalAlign="bottom"
+                  wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
+                  payload={[
+                    { value: "Preço praticado", type: "line", id: "precoUnit", color: "hsl(var(--chart-price))" },
+                    { value: "Break-even", type: "line", id: "breakevenUnit", color: "hsl(var(--chart-breakeven))" },
+                    { value: "MCO %", type: "line", id: "mcoPct", color: "hsl(var(--chart-mco))" },
+                    { value: "Margem positiva", type: "rect", id: "gainBand", color: "hsl(var(--success))" },
+                    { value: "Margem negativa", type: "rect", id: "lossBand", color: "hsl(var(--destructive))" },
+                  ]}
+                />
+
+                {/* Base invisível — empurra as bandas até min(preço, break-even).
+                    type="linear" nas bandas e linhas de preço/break-even: evita
+                    overshoot cúbico nos cruzamentos (pitfall do research). */}
+                <Area
+                  yAxisId="preco" type="linear" dataKey="base" stackId="mco"
+                  stroke="none" fill="transparent" isAnimationActive={false}
+                />
+                {/* Colchão verde — preço ≥ break-even */}
+                <Area
+                  yAxisId="preco" type="linear" dataKey="gainBand" stackId="mco"
+                  stroke="none" fill="hsl(var(--success))" fillOpacity={0.25}
+                  isAnimationActive={false}
+                />
+                {/* Colchão vermelho — preço < break-even */}
+                <Area
+                  yAxisId="preco" type="linear" dataKey="lossBand" stackId="mco"
+                  stroke="none" fill="hsl(var(--destructive))" fillOpacity={0.25}
+                  isAnimationActive={false}
+                />
+
+                <Line
+                  yAxisId="preco" type="linear" dataKey="precoUnit" name="precoUnit"
+                  stroke="hsl(var(--chart-price))" strokeWidth={2.2}
+                  dot={{ r: 2.5, fill: "hsl(var(--chart-price))" }} activeDot={{ r: 4 }}
                 />
                 <Line
-                  yAxisId="preco" type="monotone" dataKey="preco_medio" name="preco_medio"
-                  stroke="hsl(var(--accent))" strokeWidth={2.2}
-                  dot={{ r: 2.5, fill: "hsl(var(--accent))" }} activeDot={{ r: 4 }}
+                  yAxisId="preco" type="linear" dataKey="breakevenUnit" name="breakevenUnit"
+                  stroke="hsl(var(--chart-breakeven))" strokeWidth={2}
+                  strokeDasharray="5 4" dot={false}
+                />
+                <Line
+                  yAxisId="mco" type="monotone" dataKey="mcoPct" name="mcoPct"
+                  stroke="hsl(var(--chart-mco))" strokeWidth={2} dot={false}
                 />
               </ComposedChart>
             </ResponsiveContainer>
           )}
+
+          {/* Gráfico de barras — unidades vendidas por bucket, alinhado ao
+              gráfico principal (mesmas margens/larguras de eixo). */}
+          {hasData && !loading && selectedId && (
+            <div className="mt-1">
+              <p className="mt-2 mb-0.5 text-[10px] uppercase tracking-wider text-muted-foreground text-center">
+                Unidades vendidas por período
+              </p>
+              <ResponsiveContainer width="100%" height={140}>
+                <BarChart data={chartData} margin={{ left: 4, right: 8, top: 4, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                  <XAxis dataKey="label" fontSize={11} tick={{ fill: "hsl(var(--muted-foreground))" }} tickMargin={8} />
+                  <YAxis fontSize={11} tick={{ fill: "hsl(var(--muted-foreground))" }} allowDecimals={false} width={56} />
+                  {/* Espaçador direito invisível — casa com o eixo MCO% (width 44) do principal */}
+                  <YAxis orientation="right" width={44} hide />
+                  <RechartsTooltip
+                    content={<BarTooltip />}
+                    cursor={{ fill: "hsl(var(--muted-foreground))", fillOpacity: 0.08 }}
+                  />
+                  <Bar dataKey="qtd" name="Unidades vendidas"
+                    fill="hsl(var(--primary))" fillOpacity={0.55}
+                    radius={[3, 3, 0, 0]} isAnimationActive={false}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Avisos de dado ausente (nunca inventar número) */}
+          {hasData && (kpis.qtdSemCusto > 0 || kpis.temImpostoAusente) && (
+            <div className="mt-2 space-y-0.5">
+              {kpis.qtdSemCusto > 0 && (
+                <p className="flex items-center justify-center gap-1 text-[10px] text-warning">
+                  <AlertTriangle className="w-3 h-3 shrink-0" />
+                  custo ausente em {intFmt(kpis.qtdSemCusto)} un — break-even subestimado
+                </p>
+              )}
+              {kpis.temImpostoAusente && (
+                <p className="flex items-center justify-center gap-1 text-[10px] text-warning">
+                  <AlertTriangle className="w-3 h-3 shrink-0" />
+                  regime fiscal não configurado em parte das vendas — imposto pode estar subestimado
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Rodapé de transparência */}
           {hasData && (
             <p className="mt-2 text-[10px] text-muted-foreground text-center">
-              Barras = {volumeMetric === "receita" ? "receita" : "quantidade vendida"} · Linha = preço médio praticado ·
-              granularidade {GRANULARITY_LABELS[granularity].toLowerCase()}
+              Linha sólida = preço praticado · linha tracejada = break-even · colchão verde/vermelho = MCO por unidade ·
+              linha do eixo direito = MCO% · Ads = relatório diário de publicidade (melhor esforço; ausente = 0) ·
+              imposto pelo regime configurado · granularidade {GRANULARITY_LABELS[granularity].toLowerCase()}
             </p>
           )}
         </CardContent>

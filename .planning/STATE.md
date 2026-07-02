@@ -4,22 +4,22 @@ milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
 current_phase: 78
 current_phase_name: Revisão Mobile-First
-status: complete
+status: verifying
 stopped_at: Completed 78-04 (Phase 78 complete)
-last_updated: "2026-07-02T00:33:00.000Z"
+last_updated: "2026-07-02T12:37:48.596Z"
 last_activity: 2026-07-02
-last_activity_desc: Phase 78 complete — mobile-first revisão de 10 páginas (4 planos, 78-01..78-04)
+last_activity_desc: Phase 78 execution started
 progress:
-  total_phases: 23
+  total_phases: 24
   completed_phases: 12
-  total_plans: 52
-  completed_plans: 50
-  percent: 52
+  total_plans: 55
+  completed_plans: 48
+  percent: 50
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
 
-- **Status:** Ready to execute
+- **Status:** Phase complete — ready for verification
 - **Backend:** tabela `purchase_orders` (migration `20260665000000`, RLS org-first); EF `sync-tiny-purchase-orders` v1 (endpoint Tiny correto = `/ordem-compra` singular; waitUntil 202; `organization_id` no insert); RPC `get_replenishment_by_sku` (migration `20260665000100`, +CTE `incoming_by_sku`, +colunas `qtd_a_caminho`/`data_proxima_chegada`, desconta TODA a qtd a caminho — decisão Wesley); cron `sync-tiny-purchase-orders-daily` (jobid 34, 03:15 UTC).
 - **Prova:** sync 22 OCs/135 SKUs/1.885 un; RPC 93 SKUs a caminho, 80 zeraram sugestão, cobertura parcial preserva gatilho (ex `11011273-CAFE3374G` → ainda sugere 10). tsc 0 + 208 testes + build ok.
 - **Decisão tunável:** "a caminho" = situação `3` (aguardando recebimento); ampliar p/ `2` (aprovada) = 1 linha em `SITUACOES_A_CAMINHO` na EF.
@@ -137,8 +137,8 @@ See: .planning/PROJECT.md
 
 Phase: 78 (Revisão Mobile-First) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
-Last activity: 2026-07-02 — Phase 78 execution started
+Status: Phase complete — ready for verification
+Last activity: 2026-07-02 - Quick 260702-kfo (cores/legendas nítidas em /analise-precos) concluído; PR #25 indo para produção para validação do Wesley
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
 
 ### Phase 54 — Wave 1 EXECUTADA (2026-06-24), Wave 2 PENDENTE
@@ -197,6 +197,9 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | 260618-sma | Fluxo de caixa: 2ª linha de projeção (média 15d via orders) — AGUARDA validação Wesley | 2026-06-18 | fe19611d | [260618-sma](./quick/260618-sma-segunda-linha-projecao-media-15d/) |
 | 260619-02b | Fluxo de caixa: base da média 15d = bruta−comissão−frete (sem dupla imposto) + rótulo piso ~30d | 2026-06-19 | ddf946c8 | [260619-02b](./quick/260619-02b-trocar-base-da-linha-de-projecao-media-1/) |
 | 260625-ixc | Caixa sempre atualizado: waitUntil na EF sync-mp-releases + cron entradas/saídas a cada 3h. Provado em prod (202, 401, synced_at avançando, crons 0 */3) | 2026-06-25 | 529d55eb | [260625-ixc](./quick/260625-ixc-caixa-sempre-atualizado-waituntil-na-ef-/) |
+| 260702-i8u | Linha de unidades vendidas + legenda no gráfico de /analise-precos (feedback Wesley Phase 79) | 2026-07-02 | 596fb659 | [260702-i8u](./quick/260702-i8u-linha-de-unidades-vendidas-legendas-no-g/) |
+| 260702-jq4 | Gráfico de /analise-precos dividido em principal+BarChart de unidades; 6 KPI cards com comparativo vs período anterior (%/p.p.) | 2026-07-02 | 5370606f | [260702-jq4](./quick/260702-jq4-grafico-dividido-kpi-comparativo/) |
+| 260702-kfo | Cores/legenda nítidas no gráfico de /analise-precos: tokens --chart-price/breakeven/mco (paleta validada CVD light+dark), legenda 5 itens, chips no tooltip, ticks do eixo MCO% violeta. AGUARDA validação visual Wesley EM PROD | 2026-07-02 | 86dd69d6 | [260702-kfo](./quick/260702-kfo-cores-legendas-grafico-precos/) |
 | 260627-1z0 | Reposição: alvo order-up-to = venda × (GREATEST(cobertura, lead+7) + safety) — corrige cobertura<lead que jogava compra no MOQ. Deployado prod via MCP; total compra 756→1053, 0 SKUs presos no piso. | 2026-06-27 | 5c0820ec | [260627-1z0](./quick/260627-1z0-fix-parametro-reposicao-alvo-order-up-to/) |
 
 ### DRE mês-calendário (quick 260613-2p6, 2026-06-13)
@@ -266,6 +269,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | Phase 78 P01 | 2min | 2 tasks | 2 files |
 | Phase 78 P02 | 6min | 3 tasks | 5 files |
 | Phase 78 P03 | 6min | 4 tasks | 6 files |
+| Phase 79 P01 | 5min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -328,6 +332,8 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 - [Phase ?]: Phase 78-01: OrganizationSwitcher inline no Header com max-w-[140px] sm:max-w-none — abordagem mínima sem drawer
 - [Phase ?]: BLOCKER B-02 corrigido — dialog não era cortado no mobile
 - [Phase ?]: Paridade dual-layout (lição Phase 71) — ação por item preservada no mobile
+- [Phase 79]: 79-01: imposto firme via SUM(tax_amount) na RPC (padrão MLCostCard), sem src/lib/tax no util
+- [Phase 79]: 79-01: ads = série diária real de ml_ads_products_cache bucketizada pela truncagem da RPC, sem rateio por receita
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -363,6 +369,7 @@ Dashboard atual mostra:
 
 - Phase 77 added: Página Análise de Anúncios: porte Produtos Vendidos + Análise de Preços do app oficial, em página própria do menu
 - Phase 78 added: Revisão mobile-first do dashboard inteiro (pedido Wesley 2026-07-01)
+- Phase 79 added: Análise de Preços com MCO — gráfico preço vs. break-even (spec 2026-07-02)
 
 ## Deferred Items
 
@@ -382,7 +389,7 @@ Dashboard atual mostra:
 
 **Resume file:** None
 
-Last session: 2026-07-02T00:25:52.706Z
+Last session: 2026-07-02T12:37:03.725Z
 Stopped at: Completed 78-01
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
