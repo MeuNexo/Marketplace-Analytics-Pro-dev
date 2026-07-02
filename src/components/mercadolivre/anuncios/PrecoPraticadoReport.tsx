@@ -21,12 +21,16 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { KPICard } from "@/components/dashboard/KPICard";
-import { computeMco } from "@/lib/mco";
 import {
   computePrecoMcoSeries,
+  computePreviousWindow,
+  computePriceKpis,
+  percentDelta,
+  pointDelta,
   type AdsDailyRow,
   type McoSeriesPoint,
   type PrecoSeriesRow,
+  type PriceKpis,
   type SeriesGranularity,
 } from "@/lib/precoMcoSeries";
 
@@ -137,6 +141,8 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
   const [incluirAds, setIncluirAds] = useState(true);
   const [rows, setRows] = useState<PrecoSeriesRow[] | null>(null);
   const [adsDaily, setAdsDaily] = useState<AdsDailyRow[]>([]);
+  const [prevRows, setPrevRows] = useState<PrecoSeriesRow[] | null>(null);
+  const [prevAdsDaily, setPrevAdsDaily] = useState<AdsDailyRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -159,38 +165,54 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
     [products, selectedId],
   );
 
-  // Série de preço/custos por bucket (RPC estendida — 13 colunas).
+  // Série de preço/custos por bucket (RPC estendida — 13 colunas). Busca o
+  // período atual e o período anterior (mesma duração, imediatamente antes)
+  // em paralelo, para o comparativo dos KPIs.
   useEffect(() => {
-    if (!selectedId) { setRows(null); return; }
+    if (!selectedId) { setRows(null); setPrevRows(null); return; }
     let cancelled = false;
-    (async () => {
-      setLoading(true);
+    const mapRows = (data: any): PrecoSeriesRow[] =>
+      (data ?? []).map((r: any) => ({
+        bucket: String(r.bucket),
+        qtd: Number(r.qtd ?? 0),
+        total: Number(r.total ?? 0),
+        cmv: Number(r.cmv ?? 0),
+        comissao: Number(r.comissao ?? 0),
+        frete: Number(r.frete ?? 0),
+        qtd_sem_custo: Number(r.qtd_sem_custo ?? 0),
+        impostos: Number(r.impostos ?? 0),
+        qtd_sem_imposto: Number(r.qtd_sem_imposto ?? 0),
+      }));
+    const fetchWindow = (_from: string | null, _to: string | null) =>
       // RPC ainda não presente nos tipos gerados — cast como no restante do projeto.
-      const { data, error } = await (supabase.rpc as any)("orders_price_timeseries", {
+      (supabase.rpc as any)("orders_price_timeseries", {
         _item_id: selectedId,
         _ml_user_ids: mlUserIds && mlUserIds.length > 0 ? mlUserIds : null,
-        _from: fromDate,
-        _to: toDate,
+        _from,
+        _to,
         _granularity: granularity,
       });
+    (async () => {
+      setLoading(true);
+      const prev = computePreviousWindow(fromDate, toDate);
+      const [curRes, prevRes] = await Promise.all([
+        fetchWindow(fromDate, toDate),
+        prev ? fetchWindow(prev.from, prev.to) : Promise.resolve({ data: null, error: null }),
+      ]);
       if (cancelled) return;
-      if (error) {
-        console.warn("orders_price_timeseries:", error.message);
+      if (curRes.error) {
+        console.warn("orders_price_timeseries:", curRes.error.message);
         setRows([]);
       } else {
-        setRows(
-          (data ?? []).map((r: any) => ({
-            bucket: String(r.bucket),
-            qtd: Number(r.qtd ?? 0),
-            total: Number(r.total ?? 0),
-            cmv: Number(r.cmv ?? 0),
-            comissao: Number(r.comissao ?? 0),
-            frete: Number(r.frete ?? 0),
-            qtd_sem_custo: Number(r.qtd_sem_custo ?? 0),
-            impostos: Number(r.impostos ?? 0),
-            qtd_sem_imposto: Number(r.qtd_sem_imposto ?? 0),
-          })),
-        );
+        setRows(mapRows(curRes.data));
+      }
+      if (!prev) {
+        setPrevRows(null);
+      } else if (prevRes.error) {
+        console.warn("orders_price_timeseries (período anterior):", prevRes.error.message);
+        setPrevRows([]);
+      } else {
+        setPrevRows(mapRows(prevRes.data));
       }
       setLoading(false);
     })();
@@ -200,29 +222,45 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
   // Spend diário de ads do item (ml_ads_products_cache — RLS org-first isola;
   // cobertura ausente => array vazio => ads=0 silencioso). Não depende da
   // granularidade: a bucketização é feita no util (evita refetch à toa).
+  // Busca o período atual e o anterior em paralelo (comparativo dos KPIs).
   useEffect(() => {
-    if (!selectedId) { setAdsDaily([]); return; }
+    if (!selectedId) { setAdsDaily([]); setPrevAdsDaily([]); return; }
     let cancelled = false;
-    (async () => {
+    const mapAds = (data: any): AdsDailyRow[] =>
+      (data ?? [])
+        .filter((r: any) => r.date != null)
+        .map((r: any) => ({ date: String(r.date), spend: Number(r.spend ?? 0) }));
+    const fetchWindow = (_from: string | null, _to: string | null) => {
       let query = supabase
         .from("ml_ads_products_cache")
         .select("spend, date")
         .eq("item_id", selectedId)
         .range(0, 4999); // PostgREST trunca em 1000 sem range explícito
       if (mlUserIds && mlUserIds.length > 0) query = query.in("ml_user_id", mlUserIds);
-      if (fromDate) query = query.gte("date", fromDate);
-      if (toDate) query = query.lte("date", toDate);
-      const { data, error } = await query;
+      if (_from) query = query.gte("date", _from);
+      if (_to) query = query.lte("date", _to);
+      return query;
+    };
+    (async () => {
+      const prev = computePreviousWindow(fromDate, toDate);
+      const [curRes, prevRes] = await Promise.all([
+        fetchWindow(fromDate, toDate),
+        prev ? fetchWindow(prev.from, prev.to) : Promise.resolve({ data: null, error: null }),
+      ]);
       if (cancelled) return;
-      if (error) {
-        console.warn("ml_ads_products_cache:", error.message);
+      if (curRes.error) {
+        console.warn("ml_ads_products_cache:", curRes.error.message);
         setAdsDaily([]);
       } else {
-        setAdsDaily(
-          (data ?? [])
-            .filter((r: any) => r.date != null)
-            .map((r: any) => ({ date: String(r.date), spend: Number(r.spend ?? 0) })),
-        );
+        setAdsDaily(mapAds(curRes.data));
+      }
+      if (!prev) {
+        setPrevAdsDaily([]);
+      } else if (prevRes.error) {
+        console.warn("ml_ads_products_cache (período anterior):", prevRes.error.message);
+        setPrevAdsDaily([]);
+      } else {
+        setPrevAdsDaily(mapAds(prevRes.data));
       }
     })();
     return () => { cancelled = true; };
@@ -241,31 +279,63 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
 
   const kpis = useMemo(() => {
     const rs = rows ?? [];
-    const qtd = rs.reduce((s, r) => s + r.qtd, 0);
-    const receita = rs.reduce((s, r) => s + r.total, 0);
-    const cmv = rs.reduce((s, r) => s + r.cmv, 0);
-    const comissao = rs.reduce((s, r) => s + r.comissao, 0);
-    const frete = rs.reduce((s, r) => s + r.frete, 0);
-    const impostos = rs.reduce((s, r) => s + r.impostos, 0);
-    // Ads dos buckets exibidos (já zerado pelo util quando o toggle está OFF) —
-    // reconcilia os KPIs com a série do gráfico.
-    const adsBucket = serie.reduce((s, p) => s + p.ads, 0);
+    const base = computePriceKpis(rs, { adsDaily, incluirAds, granularity });
 
-    const precoMedio = qtd > 0 ? receita / qtd : 0;
-    const breakevenMedio = qtd > 0 ? (cmv + comissao + frete + adsBucket + impostos) / qtd : 0;
-    const { mco, pct } = computeMco({
-      grossRevenue: receita,
-      cmv,
-      platformCost: comissao + frete,
-      ads: adsBucket,
-      tax: impostos,
-    });
-
+    // Avisos de dado ausente — não fazem parte do util (não entram no comparativo).
     const qtdSemCusto = rs.reduce((s, r) => s + r.qtd_sem_custo, 0);
     const temImpostoAusente = rs.some((r) => r.qtd_sem_imposto > 0);
 
-    return { qtd, receita, precoMedio, breakevenMedio, mco, mcoPct: pct, qtdSemCusto, temImpostoAusente };
-  }, [rows, serie]);
+    return { ...base, qtdSemCusto, temImpostoAusente };
+  }, [rows, adsDaily, incluirAds, granularity]);
+
+  // KPIs do período anterior (mesma duração, imediatamente antes) — comparativo.
+  const prevKpis = useMemo<PriceKpis | null>(
+    () =>
+      prevRows && prevRows.length > 0
+        ? computePriceKpis(prevRows, { adsDaily: prevAdsDaily, incluirAds, granularity })
+        : null,
+    [prevRows, prevAdsDaily, incluirAds, granularity],
+  );
+
+  // Deltas vs período anterior — % para preço/break-even/MCO R$/qtd/receita,
+  // pontos percentuais (p.p.) para MCO %. null quando não há dados anteriores.
+  const deltas = useMemo(() => {
+    if (!prevKpis) return null;
+    return {
+      precoMedio: percentDelta(kpis.precoMedio, prevKpis.precoMedio),
+      breakevenMedio: percentDelta(kpis.breakevenMedio, prevKpis.breakevenMedio),
+      mco: percentDelta(kpis.mco, prevKpis.mco),
+      qtd: percentDelta(kpis.qtd, prevKpis.qtd),
+      receita: percentDelta(kpis.receita, prevKpis.receita),
+      mcoPp: pointDelta(kpis.mcoPct, prevKpis.mcoPct),
+    };
+  }, [kpis, prevKpis]);
+
+  // Texto secundário do comparativo — "—" sem dados anteriores; senão sinal +
+  // valor + unidade (% ou p.p.) colorido conforme direção (neutra quando o
+  // sentido "bom/ruim" é ambíguo, ex.: aumento de preço/break-even).
+  function comparativoNode(
+    delta: number | null,
+    unidade: "pct" | "pp",
+    cor: "direcional" | "neutra",
+  ) {
+    if (delta == null) {
+      return <span className="text-[10px] text-muted-foreground">— vs período anterior</span>;
+    }
+    const sign = delta > 0 ? "+" : "";
+    const valor = delta.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+    const sufixo = unidade === "pp" ? " p.p." : "%";
+    const texto = `${sign}${valor}${sufixo} vs período anterior`;
+    const classeCor =
+      cor === "neutra"
+        ? "text-muted-foreground"
+        : delta > 0
+          ? "text-success"
+          : delta < 0
+            ? "text-destructive"
+            : "text-muted-foreground";
+    return <span className={cn("text-[10px]", classeCor)}>{texto}</span>;
+  }
 
   const hasData = (rows?.length ?? 0) > 0;
 
@@ -339,20 +409,42 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
         </div>
       </div>
 
-      {/* KPIs */}
+      {/* KPIs — cada card com comparativo vs período anterior (mesma duração) */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <KPICard title="Preço médio" value={brl(kpis.precoMedio)} icon={<DollarSign className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-accent/10 text-accent" />
-        <KPICard title="Break-even médio" value={brl(kpis.breakevenMedio)} icon={<Gauge className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(25,95%,53%)]/10 text-[hsl(25,95%,53%)]" />
-        <KPICard title="MCO (R$)" value={brl(kpis.mco)} icon={<TrendingUp className="w-4 h-4" />} variant="minimal" size="compact" iconClassName={kpis.mco >= 0 ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"} />
+        <KPICard
+          title="Preço médio" value={brl(kpis.precoMedio)}
+          subtitleNode={comparativoNode(deltas?.precoMedio ?? null, "pct", "neutra")}
+          icon={<DollarSign className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-accent/10 text-accent"
+        />
+        <KPICard
+          title="Break-even médio" value={brl(kpis.breakevenMedio)}
+          subtitleNode={comparativoNode(deltas?.breakevenMedio ?? null, "pct", "neutra")}
+          icon={<Gauge className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(25,95%,53%)]/10 text-[hsl(25,95%,53%)]"
+        />
+        <KPICard
+          title="MCO (R$)" value={brl(kpis.mco)}
+          subtitleNode={comparativoNode(deltas?.mco ?? null, "pct", "direcional")}
+          icon={<TrendingUp className="w-4 h-4" />} variant="minimal" size="compact"
+          iconClassName={kpis.mco >= 0 ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}
+        />
         <KPICard
           title="MCO %"
           value={pctFmt(kpis.mcoPct)}
+          subtitleNode={comparativoNode(deltas?.mcoPp ?? null, "pp", "direcional")}
           icon={<Percent className="w-4 h-4" />}
           variant={kpis.mcoPct != null && kpis.mcoPct >= 0 ? "success" : "danger"}
           size="compact"
         />
-        <KPICard title="Qtd vendida" value={intFmt(kpis.qtd)} icon={<Package className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-primary/10 text-primary" />
-        <KPICard title="Receita" value={brl(kpis.receita)} icon={<BarChart2 className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-success/10 text-success" />
+        <KPICard
+          title="Qtd vendida" value={intFmt(kpis.qtd)}
+          subtitleNode={comparativoNode(deltas?.qtd ?? null, "pct", "direcional")}
+          icon={<Package className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-primary/10 text-primary"
+        />
+        <KPICard
+          title="Receita" value={brl(kpis.receita)}
+          subtitleNode={comparativoNode(deltas?.receita ?? null, "pct", "direcional")}
+          icon={<BarChart2 className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-success/10 text-success"
+        />
       </div>
 
       {/* Gráfico */}
