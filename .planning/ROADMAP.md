@@ -589,4 +589,16 @@ Plans:
 - [x] 80-01-PLAN.md — Util `precoFaixas.ts`: bucketização por faixa de preço + veredito determinístico + testes (wave 1)
 - [x] 80-02-PLAN.md — UI: histograma de faixas com toggle Unidades/Lucro + veredito + 4 KPIs + aba temporal secundária + CVD (wave 2, depende de 80-01)
 
+### Phase 81: Giro e Cobertura por Faixa de Preço
+
+**Goal:** Cada faixa de preço em `/analise-precos` (`PrecoPraticadoReport.tsx`) passa a mostrar **giro** (unidades/dia) e **cobertura em dias** do estoque atual, respondendo "nesse preço, em quanto tempo esvazio meu estoque?". (1) util puro `src/lib/precoFaixas.ts` estendido: conta dias-com-venda por faixa a partir dos `McoSeriesPoint` já em memória, calcula `giroDia = unidades ÷ diasNaFaixa` e `coberturaDias = estoqueAtual ÷ giroDia`, estende `FaixaPreco` com `diasNaFaixa/giroDia/coberturaDias/baixaConfianca` + constantes `MIN_DIAS_CONFIANCA=3` e `COBERTURA_RISCO_DIAS=7`; (2) estoque atual do anúncio vem de `ml_inventory_cache.available_quantity` por `item_id` via `MLInventoryContext` (DB-first, sem RPC/migration nova, sem mapear SKU); (3) UI: rótulo `~Xd` em cada barra (texto vermelho quando cobertura<7d; sufixo `?` + esmaecido quando baixa confiança), tooltip com giro/cobertura/estoque, frase de cobertura no cartão-veredito do preço vigente, rodapé de transparência (giro nos dias-com-venda do período; estoque = saldo atual). Cor da barra segue sendo saúde de margem (sem conflito de sinal). Spec: `docs/superpowers/specs/2026-07-02-giro-cobertura-por-faixa-design.md`.
+**Requirements**: (phase ad-hoc — nenhum requirement ID)
+**Depends on:** Phase 80
+**Plans:** 2 plans
+
+Plans:
+
+- [ ] 81-01-PLAN.md — Util `precoFaixas.ts` estendido: contagem de dias-com-venda por faixa + giro + cobertura + baixa confiança + constantes + frase de cobertura no veredito + testes (wave 1)
+- [ ] 81-02-PLAN.md — UI `PrecoPraticadoReport.tsx`: estoque via MLInventoryContext, rótulo `~Xd` na barra (vermelho <7d, `?` esmaecido baixa confiança), tooltip giro/cobertura/estoque, frase no cartão-veredito, rodapé + checkpoint visual (wave 2, depende de 81-01)
+
 ---
