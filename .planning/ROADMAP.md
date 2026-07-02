@@ -567,10 +567,14 @@ Plans:
 **Goal:** A página `/analise-precos` responde "o preço praticado deu MCO?": (1) RPC `orders_price_timeseries` estendida com componentes firmes por bucket (cmv = Σ custo_unit×qtd, comissão, frete, qtd_sem_custo), mantendo SECURITY INVOKER (RLS de `orders`, padrão anti-IDOR Phases 63/69, sem subquery correlacionada); (2) util puro `src/lib/precoMcoSeries.ts` calcula MCO completo por bucket = venda − custo − comissão − frete − ads rateado − imposto, reusando `computeMco` (`src/lib/mco.ts`) + helpers `src/lib/tax/*` com `ml_tax_config`; ads rateado do spend do item (`ml_ads_products_cache`) proporcional à receita de cada bucket (melhor-esforço, carimbado); (3) gráfico refeito em `PrecoPraticadoReport`: linha preço praticado × linha break-even (R$/un) com colchão verde/vermelho entre elas + linha MCO% no eixo direito (saem as barras de volume e o toggle Qtd/Receita); toggle "incluir ads" (default ON); (4) KPIs: Preço médio · Break-even médio · MCO R$ · MCO % · Qtd · Receita; (5) avisos explícitos de custo ausente (nunca inventar número) e regime fiscal não configurado. Spec aprovada: `docs/superpowers/specs/2026-07-02-analise-precos-mco-design.md`.
 **Requirements**: (phase ad-hoc — nenhum requirement ID)
 **Depends on:** Phase 78
-**Plans:** 0 plans
+**Plans:** 3 plans
+
+> Nota de planejamento (2026-07-02): decisão de design pós-research adotada (CONTEXT.md/spec adendo = fonte de verdade): imposto = `SUM(o.tax_amount)` firme na RPC (não taxa efetiva client-side) e **ads = série diária real de `ml_ads_products_cache` bucketizada pela granularidade** (NÃO rateio por receita — o texto "ads rateado" acima foi superado pelo adendo).
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 79 to break down)
+- [ ] 79-01-PLAN.md — Backend: migration DROP+CREATE da RPC (6 colunas firmes) + util puro `precoMcoSeries.ts` + testes (wave 1)
+- [ ] 79-02-PLAN.md — [BLOCKING] Aplicar migration via MCP + smoke reconciliação + anti-IDOR (checkpoint orquestrador, wave 2)
+- [ ] 79-03-PLAN.md — UI: gráfico preço×break-even com colchão MCO + MCO% + toggle ads + 6 KPIs + checkpoint visual (wave 3)
 
 ---
