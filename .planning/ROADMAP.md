@@ -577,4 +577,16 @@ Plans:
 - [x] 79-02-PLAN.md — [BLOCKING] Aplicar migration via MCP + smoke reconciliação + anti-IDOR (checkpoint orquestrador, wave 2) — aplicada em prod, reconciliada ao centavo, anti-IDOR 0 linhas
 - [x] 79-03-PLAN.md — UI: gráfico preço×break-even com colchão MCO + MCO% + toggle ads + 6 KPIs (wave 3) — executado; checkpoint visual Wesley PENDENTE (preview + PR #25)
 
+### Phase 80: Análise de Preços — onde vendo bem
+
+**Goal:** Redesenhar a visão principal de `/analise-precos` (`PrecoPraticadoReport.tsx`) para responder "em que preço eu vendo bem?", trocando a série temporal por um **histograma de faixas de preço**: eixo X = faixas de preço, altura da barra = volume OU lucro (toggle Unidades↔Lucro R$), cor + rótulo = margem % da faixa, marcador do preço recente. (1) util puro novo `src/lib/precoFaixas.ts` reagrupa **por faixa de preço** os pontos diários já reconciliados de `computePrecoMcoSeries` (mesma RPC `orders_price_timeseries`, sem recalcular custo/imposto), com bucketização "redonda" (série 1/2/5) centrada em ~90% das vendas e agregação de outliers de preço alto numa única barra "+R$X"; (2) veredito determinístico (sem LLM) — frase de saúde do preço atual (saudável/apertada/prejuízo por threshold `MCO_SAUDAVEL_PCT`) + frase da faixa ótima que acompanha o modo do toggle; (3) 4 KPIs enxutos (Preço recente · Margem recente % · Faixa campeã · Unidades no período) com comparativo vs. período anterior; (4) o gráfico de linha temporal atual (Phase 79) é **preservado** numa aba secundária recolhida "Evolução no tempo"; (5) cor de margem verde/âmbar/vermelho validada CVD-safe (skill dataviz, light+dark), com rótulo % em toda barra (cor nunca é sinal único). Spec: `docs/superpowers/specs/2026-07-02-analise-precos-onde-vendo-bem-design.md`. Plano: `docs/superpowers/plans/2026-07-02-analise-precos-onde-vendo-bem.md`.
+**Requirements**: (phase ad-hoc — nenhum requirement ID)
+**Depends on:** Phase 79
+**Plans:** 2/2 plans complete
+
+Plans:
+
+- [x] 80-01-PLAN.md — Util `precoFaixas.ts`: bucketização por faixa de preço + veredito determinístico + testes (wave 1)
+- [x] 80-02-PLAN.md — UI: histograma de faixas com toggle Unidades/Lucro + veredito + 4 KPIs + aba temporal secundária + CVD (wave 2, depende de 80-01)
+
 ---

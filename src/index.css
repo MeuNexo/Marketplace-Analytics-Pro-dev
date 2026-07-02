@@ -53,6 +53,17 @@
     --chart-breakeven: 21 90% 48%;
     --chart-mco: 262 83% 58%;
 
+    /* Chart margin colors - histograma de faixas (Phase 80-02, LOCKED, CVD/contrast
+       validated via skill dataviz validate_palette.py, --mode light --pairs all: PASS —
+       Lightness band + Chroma floor PASS, CVD ΔE 10.3 (deutan, floor band — legal because
+       every bar always carries a % label, satisfying the mandatory secondary encoding).
+       --chart-margin-saudavel reuses --success (already in-band); apertada/prejuizo are
+       distinct tokens tuned separately from --warning/--destructive because those global
+       tokens fall outside the OKLCH lightness band required for adjacent chart marks. */
+    --chart-margin-saudavel: 142 70% 45%;
+    --chart-margin-apertada: 38 92% 38%;
+    --chart-margin-prejuizo: 0 72% 51%;
+
     /* Status colors */
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
@@ -128,6 +139,15 @@
     --chart-price: 217 65% 54%;
     --chart-breakeven: 21 90% 48%;
     --chart-mco: 260 100% 71%;
+
+    /* Chart margin colors - histograma de faixas (Phase 80-02, LOCKED, CVD/contrast
+       validated via skill dataviz validate_palette.py, --mode dark --pairs all: PASS —
+       all 4 checks (Lightness band, Chroma floor, CVD ΔE 15.0, Contrast >=3:1). Distinct
+       from --warning/--destructive dark values, which sit outside the dark OKLCH
+       lightness band (0.48–0.67) required for adjacent chart marks. */
+    --chart-margin-saudavel: 142 70% 40%;
+    --chart-margin-apertada: 38 92% 35%;
+    --chart-margin-prejuizo: 0 62% 48%;
 
     --destructive: 0 62% 40%;
     --destructive-foreground: 0 0% 100%;
