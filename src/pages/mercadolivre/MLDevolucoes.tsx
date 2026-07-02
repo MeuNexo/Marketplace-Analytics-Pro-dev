@@ -203,7 +203,7 @@ export default function MLDevolucoes() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[640px] text-sm">
                 <thead>
                   <tr className="border-b border-border">
                     <th className="text-left px-6 py-3 text-xs text-muted-foreground font-medium">Data</th>
@@ -225,7 +225,7 @@ export default function MLDevolucoes() {
                       <td className="px-3 py-3 text-muted-foreground whitespace-nowrap">
                         {tipoLabel(claim.tipo)}
                       </td>
-                      <td className="px-3 py-3 text-muted-foreground">{claim.motivo ?? claim.descricao ?? "—"}</td>
+                      <td className="px-3 py-3 max-w-[120px] truncate text-muted-foreground">{claim.motivo ?? claim.descricao ?? "—"}</td>
                       <td className="px-3 py-3 text-right font-mono">
                         {claim.valor != null
                           ? claim.valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })

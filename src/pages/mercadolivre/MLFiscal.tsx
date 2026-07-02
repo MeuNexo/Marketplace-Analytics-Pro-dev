@@ -346,7 +346,7 @@ function LucroRealForm({ initial, onSave, saving }: LRFormProps) {
         <div className="flex items-center gap-1">
           <Label className="text-xs font-medium">ICMS por destino</Label>
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="space-y-1">
             <Label className="text-[11px] text-muted-foreground">Intra-estadual</Label>
             <PercentInput value={icmsIntra} onChange={setIcmsIntra} placeholder={icmsD || "0,00"} />
@@ -602,6 +602,7 @@ export default function MLFiscal() {
             </TabsContent>
 
             <TabsContent value="lucro_real">
+              <div className="overflow-y-auto max-h-[70dvh]">
               <div className="space-y-1.5 pt-3">
                 <Label className="text-xs flex items-center gap-1">
                   UF de origem (loja)
@@ -631,6 +632,7 @@ export default function MLFiscal() {
                 onSave={handleFormSave}
                 saving={saving}
               />
+              </div>
             </TabsContent>
           </Tabs>
         </DialogContent>
