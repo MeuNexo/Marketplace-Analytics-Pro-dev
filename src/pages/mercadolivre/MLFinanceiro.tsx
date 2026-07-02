@@ -486,7 +486,7 @@ export default function MLFinanceiro() {
           <ResponsiveContainer width="100%" height={240}>
             <ComposedChart
               data={chartData}
-              margin={{ top: 4, right: 48, left: 0, bottom: 0 }}
+              margin={{ top: 4, right: isMobile ? 4 : 48, left: 0, bottom: 0 }}
             >
               <CartesianGrid
                 strokeDasharray="3 3"
@@ -928,91 +928,113 @@ export default function MLFinanceiro() {
             <span className="text-sm font-medium">Lucro por Marca</span>
           </div>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border/60 bg-muted/30">
-                    {[
-                      "Marca",
-                      "Pedidos",
-                      "Receita",
-                      "CMV",
-                      "Comissão",
-                      "Frete",
-                      "Impostos",
-                      "Lucro R$",
-                      "Lucro %",
-                    ].map((h) => (
-                      <th
-                        key={h}
-                        className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground first:pl-5 last:pr-5 whitespace-nowrap"
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {byBrand.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={9}
-                        className="px-5 py-8 text-center text-xs text-muted-foreground"
-                      >
-                        Sem dados no período
-                      </td>
+            {isMobile ? (
+              /* ── Mobile: cards (A-04) ── */
+              <div className="space-y-2 p-3">
+                {byBrand.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-4">Sem dados no período</p>
+                ) : (
+                  byBrand.map((b) => (
+                    <div key={b.marca} className="rounded-lg border border-border bg-card p-3 space-y-1.5">
+                      <p className="text-xs font-medium">{b.marca}</p>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                        <div><span className="text-muted-foreground">Receita </span><span className="font-mono tabular-nums">{currFmt(b.receita)}</span></div>
+                        <div><span className="text-muted-foreground">Pedidos </span><span className="tabular-nums">{b.pedidos}</span></div>
+                        <div><span className="text-muted-foreground">Lucro R$ </span><span className={`font-mono tabular-nums font-semibold ${b.lucro >= 0 ? "text-kpi-positive" : "text-kpi-negative"}`}>{currFmt(b.lucro)}</span></div>
+                        <div><span className="text-muted-foreground">Lucro % </span><span className={`font-mono tabular-nums ${(b.lucro_pct ?? 0) >= 15 ? "text-kpi-positive font-semibold" : (b.lucro_pct ?? 0) < 0 ? "text-kpi-negative" : ""}`}>{b.lucro_pct != null ? pctFmt(b.lucro_pct) : "—"}</span></div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : (
+              /* ── Desktop: tabela completa (A-04) ── */
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border/60 bg-muted/30">
+                      {[
+                        "Marca",
+                        "Pedidos",
+                        "Receita",
+                        "CMV",
+                        "Comissão",
+                        "Frete",
+                        "Impostos",
+                        "Lucro R$",
+                        "Lucro %",
+                      ].map((h) => (
+                        <th
+                          key={h}
+                          className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground first:pl-5 last:pr-5 whitespace-nowrap"
+                        >
+                          {h}
+                        </th>
+                      ))}
                     </tr>
-                  ) : (
-                    byBrand.map((b, i) => (
-                      <tr
-                        key={b.marca}
-                        className={`border-b border-border/40 last:border-0 ${
-                          i % 2 === 0 ? "" : "bg-muted/10"
-                        }`}
-                      >
-                        <td className="px-3 py-2.5 pl-5 font-medium text-xs">
-                          {b.marca}
-                        </td>
-                        <td className="px-3 py-2.5 tabular-nums text-xs">{b.pedidos}</td>
-                        <td className="px-3 py-2.5 tabular-nums text-xs whitespace-nowrap">
-                          {currFmt(b.receita)}
-                        </td>
-                        <td className="px-3 py-2.5 tabular-nums text-xs whitespace-nowrap text-muted-foreground">
-                          {b.has_cmv ? currFmt(b.cmv) : "—"}
-                        </td>
-                        <td className="px-3 py-2.5 tabular-nums text-xs whitespace-nowrap text-amber-600">
-                          {currFmt(b.comissao)}
-                        </td>
-                        <td className="px-3 py-2.5 tabular-nums text-xs whitespace-nowrap text-sky-600">
-                          {currFmt(b.frete)}
-                        </td>
-                        <td className="px-3 py-2.5 tabular-nums text-xs whitespace-nowrap text-purple-600">
-                          {b.impostos > 0 ? currFmt(b.impostos) : "—"}
-                        </td>
+                  </thead>
+                  <tbody>
+                    {byBrand.length === 0 ? (
+                      <tr>
                         <td
-                          className={`px-3 py-2.5 tabular-nums text-xs whitespace-nowrap font-semibold ${
-                            b.lucro >= 0 ? "text-kpi-positive" : "text-kpi-negative"
-                          }`}
+                          colSpan={9}
+                          className="px-5 py-8 text-center text-xs text-muted-foreground"
                         >
-                          {currFmt(b.lucro)}
-                        </td>
-                        <td
-                          className={`px-3 py-2.5 pr-5 tabular-nums text-xs whitespace-nowrap ${
-                            (b.lucro_pct ?? 0) >= 15
-                              ? "text-kpi-positive font-semibold"
-                              : (b.lucro_pct ?? 0) < 0
-                              ? "text-kpi-negative"
-                              : ""
-                          }`}
-                        >
-                          {b.lucro_pct != null ? pctFmt(b.lucro_pct) : "—"}
+                          Sem dados no período
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    ) : (
+                      byBrand.map((b, i) => (
+                        <tr
+                          key={b.marca}
+                          className={`border-b border-border/40 last:border-0 ${
+                            i % 2 === 0 ? "" : "bg-muted/10"
+                          }`}
+                        >
+                          <td className="px-3 py-2.5 pl-5 font-medium text-xs">
+                            {b.marca}
+                          </td>
+                          <td className="px-3 py-2.5 tabular-nums text-xs">{b.pedidos}</td>
+                          <td className="px-3 py-2.5 tabular-nums text-xs whitespace-nowrap">
+                            {currFmt(b.receita)}
+                          </td>
+                          <td className="px-3 py-2.5 tabular-nums text-xs whitespace-nowrap text-muted-foreground">
+                            {b.has_cmv ? currFmt(b.cmv) : "—"}
+                          </td>
+                          <td className="px-3 py-2.5 tabular-nums text-xs whitespace-nowrap text-amber-600">
+                            {currFmt(b.comissao)}
+                          </td>
+                          <td className="px-3 py-2.5 tabular-nums text-xs whitespace-nowrap text-sky-600">
+                            {currFmt(b.frete)}
+                          </td>
+                          <td className="px-3 py-2.5 tabular-nums text-xs whitespace-nowrap text-purple-600">
+                            {b.impostos > 0 ? currFmt(b.impostos) : "—"}
+                          </td>
+                          <td
+                            className={`px-3 py-2.5 tabular-nums text-xs whitespace-nowrap font-semibold ${
+                              b.lucro >= 0 ? "text-kpi-positive" : "text-kpi-negative"
+                            }`}
+                          >
+                            {currFmt(b.lucro)}
+                          </td>
+                          <td
+                            className={`px-3 py-2.5 pr-5 tabular-nums text-xs whitespace-nowrap ${
+                              (b.lucro_pct ?? 0) >= 15
+                                ? "text-kpi-positive font-semibold"
+                                : (b.lucro_pct ?? 0) < 0
+                                ? "text-kpi-negative"
+                                : ""
+                            }`}
+                          >
+                            {b.lucro_pct != null ? pctFmt(b.lucro_pct) : "—"}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -1022,67 +1044,89 @@ export default function MLFinanceiro() {
             <span className="text-sm font-medium">Lucro por Estado</span>
           </div>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border/60 bg-muted/30">
-                    {["Estado", "Pedidos", "Receita", "Lucro R$", "Lucro %"].map((h) => (
-                      <th
-                        key={h}
-                        className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground first:pl-5 last:pr-5 whitespace-nowrap"
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {byEstado.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={5}
-                        className="px-5 py-8 text-center text-xs text-muted-foreground"
-                      >
-                        Sem dados no período
-                      </td>
+            {isMobile ? (
+              /* ── Mobile: cards (A-04) ── */
+              <div className="space-y-2 p-3">
+                {byEstado.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-4">Sem dados no período</p>
+                ) : (
+                  byEstado.slice(0, 15).map((e) => (
+                    <div key={e.estado} className="rounded-lg border border-border bg-card p-3 space-y-1.5">
+                      <p className="text-xs font-medium">{e.estado}</p>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                        <div><span className="text-muted-foreground">Pedidos </span><span className="tabular-nums">{e.pedidos}</span></div>
+                        <div><span className="text-muted-foreground">Receita </span><span className="font-mono tabular-nums">{currFmt(e.receita)}</span></div>
+                        <div><span className="text-muted-foreground">Lucro R$ </span><span className={`font-mono tabular-nums font-semibold ${e.lucro >= 0 ? "text-kpi-positive" : "text-kpi-negative"}`}>{currFmt(e.lucro)}</span></div>
+                        <div><span className="text-muted-foreground">Lucro % </span><span className={`font-mono tabular-nums ${(e.lucro_pct ?? 0) >= 15 ? "text-kpi-positive font-semibold" : ""}`}>{e.lucro_pct != null ? pctFmt(e.lucro_pct) : "—"}</span></div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : (
+              /* ── Desktop: tabela completa (A-04) ── */
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border/60 bg-muted/30">
+                      {["Estado", "Pedidos", "Receita", "Lucro R$", "Lucro %"].map((h) => (
+                        <th
+                          key={h}
+                          className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground first:pl-5 last:pr-5 whitespace-nowrap"
+                        >
+                          {h}
+                        </th>
+                      ))}
                     </tr>
-                  ) : (
-                    byEstado.slice(0, 15).map((e, i) => (
-                      <tr
-                        key={e.estado}
-                        className={`border-b border-border/40 last:border-0 ${
-                          i % 2 === 0 ? "" : "bg-muted/10"
-                        }`}
-                      >
-                        <td className="px-3 py-2.5 pl-5 font-medium text-xs">
-                          {e.estado}
-                        </td>
-                        <td className="px-3 py-2.5 tabular-nums text-xs">{e.pedidos}</td>
-                        <td className="px-3 py-2.5 tabular-nums text-xs whitespace-nowrap">
-                          {currFmt(e.receita)}
-                        </td>
+                  </thead>
+                  <tbody>
+                    {byEstado.length === 0 ? (
+                      <tr>
                         <td
-                          className={`px-3 py-2.5 tabular-nums text-xs whitespace-nowrap font-semibold ${
-                            e.lucro >= 0 ? "text-kpi-positive" : "text-kpi-negative"
-                          }`}
+                          colSpan={5}
+                          className="px-5 py-8 text-center text-xs text-muted-foreground"
                         >
-                          {currFmt(e.lucro)}
-                        </td>
-                        <td
-                          className={`px-3 py-2.5 pr-5 tabular-nums text-xs whitespace-nowrap ${
-                            (e.lucro_pct ?? 0) >= 15
-                              ? "text-kpi-positive font-semibold"
-                              : ""
-                          }`}
-                        >
-                          {e.lucro_pct != null ? pctFmt(e.lucro_pct) : "—"}
+                          Sem dados no período
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    ) : (
+                      byEstado.slice(0, 15).map((e, i) => (
+                        <tr
+                          key={e.estado}
+                          className={`border-b border-border/40 last:border-0 ${
+                            i % 2 === 0 ? "" : "bg-muted/10"
+                          }`}
+                        >
+                          <td className="px-3 py-2.5 pl-5 font-medium text-xs">
+                            {e.estado}
+                          </td>
+                          <td className="px-3 py-2.5 tabular-nums text-xs">{e.pedidos}</td>
+                          <td className="px-3 py-2.5 tabular-nums text-xs whitespace-nowrap">
+                            {currFmt(e.receita)}
+                          </td>
+                          <td
+                            className={`px-3 py-2.5 tabular-nums text-xs whitespace-nowrap font-semibold ${
+                              e.lucro >= 0 ? "text-kpi-positive" : "text-kpi-negative"
+                            }`}
+                          >
+                            {currFmt(e.lucro)}
+                          </td>
+                          <td
+                            className={`px-3 py-2.5 pr-5 tabular-nums text-xs whitespace-nowrap ${
+                              (e.lucro_pct ?? 0) >= 15
+                                ? "text-kpi-positive font-semibold"
+                                : ""
+                            }`}
+                          >
+                            {e.lucro_pct != null ? pctFmt(e.lucro_pct) : "—"}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
 
