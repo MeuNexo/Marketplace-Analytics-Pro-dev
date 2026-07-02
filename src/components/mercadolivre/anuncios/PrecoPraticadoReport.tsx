@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import {
   ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip as RechartsTooltip, ResponsiveContainer, Legend,
+  Tooltip as RechartsTooltip, ResponsiveContainer, Legend, BarChart, Bar,
 } from "recharts";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
@@ -110,6 +110,21 @@ function ChartTooltip({ active, payload }: any) {
           {d.impostoAusente && "imposto ausente em parte das unidades"}
         </p>
       )}
+    </div>
+  );
+}
+
+// Tooltip simples do gráfico de barras — só unidades vendidas do bucket.
+function BarTooltip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload as McoSeriesPoint & { label: string };
+  return (
+    <div className="rounded-lg border border-border bg-background px-3 py-2 text-xs shadow-md">
+      <p className="mb-1 font-medium">{d.label}</p>
+      <p className="flex justify-between gap-6">
+        <span className="text-muted-foreground">Unidades</span>
+        <span className="font-semibold tabular-nums">{intFmt(d.qtd)}</span>
+      </p>
     </div>
   );
 }
@@ -373,9 +388,6 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                   tickFormatter={(v: number) => `${v.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}%`}
                   width={44}
                 />
-                {/* Terceiro eixo OCULTO: escala própria das unidades vendidas
-                    (não desenha ticks nem eixo — os dois eixos visíveis ficam limpos) */}
-                <YAxis yAxisId="qtd" hide />
                 <RechartsTooltip content={<ChartTooltip />} cursor={{ stroke: "hsl(var(--muted-foreground))", strokeOpacity: 0.3 }} />
                 {/* Legenda com payload explícito: lista só as séries visíveis e
                     representa as 3 Areas técnicas (base/gainBand/lossBand) como
@@ -387,7 +399,6 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                     { value: "Preço praticado", type: "line", id: "precoUnit", color: "hsl(var(--accent))" },
                     { value: "Break-even", type: "line", id: "breakevenUnit", color: "hsl(var(--muted-foreground))" },
                     { value: "MCO %", type: "line", id: "mcoPct", color: "hsl(var(--primary))" },
-                    { value: "Unidades vendidas", type: "line", id: "qtd", color: "hsl(var(--muted-foreground))" },
                     { value: "Margem (verde=positiva, vermelho=negativa)", type: "rect", id: "band", color: "hsl(var(--success))" },
                   ]}
                 />
@@ -426,15 +437,35 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                   yAxisId="mco" type="monotone" dataKey="mcoPct" name="mcoPct"
                   stroke="hsl(var(--primary))" strokeWidth={2} dot={false}
                 />
-                {/* Linha DISCRETA de unidades vendidas (escala oculta própria).
-                    Sem dash para não confundir com o break-even tracejado. */}
-                <Line
-                  yAxisId="qtd" type="monotone" dataKey="qtd" name="Unidades vendidas"
-                  stroke="hsl(var(--muted-foreground))" strokeWidth={1}
-                  strokeOpacity={0.5} dot={false}
-                />
               </ComposedChart>
             </ResponsiveContainer>
+          )}
+
+          {/* Gráfico de barras — unidades vendidas por bucket, alinhado ao
+              gráfico principal (mesmas margens/larguras de eixo). */}
+          {hasData && !loading && selectedId && (
+            <div className="mt-1">
+              <p className="mt-2 mb-0.5 text-[10px] uppercase tracking-wider text-muted-foreground text-center">
+                Unidades vendidas por período
+              </p>
+              <ResponsiveContainer width="100%" height={140}>
+                <BarChart data={chartData} margin={{ left: 4, right: 8, top: 4, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                  <XAxis dataKey="label" fontSize={11} tick={{ fill: "hsl(var(--muted-foreground))" }} tickMargin={8} />
+                  <YAxis fontSize={11} tick={{ fill: "hsl(var(--muted-foreground))" }} allowDecimals={false} width={56} />
+                  {/* Espaçador direito invisível — casa com o eixo MCO% (width 44) do principal */}
+                  <YAxis orientation="right" width={44} hide />
+                  <RechartsTooltip
+                    content={<BarTooltip />}
+                    cursor={{ fill: "hsl(var(--muted-foreground))", fillOpacity: 0.08 }}
+                  />
+                  <Bar dataKey="qtd" name="Unidades vendidas"
+                    fill="hsl(var(--primary))" fillOpacity={0.55}
+                    radius={[3, 3, 0, 0]} isAnimationActive={false}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           )}
 
           {/* Avisos de dado ausente (nunca inventar número) */}
