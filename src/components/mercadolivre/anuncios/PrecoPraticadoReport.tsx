@@ -79,11 +79,19 @@ function ChartTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload as McoSeriesPoint & { label: string };
   const mcoUnit = d.precoUnit - d.breakevenUnit;
-  const Row = ({ k, v, accent, danger, muted }: {
-    k: string; v: string; accent?: boolean; danger?: boolean; muted?: boolean;
+  const Row = ({ k, v, accent, danger, muted, dotColor }: {
+    k: string; v: string; accent?: boolean; danger?: boolean; muted?: boolean; dotColor?: string;
   }) => (
     <p className={cn("flex justify-between gap-6", muted && "text-[10px]")}>
-      <span className="text-muted-foreground">{k}</span>
+      <span className="text-muted-foreground flex items-center gap-1.5">
+        {dotColor && (
+          <span
+            className="inline-block w-2 h-2 rounded-full shrink-0"
+            style={{ backgroundColor: dotColor }}
+          />
+        )}
+        {k}
+      </span>
       <span className={cn(
         "font-semibold tabular-nums",
         accent && "text-success", danger && "text-destructive",
@@ -95,10 +103,10 @@ function ChartTooltip({ active, payload }: any) {
     <div className="rounded-lg border border-border bg-background px-3 py-2 text-xs shadow-md">
       <p className="mb-1 font-medium">{d.label}</p>
       <Row k="Unidades" v={intFmt(d.qtd)} />
-      <Row k="Preço" v={brl(d.precoUnit)} />
-      <Row k="Break-even" v={brl(d.breakevenUnit)} />
+      <Row k="Preço" v={brl(d.precoUnit)} dotColor="hsl(var(--chart-price))" />
+      <Row k="Break-even" v={brl(d.breakevenUnit)} dotColor="hsl(var(--chart-breakeven))" />
       <Row k="MCO R$/un" v={brl(mcoUnit)} accent={mcoUnit >= 0} danger={mcoUnit < 0} />
-      <Row k="MCO %" v={pctFmt(d.mcoPct)} accent={(d.mcoPct ?? 0) >= 0 && d.mcoPct != null} danger={(d.mcoPct ?? 0) < 0} />
+      <Row k="MCO %" v={pctFmt(d.mcoPct)} accent={(d.mcoPct ?? 0) >= 0 && d.mcoPct != null} danger={(d.mcoPct ?? 0) < 0} dotColor="hsl(var(--chart-mco))" />
       <div className="mt-1 border-t border-border pt-1">
         <p className="mb-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">Por unidade</p>
         <Row k="Custo" v={brl(d.cmvUnit)} muted />
@@ -476,22 +484,23 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                 />
                 {/* Eixo direito: MCO % */}
                 <YAxis
-                  yAxisId="mco" orientation="right" fontSize={11} tick={{ fill: "hsl(var(--muted-foreground))" }}
+                  yAxisId="mco" orientation="right" fontSize={11} tick={{ fill: "hsl(var(--chart-mco))" }}
                   tickFormatter={(v: number) => `${v.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}%`}
                   width={44}
                 />
                 <RechartsTooltip content={<ChartTooltip />} cursor={{ stroke: "hsl(var(--muted-foreground))", strokeOpacity: 0.3 }} />
-                {/* Legenda com payload explícito: lista só as séries visíveis e
-                    representa as 3 Areas técnicas (base/gainBand/lossBand) como
-                    um único item "Margem". Wrap responsivo p/ paridade mobile. */}
+                {/* Legenda com payload explícito: 5 itens nítidos — 3 linhas
+                    (cores distintas via tokens --chart-*) + 2 bandas de margem.
+                    Wrap responsivo p/ paridade mobile. */}
                 <Legend
                   verticalAlign="bottom"
                   wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
                   payload={[
-                    { value: "Preço praticado", type: "line", id: "precoUnit", color: "hsl(var(--accent))" },
-                    { value: "Break-even", type: "line", id: "breakevenUnit", color: "hsl(var(--muted-foreground))" },
-                    { value: "MCO %", type: "line", id: "mcoPct", color: "hsl(var(--primary))" },
-                    { value: "Margem (verde=positiva, vermelho=negativa)", type: "rect", id: "band", color: "hsl(var(--success))" },
+                    { value: "Preço praticado", type: "line", id: "precoUnit", color: "hsl(var(--chart-price))" },
+                    { value: "Break-even", type: "line", id: "breakevenUnit", color: "hsl(var(--chart-breakeven))" },
+                    { value: "MCO %", type: "line", id: "mcoPct", color: "hsl(var(--chart-mco))" },
+                    { value: "Margem positiva", type: "rect", id: "gainBand", color: "hsl(var(--success))" },
+                    { value: "Margem negativa", type: "rect", id: "lossBand", color: "hsl(var(--destructive))" },
                   ]}
                 />
 
@@ -517,17 +526,17 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
 
                 <Line
                   yAxisId="preco" type="linear" dataKey="precoUnit" name="precoUnit"
-                  stroke="hsl(var(--accent))" strokeWidth={2.2}
-                  dot={{ r: 2.5, fill: "hsl(var(--accent))" }} activeDot={{ r: 4 }}
+                  stroke="hsl(var(--chart-price))" strokeWidth={2.2}
+                  dot={{ r: 2.5, fill: "hsl(var(--chart-price))" }} activeDot={{ r: 4 }}
                 />
                 <Line
                   yAxisId="preco" type="linear" dataKey="breakevenUnit" name="breakevenUnit"
-                  stroke="hsl(var(--muted-foreground))" strokeWidth={1.5}
+                  stroke="hsl(var(--chart-breakeven))" strokeWidth={2}
                   strokeDasharray="5 4" dot={false}
                 />
                 <Line
                   yAxisId="mco" type="monotone" dataKey="mcoPct" name="mcoPct"
-                  stroke="hsl(var(--primary))" strokeWidth={2} dot={false}
+                  stroke="hsl(var(--chart-mco))" strokeWidth={2} dot={false}
                 />
               </ComposedChart>
             </ResponsiveContainer>
