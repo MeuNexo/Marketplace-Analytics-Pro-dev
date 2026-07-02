@@ -124,6 +124,22 @@ receita média diária.
 - Deep-link `?item=` (já deferido na Phase 77).
 - Mudanças em Produtos Vendidos.
 
+## Adendo pós-research (2026-07-02)
+
+O research da Phase 79 (79-RESEARCH.md) corrigiu duas premissas deste spec — ambas a
+favor de dado mais firme:
+
+1. **Imposto**: `orders.tax_amount` já existe por pedido, calculado com a UF de destino
+   real (`recalc-order-costs`). A RPC soma `SUM(tax_amount)` por bucket (padrão
+   `get_cost_waterfall`/`MLCostCard`). A modelagem client-side via `ml_tax_config` ×
+   taxa efetiva média **não será usada**.
+2. **Publicidade**: `ml_ads_products_cache` **tem** coluna `date` (série diária por
+   item). O spend real do item é agregado pelos mesmos buckets do relatório — **sem
+   rateio por receita**. Cobertura do cache não garantida → ausente = 0, toggle
+   "incluir ads" mantido, rodapé passa a citar o relatório diário de publicidade.
+3. **Migration**: mudar `RETURNS TABLE` exige `DROP FUNCTION IF EXISTS ...` antes do
+   `CREATE FUNCTION` (`CREATE OR REPLACE` não muda OUT params).
+
 ## Processo
 
 Phase GSD nova no milestone atual (plan-phase → execute-phase → verifier), branch

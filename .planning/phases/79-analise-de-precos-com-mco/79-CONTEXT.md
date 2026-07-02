@@ -37,9 +37,13 @@ não cria sync novo de ads, não implementa deep-link `?item=`.
   linha tracejada = break-even".
 
 ### Backend — RPC estendida
-- `CREATE OR REPLACE` de `orders_price_timeseries` acrescentando por bucket:
+- Estender `orders_price_timeseries` acrescentando por bucket:
   `cmv` (=SUM(custo_unit*quantidade)), `comissao` (SUM), `frete` (SUM),
+  `imposto` (=SUM(tax_amount) — achado do research), e
   `qtd_sem_custo` (SUM(quantidade) FILTER (WHERE custo_unit IS NULL)).
+- **PITFALL (research):** mudar RETURNS TABLE exige `DROP FUNCTION IF EXISTS
+  public.orders_price_timeseries(text, text[], date, date, text);` antes do CREATE —
+  `CREATE OR REPLACE` falha ao mudar OUT params.
 - MANTER SECURITY INVOKER — RLS de `orders` isola org (anti-IDOR Phases 63/69).
   Sem parâmetro de org. Sem subquery correlacionada (lição RPC RLS timeout 8s).
 - `data_pedido` é TEXT com formatos mistos → manter cast `::date`.
@@ -48,15 +52,22 @@ não cria sync novo de ads, não implementa deep-link `?item=`.
   buckets contra soma manual em SQL.
 
 ### Camada TS — util puro `src/lib/precoMcoSeries.ts`
-- Entrada: linhas da RPC + taxaEfetiva + spendItem + flag incluirAds. Saída por bucket:
-  imposto (= receita × taxaEfetiva), ads (= spendItem × receita/receitaTotalPeriodo se
-  incluirAds, senão 0), mco/mcoPct via computeMco, precoUnit, breakevenUnit
-  (= (cmv+comissao+frete+ads+imposto)/qtd), custoAusente, gainBand/lossBand.
-- Alíquota efetiva: `ml_tax_config` + `computeOrderTaxRate`/helpers de `src/lib/tax/`.
-  Sem UF destino por bucket → taxa efetiva média da loja (mesma simplificação de telas
-  agregadas). Múltiplas lojas: seguir o que `MLCostCard` já faz (ponderar por receita
-  ou config da loja principal — planner decide olhando o código).
-- spendItem: `ml_ads_products_cache` pelo item_id (coluna `spend`); ausente → ads=0.
+**[ATUALIZADO pós-research 2026-07-02 — dois achados mudam a fonte de imposto e ads:]**
+- **Imposto = dado FIRME via RPC**: `orders.tax_amount` já existe por pedido (calculado
+  com UF de destino real por `recalc-order-costs`). A RPC soma `SUM(tax_amount)` por
+  bucket — mesmo padrão de `get_cost_waterfall`/`MLCostCard`. NÃO usar taxa efetiva
+  média client-side. Aviso "regime fiscal não configurado" quando tax_amount vier
+  NULL/0 em bucket com receita (verificar semântica real ao planejar).
+- **Ads = série diária REAL**: `ml_ads_products_cache` TEM coluna `date` (migration
+  20260522_ads_products_daily). Buscar spend diário do item_id no período e agregar
+  pelos MESMOS buckets da granularidade — sem rateio por receita. Cobertura do cache
+  não garantida (sync sob demanda, cap 90d) → ausente = 0 e o toggle "incluir ads"
+  cobre a incerteza. Rodapé do gráfico ajustado: ads vem do relatório diário de
+  publicidade, não de rateio.
+- Entrada do util: linhas da RPC + linhas de ads diárias + flag incluirAds. Saída por
+  bucket: imposto (da RPC), ads (do cache bucketizado, 0 se toggle off), mco/mcoPct via
+  computeMco, precoUnit, breakevenUnit (= (cmv+comissao+frete+ads+imposto)/qtd),
+  custoAusente, gainBand/lossBand.
 
 ### KPIs (6, mesmo grid)
 - Preço médio · Break-even médio · MCO (R$) · MCO % (verde/vermelho pelo sinal) ·
