@@ -1,6 +1,10 @@
 import {
   bucketKeyForDate,
   computePrecoMcoSeries,
+  computePreviousWindow,
+  computePriceKpis,
+  percentDelta,
+  pointDelta,
   type AdsDailyRow,
   type PrecoSeriesRow,
 } from "./precoMcoSeries";
@@ -196,5 +200,71 @@ describe("computePrecoMcoSeries", () => {
     ]) {
       expect(Number.isFinite(v)).toBe(true);
     }
+  });
+});
+
+describe("computePreviousWindow", () => {
+  it("janela de 7 dias: retorna os 7 dias imediatamente anteriores", () => {
+    expect(computePreviousWindow("2026-06-08", "2026-06-14")).toEqual({
+      from: "2026-06-01",
+      to: "2026-06-07",
+    });
+  });
+
+  it("um único dia (from===to): janela anterior é o dia anterior", () => {
+    expect(computePreviousWindow("2026-06-14", "2026-06-14")).toEqual({
+      from: "2026-06-13",
+      to: "2026-06-13",
+    });
+  });
+
+  it("from ou to null: retorna null", () => {
+    expect(computePreviousWindow(null, "2026-06-14")).toBeNull();
+    expect(computePreviousWindow("2026-06-08", null)).toBeNull();
+    expect(computePreviousWindow(null, null)).toBeNull();
+  });
+});
+
+describe("computePriceKpis", () => {
+  it("caso típico: reconcilia com a lógica do componente (ads no mesmo dia)", () => {
+    const adsDaily: AdsDailyRow[] = [{ date: "2026-06-01", spend: 40 }];
+    const kpis = computePriceKpis([row()], {
+      adsDaily,
+      incluirAds: true,
+      granularity: "day",
+    });
+
+    expect(kpis.qtd).toBe(10);
+    expect(kpis.receita).toBe(1000);
+    expect(kpis.precoMedio).toBeCloseTo(100, 5);
+    expect(kpis.breakevenMedio).toBeCloseTo(60, 5);
+    expect(kpis.mco).toBe(400);
+    expect(kpis.mcoPct).toBeCloseTo(40, 5);
+  });
+
+  it("qtd=0 / total=0: precoMedio e breakevenMedio zerados, mcoPct null", () => {
+    const kpis = computePriceKpis(
+      [row({ qtd: 0, total: 0, cmv: 0, comissao: 0, frete: 0, impostos: 0 })],
+      { adsDaily: [], incluirAds: true, granularity: "day" },
+    );
+
+    expect(kpis.precoMedio).toBe(0);
+    expect(kpis.breakevenMedio).toBe(0);
+    expect(kpis.mcoPct).toBeNull();
+  });
+});
+
+describe("percentDelta / pointDelta", () => {
+  it("percentDelta: variação percentual com sinal correto", () => {
+    expect(percentDelta(110, 100)).toBeCloseTo(10, 5);
+    expect(percentDelta(90, 100)).toBeCloseTo(-10, 5);
+    expect(percentDelta(50, 0)).toBeNull();
+  });
+
+  it("pointDelta: diferença absoluta em pontos; null se qualquer argumento for null", () => {
+    expect(pointDelta(41.3, 40)).toBeCloseTo(1.3, 5);
+    expect(pointDelta(null, 40)).toBeNull();
+    expect(pointDelta(40, null)).toBeNull();
+    expect(pointDelta(null, null)).toBeNull();
   });
 });

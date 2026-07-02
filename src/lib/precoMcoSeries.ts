@@ -22,7 +22,14 @@
  *
  * Zero I/O: sem imports de UI/rede — apenas date-fns e computeMco.
  */
-import { format, parseISO, startOfMonth, startOfWeek } from "date-fns";
+import {
+  differenceInCalendarDays,
+  format,
+  parseISO,
+  startOfMonth,
+  startOfWeek,
+  subDays,
+} from "date-fns";
 import { computeMco } from "./mco";
 
 export type SeriesGranularity = "day" | "week" | "month";
@@ -152,4 +159,92 @@ export function computePrecoMcoSeries(
       impostoAusente: r.qtd_sem_imposto > 0,
     };
   });
+}
+
+/**
+ * Janela anterior de MESMA duração, imediatamente antes de [from, to] (inclusivos).
+ * Usada para o comparativo dos KPIs vs período anterior.
+ *
+ * Ex.: from="2026-06-08", to="2026-06-14" (7 dias) → { from: "2026-06-01", to: "2026-06-07" }.
+ * from===to (1 dia) → o dia imediatamente anterior. from ou to ausente → null.
+ */
+export function computePreviousWindow(
+  from: string | null,
+  to: string | null,
+): { from: string; to: string } | null {
+  if (!from || !to) return null;
+  const start = parseISO(from);
+  const end = parseISO(to);
+  const durationDays = differenceInCalendarDays(end, start) + 1;
+  if (durationDays <= 0) return null;
+  const prevEnd = subDays(start, 1);
+  const prevFrom = subDays(prevEnd, durationDays - 1);
+  return { from: format(prevFrom, "yyyy-MM-dd"), to: format(prevEnd, "yyyy-MM-dd") };
+}
+
+/** KPIs agregados de um período (reconciliados com computePrecoMcoSeries/computeMco). */
+export interface PriceKpis {
+  qtd: number;
+  receita: number;
+  precoMedio: number;
+  breakevenMedio: number;
+  mco: number;
+  mcoPct: number | null;
+}
+
+/**
+ * Agrega os KPIs de preço/break-even/MCO de um conjunto de rows, reconciliando
+ * o spend de ads com a série do gráfico (mesma truncagem/bucketização de
+ * computePrecoMcoSeries). Replica a agregação hoje inline no componente,
+ * exceto os avisos qtdSemCusto/temImpostoAusente (ficam no componente).
+ */
+export function computePriceKpis(
+  rows: PrecoSeriesRow[],
+  opts: ComputePrecoMcoSeriesOpts,
+): PriceKpis {
+  const serie = computePrecoMcoSeries(rows, opts);
+  const adsBucket = serie.reduce((s, p) => s + p.ads, 0);
+
+  const qtd = rows.reduce((s, r) => s + r.qtd, 0);
+  const receita = rows.reduce((s, r) => s + r.total, 0);
+  const cmv = rows.reduce((s, r) => s + r.cmv, 0);
+  const comissao = rows.reduce((s, r) => s + r.comissao, 0);
+  const frete = rows.reduce((s, r) => s + r.frete, 0);
+  const impostos = rows.reduce((s, r) => s + r.impostos, 0);
+
+  const precoMedio = qtd > 0 ? receita / qtd : 0;
+  const breakevenMedio =
+    qtd > 0 ? (cmv + comissao + frete + adsBucket + impostos) / qtd : 0;
+
+  const { mco, pct } = computeMco({
+    grossRevenue: receita,
+    cmv,
+    platformCost: comissao + frete,
+    ads: adsBucket,
+    tax: impostos,
+  });
+
+  return { qtd, receita, precoMedio, breakevenMedio, mco, mcoPct: pct };
+}
+
+/**
+ * Variação percentual de `current` vs `previous`. previous=0 → null (evita
+ * divisão por zero / Infinity). Denominador com Math.abs mantém o sinal
+ * correto quando o valor anterior é negativo (ex.: MCO R$ negativo).
+ */
+export function percentDelta(current: number, previous: number): number | null {
+  if (previous === 0) return null;
+  return ((current - previous) / Math.abs(previous)) * 100;
+}
+
+/**
+ * Diferença absoluta (pontos percentuais) entre `current` e `previous`.
+ * Qualquer argumento null → null (usado no delta de MCO % em p.p.).
+ */
+export function pointDelta(
+  current: number | null,
+  previous: number | null,
+): number | null {
+  if (current == null || previous == null) return null;
+  return current - previous;
 }
