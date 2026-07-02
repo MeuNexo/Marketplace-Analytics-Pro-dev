@@ -10,6 +10,7 @@ import {
   Tooltip as RechartsTooltip, ResponsiveContainer, Legend, BarChart, Bar, Cell, LabelList,
 } from "recharts";
 import { supabase } from "@/integrations/supabase/client";
+import { useMLInventory } from "@/contexts/MLInventoryContext";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -38,6 +39,7 @@ import {
   computePrecoFaixas,
   computeVeredicto,
   classificarSaude,
+  COBERTURA_RISCO_DIAS,
   type FaixaMode,
   type FaixaPreco,
   type SaudePreco,
@@ -197,6 +199,7 @@ function FaixaTooltip({ active, payload }: any) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, request }: Props) {
+  const { items: inventoryItems } = useMLInventory();
   const [selectedId, setSelectedId] = useState<string | null>(request?.itemId ?? products[0]?.id ?? null);
   const [granularity, setGranularity] = useState<Granularity>("day");
   const [incluirAds, setIncluirAds] = useState(true);
@@ -387,16 +390,25 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
     () => computePrecoMcoSeries(dailyRows ?? [], { adsDaily, incluirAds, granularity: "day" }),
     [dailyRows, adsDaily, incluirAds],
   );
+  // Estoque atual do anúncio selecionado — DB-first via MLInventoryContext (sem
+  // fetch novo). Ausente do cache (anúncio fora do escopo/sync não rodou ainda)
+  // => null; a UI/util trata null como "cobertura não computável" (nunca 0).
+  const estoqueAtual = useMemo(() => {
+    const item = inventoryItems.find((i) => i.id === selectedId);
+    return item ? item.available_quantity : null;
+  }, [inventoryItems, selectedId]);
   const faixasResult = useMemo(
-    () => computePrecoFaixas(dailyPoints, { mode: faixaMode }),
-    [dailyPoints, faixaMode],
+    () => computePrecoFaixas(dailyPoints, { mode: faixaMode, estoqueAtual }),
+    [dailyPoints, faixaMode, estoqueAtual],
   );
   const veredicto = useMemo(
     () => computeVeredicto(faixasResult, faixaMode),
     [faixasResult, faixaMode],
   );
   const faixasChartData = useMemo(
-    () => faixasResult.faixas.map((f) => ({ ...f, saude: classificarSaude(f.mcoPctMedio) })),
+    () => faixasResult.faixas.map((f) => ({
+      ...f, saude: classificarSaude(f.mcoPctMedio), estoqueAtual: faixasResult.estoqueAtual,
+    })),
     [faixasResult],
   );
 
