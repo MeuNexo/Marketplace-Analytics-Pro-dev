@@ -553,11 +553,11 @@ Plans:
 **Goal:** Dashboard 100% responsivo e utilizável no mobile (360-430px): todos os 38 findings de auditoria (6 BLOCKER, 16 MAJOR, 16 MINOR) corrigidos, sem nenhum bug de layout/overflow/touch — nenhuma função é desktop-only.
 **Requirements**: (phase ad-hoc — nenhum requirement ID)
 **Depends on:** Phase 77
-**Plans:** 4 plans
+**Plans:** 1/4 plans executed
 
 Plans:
 
-- [ ] 78-01-PLAN.md — Shell + componentes compartilhados (MLPeriodPicker, OrganizationSwitcher/Header)
+- [x] 78-01-PLAN.md — Shell + componentes compartilhados (MLPeriodPicker, OrganizationSwitcher/Header)
 - [ ] 78-02-PLAN.md — Páginas Dashboard (Publicidade, Financeiro, Produtos Vendidos, Análise de Preços, Vendas)
 - [ ] 78-03-PLAN.md — Operações (Anúncios + modal/sheet, Estoque, Pedidos, Precificação, Fluxo de Caixa)
 - [ ] 78-04-PLAN.md — Pós-venda + Configurações (Devoluções, Organização, Sellers, Integrações, Perfil, Fiscal, Perguntas, Metas)
