@@ -325,6 +325,7 @@ export default function MLPerguntas() {
                               className="text-sm resize-none"
                               rows={3}
                               maxLength={2000}
+                              autoFocus
                             />
                             <div className="flex items-center justify-between gap-2">
                               {/* Char counter (D-06) */}
