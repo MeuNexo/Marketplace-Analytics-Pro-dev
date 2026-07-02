@@ -4,14 +4,19 @@ import { KPI_GLOSSARY } from "@/lib/kpi-glossary";
 import { EmptyState } from "@/components/ui/empty-state";
 import { STORE_BADGE_COLORS } from "@/config/storeColors";
 import { useMLInventory } from "@/contexts/MLInventoryContext";
-import type { ProductVariation } from "@/contexts/MLInventoryContext";
+import type { ProductItem, ProductVariation } from "@/contexts/MLInventoryContext";
 import { useMLStore } from "@/contexts/MLStoreContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { format, subDays, startOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import type { DateRange } from "react-day-picker";
-import { LISTING_TYPE_RATES } from "@/data/financialMockData";
+import {
+  getCommissionRate,
+  getListingLabel,
+  currencyFmt,
+  mlListingUrl,
+} from "@/components/mercadolivre/anuncios/listingHelpers";
 import { useMLPrecosCustos, type MLItemSuggestion } from "@/hooks/useMLPrecosCustos";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { Progress } from "@/components/ui/progress";
@@ -30,7 +35,7 @@ import {
   ShoppingBag, RefreshCw, Search, ExternalLink, Plug, DollarSign, Tag, TrendingUp, Package,
   ChevronDown, ChevronRight, Receipt, Truck, ArrowUpDown, ArrowUp, ArrowDown,
   BookOpen, CalendarIcon, X, Check, Lightbulb, BarChart2, CheckCircle2, TrendingDown, AlertCircle, Download,
-  Pencil,
+  Pencil, Eye,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Link, useSearchParams } from "react-router-dom";
@@ -42,6 +47,7 @@ import { useMLTaxConfig } from "@/hooks/useMLTaxConfig";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useMLMarginWithAds } from "@/hooks/useMLMarginWithAds";
 import { ImportacaoCustos } from "@/components/mercadolivre/anuncios/ImportacaoCustos";
+import { ListingDetailModal } from "@/components/mercadolivre/anuncios/ListingDetailModal";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer,
   PieChart, Pie, Cell, ComposedChart, Line, Area, ReferenceLine, CartesianGrid,
@@ -64,31 +70,8 @@ const RANKING_QUICK_RANGES = [
 ];
 
 // ─── Financial helpers ────────────────────────────────────────────────────────
-
-function getCommissionRate(listingTypeId: string | null): number {
-  if (!listingTypeId) return LISTING_TYPE_RATES.classic.rate;
-  if (listingTypeId.includes("gold_pro") || listingTypeId.includes("premium")) return LISTING_TYPE_RATES.premium.rate;
-  if (listingTypeId.includes("free")) return LISTING_TYPE_RATES.free.rate;
-  return LISTING_TYPE_RATES.classic.rate;
-}
-
-function getListingLabel(listingTypeId: string | null): string {
-  if (!listingTypeId) return "Clássico";
-  if (listingTypeId.includes("gold_pro") || listingTypeId.includes("premium")) return "Premium";
-  if (listingTypeId.includes("free")) return "Grátis";
-  return "Clássico";
-}
-
-const currencyFmt = (v: number) =>
-  v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-
-const listingBadge = (listingTypeId: string | null, commRate: number) => {
-  const label = getListingLabel(listingTypeId);
-  const pct = (commRate * 100).toFixed(1);
-  if (label === "Premium") return <Badge className="text-[10px] bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-100 px-[4px] py-px">{label} · {pct}%</Badge>;
-  if (label === "Grátis") return <Badge className="text-[10px] bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-100 px-[4px] py-px">{label} · {pct}%</Badge>;
-  return <Badge variant="secondary" className="text-[10px] px-[4px] py-px">{label} · {pct}%</Badge>;
-};
+// getCommissionRate, getListingLabel, currencyFmt e mlListingUrl são importados
+// de @/components/mercadolivre/anuncios/listingHelpers (módulo compartilhado).
 
 type StatusFilter = "all" | "active" | "paused";
 type StockFilter = "all" | "in_stock" | "low" | "out";
@@ -587,6 +570,10 @@ export default function MLProdutos() {
   // ── Price Sheet state ──────────────────────────────────────────────────────
   const [priceSheetOpen, setPriceSheetOpen] = useState(false);
   const [priceSheetItem, setPriceSheetItem] = useState<{ id: string; title: string; thumbnail: string; price: number } | null>(null);
+
+  // ── Detail Modal state ──────────────────────────────────────────────────────
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<ProductItem | null>(null);
   const [loadingSuggestion, setLoadingSuggestion] = useState(false);
   const [suggestion, setSuggestion] = useState<MLItemSuggestion | null>(null);
   const [noSuggestion, setNoSuggestion] = useState(false);
@@ -774,6 +761,11 @@ export default function MLProdutos() {
       setLoadingSuggestion(false);
     }
   }, [fetchItemSuggestion]);
+
+  const openDetail = useCallback((item: ProductItem) => {
+    setSelectedItem(item);
+    setDetailModalOpen(true);
+  }, []);
 
   const toggleSort = (field: string) => {
     const asc = `${field}_asc` as SortBy;
@@ -1271,7 +1263,14 @@ export default function MLProdutos() {
                   const mads = marginByItem.get(item.id);
                   const mgOp = mads?.lucro_pct;
                   return (
-                    <div key={item.id} className="rounded-lg border border-border bg-card p-3 space-y-1.5">
+                    <div
+                      key={item.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openDetail(item)}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDetail(item); } }}
+                      className="rounded-lg border border-border bg-card p-3 space-y-1.5 cursor-pointer active:bg-muted/50 transition-colors"
+                    >
                       <p className="text-xs font-medium line-clamp-2">{item.title}</p>
                       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                         {([
@@ -1386,18 +1385,18 @@ export default function MLProdutos() {
                               ) : null}
                             </TableCell>
 
-                            <TableCell className="p-2" onClick={(e) => e.stopPropagation()}>
+                            <TableCell className="p-2 cursor-pointer" onClick={(e) => { e.stopPropagation(); openDetail(item); }} title="Ver detalhes">
                               {item.thumbnail ? (
-                                <img src={item.thumbnail.replace("http://", "https://")} alt="" className="w-10 h-10 rounded object-cover" loading="lazy" />
+                                <img src={item.thumbnail.replace("http://", "https://")} alt="" className="w-10 h-10 rounded object-cover hover:opacity-80 transition-opacity" loading="lazy" />
                               ) : (
-                                <div className="w-10 h-10 rounded bg-muted flex items-center justify-center">
+                                <div className="w-10 h-10 rounded bg-muted flex items-center justify-center hover:bg-muted/70 transition-colors">
                                   <Package className="w-4 h-4 text-muted-foreground" />
                                 </div>
                               )}
                             </TableCell>
 
                             <TableCell>
-                              <a href={`https://produto.mercadolivre.com.br/${item.id.replace(/^(MLB)(\d+)$/, "$1-$2")}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-xs font-medium line-clamp-2 leading-tight hover:underline hover:text-primary transition-colors">
+                              <a href={mlListingUrl(item.id)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-xs font-medium line-clamp-2 leading-tight hover:underline hover:text-primary transition-colors">
                                 {item.title} <ExternalLink className="w-3 h-3 inline mb-0.5 ml-0.5" />
                               </a>
                               <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -1584,15 +1583,31 @@ export default function MLProdutos() {
                                     )}
                                   </TableCell>
                                   <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="h-7 text-xs px-2 gap-1"
-                                      onClick={() => handleOpenPriceSheet({ id: item.id, title: item.title, thumbnail: item.thumbnail ?? "", price: priceSale })}
-                                    >
-                                      <BarChart2 className="w-3 h-3" />
-                                      Análise
-                                    </Button>
+                                    <div className="flex items-center justify-center gap-1">
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-7 text-xs px-2 gap-1"
+                                        onClick={() => handleOpenPriceSheet({ id: item.id, title: item.title, thumbnail: item.thumbnail ?? "", price: priceSale })}
+                                      >
+                                        <BarChart2 className="w-3 h-3" />
+                                        Análise
+                                      </Button>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-7 w-7 p-0"
+                                            onClick={(e) => { e.stopPropagation(); openDetail(item); }}
+                                            aria-label="Ver detalhes"
+                                          >
+                                            <Eye className="w-3.5 h-3.5" />
+                                          </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top" className="text-xs">Ver detalhes</TooltipContent>
+                                      </Tooltip>
+                                    </div>
                                   </TableCell>
                                 </>
                               );
@@ -1965,7 +1980,7 @@ export default function MLProdutos() {
                               )}
                             </TableCell>
                             <TableCell>
-                              <a href={`https://produto.mercadolivre.com.br/${r.id.replace(/^(MLB)(\d+)$/, "$1-$2")}`} target="_blank" rel="noopener noreferrer" className="text-sm font-medium line-clamp-2 leading-tight hover:underline hover:text-primary transition-colors">
+                              <a href={mlListingUrl(r.id)} target="_blank" rel="noopener noreferrer" className="text-sm font-medium line-clamp-2 leading-tight hover:underline hover:text-primary transition-colors">
                                 {r.title} <ExternalLink className="w-3 h-3 inline mb-0.5 ml-0.5" />
                               </a>
                               <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -2237,7 +2252,7 @@ export default function MLProdutos() {
                               )}
                             </TableCell>
                             <TableCell>
-                              <a href={`https://produto.mercadolivre.com.br/${r.id.replace(/^(MLB)(\d+)$/, "$1-$2")}`} target="_blank" rel="noopener noreferrer" className="text-sm font-medium line-clamp-2 leading-tight hover:underline hover:text-primary transition-colors">
+                              <a href={mlListingUrl(r.id)} target="_blank" rel="noopener noreferrer" className="text-sm font-medium line-clamp-2 leading-tight hover:underline hover:text-primary transition-colors">
                                 {r.title} <ExternalLink className="w-3 h-3 inline mb-0.5 ml-0.5" />
                               </a>
                               <p className="text-xs text-muted-foreground mt-0.5">{r.brand} · {r.id}</p>
@@ -2279,6 +2294,12 @@ export default function MLProdutos() {
       suggestion={suggestion}
       noSuggestion={noSuggestion}
       loading={loadingSuggestion}
+    />
+    <ListingDetailModal
+      item={selectedItem}
+      open={detailModalOpen}
+      onOpenChange={setDetailModalOpen}
+      margin={selectedItem ? marginByItem.get(selectedItem.id) : undefined}
     />
     </>
   );
