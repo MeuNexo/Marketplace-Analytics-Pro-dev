@@ -48,6 +48,11 @@
     --accent: 217 70% 45%;
     --accent-foreground: 0 0% 100%;
 
+    /* Chart series colors - Análise de Preços (LOCKED, CVD/contrast validated) */
+    --chart-price: 217 70% 45%;
+    --chart-breakeven: 21 90% 48%;
+    --chart-mco: 262 83% 58%;
+
     /* Status colors */
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
@@ -118,6 +123,12 @@
     --muted-foreground: 210 10% 55%;
     --accent: 217 70% 50%;
     --accent-foreground: 0 0% 100%;
+
+    /* Chart series colors - Análise de Preços (LOCKED, CVD/contrast validated) */
+    --chart-price: 217 65% 54%;
+    --chart-breakeven: 21 90% 48%;
+    --chart-mco: 260 100% 71%;
+
     --destructive: 0 62% 40%;
     --destructive-foreground: 0 0% 100%;
     --success: 142 70% 40%;
