@@ -562,4 +562,15 @@ Plans:
 - [x] 78-03-PLAN.md — Operações (Anúncios + modal/sheet, Estoque, Pedidos, Precificação, Fluxo de Caixa)
 - [x] 78-04-PLAN.md — Pós-venda + Configurações (Devoluções, Organização, Sellers, Integrações, Perfil, Fiscal, Perguntas, Metas)
 
+### Phase 79: Análise de Preços com MCO — gráfico preço vs. break-even
+
+**Goal:** A página `/analise-precos` responde "o preço praticado deu MCO?": (1) RPC `orders_price_timeseries` estendida com componentes firmes por bucket (cmv = Σ custo_unit×qtd, comissão, frete, qtd_sem_custo), mantendo SECURITY INVOKER (RLS de `orders`, padrão anti-IDOR Phases 63/69, sem subquery correlacionada); (2) util puro `src/lib/precoMcoSeries.ts` calcula MCO completo por bucket = venda − custo − comissão − frete − ads rateado − imposto, reusando `computeMco` (`src/lib/mco.ts`) + helpers `src/lib/tax/*` com `ml_tax_config`; ads rateado do spend do item (`ml_ads_products_cache`) proporcional à receita de cada bucket (melhor-esforço, carimbado); (3) gráfico refeito em `PrecoPraticadoReport`: linha preço praticado × linha break-even (R$/un) com colchão verde/vermelho entre elas + linha MCO% no eixo direito (saem as barras de volume e o toggle Qtd/Receita); toggle "incluir ads" (default ON); (4) KPIs: Preço médio · Break-even médio · MCO R$ · MCO % · Qtd · Receita; (5) avisos explícitos de custo ausente (nunca inventar número) e regime fiscal não configurado. Spec aprovada: `docs/superpowers/specs/2026-07-02-analise-precos-mco-design.md`.
+**Requirements**: (phase ad-hoc — nenhum requirement ID)
+**Depends on:** Phase 78
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 79 to break down)
+
 ---

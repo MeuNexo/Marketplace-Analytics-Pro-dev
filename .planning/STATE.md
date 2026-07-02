@@ -6,15 +6,15 @@ current_phase: 78
 current_phase_name: Revisão Mobile-First
 status: complete
 stopped_at: Completed 78-04 (Phase 78 complete)
-last_updated: "2026-07-02T00:33:00.000Z"
+last_updated: "2026-07-02T12:01:20.874Z"
 last_activity: 2026-07-02
-last_activity_desc: Phase 78 complete — mobile-first revisão de 10 páginas (4 planos, 78-01..78-04)
+last_activity_desc: Phase 78 execution started
 progress:
-  total_phases: 23
+  total_phases: 24
   completed_phases: 12
   total_plans: 52
-  completed_plans: 50
-  percent: 52
+  completed_plans: 47
+  percent: 50
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
@@ -363,6 +363,7 @@ Dashboard atual mostra:
 
 - Phase 77 added: Página Análise de Anúncios: porte Produtos Vendidos + Análise de Preços do app oficial, em página própria do menu
 - Phase 78 added: Revisão mobile-first do dashboard inteiro (pedido Wesley 2026-07-01)
+- Phase 79 added: Análise de Preços com MCO — gráfico preço vs. break-even (spec 2026-07-02)
 
 ## Deferred Items
 
