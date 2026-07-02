@@ -6,14 +6,14 @@ current_phase: 78
 current_phase_name: Revisão Mobile-First
 status: executing
 stopped_at: Completed 78-01
-last_updated: "2026-07-02T00:14:25.521Z"
+last_updated: "2026-07-02T00:25:58.395Z"
 last_activity: 2026-07-02
 last_activity_desc: Phase 78 execution started
 progress:
   total_phases: 23
   completed_phases: 11
   total_plans: 52
-  completed_plans: 45
+  completed_plans: 46
   percent: 48
 ---
 
@@ -136,7 +136,7 @@ See: .planning/PROJECT.md
 ## Current Position
 
 Phase: 78 (Revisão Mobile-First) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-07-02 — Phase 78 execution started
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
@@ -265,6 +265,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | Phase 77 P01 | 3min | 3 tasks | 4 files |
 | Phase 78 P01 | 2min | 2 tasks | 2 files |
 | Phase 78 P02 | 6min | 3 tasks | 5 files |
+| Phase 78 P03 | 6min | 4 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -325,6 +326,8 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 - [Phase ?]: orders_price_timeseries RPC usa SECURITY INVOKER + cast data_pedido::date (TEXT schema) — deploy via MCP apply_migration orquestrador
 - [Phase ?]: Phase 78-01: useIsMobile controla numberOfMonths no MLPeriodPicker (1 no mobile, 2 no desktop) — padrão do projeto
 - [Phase ?]: Phase 78-01: OrganizationSwitcher inline no Header com max-w-[140px] sm:max-w-none — abordagem mínima sem drawer
+- [Phase ?]: BLOCKER B-02 corrigido — dialog não era cortado no mobile
+- [Phase ?]: Paridade dual-layout (lição Phase 71) — ação por item preservada no mobile
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -379,7 +382,7 @@ Dashboard atual mostra:
 
 **Resume file:** None
 
-Last session: 2026-07-02T00:14:18.094Z
+Last session: 2026-07-02T00:25:52.706Z
 Stopped at: Completed 78-01
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
