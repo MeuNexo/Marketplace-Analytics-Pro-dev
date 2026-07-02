@@ -206,7 +206,7 @@ export default function MLProdutosVendidos() {
             <CardHeader className="pb-2 pt-4 px-4">
               <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
                 {pvSelected === null
-                  ? "Selecione um grupo à esquerda"
+                  ? "Selecione um grupo acima"
                   : pvGroups.find((g) => g.key === pvSelected)?.name ?? pvSelected}
               </CardTitle>
             </CardHeader>

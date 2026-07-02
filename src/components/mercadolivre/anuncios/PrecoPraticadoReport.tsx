@@ -229,28 +229,31 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
           </PopoverContent>
         </Popover>
 
-        {/* Granularidade */}
-        <ToggleGroup
-          type="single" size="sm" value={granularity}
-          onValueChange={(v) => v && setGranularity(v as Granularity)}
-          className="h-8"
-        >
-          {(["day", "week", "month"] as Granularity[]).map((g) => (
-            <ToggleGroupItem key={g} value={g} className="h-7 px-2.5 text-xs">
-              {GRANULARITY_LABELS[g]}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+        {/* Granularidade + Métrica agrupados (A-08: ficam juntos ao quebrar linha) */}
+        <div className="flex items-center gap-2 ml-auto">
+          {/* Granularidade */}
+          <ToggleGroup
+            type="single" size="sm" value={granularity}
+            onValueChange={(v) => v && setGranularity(v as Granularity)}
+            className="h-8"
+          >
+            {(["day", "week", "month"] as Granularity[]).map((g) => (
+              <ToggleGroupItem key={g} value={g} className="h-7 px-2.5 text-xs">
+                {GRANULARITY_LABELS[g]}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
 
-        {/* Métrica de volume nas barras */}
-        <ToggleGroup
-          type="single" size="sm" value={volumeMetric}
-          onValueChange={(v) => v && setVolumeMetric(v as VolumeMetric)}
-          className="h-8 ml-auto"
-        >
-          <ToggleGroupItem value="qtd" className="h-7 px-2.5 text-xs">Qtd</ToggleGroupItem>
-          <ToggleGroupItem value="receita" className="h-7 px-2.5 text-xs">Receita</ToggleGroupItem>
-        </ToggleGroup>
+          {/* Métrica de volume nas barras */}
+          <ToggleGroup
+            type="single" size="sm" value={volumeMetric}
+            onValueChange={(v) => v && setVolumeMetric(v as VolumeMetric)}
+            className="h-8"
+          >
+            <ToggleGroupItem value="qtd" className="h-7 px-2.5 text-xs">Qtd</ToggleGroupItem>
+            <ToggleGroupItem value="receita" className="h-7 px-2.5 text-xs">Receita</ToggleGroupItem>
+          </ToggleGroup>
+        </div>
       </div>
 
       {/* KPIs */}
