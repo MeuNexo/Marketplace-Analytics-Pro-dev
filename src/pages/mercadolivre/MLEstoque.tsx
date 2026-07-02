@@ -1209,6 +1209,11 @@ export default function MLEstoque() {
                 <div className="space-y-2 p-2">
                   {filteredItems.map((item) => {
                     const cd = coverageMap.get(item.id);
+                    const visibleVariationsM = hideOutOfStock
+                      ? item.variations.filter((v) => v.available_quantity > 0)
+                      : item.variations;
+                    const hasVisibleVariationsM = item.has_variations && visibleVariationsM.length > 0;
+                    const isOpenM = expanded.has(item.id);
                     return (
                       <div key={item.id} className="rounded-lg border border-border bg-card p-3 space-y-2">
                         <div className="flex items-start gap-2">
@@ -1266,6 +1271,37 @@ export default function MLEstoque() {
                             <HealthBar health={item.health} />
                           </div>
                         </div>
+                        {/* Paridade dual-layout (lição Phase 71): expansão de variações também no mobile */}
+                        {hasVisibleVariationsM && (
+                          <button
+                            type="button"
+                            onClick={() => toggleExpand(item.id)}
+                            className="flex items-center gap-1 text-xs text-muted-foreground pt-1"
+                          >
+                            {isOpenM ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                            {visibleVariationsM.length} {visibleVariationsM.length === 1 ? "variação" : "variações"}
+                          </button>
+                        )}
+                        {isOpenM && hasVisibleVariationsM && (
+                          <div className="border-t border-border/40 pt-2 space-y-1.5">
+                            {visibleVariationsM.map((v) => (
+                              <div
+                                key={v.variation_id}
+                                className="flex items-center justify-between gap-2 text-xs"
+                              >
+                                <span className="truncate flex-1">
+                                  {v.attribute_combinations?.map((a) => `${a.name}: ${a.value}`).join(" / ") ||
+                                    `Variação ${v.variation_id}`}
+                                </span>
+                                <span
+                                  className={`font-semibold shrink-0 ${v.available_quantity === 0 ? "text-red-500" : ""}`}
+                                >
+                                  {numFmt(v.available_quantity)} un
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
