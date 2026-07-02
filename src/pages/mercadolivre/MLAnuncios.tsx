@@ -50,7 +50,7 @@ import { ImportacaoCustos } from "@/components/mercadolivre/anuncios/ImportacaoC
 import { ListingDetailModal } from "@/components/mercadolivre/anuncios/ListingDetailModal";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, ComposedChart, Line, Area, ReferenceLine, CartesianGrid,
+  PieChart, Pie, Cell, ComposedChart, Line, Area, ReferenceLine, CartesianGrid, Legend,
 } from "recharts";
 
 const TOTAL_PERIOD = -1; // sentinel: no date filter → use ML API's sold_quantity
@@ -1133,14 +1133,14 @@ export default function MLProdutos() {
               <span className="text-sm font-medium text-foreground">Catálogo de Anúncios</span>
               <div className="flex items-center gap-1.5 w-full sm:w-auto flex-wrap">
                 {/* Search */}
-                <div className="relative w-44">
+                <div className="relative flex-1 min-w-[120px]">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-                  <Input placeholder="Buscar..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8 h-8 text-xs" />
+                  <Input placeholder="Buscar..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8 h-8 text-xs w-full" />
                 </div>
 
                 {/* Brand filter */}
                 <Select value={brandFilter} onValueChange={setBrandFilter}>
-                  <SelectTrigger className="w-36 h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-full sm:w-36 h-8 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todas as marcas</SelectItem>
                     {brands.map((b) => (
@@ -1151,7 +1151,7 @@ export default function MLProdutos() {
 
                 {/* Logistic filter */}
                 <Select value={logisticFilter} onValueChange={(v) => setLogisticFilter(v as LogisticFilter)}>
-                  <SelectTrigger className="w-32 h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-full sm:w-32 h-8 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Toda logística</SelectItem>
                     <SelectItem value="fulfillment">Full</SelectItem>
@@ -1294,7 +1294,7 @@ export default function MLProdutos() {
               </div>
             ) : (
               /* ── Desktop: shadcn Table (D-07) ── */
-              <div className="max-h-[600px] overflow-auto">
+              <div className="max-h-[600px] overflow-x-auto overflow-y-auto">
                 <Table>
                   <TableHeader className="sticky top-0 bg-card z-10">
                     <TableRow>
@@ -1780,14 +1780,14 @@ export default function MLProdutos() {
       {/* ═══════════════════ ABA RELATÓRIOS ═══════════════════ */}
       <TabsContent value="relatorios" className="space-y-5 mt-0">
         <Tabs defaultValue="ranking" className="space-y-4" onValueChange={(v) => setReportTab(v)}>
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-3">
             <TabsList className="h-8">
               <TabsTrigger value="ranking" className="text-xs px-3 h-7">Ranking de Anúncios</TabsTrigger>
               <TabsTrigger value="marca" className="text-xs px-3 h-7">Análise por Marca</TabsTrigger>
               <TabsTrigger value="abc" className="text-xs px-3 h-7">Curva ABC</TabsTrigger>
             </TabsList>
             {(reportTab === "ranking" || reportTab === "marca") && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 {/* Date / period selector */}
                 <Popover
                   open={rankingPopoverOpen}
@@ -1953,7 +1953,7 @@ export default function MLProdutos() {
                   </div>
                 ) : (
                   <div className="max-h-[600px] overflow-auto">
-                    <Table>
+                    <Table className="min-w-[640px]">
                       <TableHeader>
                         <TableRow>
                           <TableHead className="w-10 text-center text-xs">#</TableHead>
@@ -2079,8 +2079,8 @@ export default function MLProdutos() {
                           innerRadius={55}
                           outerRadius={100}
                           paddingAngle={2}
-                          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                          labelLine={false}
+                          label={!isMobile ? ({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%` : undefined}
+                          labelLine={!isMobile}
                           fontSize={10}
                         >
                           {brandPieData.map((_, idx) => (
@@ -2091,6 +2091,12 @@ export default function MLProdutos() {
                           formatter={(value: number, name: string) => [value, name]}
                           contentStyle={{ background: "hsl(var(--background))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
                         />
+                        {isMobile && (
+                          <Legend
+                            iconSize={8}
+                            wrapperStyle={{ fontSize: 11 }}
+                          />
+                        )}
                       </PieChart>
                     </ResponsiveContainer>
                   </CardContent>
@@ -2113,7 +2119,7 @@ export default function MLProdutos() {
                   </div>
                 ) : (
                   <div className="max-h-[600px] overflow-auto">
-                    <Table>
+                    <Table className="min-w-[500px]">
                       <TableHeader>
                         <TableRow>
                           <TableHead>Marca</TableHead>
@@ -2219,7 +2225,7 @@ export default function MLProdutos() {
                   </div>
                 ) : (
                   <div className="max-h-[600px] overflow-auto">
-                    <Table>
+                    <Table className="min-w-[700px]">
                       <TableHeader>
                         <TableRow>
                           <TableHead className="w-10 text-center">#</TableHead>
