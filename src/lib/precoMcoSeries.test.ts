@@ -57,6 +57,7 @@ describe("computePrecoMcoSeries", () => {
     });
 
     expect(p.bucket).toBe("2026-06-01");
+    expect(p.qtd).toBe(10);
     expect(p.ads).toBe(40);
     expect(p.mco).toBe(400);
     expect(p.mcoPct).toBeCloseTo(40, 5);
