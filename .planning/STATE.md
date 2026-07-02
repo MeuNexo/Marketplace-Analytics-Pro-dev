@@ -198,6 +198,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | 260619-02b | Fluxo de caixa: base da média 15d = bruta−comissão−frete (sem dupla imposto) + rótulo piso ~30d | 2026-06-19 | ddf946c8 | [260619-02b](./quick/260619-02b-trocar-base-da-linha-de-projecao-media-1/) |
 | 260625-ixc | Caixa sempre atualizado: waitUntil na EF sync-mp-releases + cron entradas/saídas a cada 3h. Provado em prod (202, 401, synced_at avançando, crons 0 */3) | 2026-06-25 | 529d55eb | [260625-ixc](./quick/260625-ixc-caixa-sempre-atualizado-waituntil-na-ef-/) |
 | 260702-i8u | Linha de unidades vendidas + legenda no gráfico de /analise-precos (feedback Wesley Phase 79) | 2026-07-02 | 596fb659 | [260702-i8u](./quick/260702-i8u-linha-de-unidades-vendidas-legendas-no-g/) |
+| 260702-jq4 | Gráfico de /analise-precos dividido em principal+BarChart de unidades; 6 KPI cards com comparativo vs período anterior (%/p.p.) | 2026-07-02 | 5370606f | [260702-jq4](./quick/260702-jq4-grafico-dividido-kpi-comparativo/) |
 | 260627-1z0 | Reposição: alvo order-up-to = venda × (GREATEST(cobertura, lead+7) + safety) — corrige cobertura<lead que jogava compra no MOQ. Deployado prod via MCP; total compra 756→1053, 0 SKUs presos no piso. | 2026-06-27 | 5c0820ec | [260627-1z0](./quick/260627-1z0-fix-parametro-reposicao-alvo-order-up-to/) |
 
 ### DRE mês-calendário (quick 260613-2p6, 2026-06-13)
