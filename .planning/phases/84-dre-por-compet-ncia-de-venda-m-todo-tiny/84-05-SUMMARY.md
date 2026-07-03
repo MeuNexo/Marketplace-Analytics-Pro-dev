@@ -31,3 +31,21 @@ Manter EF+migration live (já estão) e deixar o **cron `sync-ml-billing-prev-mo
 3. Só então: **84-06** (validação visual Wesley light+dark + merge do frontend). Merge do frontend fica TRAVADO até junho reconciliar.
 
 **Job background morto (req 32371) não gravou — sem cleanup necessário (idempotente).**
+
+---
+
+## UPDATE (mesma sessão, 2026-07-03) — JUNHO RECONCILIADO ✅
+
+Wesley pediu para finalizar junho. Como o `debug=1` de 2 faturas estourava o limite da EF com o ML lento, foi feito um **ajuste mínimo na EF (v12 ACTIVE):** modo backfill de **1 fatura por chamada** via body `invoice_key` (`syncSingleInvoice`) — comportamento existente intacto quando `invoice_key` ausente. Commit `feat(84-05): EF ganha modo backfill 1-fatura`.
+
+**Faturas de junho re-derivadas:** `2026-07` (926 linhas, via period 2026-06) + `2026-06` (841 linhas / 513 realocadas, via `invoice_key=2026-06-01` após cooldown de ~2,5min do rate-limit do ML). Junho está completo (todas as faturas que o ML já cobrou até hoje).
+
+**DRE junho por competência (Pé Vermeio 1639558873):**
+Receita R$261.987,61 − CMV R$110.613,42 − Impostos R$53.327,05 − **Tarifas competência R$77.159,19 = Lucro R$20.887,95**.
+- vs lançamento (charge_date) atual pós-resync: tarifas R$74.800,83 / lucro R$23.246.
+- vs lançamento antigo (início da sessão): tarifas R$80.426,45 / lucro R$17.620,69.
+- Delta competência: ~R$3.267 de tarifa cobrada em junho mas de venda de outro mês saiu de junho (efeito pedido).
+
+**Comparação Tiny vs dashboard:** Tiny "Custos e-commerce" é visão PARCIAL (só CMV+comissão+frete; NÃO inclui impostos/parcelamento/ads/Full/DIFAL) e puxa ~91% dos pedidos. Proporções item-a-item batem ~90-92% → coerente. Dashboard é o autoritativo para lucro real.
+
+**Ainda pendente:** faturas `2026-03/04/05` (+jan) não re-derivadas (cron/on-demand ou backfill manual via `invoice_key`+cooldown); smoke completo (invariante/anti-IDOR/cross-month); **84-06** (validação visual Wesley + merge frontend). Ao merge, o dashboard de junho passa de R$23.246 (charge_date) para R$20.888 (competência).
