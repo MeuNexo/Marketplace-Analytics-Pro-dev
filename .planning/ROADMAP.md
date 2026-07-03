@@ -614,4 +614,17 @@ Plans:
 - [x] 82-02-PLAN.md — [BLOCKING/checkpoint do orquestrador] Migration aplicada em prod via MCP + smoke: retrocompat, prova cobertura 0d (variação) vs 6d (pai), reconciliação por SKU, anti-IDOR 0 linhas.
 - [x] 82-03-PLAN.md — UI: util `variacoesResumo.ts` (8 testes) + dropdown de variação em `PrecoPraticadoReport.tsx` (`_sku` na RPC, estoque via `seller_custom_field`, badge, aviso do pai, reset). `precoFaixas.ts` intacto. 374/374 testes.
 
+### Phase 83: MCO por anúncio em Produtos Vendidos + redesign UX
+
+**Goal:** A página `/produtos-vendidos` (`src/pages/mercadolivre/MLProdutosVendidos.tsx`, painel duplo: esquerda = grupos Marca/Categoria, direita = anúncios do grupo) passa a mostrar MCO e responder "vende bem, mas sobra?". (1) DADOS: trocar a fonte da página de `orders_sold_products_agg` (só qtd+receita) para **fonte única** `get_margin_with_ads_by_product` (por `item_id`: receita/cmv/comissão/frete/imposto/`lucro`/`lucro_pos_ads`/`ads_spend`/`has_cmv`/`unidades`) — RPC já existente, SECURITY INVOKER, + pequena migration DROP+CREATE adicionando `marca` (para o agrupamento). Agregados por marca (painel esquerdo) = client-side pós-ads (Σ`lucro_pos_ads`÷Σ`receita`), NÃO `get_margin_by_brand` (pré-ads, inconsistente). Estoque continua do `MLInventoryContext` por `item_id`; critério de vendas unificado `paid+shipped+delivered` (números da tela mudam levemente vs. hoje que conta só `paid` — esperado). (2) PAINEL DIREITO: nova coluna **MCO%** (com ads = `lucro_pos_ads`) com semáforo CVD-safe (🔴 ≤5% · 🟡 6–8% · 🟢 ≥9%, rótulo % sempre visível, cor nunca é sinal único — skill dataviz) via constante `MCO_SAUDAVEL_PCT`; nova coluna **% Ads (ACoS)**; tabela **ordenável** por qualquer coluna (hoje fixa por receita); hover com quebra de custos (R$ MCO, ads, comissão, frete, imposto). (3) PAINEL ESQUERDO: MCO% por marca ao lado da receita, com bolinha de cor. (4) CABEÇALHO DO GRUPO: faixa-resumo ao selecionar marca (Receita total · MCO% médio · nº de anúncios no vermelho). Decisões travadas com Wesley (2026-07-03): MCO principal = com ads; formato = % com semáforo + R$/quebra no hover; faixas 🔴≤5/🟡6–8/🟢≥9; critério unificado paid+shipped+delivered. Supabase `ckcdevcxgvueywivefgx` (NÃO o do CLAUDE.md); testes vitest; deploy migration/EF só via MCP (sem token CLI); nunca inventar número quando custo ausente — mostrar aviso (padrão phases 79-82).
+**Requirements**: (phase ad-hoc — nenhum requirement ID)
+**Depends on:** Phase 82
+**Plans:** 1/3 plans executed
+
+Plans:
+
+- [x] 83-01-PLAN.md — [W1] Fundação backend+lógica pura: migration DROP+CREATE de `get_margin_with_ads_by_product` com coluna `marca` + `mcoHealth.ts` (constante `MCO_SAUDAVEL_PCT` + `classifyMcoHealth` semáforo) + `soldProductsMcoAgg.ts` (agregação pós-ads por marca/anúncio) — tudo com vitest
+- [ ] 83-02-PLAN.md — [W2][BLOCKING] Orquestrador aplica migration via MCP em `ckcdevcxgvueywivefgx` + smoke: marca preenchida, retrocompat do consumidor useMLMarginWithAds, reconciliação de receita (paid+shipped+delivered), anti-IDOR
+- [ ] 83-03-PLAN.md — [W3] UI: `useMLMarginWithAds` expõe `marca` + reescrita de `MLProdutosVendidos.tsx` (coluna MCO% com semáforo+tooltip, % Ads, tabela ordenável, MCO% por marca no painel esquerdo, cabeçalho-resumo, cards mobile, aviso de custo ausente) + checkpoint visual Wesley (light+dark)
+
 ---

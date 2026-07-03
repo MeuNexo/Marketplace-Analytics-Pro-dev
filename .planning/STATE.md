@@ -4,16 +4,16 @@ milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
 current_phase: 80
 status: completed
-stopped_at: Completed 80-02
-last_updated: "2026-07-02T17:23:29.927Z"
+stopped_at: Completed 83-01
+last_updated: "2026-07-03T12:33:23.438Z"
 last_activity: 2026-07-02
 last_activity_desc: Phase 80 complete
 progress:
-  total_phases: 25
-  completed_phases: 14
-  total_plans: 57
-  completed_plans: 52
-  percent: 56
+  total_phases: 28
+  completed_phases: 15
+  total_plans: 65
+  completed_plans: 57
+  percent: 54
 current_phase_name: an-lise-de-pre-os-onde-vendo-bem
 ---
 
@@ -273,6 +273,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | Phase 80 P01 | 8min | 2 tasks | 2 files |
 | Phase 80-an-lise-de-pre-os-onde-vendo-bem P02 | 35min | 3 tasks | 2 files |
 | 80 | 2 | - | - |
+| Phase 83-produtos-vendidos-mco-redesign P01 | 6min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -340,6 +341,8 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 - [Phase ?]: Phase 80-01: divisor da largura de bucket em computePrecoFaixas ajustado de spread/8 (doc de referencia) para spread/2 — /8 quebrava os 4 testes de agregacao/faixaOtima/outlier/preco-recente do proprio doc; /2 reproduz o comportamento esperado
 - [Phase 80-02]: precoFaixas.ts expressa margem como fracao (0-1); usar pctFraction() dedicado no componente, nunca pctFmt() (que espera 0-100 de McoSeriesPoint.mcoPct) — evita bug de multiplicar por 100 duas vezes
 - [Phase 80-02]: Tokens --chart-margin-saudavel/apertada/prejuizo criados dedicados ao histograma (nao reusar --success/--warning/--destructive globais) porque estes falham o check Lightness band do validador CVD quando usados lado a lado como marcas de grafico
+- [Phase 83-01]: Migration usa DROP FUNCTION + CREATE (nao CREATE OR REPLACE) para adicionar coluna marca a RPC get_margin_with_ads_by_product, pois RETURNS TABLE muda de forma
+- [Phase 83-01]: mcoPct do GRUPO em Produtos Vendidos = soma(lucro_pos_ads) / soma(receita) x 100 pos-ads, nunca a media dos mcoPct dos itens
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -376,6 +379,7 @@ Dashboard atual mostra:
 - Phase 77 added: Página Análise de Anúncios: porte Produtos Vendidos + Análise de Preços do app oficial, em página própria do menu
 - Phase 78 added: Revisão mobile-first do dashboard inteiro (pedido Wesley 2026-07-01)
 - Phase 79 added: Análise de Preços com MCO — gráfico preço vs. break-even (spec 2026-07-02)
+- Phase 83 added: MCO por anúncio em Produtos Vendidos + redesign UX
 
 ## Deferred Items
 
@@ -395,8 +399,8 @@ Dashboard atual mostra:
 
 **Resume file:** None
 
-Last session: 2026-07-02T17:16:03.740Z
-Stopped at: Completed 80-02
+Last session: 2026-07-03T12:33:23.415Z
+Stopped at: Completed 83-01
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 

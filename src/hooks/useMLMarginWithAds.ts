@@ -28,6 +28,8 @@ export interface ProductMarginWithAds {
   lucro_pct_pos_ads: number | null;
   /** true quando há gasto de ads mas nenhum pedido atribuído */
   ads_no_sale: boolean;
+  /** Marca do anúncio (MAX(o.marca) agregado); null quando ausente. */
+  marca: string | null;
 }
 
 export function useMLMarginWithAds(dateFrom: string, dateTo: string) {
@@ -68,6 +70,7 @@ export function useMLMarginWithAds(dateFrom: string, dateTo: string) {
         lucro_pos_ads:         Number(r.lucro_pos_ads),
         lucro_pct_pos_ads:     r.lucro_pct_pos_ads != null ? Number(r.lucro_pct_pos_ads) : null,
         ads_no_sale:           Boolean(r.ads_no_sale),
+        marca:                 r.marca ? String(r.marca) : null,
       }));
     },
     enabled: !!currentOrg?.id && resolvedMLUserIds.length > 0,
