@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { aggregateMoves, type RawMove } from "./aggregate.ts";
 
 // EdgeRuntime é global no runtime Supabase Edge — sem import necessário.
 // Usado para o modo "daily" rodar em background (ver serve() abaixo) — evita o
@@ -87,10 +88,6 @@ async function resolveInvoice(
 // 1 página só, eliminando o cenário que estourava o rate-limit no offset 800.
 // Dedup por detail_id continua como defesa (idempotente mesmo se a API
 // devolver overlap entre páginas).
-interface RawMove {
-  detailId: number; date: string; type: string; label: string; amount: number; isBonus: boolean; saleDate: string | null;
-}
-
 async function fetchGroupMoves(token: string, sellerId: string, key: string, group: string): Promise<RawMove[]> {
   const PAGE = 1000; // limite recomendado pela doc do ML para paginação por from_id
   const byId = new Map<number, RawMove>();
@@ -155,31 +152,23 @@ async function fetchGroupMoves(token: string, sellerId: string, key: string, gro
   return [...byId.values()];
 }
 
-// Agrega uma fatura inteira (ML+MP) por (data de lançamento, tipo), aplicando a
-// regra de sinal e a janela de consumo (estornos de vendas fora da janela são
-// excluídos — o ML também não os inclui no total_amount da fatura).
+// Agrega uma fatura inteira (ML+MP) por (competência da venda, data de
+// lançamento, tipo) — trilha de COMPETÊNCIA (Phase 84). competence_date =
+// saleDate ?? charge_date; a exclusão `within` (janela de consumo da fatura)
+// foi REMOVIDA nesta trilha — estornos de vendas fora da janela agora contam
+// (sempre com sinal negativo). Núcleo puro de agregação vive em ./aggregate.ts
+// (testável no vitest sem os imports Deno/URL deste arquivo). `inv.from`/`inv.to`
+// não são mais usados aqui (mantidos na assinatura só por `inv.key`, usado por
+// fetchGroupMoves) — a trilha `fetchBillingPeriod`/`ml_billing_monthly` (visão
+// "igual à fatura ML") continua intacta e usa esses campos separadamente.
 async function aggregateInvoice(
   token: string, sellerId: string, inv: { key: string; from: string; to: string },
-): Promise<Array<{ charge_date: string; charge_type: string; charge_label: string; amount: number }>> {
-  const moves = [
+): Promise<Array<{ competence_date: string; charge_date: string; charge_type: string; charge_label: string; amount: number }>> {
+  const moves: RawMove[] = [
     ...(await fetchGroupMoves(token, sellerId, inv.key, "ML")),
     ...(await fetchGroupMoves(token, sellerId, inv.key, "MP")),
   ];
-  const within = (d: string | null) => d === null || (d >= inv.from && d <= inv.to);
-  const agg = new Map<string, { charge_date: string; charge_type: string; charge_label: string; amount: number }>();
-  for (const m of moves) {
-    if (!m.date || !m.type) continue;
-    let signed: number | null;
-    if (!m.isBonus) signed = m.amount;
-    else if (within(m.saleDate)) signed = -m.amount;
-    else signed = null; // estorno de venda fora da janela: ignorado
-    if (signed === null) continue;
-    const k = `${m.date}|${m.type}`;
-    const cur = agg.get(k);
-    if (cur) cur.amount += signed;
-    else agg.set(k, { charge_date: m.date, charge_type: m.type, charge_label: m.label, amount: signed });
-  }
-  return [...agg.values()].map((r) => ({ ...r, amount: Math.round(r.amount * 100) / 100 }));
+  return aggregateMoves(moves);
 }
 
 // ── Billing period fetch (modo monthly — summary agregado, comportamento legado) ─
