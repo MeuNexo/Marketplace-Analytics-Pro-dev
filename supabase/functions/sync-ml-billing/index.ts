@@ -235,7 +235,7 @@ async function runDailySync(
     await supabaseAdmin.from("ml_billing_daily")
       .delete().eq("organization_id", organizationId).eq("ml_user_id", ml_user_id).eq("source_invoice_key", inv.key);
     if (rows.length > 0) {
-      const payload = rows.map((r) => ({ organization_id: organizationId, ml_user_id, charge_date: r.charge_date, charge_type: r.charge_type, charge_label: r.charge_label, amount: r.amount, source_invoice_key: inv.key }));
+      const payload = rows.map((r) => ({ organization_id: organizationId, ml_user_id, competence_date: r.competence_date, charge_date: r.charge_date, charge_type: r.charge_type, charge_label: r.charge_label, amount: r.amount, source_invoice_key: inv.key }));
       for (let i = 0; i < payload.length; i += 500) {
         const { error } = await supabaseAdmin.from("ml_billing_daily").insert(payload.slice(i, i + 500));
         if (error) throw new Error(`insert ml_billing_daily: ${error.message}`);
