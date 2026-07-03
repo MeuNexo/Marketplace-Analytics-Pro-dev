@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
 import { ChevronLeft, ChevronRight, Loader2, TrendingDown, TrendingUp } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { BillingGroup } from "@/hooks/useMLBilling";
 
 const fmt = (v: number) =>
@@ -44,6 +45,12 @@ interface MLCostCardProps {
   /** Janela real da fatura ML (ciclo da conta) — YYYY-MM-DD, exibida quando fonte=billing */
   faturaFrom?: string | null;
   faturaTo?: string | null;
+  /** Lista de meses selecionáveis no dropdown (jan/2026 → mês corrente), mais recente primeiro */
+  months?: Array<{ value: string; label: string }>;
+  /** Mês atualmente exibido (billingMonth), ex.: "2026-06" — valor do <Select> */
+  selectedMonth?: string;
+  /** Troca o mês exibido no DRE — chamado pelo <Select> */
+  onSelectMonth?: (month: string) => void;
 }
 
 // ── Componente ─────────────────────────────────────────────────────────────
@@ -63,6 +70,9 @@ export function MLCostCard({
   syncing = false,
   faturaFrom,
   faturaTo,
+  months,
+  selectedMonth,
+  onSelectMonth,
 }: MLCostCardProps) {
   // Lucro do mês = receita − total tarifas − CMV − impostos
   const lucro =
@@ -97,9 +107,24 @@ export function MLCostCard({
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <span className="text-xs font-medium tabular-nums text-foreground min-w-[88px] text-center">
-              {mesLabel}
-            </span>
+            {months && onSelectMonth ? (
+              <Select value={selectedMonth} onValueChange={onSelectMonth} disabled={syncing}>
+                <SelectTrigger className="h-6 text-[10px] w-[104px] px-1.5 tabular-nums">
+                  <SelectValue placeholder={mesLabel} />
+                </SelectTrigger>
+                <SelectContent>
+                  {months.map((m) => (
+                    <SelectItem key={m.value} value={m.value} className="text-xs">
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <span className="text-xs font-medium tabular-nums text-foreground min-w-[88px] text-center">
+                {mesLabel}
+              </span>
+            )}
             <button
               type="button"
               onClick={onNextMonth}
