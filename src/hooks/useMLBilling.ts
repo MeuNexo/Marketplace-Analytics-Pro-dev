@@ -286,8 +286,9 @@ const isClosedMonth = (periodMonth: string): boolean => periodMonth < currentPer
 
 /**
  * Soma ml_billing_daily por tipo no range 01–fim do mês-calendário (competência
- * = data de lançamento). É a fonte exata do DRE: tarifas dos dias 01–31 do mês,
- * sem o viés do ciclo de fechamento da fatura (06→05). Retorna null sem dados.
+ * = data da venda (sale_date_time), fallback data de lançamento). É a fonte
+ * exata do DRE: tarifas dos dias 01–31 do mês, sem o viés do ciclo de
+ * fechamento da fatura (06→05). Retorna null sem dados.
  */
 export function useMLBillingDaily(periodMonth: string) {
   const { resolvedMLUserIds } = useMLStore();
@@ -302,17 +303,17 @@ export function useMLBillingDaily(periodMonth: string) {
       const to = lastDayOfMonth(periodMonth);
 
       // Pagina defensivamente (>1000 linhas em multi-loja) — PostgREST trunca em 1000
-      type Row = { charge_type: string; charge_label: string; amount: number; charge_date: string };
+      type Row = { charge_type: string; charge_label: string; amount: number; competence_date: string };
       const rows: Row[] = [];
       const PAGE = 1000;
       for (let offset = 0; ; offset += PAGE) {
         const { data, error } = await supabase
           .from("ml_billing_daily")
-          .select("charge_type, charge_label, amount, charge_date")
+          .select("charge_type, charge_label, amount, competence_date")
           .eq("organization_id", orgId)
           .in("ml_user_id", resolvedMLUserIds)
-          .gte("charge_date", from)
-          .lte("charge_date", to)
+          .gte("competence_date", from)
+          .lte("competence_date", to)
           .range(offset, offset + PAGE - 1);
         if (error) throw error;
         if (!data || data.length === 0) break;
@@ -327,7 +328,7 @@ export function useMLBillingDaily(periodMonth: string) {
         const cur = byType.get(r.charge_type);
         if (cur) cur.amount += Number(r.amount);
         else byType.set(r.charge_type, { type: r.charge_type, label: r.charge_label ?? r.charge_type, amount: Number(r.amount) });
-        if (!coverageTo || r.charge_date > coverageTo) coverageTo = r.charge_date;
+        if (!coverageTo || r.competence_date > coverageTo) coverageTo = r.competence_date;
       }
       const charges = [...byType.values()].map((c) => ({ ...c, amount: Math.round(c.amount * 100) / 100 }));
       return { charges, coverageTo };
