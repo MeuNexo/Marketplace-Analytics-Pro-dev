@@ -32,6 +32,10 @@ export interface FaixaPreco {
   isOutlierBucket: boolean;
   isPrecoAtual: boolean; // contém o preço recente
   altura: number; // = unidades (mode "unidades") ou mcoRsTotal (mode "lucro")
+  diasNaFaixa: number; // nº de McoSeriesPoint (dias-com-venda) atribuídos a esta faixa
+  giroDia: number | null; // unidades / diasNaFaixa; null se diasNaFaixa=0
+  coberturaDias: number | null; // floor(estoqueAtual / giroDia); ver computeCoberturaFaixa
+  baixaConfianca: boolean; // true quando 0 < diasNaFaixa < MIN_DIAS_CONFIANCA
 }
 
 export interface FaixasResult {
@@ -42,10 +46,34 @@ export interface FaixasResult {
   margemRecentePct: number | null; // mcoPctMedio da faixa que contém precoRecente
   totalUnidades: number;
   totalMcoRs: number;
+  estoqueAtual: number | null; // eco de opts.estoqueAtual, usado pelo veredicto
 }
 
 export interface ComputeFaixasOpts {
   mode: FaixaMode;
+  /** Estoque atual (saldo de hoje) do anúncio, injetado pela UI. Ausente/undefined = sem dado (null). */
+  estoqueAtual?: number | null;
+}
+
+/** Limiar de amostra fraca: faixa com menos de N dias-com-venda tem giro/cobertura pouco confiáveis. */
+export const MIN_DIAS_CONFIANCA = 3;
+/** Limiar de risco de ruptura: cobertura abaixo de N dias é sinalizada (cor de risco no rótulo). */
+export const COBERTURA_RISCO_DIAS = 7;
+
+/** Giro da faixa: unidades vendidas ÷ dias-com-venda naquela faixa. null se não há dia com venda. */
+export function computeGiroFaixa(unidades: number, diasNaFaixa: number): number | null {
+  return diasNaFaixa > 0 ? unidades / diasNaFaixa : null;
+}
+
+/**
+ * Cobertura da faixa em dias inteiros (floor), pela precedência exata:
+ * estoque null → null; estoque <= 0 → 0; giro null/<=0 → null; senão floor(estoque/giro).
+ */
+export function computeCoberturaFaixa(estoqueAtual: number | null, giro: number | null): number | null {
+  if (estoqueAtual == null) return null;
+  if (estoqueAtual <= 0) return 0;
+  if (giro == null || giro <= 0) return null;
+  return Math.floor(estoqueAtual / giro);
 }
 
 function brlEdge(n: number): string {
@@ -66,11 +94,12 @@ function weightedPercentile(sorted: { p: number; w: number }[], q: number): numb
 }
 
 export function computePrecoFaixas(daily: McoSeriesPoint[], opts: ComputeFaixasOpts): FaixasResult {
+  const estoqueAtual = opts.estoqueAtual ?? null;
   const pts = daily.filter((d) => d.qtd > 0 && d.precoUnit > 0);
   if (pts.length === 0) {
     return {
       faixas: [], larguraBucket: 0, faixaOtima: null, precoRecente: null,
-      margemRecentePct: null, totalUnidades: 0, totalMcoRs: 0,
+      margemRecentePct: null, totalUnidades: 0, totalMcoRs: 0, estoqueAtual,
     };
   }
 
@@ -88,12 +117,15 @@ export function computePrecoFaixas(daily: McoSeriesPoint[], opts: ComputeFaixasO
   const topEdge = Math.ceil(pHigh / w) * w;
 
   // Buckets regulares [firstEdge, topEdge) + 1 bucket outlier (≥ topEdge).
-  type Acc = { min: number; max: number; unidades: number; mcoRsTotal: number; receita: number; isOutlier: boolean };
+  type Acc = {
+    min: number; max: number; unidades: number; mcoRsTotal: number; receita: number;
+    isOutlier: boolean; dias: number;
+  };
   const buckets: Acc[] = [];
   for (let e = firstEdge; e < topEdge; e += w) {
-    buckets.push({ min: e, max: e + w, unidades: 0, mcoRsTotal: 0, receita: 0, isOutlier: false });
+    buckets.push({ min: e, max: e + w, unidades: 0, mcoRsTotal: 0, receita: 0, isOutlier: false, dias: 0 });
   }
-  const outlier: Acc = { min: topEdge, max: Infinity, unidades: 0, mcoRsTotal: 0, receita: 0, isOutlier: true };
+  const outlier: Acc = { min: topEdge, max: Infinity, unidades: 0, mcoRsTotal: 0, receita: 0, isOutlier: true, dias: 0 };
 
   const idxFor = (price: number): Acc => {
     if (price >= topEdge) return outlier;
@@ -106,11 +138,14 @@ export function computePrecoFaixas(daily: McoSeriesPoint[], opts: ComputeFaixasO
     b.unidades += d.qtd;
     b.mcoRsTotal += d.mco;
     b.receita += d.precoUnit * d.qtd;
+    b.dias += 1; // cada McoSeriesPoint da série "day" = 1 dia-com-venda
   }
 
   const all = [...buckets, outlier].filter((b) => (b.isOutlier ? b.unidades > 0 : true));
   const faixas: FaixaPreco[] = all.map((b) => {
     const contemAtual = precoRecente >= b.min && precoRecente < b.max;
+    const giroDia = computeGiroFaixa(b.unidades, b.dias);
+    const coberturaDias = computeCoberturaFaixa(estoqueAtual, giroDia);
     return {
       min: b.min, max: b.max,
       label: b.isOutlier ? `+R$${brlEdge(b.min)}` : `R$${brlEdge(b.min)}–${brlEdge(b.max)}`,
@@ -119,6 +154,8 @@ export function computePrecoFaixas(daily: McoSeriesPoint[], opts: ComputeFaixasO
       mcoPctMedio: b.receita > 0 ? b.mcoRsTotal / b.receita : null,
       isOutlierBucket: b.isOutlier, isPrecoAtual: contemAtual,
       altura: opts.mode === "lucro" ? b.mcoRsTotal : b.unidades,
+      diasNaFaixa: b.dias, giroDia, coberturaDias,
+      baixaConfianca: b.dias > 0 && b.dias < MIN_DIAS_CONFIANCA,
     };
   });
 
@@ -133,6 +170,7 @@ export function computePrecoFaixas(daily: McoSeriesPoint[], opts: ComputeFaixasO
     margemRecentePct: faixaAtual?.mcoPctMedio ?? null,
     totalUnidades: pts.reduce((s, d) => s + d.qtd, 0),
     totalMcoRs: pts.reduce((s, d) => s + d.mco, 0),
+    estoqueAtual,
   };
 }
 
@@ -145,6 +183,7 @@ export interface Veredicto {
   saude: SaudePreco;
   saudeTexto: string; // frase 1
   otimoTexto: string; // frase 2 (depende do mode)
+  coberturaTexto: string | null; // frase 3: cobertura do preço vigente, ou null se não computável
 }
 
 const brl = (n: number) =>
@@ -184,5 +223,23 @@ export function computeVeredicto(r: FaixasResult, mode: FaixaMode): Veredicto {
     otimoTexto = `Seu maior lucro veio na faixa ${f.label}: ${brl(f.mcoRsTotal)} no período.`;
   }
 
-  return { saude, saudeTexto, otimoTexto };
+  // Frase de cobertura do preço vigente (determinística, sem LLM). Regras de borda (D-CONTEXT):
+  // sem faixa atual / estoque null / coberturaDias null → null (UI não renderiza a linha);
+  // estoque <= 0 → "sem estoque"; coberturaDias 0 com estoque > 0 → "dura menos de 1 dia".
+  const faixaAtual = r.faixas.find((fx) => fx.isPrecoAtual) ?? null;
+  let coberturaTexto: string | null = null;
+  if (faixaAtual && r.precoRecente != null && r.estoqueAtual != null) {
+    const precoTxt = brl(r.precoRecente);
+    if (r.estoqueAtual <= 0) {
+      coberturaTexto = `No preço atual (${precoTxt}), seu estoque está zerado — sem unidades para vender.`;
+    } else if (faixaAtual.coberturaDias != null) {
+      const dias = faixaAtual.coberturaDias;
+      const estoqueTxt = r.estoqueAtual.toLocaleString("pt-BR");
+      coberturaTexto = dias <= 0
+        ? `No preço atual (${precoTxt}), seu estoque de ${estoqueTxt} und dura menos de 1 dia.`
+        : `No preço atual (${precoTxt}), seu estoque de ${estoqueTxt} und dura ~${dias} dia${dias === 1 ? "" : "s"}.`;
+    }
+  }
+
+  return { saude, saudeTexto, otimoTexto, coberturaTexto };
 }

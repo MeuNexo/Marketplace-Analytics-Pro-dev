@@ -589,4 +589,29 @@ Plans:
 - [x] 80-01-PLAN.md — Util `precoFaixas.ts`: bucketização por faixa de preço + veredito determinístico + testes (wave 1)
 - [x] 80-02-PLAN.md — UI: histograma de faixas com toggle Unidades/Lucro + veredito + 4 KPIs + aba temporal secundária + CVD (wave 2, depende de 80-01)
 
+### Phase 81: Giro e Cobertura por Faixa de Preço
+
+**Goal:** Cada faixa de preço em `/analise-precos` (`PrecoPraticadoReport.tsx`) passa a mostrar **giro** (unidades/dia) e **cobertura em dias** do estoque atual, respondendo "nesse preço, em quanto tempo esvazio meu estoque?". (1) util puro `src/lib/precoFaixas.ts` estendido: conta dias-com-venda por faixa a partir dos `McoSeriesPoint` já em memória, calcula `giroDia = unidades ÷ diasNaFaixa` e `coberturaDias = estoqueAtual ÷ giroDia`, estende `FaixaPreco` com `diasNaFaixa/giroDia/coberturaDias/baixaConfianca` + constantes `MIN_DIAS_CONFIANCA=3` e `COBERTURA_RISCO_DIAS=7`; (2) estoque atual do anúncio vem de `ml_inventory_cache.available_quantity` por `item_id` via `MLInventoryContext` (DB-first, sem RPC/migration nova, sem mapear SKU); (3) UI: rótulo `~Xd` em cada barra (texto vermelho quando cobertura<7d; sufixo `?` + esmaecido quando baixa confiança), tooltip com giro/cobertura/estoque, frase de cobertura no cartão-veredito do preço vigente, rodapé de transparência (giro nos dias-com-venda do período; estoque = saldo atual). Cor da barra segue sendo saúde de margem (sem conflito de sinal). Spec: `docs/superpowers/specs/2026-07-02-giro-cobertura-por-faixa-design.md`.
+**Requirements**: (phase ad-hoc — nenhum requirement ID)
+**Depends on:** Phase 80
+**Plans:** 2/2 plans executed — VERIFICATION human_needed (9/9 code truths OK; pendente só ok visual Wesley light/dark)
+
+Plans:
+
+- [x] 81-01-PLAN.md — Util `precoFaixas.ts` estendido: contagem de dias-com-venda por faixa + giro + cobertura + baixa confiança + constantes + frase de cobertura no veredito + testes (wave 1) — 366/366 testes, tsc limpo
+- [x] 81-02-PLAN.md — UI `PrecoPraticadoReport.tsx`: estoque via MLInventoryContext, rótulo `~Xd` na barra (vermelho <7d, `?` esmaecido baixa confiança), tooltip giro/cobertura/estoque, frase no cartão-veredito, rodapé + checkpoint visual (wave 2, depende de 81-01) — implementado; **checkpoint visual Wesley PENDENTE**
+
+### Phase 82: Análise de Preços por Variação (seletor de variação)
+
+**Goal:** Adicionar um **seletor de variação** em `/analise-precos` (`PrecoPraticadoReport.tsx`). Por padrão a análise é do anúncio pai (Phase 81 intacta); ao selecionar uma variação, toda a análise — faixas de preço, giro, estoque e cobertura — passa a ser daquela variação, corrigindo o número enganoso do pai (cobertura pelo pai vira média que esconde rupturas por variação). (1) RPC `orders_price_timeseries` ganha parâmetro **opcional** `_sku text DEFAULT NULL` (quando não-nulo, `AND o.sku = _sku`; migration DROP+CREATE, SECURITY INVOKER, deploy via MCP no `ckcdevcxgvueywivefgx`); (2) UI: dropdown de variações do `MLInventoryContext` (label = tamanho + SKU + estoque; default "Todas (anúncio)"), passa `_sku` à RPC e injeta `estoqueAtual` = estoque da variação (do jsonb via `seller_custom_field`) em `computePrecoFaixas` — o util NÃO muda; (3) badge "analisando variação X" + aviso no nível pai ("N variações, M esgotadas — selecione uma para cobertura precisa"); reset ao trocar de anúncio; seletor oculto se `has_variations=false`. **LIÇÃO CRÍTICA:** vínculo vendas↔estoque é por **SKU** (`orders.sku` = `seller_custom_field`), NÃO `variation_id` (casou 0/43). Fora de escopo: métrica agregada "sustentável + % rompido" (descartada em favor do seletor). Spec: `docs/superpowers/specs/2026-07-03-analise-precos-por-variacao-design.md`.
+**Requirements**: (phase ad-hoc — nenhum requirement ID)
+**Depends on:** Phase 81
+**Plans:** 3/3 plans executed — VERIFICATION passed 8/8 (RPC _sku em prod; pendente ok visual Wesley)
+
+Plans:
+
+- [x] 82-01-PLAN.md — Migration: `orders_price_timeseries` ganha `_sku text DEFAULT NULL` (predicado `AND o.sku = _sku`; DROP+CREATE; SECURITY INVOKER). Executor escreve o arquivo.
+- [x] 82-02-PLAN.md — [BLOCKING/checkpoint do orquestrador] Migration aplicada em prod via MCP + smoke: retrocompat, prova cobertura 0d (variação) vs 6d (pai), reconciliação por SKU, anti-IDOR 0 linhas.
+- [x] 82-03-PLAN.md — UI: util `variacoesResumo.ts` (8 testes) + dropdown de variação em `PrecoPraticadoReport.tsx` (`_sku` na RPC, estoque via `seller_custom_field`, badge, aviso do pai, reset). `precoFaixas.ts` intacto. 374/374 testes.
+
 ---

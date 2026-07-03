@@ -10,18 +10,24 @@ import {
   Tooltip as RechartsTooltip, ResponsiveContainer, Legend, BarChart, Bar, Cell, LabelList,
 } from "recharts";
 import { supabase } from "@/integrations/supabase/client";
+import { useMLInventory } from "@/contexts/MLInventoryContext";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
 } from "@/components/ui/command";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { KPICard } from "@/components/dashboard/KPICard";
+import { resumoVariacoes, estoqueDaVariacao } from "@/lib/variacoesResumo";
 import {
   computePrecoMcoSeries,
   computePreviousWindow,
@@ -38,6 +44,8 @@ import {
   computePrecoFaixas,
   computeVeredicto,
   classificarSaude,
+  COBERTURA_RISCO_DIAS,
+  MIN_DIAS_CONFIANCA,
   type FaixaMode,
   type FaixaPreco,
   type SaudePreco,
@@ -168,11 +176,37 @@ function BarTooltip({ active, payload }: any) {
   );
 }
 
-// Tooltip do histograma de faixas — preço médio, unidades, margem %, MCO R$, receita.
+// Textos de cobertura/giro reusados pelo rótulo da barra e pelo tooltip da faixa
+// (precedência: sem estoque > sem giro > <1 dia > ~N dias). estoqueAtual aqui é o
+// valor ÚNICO do anúncio (mesmo em todas as faixas — cenário hipotético por faixa).
+function giroTexto(f: FaixaPreco): string {
+  return f.giroDia != null
+    ? `${f.giroDia.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}/dia`
+    : "—";
+}
+function coberturaTooltipTexto(f: FaixaPreco & { estoqueAtual?: number | null }): string {
+  const estoque = f.estoqueAtual ?? null;
+  if (estoque == null) return "—";
+  if (estoque <= 0) return "sem estoque";
+  if (f.giroDia == null) return "sem giro";
+  if (f.coberturaDias === 0) return "menos de 1 dia";
+  return `~${f.coberturaDias} dia${f.coberturaDias === 1 ? "" : "s"}`;
+}
+/** Rótulo curto `~Xd` na barra; null quando faixa vazia ou sem cobertura computável. */
+function coberturaBarraTexto(f: FaixaPreco & { estoqueAtual?: number | null }): string | null {
+  if (f.unidades <= 0 || f.coberturaDias == null) return null;
+  const estoque = f.estoqueAtual ?? null;
+  const base = f.coberturaDias === 0 && estoque != null && estoque > 0 ? "<1d" : `~${f.coberturaDias}d`;
+  return f.baixaConfianca ? `${base}?` : base;
+}
+
+// Tooltip do histograma de faixas — preço médio, unidades, margem %, MCO R$, receita,
+// giro/cobertura/estoque (Phase 81) e aviso de baixa confiança.
 function FaixaTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null;
-  const f = payload[0].payload as FaixaPreco & { saude: SaudePreco };
+  const f = payload[0].payload as FaixaPreco & { saude: SaudePreco; estoqueAtual?: number | null };
   const margemNegativa = f.mcoPctMedio != null && f.mcoPctMedio < 0;
+  const coberturaRisco = f.coberturaDias != null && f.coberturaDias < COBERTURA_RISCO_DIAS;
   const Row = ({ k, v, accent, danger }: { k: string; v: string; accent?: boolean; danger?: boolean }) => (
     <p className="flex justify-between gap-6">
       <span className="text-muted-foreground">{k}</span>
@@ -190,6 +224,16 @@ function FaixaTooltip({ active, payload }: any) {
       <Row k="Margem" v={pctFraction(f.mcoPctMedio)} accent={!margemNegativa && f.mcoPctMedio != null} danger={margemNegativa} />
       <Row k="MCO R$" v={brl(f.mcoRsTotal)} accent={f.mcoRsTotal >= 0} danger={f.mcoRsTotal < 0} />
       <Row k="Receita" v={brl(f.receita)} />
+      <div className="mt-1 border-t border-border pt-1">
+        <Row k="Giro" v={giroTexto(f)} />
+        <Row k="Cobertura" v={coberturaTooltipTexto(f)} danger={coberturaRisco} />
+        <Row k="Estoque atual" v={f.estoqueAtual != null ? `${intFmt(f.estoqueAtual)} und` : "—"} />
+      </div>
+      {f.baixaConfianca && (
+        <p className="mt-1 text-[10px] text-warning">
+          só {f.diasNaFaixa} dia{f.diasNaFaixa === 1 ? "" : "s"} de dados — estimativa fraca
+        </p>
+      )}
     </div>
   );
 }
@@ -197,6 +241,7 @@ function FaixaTooltip({ active, payload }: any) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, request }: Props) {
+  const { items: inventoryItems } = useMLInventory();
   const [selectedId, setSelectedId] = useState<string | null>(request?.itemId ?? products[0]?.id ?? null);
   const [granularity, setGranularity] = useState<Granularity>("day");
   const [incluirAds, setIncluirAds] = useState(true);
@@ -209,6 +254,9 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
   const [loadingDaily, setLoadingDaily] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [faixaMode, setFaixaMode] = useState<FaixaMode>("unidades");
+  // Seletor de variação (Phase 82). null = "Todas as variações (anúncio)" —
+  // base é sempre o anúncio pai (Phase 81 intacta) até o usuário escolher.
+  const [selectedSku, setSelectedSku] = useState<string | null>(null);
 
   // Mantém uma seleção válida quando a lista de produtos muda (troca de período/loja).
   useEffect(() => {
@@ -218,6 +266,34 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
       setSelectedId(products[0].id);
     }
   }, [products, selectedId]);
+
+  // Reset do seletor de variação sempre que o anúncio muda (decisão LOCKED).
+  useEffect(() => {
+    setSelectedSku(null);
+  }, [selectedId]);
+
+  // Anúncio selecionado no MLInventoryContext (fonte de variações/estoque).
+  const selectedItem = useMemo(
+    () => inventoryItems.find((i) => i.id === selectedId) ?? null,
+    [inventoryItems, selectedId],
+  );
+  // Estoque atual por anúncio (item_id) para enriquecer o seletor — ajuda a
+  // distinguir anúncios "modelo novo" onde cada cor/tamanho é um MLB separado
+  // (títulos quase idênticos), mostrando o saldo de cada um.
+  const estoquePorId = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const it of inventoryItems) m.set(it.id, it.available_quantity);
+    return m;
+  }, [inventoryItems]);
+  const variacoesInfo = useMemo(
+    () => resumoVariacoes(selectedItem?.variations ?? []),
+    [selectedItem],
+  );
+  // Opção da variação selecionada (para o badge "analisando variação: …").
+  const selectedVariacaoOption = useMemo(
+    () => variacoesInfo.opcoes.find((o) => o.sku === selectedSku) ?? null,
+    [variacoesInfo, selectedSku],
+  );
 
   // Atalho vindo da coluna Preços (Produtos Vendidos): pré-seleciona o anúncio.
   useEffect(() => {
@@ -256,6 +332,7 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
         _from,
         _to,
         _granularity: granularity,
+        _sku: selectedSku,
       });
     (async () => {
       setLoading(true);
@@ -282,7 +359,7 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [selectedId, mlUserIds, fromDate, toDate, granularity]);
+  }, [selectedId, mlUserIds, fromDate, toDate, granularity, selectedSku]);
 
   // Fetch diário dedicado ao histograma de faixas — SEMPRE granularidade "day",
   // independente do toggle de granularidade (que agora serve só a aba temporal).
@@ -310,6 +387,7 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
         _from: fromDate,
         _to: toDate,
         _granularity: "day",
+        _sku: selectedSku,
       });
       if (cancelled) return;
       if (res.error) {
@@ -321,7 +399,7 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
       setLoadingDaily(false);
     })();
     return () => { cancelled = true; };
-  }, [selectedId, mlUserIds, fromDate, toDate]);
+  }, [selectedId, mlUserIds, fromDate, toDate, selectedSku]);
 
   // Spend diário de ads do item (ml_ads_products_cache — RLS org-first isola;
   // cobertura ausente => array vazio => ads=0 silencioso). Não depende da
@@ -387,18 +465,37 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
     () => computePrecoMcoSeries(dailyRows ?? [], { adsDaily, incluirAds, granularity: "day" }),
     [dailyRows, adsDaily, incluirAds],
   );
+  // Estoque atual — DB-first via MLInventoryContext (sem fetch novo). Com
+  // variação selecionada, o estoque passa a ser o DA VARIAÇÃO (join por SKU,
+  // seller_custom_field — Phase 82); senão o do anúncio pai (Phase 81).
+  // Ausente do cache => null; a UI/util trata null como "cobertura não
+  // computável" (nunca 0).
+  const estoqueAtual = useMemo(() => {
+    if (selectedSku != null) {
+      return estoqueDaVariacao(selectedItem?.variations ?? [], selectedSku);
+    }
+    return selectedItem ? selectedItem.available_quantity : null;
+  }, [selectedItem, selectedSku]);
   const faixasResult = useMemo(
-    () => computePrecoFaixas(dailyPoints, { mode: faixaMode }),
-    [dailyPoints, faixaMode],
+    () => computePrecoFaixas(dailyPoints, { mode: faixaMode, estoqueAtual }),
+    [dailyPoints, faixaMode, estoqueAtual],
   );
   const veredicto = useMemo(
     () => computeVeredicto(faixasResult, faixaMode),
     [faixasResult, faixaMode],
   );
   const faixasChartData = useMemo(
-    () => faixasResult.faixas.map((f) => ({ ...f, saude: classificarSaude(f.mcoPctMedio) })),
+    () => faixasResult.faixas.map((f) => ({
+      ...f, saude: classificarSaude(f.mcoPctMedio), estoqueAtual: faixasResult.estoqueAtual,
+    })),
     [faixasResult],
   );
+  // Preço vigente em risco de ruptura (< COBERTURA_RISCO_DIAS) — colore a frase de
+  // cobertura no cartão-veredito. Não afeta a cor da barra (saúde de margem).
+  const coberturaVigenteRisco = useMemo(() => {
+    const atual = faixasResult.faixas.find((f) => f.isPrecoAtual) ?? null;
+    return atual?.coberturaDias != null && atual.coberturaDias < COBERTURA_RISCO_DIAS;
+  }, [faixasResult]);
 
   const kpis = useMemo(() => {
     const rs = rows ?? [];
@@ -487,23 +584,69 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
               <CommandList>
                 <CommandEmpty>Nenhum anúncio com vendas no período.</CommandEmpty>
                 <CommandGroup>
-                  {products.map((p) => (
-                    <CommandItem
-                      key={p.id}
-                      value={`${p.title} ${p.id}`}
-                      onSelect={() => { setSelectedId(p.id); setPickerOpen(false); }}
-                      className="text-xs data-[selected=true]:bg-muted data-[selected=true]:text-foreground"
-                    >
-                      <Check className={cn("mr-2 h-3.5 w-3.5", selectedId === p.id ? "opacity-100" : "opacity-0")} />
-                      <span className="truncate">{p.title}</span>
-                      <span className="ml-auto pl-2 text-[10px] text-muted-foreground">{p.id}</span>
-                    </CommandItem>
-                  ))}
+                  {products.map((p) => {
+                    const estoque = estoquePorId.get(p.id);
+                    return (
+                      <CommandItem
+                        key={p.id}
+                        value={`${p.title} ${p.id}`}
+                        onSelect={() => { setSelectedId(p.id); setPickerOpen(false); }}
+                        className="items-start text-xs data-[selected=true]:bg-muted data-[selected=true]:text-foreground"
+                      >
+                        <Check className={cn("mr-2 mt-0.5 h-3.5 w-3.5 shrink-0", selectedId === p.id ? "opacity-100" : "opacity-0")} />
+                        {/* título completo (2 linhas) — mostra a cor/tamanho que o truncate escondia */}
+                        <span className="line-clamp-2 flex-1 leading-snug">{p.title}</span>
+                        <span className="ml-auto shrink-0 pl-2 text-right">
+                          {estoque !== undefined && (
+                            <span className={cn(
+                              "block text-[10px] font-medium tabular-nums",
+                              estoque === 0 ? "text-destructive" : "text-muted-foreground",
+                            )}>
+                              {estoque === 0 ? "sem estoque" : `${estoque} und`}
+                            </span>
+                          )}
+                          <span className="block text-[10px] text-muted-foreground/70">{p.id}</span>
+                        </span>
+                      </CommandItem>
+                    );
+                  })}
                 </CommandGroup>
               </CommandList>
             </Command>
           </PopoverContent>
         </Popover>
+
+        {/* Seletor de variação (Phase 82) — só quando o anúncio tem variações.
+            Default fixo "Todas as variações (anúncio)" (value sentinela "__all__"
+            porque Select não aceita value=""); troca de anúncio reseta para null. */}
+        {selectedItem?.has_variations && (
+          <Select
+            value={selectedSku ?? "__all__"}
+            onValueChange={(v) => setSelectedSku(v === "__all__" ? null : v)}
+          >
+            <SelectTrigger className="h-8 w-auto min-w-[200px] max-w-[320px] text-xs">
+              <SelectValue placeholder="Todas as variações (anúncio)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__" className="text-xs">
+                Todas as variações (anúncio)
+              </SelectItem>
+              {variacoesInfo.opcoes.map((o) => (
+                <SelectItem key={o.sku} value={o.sku} className="text-xs">
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {/* Badge da variação selecionada — indicador discreto de que os números
+            abaixo (faixas, giro, cobertura) já são da variação, não do pai. */}
+        {selectedVariacaoOption && (
+          <Badge variant="secondary" className="h-6 text-[10px] font-normal">
+            Analisando variação: {selectedVariacaoOption.label}
+          </Badge>
+        )}
 
         {/* Toggle "incluir ads" — afeta histograma E aba temporal */}
         <div className="flex items-center gap-2 ml-auto">
@@ -517,6 +660,17 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
           </Label>
         </div>
       </div>
+
+      {/* Aviso do nível pai (Phase 82) — anúncio com variações e nenhuma
+          selecionada: o número de cobertura do pai é uma média que esconde
+          rupturas por variação. */}
+      {selectedItem?.has_variations && selectedSku == null && variacoesInfo.total > 0 && (
+        <p className="flex items-center gap-1.5 text-xs text-warning">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+          Anúncio com {variacoesInfo.total} variações ({variacoesInfo.esgotadas} esgotadas) —
+          selecione uma variação para cobertura precisa.
+        </p>
+      )}
 
       {/* KPIs — 4 focados na pergunta "em que preço vendo bem", com comparativo
           vs período anterior onde existe delta (Faixa campeã não tem delta). */}
@@ -584,6 +738,11 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                   <span>{veredicto.saudeTexto}</span>
                 </p>
                 <p className="pl-4 text-sm text-muted-foreground">{veredicto.otimoTexto}</p>
+                {veredicto.coberturaTexto && (
+                  <p className={cn("pl-4 text-sm", coberturaVigenteRisco ? "text-destructive" : "text-muted-foreground")}>
+                    {veredicto.coberturaTexto}
+                  </p>
+                )}
               </div>
 
               {/* Toggle Unidades ↔ Lucro R$ — troca a altura das barras e o veredito. */}
@@ -628,6 +787,8 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                         const f = faixasChartData[index];
                         if (!f || x == null || y == null || width == null) return null;
                         const cx = Number(x) + Number(width) / 2;
+                        const coberturaTxt = coberturaBarraTexto(f);
+                        const coberturaRisco = f.coberturaDias != null && f.coberturaDias < COBERTURA_RISCO_DIAS;
                         return (
                           <g>
                             {f.isPrecoAtual && (
@@ -638,6 +799,18 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                             <text x={cx} y={Number(y) - 4} textAnchor="middle" fontSize={11} fontWeight={600} fill="hsl(var(--foreground))">
                               {pctFraction(f.mcoPctMedio)}
                             </text>
+                            {/* Rótulo de cobertura (Phase 81) — cor NUNCA é a barra (segue
+                                saúde de margem); vermelho aqui é só o texto de risco de ruptura.
+                                Baixa confiança = tom esmaecido (opacity), sem esconder o dado. */}
+                            {coberturaTxt && (
+                              <text
+                                x={cx} y={Number(y) + 13} textAnchor="middle" fontSize={9.5} fontWeight={500}
+                                fill={coberturaRisco ? "hsl(var(--destructive))" : "hsl(var(--muted-foreground))"}
+                                opacity={f.baixaConfianca ? 0.6 : 1}
+                              >
+                                {coberturaTxt}
+                              </text>
+                            )}
                           </g>
                         );
                       }}
@@ -664,12 +837,16 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                 </div>
               )}
 
-              {/* Rodapé de transparência — descreve a nova visão principal. */}
+              {/* Rodapé de transparência — descreve a nova visão principal + giro/cobertura (Phase 81). */}
               <p className="mt-2 text-[10px] text-muted-foreground text-center">
                 Eixo X = faixas de preço · altura = {faixaMode === "unidades" ? "unidades vendidas" : "lucro (MCO R$) total"} na faixa ·
                 cor = margem (verde saudável / âmbar apertada / vermelho prejuízo, sempre com % no topo) ·
                 faixa vazia = preço não testado no período · barra "+R$X" agrega os preços mais altos (outliers) ·
-                Ads = relatório diário de publicidade (melhor esforço; ausente = 0) · imposto pelo regime configurado
+                Ads = relatório diário de publicidade (melhor esforço; ausente = 0) · imposto pelo regime configurado ·
+                giro = unidades ÷ dias-com-venda naquele preço (velocidade real de venda) ·
+                cobertura = estoque de hoje do anúncio ÷ giro da faixa — cenário hipotético "a esse preço, quanto dura?" ·
+                cobertura em vermelho = risco de ruptura (menos de {COBERTURA_RISCO_DIAS} dias) ·
+                "?" e tom esmaecido = faixa com menos de {MIN_DIAS_CONFIANCA} dias de amostra (estimativa fraca)
               </p>
             </>
           )}
