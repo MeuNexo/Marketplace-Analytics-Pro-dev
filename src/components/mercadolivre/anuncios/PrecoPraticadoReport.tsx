@@ -14,15 +14,20 @@ import { useMLInventory } from "@/contexts/MLInventoryContext";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
 } from "@/components/ui/command";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { KPICard } from "@/components/dashboard/KPICard";
+import { resumoVariacoes, estoqueDaVariacao } from "@/lib/variacoesResumo";
 import {
   computePrecoMcoSeries,
   computePreviousWindow,
@@ -249,6 +254,9 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
   const [loadingDaily, setLoadingDaily] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [faixaMode, setFaixaMode] = useState<FaixaMode>("unidades");
+  // Seletor de variação (Phase 82). null = "Todas as variações (anúncio)" —
+  // base é sempre o anúncio pai (Phase 81 intacta) até o usuário escolher.
+  const [selectedSku, setSelectedSku] = useState<string | null>(null);
 
   // Mantém uma seleção válida quando a lista de produtos muda (troca de período/loja).
   useEffect(() => {
@@ -258,6 +266,26 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
       setSelectedId(products[0].id);
     }
   }, [products, selectedId]);
+
+  // Reset do seletor de variação sempre que o anúncio muda (decisão LOCKED).
+  useEffect(() => {
+    setSelectedSku(null);
+  }, [selectedId]);
+
+  // Anúncio selecionado no MLInventoryContext (fonte de variações/estoque).
+  const selectedItem = useMemo(
+    () => inventoryItems.find((i) => i.id === selectedId) ?? null,
+    [inventoryItems, selectedId],
+  );
+  const variacoesInfo = useMemo(
+    () => resumoVariacoes(selectedItem?.variations ?? []),
+    [selectedItem],
+  );
+  // Opção da variação selecionada (para o badge "analisando variação: …").
+  const selectedVariacaoOption = useMemo(
+    () => variacoesInfo.opcoes.find((o) => o.sku === selectedSku) ?? null,
+    [variacoesInfo, selectedSku],
+  );
 
   // Atalho vindo da coluna Preços (Produtos Vendidos): pré-seleciona o anúncio.
   useEffect(() => {
@@ -296,6 +324,7 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
         _from,
         _to,
         _granularity: granularity,
+        _sku: selectedSku,
       });
     (async () => {
       setLoading(true);
@@ -322,7 +351,7 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [selectedId, mlUserIds, fromDate, toDate, granularity]);
+  }, [selectedId, mlUserIds, fromDate, toDate, granularity, selectedSku]);
 
   // Fetch diário dedicado ao histograma de faixas — SEMPRE granularidade "day",
   // independente do toggle de granularidade (que agora serve só a aba temporal).
@@ -350,6 +379,7 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
         _from: fromDate,
         _to: toDate,
         _granularity: "day",
+        _sku: selectedSku,
       });
       if (cancelled) return;
       if (res.error) {
@@ -361,7 +391,7 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
       setLoadingDaily(false);
     })();
     return () => { cancelled = true; };
-  }, [selectedId, mlUserIds, fromDate, toDate]);
+  }, [selectedId, mlUserIds, fromDate, toDate, selectedSku]);
 
   // Spend diário de ads do item (ml_ads_products_cache — RLS org-first isola;
   // cobertura ausente => array vazio => ads=0 silencioso). Não depende da
@@ -427,13 +457,17 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
     () => computePrecoMcoSeries(dailyRows ?? [], { adsDaily, incluirAds, granularity: "day" }),
     [dailyRows, adsDaily, incluirAds],
   );
-  // Estoque atual do anúncio selecionado — DB-first via MLInventoryContext (sem
-  // fetch novo). Ausente do cache (anúncio fora do escopo/sync não rodou ainda)
-  // => null; a UI/util trata null como "cobertura não computável" (nunca 0).
+  // Estoque atual — DB-first via MLInventoryContext (sem fetch novo). Com
+  // variação selecionada, o estoque passa a ser o DA VARIAÇÃO (join por SKU,
+  // seller_custom_field — Phase 82); senão o do anúncio pai (Phase 81).
+  // Ausente do cache => null; a UI/util trata null como "cobertura não
+  // computável" (nunca 0).
   const estoqueAtual = useMemo(() => {
-    const item = inventoryItems.find((i) => i.id === selectedId);
-    return item ? item.available_quantity : null;
-  }, [inventoryItems, selectedId]);
+    if (selectedSku != null) {
+      return estoqueDaVariacao(selectedItem?.variations ?? [], selectedSku);
+    }
+    return selectedItem ? selectedItem.available_quantity : null;
+  }, [selectedItem, selectedSku]);
   const faixasResult = useMemo(
     () => computePrecoFaixas(dailyPoints, { mode: faixaMode, estoqueAtual }),
     [dailyPoints, faixaMode, estoqueAtual],
@@ -560,6 +594,38 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
           </PopoverContent>
         </Popover>
 
+        {/* Seletor de variação (Phase 82) — só quando o anúncio tem variações.
+            Default fixo "Todas as variações (anúncio)" (value sentinela "__all__"
+            porque Select não aceita value=""); troca de anúncio reseta para null. */}
+        {selectedItem?.has_variations && (
+          <Select
+            value={selectedSku ?? "__all__"}
+            onValueChange={(v) => setSelectedSku(v === "__all__" ? null : v)}
+          >
+            <SelectTrigger className="h-8 w-auto min-w-[200px] max-w-[320px] text-xs">
+              <SelectValue placeholder="Todas as variações (anúncio)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__" className="text-xs">
+                Todas as variações (anúncio)
+              </SelectItem>
+              {variacoesInfo.opcoes.map((o) => (
+                <SelectItem key={o.sku} value={o.sku} className="text-xs">
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {/* Badge da variação selecionada — indicador discreto de que os números
+            abaixo (faixas, giro, cobertura) já são da variação, não do pai. */}
+        {selectedVariacaoOption && (
+          <Badge variant="secondary" className="h-6 text-[10px] font-normal">
+            Analisando variação: {selectedVariacaoOption.label}
+          </Badge>
+        )}
+
         {/* Toggle "incluir ads" — afeta histograma E aba temporal */}
         <div className="flex items-center gap-2 ml-auto">
           <Switch
@@ -572,6 +638,17 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
           </Label>
         </div>
       </div>
+
+      {/* Aviso do nível pai (Phase 82) — anúncio com variações e nenhuma
+          selecionada: o número de cobertura do pai é uma média que esconde
+          rupturas por variação. */}
+      {selectedItem?.has_variations && selectedSku == null && variacoesInfo.total > 0 && (
+        <p className="flex items-center gap-1.5 text-xs text-warning">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+          Anúncio com {variacoesInfo.total} variações ({variacoesInfo.esgotadas} esgotadas) —
+          selecione uma variação para cobertura precisa.
+        </p>
+      )}
 
       {/* KPIs — 4 focados na pergunta "em que preço vendo bem", com comparativo
           vs período anterior onde existe delta (Faixa campeã não tem delta). */}
