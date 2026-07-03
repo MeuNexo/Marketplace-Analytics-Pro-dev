@@ -247,6 +247,35 @@ async function runDailySync(
   return { synced, totalRows };
 }
 
+// Sincroniza UMA fatura específica por key (Phase 84 — backfill resiliente).
+// Motivo: quando a API do ML está lenta, `runDailySync` (2 faturas por chamada)
+// estoura o teto de wall-clock da EF. Este caminho processa 1 fatura só,
+// cabendo no limite mesmo com ML devagar. Full-resync idempotente por fatura
+// (delete-by-source_invoice_key + insert). `from`/`to` não são usados na trilha
+// de competência (aggregateInvoice ignora), então bastam a key.
+async function syncSingleInvoice(
+  // deno-lint-ignore no-explicit-any
+  supabaseAdmin: any,
+  accessToken: string,
+  mlNumericId: string,
+  organizationId: string,
+  ml_user_id: string,
+  invoiceKey: string,
+): Promise<{ synced: string[]; totalRows: number }> {
+  const inv = { key: invoiceKey, from: "", to: "" };
+  const rows = await aggregateInvoice(accessToken, mlNumericId, inv);
+  await supabaseAdmin.from("ml_billing_daily")
+    .delete().eq("organization_id", organizationId).eq("ml_user_id", ml_user_id).eq("source_invoice_key", inv.key);
+  if (rows.length > 0) {
+    const payload = rows.map((r) => ({ organization_id: organizationId, ml_user_id, competence_date: r.competence_date, charge_date: r.charge_date, charge_type: r.charge_type, charge_label: r.charge_label, amount: r.amount, source_invoice_key: inv.key }));
+    for (let i = 0; i < payload.length; i += 500) {
+      const { error } = await supabaseAdmin.from("ml_billing_daily").insert(payload.slice(i, i + 500));
+      if (error) throw new Error(`insert ml_billing_daily: ${error.message}`);
+    }
+  }
+  return { synced: [inv.key], totalRows: rows.length };
+}
+
 /** Mês-calendário anterior ao corrente (YYYY-MM, UTC). Usado pelo cron (Layer 3):
  *  ciclo de fatura ML é 06→05, então por volta do dia 6+ do mês corrente a
  *  fatura do mês anterior já está disponível/fechada. */
@@ -307,6 +336,10 @@ const BodySchema = z.object({
   ml_user_id: z.string().min(1).optional(),
   period_month: z.string().regex(/^\d{4}-\d{2}$/, "period_month must be YYYY-MM").optional(),
   mode: z.enum(["monthly", "daily"]).optional().default("monthly"),
+  // Phase 84 — backfill resiliente: sincroniza SÓ esta fatura (1 por chamada,
+  // evita o timeout do par de 2 faturas quando o ML está lento). Só honrado no
+  // modo daily; exige ml_user_id + organização resolvida.
+  invoice_key: z.string().min(1).optional(),
 });
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -334,7 +367,7 @@ serve(async (req) => {
     if (!parsed.success) {
       return new Response(JSON.stringify({ error: "Invalid input", details: parsed.error.flatten().fieldErrors }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    const { ml_user_id, period_month, mode } = parsed.data;
+    const { ml_user_id, period_month, mode, invoice_key } = parsed.data;
 
     // ── Fan-out multi-conta (Layer 3 — cron): mode=daily sem ml_user_id varre
     // TODAS as contas ativas (ml_tokens). Só service-role pode disparar — nunca
@@ -390,12 +423,17 @@ serve(async (req) => {
       if (!organizationId) {
         return new Response(JSON.stringify({ success: true, daily: null, warning: "organization_id missing" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
+      // Phase 84 — backfill resiliente: se invoice_key vier no body, sincroniza
+      // SÓ aquela fatura (1 chamada ML, cabe no tempo mesmo com o ML lento).
+      const dailyRunner = () => invoice_key
+        ? syncSingleInvoice(supabaseAdmin, accessToken, mlNumericId, organizationId, ml_user_id, invoice_key)
+        : runDailySync(supabaseAdmin, accessToken, mlNumericId, organizationId, ml_user_id, period_month);
       const isDebug = new URL(req.url).searchParams.get("debug") === "1";
       if (isDebug) {
-        const { synced, totalRows } = await runDailySync(supabaseAdmin, accessToken, mlNumericId, organizationId, ml_user_id, period_month);
+        const { synced, totalRows } = await dailyRunner();
         return new Response(JSON.stringify({ success: true, mode: "daily", period_month, invoices_synced: synced, rows: totalRows }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
-      const bg = runDailySync(supabaseAdmin, accessToken, mlNumericId, organizationId, ml_user_id, period_month)
+      const bg = dailyRunner()
         .then(({ synced, totalRows }) => {
           console.log(`sync-ml-billing daily done: ml_user_id=${ml_user_id} period=${period_month} invoices=${synced.join(",")} rows=${totalRows}`);
         })
