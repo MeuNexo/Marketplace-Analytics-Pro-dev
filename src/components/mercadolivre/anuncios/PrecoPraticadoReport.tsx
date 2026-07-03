@@ -277,6 +277,14 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
     () => inventoryItems.find((i) => i.id === selectedId) ?? null,
     [inventoryItems, selectedId],
   );
+  // Estoque atual por anúncio (item_id) para enriquecer o seletor — ajuda a
+  // distinguir anúncios "modelo novo" onde cada cor/tamanho é um MLB separado
+  // (títulos quase idênticos), mostrando o saldo de cada um.
+  const estoquePorId = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const it of inventoryItems) m.set(it.id, it.available_quantity);
+    return m;
+  }, [inventoryItems]);
   const variacoesInfo = useMemo(
     () => resumoVariacoes(selectedItem?.variations ?? []),
     [selectedItem],
@@ -576,18 +584,32 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
               <CommandList>
                 <CommandEmpty>Nenhum anúncio com vendas no período.</CommandEmpty>
                 <CommandGroup>
-                  {products.map((p) => (
-                    <CommandItem
-                      key={p.id}
-                      value={`${p.title} ${p.id}`}
-                      onSelect={() => { setSelectedId(p.id); setPickerOpen(false); }}
-                      className="text-xs data-[selected=true]:bg-muted data-[selected=true]:text-foreground"
-                    >
-                      <Check className={cn("mr-2 h-3.5 w-3.5", selectedId === p.id ? "opacity-100" : "opacity-0")} />
-                      <span className="truncate">{p.title}</span>
-                      <span className="ml-auto pl-2 text-[10px] text-muted-foreground">{p.id}</span>
-                    </CommandItem>
-                  ))}
+                  {products.map((p) => {
+                    const estoque = estoquePorId.get(p.id);
+                    return (
+                      <CommandItem
+                        key={p.id}
+                        value={`${p.title} ${p.id}`}
+                        onSelect={() => { setSelectedId(p.id); setPickerOpen(false); }}
+                        className="items-start text-xs data-[selected=true]:bg-muted data-[selected=true]:text-foreground"
+                      >
+                        <Check className={cn("mr-2 mt-0.5 h-3.5 w-3.5 shrink-0", selectedId === p.id ? "opacity-100" : "opacity-0")} />
+                        {/* título completo (2 linhas) — mostra a cor/tamanho que o truncate escondia */}
+                        <span className="line-clamp-2 flex-1 leading-snug">{p.title}</span>
+                        <span className="ml-auto shrink-0 pl-2 text-right">
+                          {estoque !== undefined && (
+                            <span className={cn(
+                              "block text-[10px] font-medium tabular-nums",
+                              estoque === 0 ? "text-destructive" : "text-muted-foreground",
+                            )}>
+                              {estoque === 0 ? "sem estoque" : `${estoque} und`}
+                            </span>
+                          )}
+                          <span className="block text-[10px] text-muted-foreground/70">{p.id}</span>
+                        </span>
+                      </CommandItem>
+                    );
+                  })}
                 </CommandGroup>
               </CommandList>
             </Command>
