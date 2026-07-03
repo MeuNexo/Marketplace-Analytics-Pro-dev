@@ -5,15 +5,15 @@ milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem
 current_phase: 80
 status: completed
 stopped_at: Completed 80-02
-last_updated: "2026-07-02T17:23:29.927Z"
+last_updated: "2026-07-03T12:03:36.379Z"
 last_activity: 2026-07-02
 last_activity_desc: Phase 80 complete
 progress:
-  total_phases: 25
-  completed_phases: 14
-  total_plans: 57
-  completed_plans: 52
-  percent: 56
+  total_phases: 28
+  completed_phases: 15
+  total_plans: 62
+  completed_plans: 56
+  percent: 54
 current_phase_name: an-lise-de-pre-os-onde-vendo-bem
 ---
 
@@ -376,6 +376,7 @@ Dashboard atual mostra:
 - Phase 77 added: Página Análise de Anúncios: porte Produtos Vendidos + Análise de Preços do app oficial, em página própria do menu
 - Phase 78 added: Revisão mobile-first do dashboard inteiro (pedido Wesley 2026-07-01)
 - Phase 79 added: Análise de Preços com MCO — gráfico preço vs. break-even (spec 2026-07-02)
+- Phase 83 added: MCO por anúncio em Produtos Vendidos + redesign UX
 
 ## Deferred Items
 
