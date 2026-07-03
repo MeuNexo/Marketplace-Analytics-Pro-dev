@@ -269,6 +269,21 @@ const lastDayOfMonth = (periodMonth: string): string => {
   return `${periodMonth}-${String(d).padStart(2, "0")}`;
 };
 
+/** Mês-calendário corrente (YYYY-MM, UTC) */
+const currentPeriodMonth = (): string => {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+};
+
+/**
+ * Um mês "fechado" (estritamente anterior ao mês corrente) tem coverage
+ * conhecida e completa: todos os dias 01→último já devem existir em
+ * ml_billing_daily. Usado para detectar sync travado/parcial (bug 2026-07-03:
+ * synced_at congelado em dia 12 depois que o mês deixou de ser corrente).
+ * Mês corrente não tem expectativa fixa (está em andamento).
+ */
+const isClosedMonth = (periodMonth: string): boolean => periodMonth < currentPeriodMonth();
+
 /**
  * Soma ml_billing_daily por tipo no range 01–fim do mês-calendário (competência
  * = data de lançamento). É a fonte exata do DRE: tarifas dos dias 01–31 do mês,
@@ -323,47 +338,89 @@ export function useMLBillingDaily(periodMonth: string) {
 }
 
 /**
- * useMLBillingDaily + sync on-demand (mode:"daily"): quando o mês não tem dados
- * em ml_billing_daily, invoca a EF para sincronizar as duas faturas que tocam o
- * mês-calendário. Uma tentativa por escopo+período; falha libera retry.
+ * useMLBillingDaily + sync on-demand (mode:"daily"): invoca a EF para
+ * sincronizar as duas faturas que tocam o mês-calendário quando:
+ *  (a) o mês não tem NENHUM dado em ml_billing_daily (comportamento original), OU
+ *  (b) o mês é um mês FECHADO (não corrente) com coverage incompleta — ex.: o
+ *      sync parou no meio (dia 12) e nunca mais rodou porque o mês deixou de
+ *      ser o corrente (bug 2026-07-03: guard antigo só olhava `!data`, então
+ *      dados parciais nunca disparavam re-sync).
+ *
+ * sync-ml-billing (mode:"daily") roda em BACKGROUND na EF (EdgeRuntime.waitUntil)
+ * e responde 202 "enqueued" quase imediatamente — não dá pra confiar que os
+ * dados já estão no banco assim que o invoke() resolve. Por isso fazemos um
+ * polling curto (refetch a cada ~4s, até ~8 tentativas) até a coverage bater
+ * com o esperado (mês fechado) ou esgotar as tentativas.
+ *
+ * Uma tentativa de TRIGGER por escopo+período (independente de quantas vezes
+ * a coverage for reavaliada); falha de invocação libera retry.
  */
 export function useMLBillingDailyWithSync(periodMonth: string) {
   const query = useMLBillingDaily(periodMonth);
   const { resolvedMLUserIds } = useMLStore();
   const [syncing, setSyncing] = useState(false);
   const attempted = useRef<Set<string>>(new Set());
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { data, isLoading, refetch } = query;
 
+  const expectedCoverage = periodMonth && isClosedMonth(periodMonth) ? lastDayOfMonth(periodMonth) : null;
+  const isIncomplete = expectedCoverage != null && (!data || data.coverageTo !== expectedCoverage);
+  const needsSync = !data || isIncomplete;
+
   useEffect(() => {
-    if (isLoading || data || !periodMonth || resolvedMLUserIds.length === 0) return;
+    if (isLoading || !needsSync || !periodMonth || resolvedMLUserIds.length === 0) return;
     const key = `${[...resolvedMLUserIds].sort().join("|")}::${periodMonth}`;
     if (attempted.current.has(key)) return;
     attempted.current.add(key);
 
     let cancelled = false;
     setSyncing(true);
+
+    const stopPolling = () => {
+      if (pollTimer.current != null) clearTimeout(pollTimer.current);
+      pollTimer.current = null;
+      if (!cancelled) setSyncing(false);
+    };
+
+    // Polling pós-trigger: a EF responde "enqueued" antes do sync terminar
+    // (roda em background) — refaz a query periodicamente até a coverage
+    // bater com o esperado (mês fechado) ou esgotar as tentativas.
+    const pollUntilComplete = (triesLeft: number) => {
+      if (cancelled) return;
+      refetch().then((result) => {
+        if (cancelled) return;
+        const cov = result.data?.coverageTo ?? null;
+        const done = expectedCoverage == null || cov === expectedCoverage || triesLeft <= 0;
+        if (done) { stopPolling(); return; }
+        pollTimer.current = setTimeout(() => pollUntilComplete(triesLeft - 1), 4000);
+      });
+    };
+
     Promise.allSettled(
       resolvedMLUserIds.map((mlUserId) =>
         supabase.functions.invoke("sync-ml-billing", {
           body: { ml_user_id: mlUserId, period_month: periodMonth, mode: "daily" },
         }),
       ),
-    )
-      .then((results) => {
-        const anyFailure = results.some(
-          (r) => r.status === "rejected" || (r.status === "fulfilled" && r.value.error != null),
-        );
-        if (anyFailure) attempted.current.delete(key);
-        if (!cancelled) return refetch();
-      })
-      .finally(() => {
-        if (!cancelled) setSyncing(false);
-      });
+    ).then((results) => {
+      if (cancelled) return;
+      const anyFailure = results.some(
+        (r) => r.status === "rejected" || (r.status === "fulfilled" && r.value.error != null),
+      );
+      if (anyFailure) {
+        attempted.current.delete(key);
+        refetch().finally(() => stopPolling());
+        return;
+      }
+      pollTimer.current = setTimeout(() => pollUntilComplete(8), 4000);
+    });
 
     return () => {
       cancelled = true;
+      if (pollTimer.current != null) clearTimeout(pollTimer.current);
     };
-  }, [isLoading, data, periodMonth, resolvedMLUserIds, refetch]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- expectedCoverage é derivado de periodMonth; needsSync já cobre a condição de disparo
+  }, [isLoading, needsSync, periodMonth, resolvedMLUserIds, refetch]);
 
   return { ...query, syncing };
 }
