@@ -627,4 +627,20 @@ Plans:
 - [ ] 83-02-PLAN.md — [W2][BLOCKING] Orquestrador aplica migration via MCP em `ckcdevcxgvueywivefgx` + smoke: marca preenchida, retrocompat do consumidor useMLMarginWithAds, reconciliação de receita (paid+shipped+delivered), anti-IDOR
 - [ ] 83-03-PLAN.md — [W3] UI: `useMLMarginWithAds` expõe `marca` + reescrita de `MLProdutosVendidos.tsx` (coluna MCO% com semáforo+tooltip, % Ads, tabela ordenável, MCO% por marca no painel esquerdo, cabeçalho-resumo, cards mobile, aviso de custo ausente) + checkpoint visual Wesley (light+dark)
 
+### Phase 84: DRE por Competência de Venda (método Tiny)
+
+**Goal:** A DRE do Mês em `/vendas` (`MLCostCard`) passa a operar por **competência de venda** — igual ao método da página "custos ecommerce" do Tiny: escolhe-se o mês e ele traz receita/CMV/impostos + **todas as tarifas ML das vendas daquele mês**, independentemente de quando o ML cobrou. Hoje as tarifas são alocadas por `charge_date` (lançamento na fatura), causando (a) descasamento — pedido vendido em junho e cancelado em julho carrega tarifa cheia em junho e estorno em julho — e (b) estornos de venda fora da janela da fatura que a EF **descarta** (regra `within`), sumindo da DRE. Descoberta habilitadora: o ML já entrega `sales_info[].sale_date_time` em cada movimento de billing (a EF lê como `saleDate` em `sync-ml-billing/index.ts:136` e descarta na agregação) — **sem cruzar com `orders`**. (1) SCHEMA: `ml_billing_daily` ganha coluna `competence_date` (= `sale_date_time`; fallback `charge_date` p/ tarifas sem venda: mensalidade, `PADS`); `charge_date` permanece p/ reconciliar com a fatura ML; grão passa a `(competence_date, charge_date, charge_type)`. (2) EF `sync-ml-billing`: `aggregateInvoice()` agrega por `competence_date` e **remove a exclusão `within`** na trilha de competência (estornos de venda antiga passam a contar no mês da venda; sinal `B*` negativo mantido); trilha `ml_billing_monthly` (por lançamento, com `within`) intacta p/ reconciliação. (3) DRE `useMLBilling.ts` (`useMLBillingDaily`): filtro `.gte/lte("charge_date")` → `("competence_date")`. (4) UI: **dropdown de seleção direta de mês** no `MLCostCard` (hoje só setas ◄ ►, com trava no futuro). (5) BACKFILL: re-sync das faturas de **2026** via `net.http_post` + `service_role_key` do vault (Pattern B), fan-out multi-conta. Decisões travadas com Wesley (2026-07-03): regime = competência de venda p/ TODAS as tarifas; Tiny é referência de método (cálculo continua no ML); dropdown de mês; backfill 2026. Efeitos aceitos: meses fechados se remexem; a DRE (competência) deixa de bater linha-a-linha com a fatura ML de propósito (`ml_billing_monthly` é a visão "igual à fatura"); estornos de venda antiga que hoje somem passam a contar. Supabase `ckcdevcxgvueywivefgx` (NÃO o do CLAUDE.md); deploy migration/EF só via MCP; smoke obrigatório de invariante (nenhum movimento perdido/duplicado, dedup por `detail_id`) + anti-IDOR + reconciliação ao centavo de um mês de referência. Spec: `docs/superpowers/specs/2026-07-03-dre-competencia-venda-design.md`.
+**Requirements**: (phase ad-hoc — nenhum requirement ID)
+**Depends on:** Phase 83
+**Plans:** 6 plans
+
+Plans:
+
+- [ ] 84-01-PLAN.md — Autoria migration (competence_date + backfill + UNIQUE alargada + índice) + types.ts [Wave 1]
+- [ ] 84-02-PLAN.md — Autoria EF sync-ml-billing: aggregateMoves por competência + remove within + testes [Wave 1]
+- [ ] 84-03-PLAN.md — Frontend: DRE filtra por competence_date + dropdown de mês no MLCostCard [Wave 2]
+- [ ] 84-04-PLAN.md — [BLOCKING MCP] Verificar constraint + aplicar migration + provar backfill [Wave 2]
+- [ ] 84-05-PLAN.md — [BLOCKING MCP] Deploy EF + backfill 2026 sequencial + smoke/reconciliação/anti-IDOR/cross-month [Wave 3]
+- [ ] 84-06-PLAN.md — [Checkpoint visual] Wesley valida /vendas DRE+dropdown (light+dark) + merge [Wave 4]
+
 ---
