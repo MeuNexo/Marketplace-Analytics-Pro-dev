@@ -670,6 +670,53 @@ export type Database = {
           },
         ]
       }
+      ml_billing_daily: {
+        Row: {
+          amount: number
+          charge_date: string
+          charge_label: string | null
+          charge_type: string
+          competence_date: string
+          id: string
+          ml_user_id: string
+          organization_id: string
+          source_invoice_key: string
+          synced_at: string | null
+        }
+        Insert: {
+          amount: number
+          charge_date: string
+          charge_label?: string | null
+          charge_type: string
+          competence_date?: string
+          id?: string
+          ml_user_id: string
+          organization_id: string
+          source_invoice_key: string
+          synced_at?: string | null
+        }
+        Update: {
+          amount?: number
+          charge_date?: string
+          charge_label?: string | null
+          charge_type?: string
+          competence_date?: string
+          id?: string
+          ml_user_id?: string
+          organization_id?: string
+          source_invoice_key?: string
+          synced_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_billing_daily_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ml_billing_monthly: {
         Row: {
           charges: Json | null
