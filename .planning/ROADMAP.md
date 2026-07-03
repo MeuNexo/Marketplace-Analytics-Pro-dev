@@ -606,12 +606,12 @@ Plans:
 **Goal:** Adicionar um **seletor de variação** em `/analise-precos` (`PrecoPraticadoReport.tsx`). Por padrão a análise é do anúncio pai (Phase 81 intacta); ao selecionar uma variação, toda a análise — faixas de preço, giro, estoque e cobertura — passa a ser daquela variação, corrigindo o número enganoso do pai (cobertura pelo pai vira média que esconde rupturas por variação). (1) RPC `orders_price_timeseries` ganha parâmetro **opcional** `_sku text DEFAULT NULL` (quando não-nulo, `AND o.sku = _sku`; migration DROP+CREATE, SECURITY INVOKER, deploy via MCP no `ckcdevcxgvueywivefgx`); (2) UI: dropdown de variações do `MLInventoryContext` (label = tamanho + SKU + estoque; default "Todas (anúncio)"), passa `_sku` à RPC e injeta `estoqueAtual` = estoque da variação (do jsonb via `seller_custom_field`) em `computePrecoFaixas` — o util NÃO muda; (3) badge "analisando variação X" + aviso no nível pai ("N variações, M esgotadas — selecione uma para cobertura precisa"); reset ao trocar de anúncio; seletor oculto se `has_variations=false`. **LIÇÃO CRÍTICA:** vínculo vendas↔estoque é por **SKU** (`orders.sku` = `seller_custom_field`), NÃO `variation_id` (casou 0/43). Fora de escopo: métrica agregada "sustentável + % rompido" (descartada em favor do seletor). Spec: `docs/superpowers/specs/2026-07-03-analise-precos-por-variacao-design.md`.
 **Requirements**: (phase ad-hoc — nenhum requirement ID)
 **Depends on:** Phase 81
-**Plans:** 3 plans
+**Plans:** 3/3 plans executed — VERIFICATION passed 8/8 (RPC _sku em prod; pendente ok visual Wesley)
 
 Plans:
 
-- [ ] 82-01-PLAN.md — Migration: `orders_price_timeseries` ganha `_sku text DEFAULT NULL` (predicado `AND o.sku = _sku`; DROP+CREATE; SECURITY INVOKER). Executor escreve o arquivo.
-- [ ] 82-02-PLAN.md — [BLOCKING/checkpoint do orquestrador] Aplicar migration via MCP `apply_migration` (ckcdevcxgvueywivefgx) + smoke: reconciliação por SKU, prova cobertura ~0d (variação) vs ~6d (pai), anti-IDOR.
-- [ ] 82-03-PLAN.md — UI: util puro `variacoesResumo.ts` (+teste) e dropdown de variação em `PrecoPraticadoReport.tsx` (`_sku` na RPC, estoque da variação via `seller_custom_field`, badge, aviso do pai, reset). `precoFaixas.ts` intacto.
+- [x] 82-01-PLAN.md — Migration: `orders_price_timeseries` ganha `_sku text DEFAULT NULL` (predicado `AND o.sku = _sku`; DROP+CREATE; SECURITY INVOKER). Executor escreve o arquivo.
+- [x] 82-02-PLAN.md — [BLOCKING/checkpoint do orquestrador] Migration aplicada em prod via MCP + smoke: retrocompat, prova cobertura 0d (variação) vs 6d (pai), reconciliação por SKU, anti-IDOR 0 linhas.
+- [x] 82-03-PLAN.md — UI: util `variacoesResumo.ts` (8 testes) + dropdown de variação em `PrecoPraticadoReport.tsx` (`_sku` na RPC, estoque via `seller_custom_field`, badge, aviso do pai, reset). `precoFaixas.ts` intacto. 374/374 testes.
 
 ---
