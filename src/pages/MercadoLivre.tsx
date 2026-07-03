@@ -249,6 +249,31 @@ export default function MercadoLivre() {
     return `${monthName.charAt(0).toUpperCase() + monthName.slice(1)}/${year}`;
   }, [billingMonth]);
 
+  // Lista de meses do dropdown do DRE — 2026-01 → mês corrente (trava no futuro
+  // por não incluir meses além de currentCalendarMonth), mais recente primeiro.
+  const dreMonths = useMemo(() => {
+    const [curYear, curMonth] = currentCalendarMonth.split("-").map(Number);
+    const months: Array<{ value: string; label: string }> = [];
+    for (let year = curYear, month = curMonth; year > 2026 || (year === 2026 && month >= 1); ) {
+      const value = `${year}-${String(month).padStart(2, "0")}`;
+      const d = new Date(year, month - 1, 1);
+      const monthName = d.toLocaleString("pt-BR", { month: "long" });
+      const label = `${monthName.charAt(0).toUpperCase() + monthName.slice(1)}/${year}`;
+      months.push({ value, label });
+      if (year === 2026 && month === 1) break;
+      month -= 1;
+      if (month === 0) { month = 12; year -= 1; }
+    }
+    return months;
+  }, [currentCalendarMonth]);
+
+  // Troca de mês via dropdown — mesma regra de colapso de shiftDreMonth: quando
+  // o mês escolhido == filterMonth, volta a seguir o filtro em vez de fixar override.
+  const handleDreSelectMonth = useCallback(
+    (m: string) => setDreMonthOverride(m === filterMonth ? null : m),
+    [filterMonth],
+  );
+
   // Receita, CMV e impostos do mês do filtro
   const receitaMes = dreWaterfall?.paid_revenue ?? 0;
   const cmvMes = (dreWaterfall?.has_cmv ? dreWaterfall.cmv : null) ?? null;
@@ -787,6 +812,9 @@ export default function MercadoLivre() {
                   syncing={billingSyncing || dailySyncing}
                   faturaFrom={billingData?.invoiceFrom}
                   faturaTo={billingData?.invoiceTo}
+                  months={dreMonths}
+                  selectedMonth={billingMonth}
+                  onSelectMonth={handleDreSelectMonth}
                 />
                 <MLTopProducts products={effectiveProducts} marginMap={marginMap} />
               </div>
