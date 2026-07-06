@@ -145,11 +145,19 @@ processed_at    timestamptz
 
 **Roteamento por tópico (extensível):**
 
-| topic (ML)          | resource       | tabela        | onConflict |
-|---------------------|----------------|---------------|------------|
-| `questions`         | `/questions/{id}` | `ml_questions` | `organization_id,ml_user_id,question_id` |
-| `claims`            | `/claims/{id}`    | `ml_claims`    | (mesmo do `sync-ml-claims`) |
-| `orders_v2`/`orders`| `/orders/{id}`    | `orders`       | (mesmo do `sync-ml-orders`) |
+| topic (ML)          | ação de processamento | destino |
+|---------------------|-----------------------|---------|
+| `questions`         | `GET /questions/{id}` → normaliza → upsert | `ml_questions` (`organization_id,ml_user_id,question_id`) |
+| `claims`            | `GET /claims/{id}` → normaliza → upsert | `ml_claims` (`organization_id,ml_user_id,claim_id`) |
+| `orders_v2`/`orders`| **cutuca** o `sync-ml-orders` (janela = hoje BRT, aquele seller) — reusa todo o enriquecimento (frete/imposto/custo/marca/shipment) | `orders` (via EF existente) |
+
+**Por que orders "cutuca" em vez de upsert direto:** o `expandOrder` do `sync-ml-orders`
+cruza 5 fontes (shipment address, custo, imposto por UF, marca, custo por SKU).
+Reimplementar isso no webhook seria muito código e risco de gravar linha incompleta.
+Decisão Wesley (2026-07-06): o webhook de pedido dispara o sync existente numa janela
+curta (hoje). **Debounce:** se já houve evento de order **processado** para o mesmo
+`ml_user_id` nos últimos **60s**, o webhook só marca `processed` sem redisparar (evita
+martelar o sync em rajada de pedidos). Quase-tempo-real (~segundos), risco baixo.
 
 Tópico desconhecido → grava `status=received` sem processar (aceita futuro sem quebrar).
 
