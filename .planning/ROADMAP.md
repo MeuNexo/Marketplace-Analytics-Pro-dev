@@ -628,3 +628,28 @@ Plans:
 - [ ] 83-03-PLAN.md — [W3] UI: `useMLMarginWithAds` expõe `marca` + reescrita de `MLProdutosVendidos.tsx` (coluna MCO% com semáforo+tooltip, % Ads, tabela ordenável, MCO% por marca no painel esquerdo, cabeçalho-resumo, cards mobile, aviso de custo ausente) + checkpoint visual Wesley (light+dark)
 
 ---
+### Phase 89: Webhook ML (tempo real) — perguntas, reclamações e pedidos
+
+**Goal:** Substituir a latência do polling (perguntas 15min, claims 30min) por **notificações em tempo real** do Mercado Livre. Uma EF pública nova `ml-webhook` (`verify_jwt=false`) recebe o `POST` do ML (`{topic, resource, user_id, sent}`), valida a origem (**secret no path + `user_id ∈ ml_tokens`** — o ML não assina), **grava o evento cru primeiro** numa tabela de auditoria `ml_webhook_events` (status `received`), responde **200 em <500ms**, e só então processa em `EdgeRuntime.waitUntil`: resolve o token do seller, faz `GET {resource}` no ML e upsert na tabela do tópico. Tópicos desta phase: `questions`→`ml_questions`, `claims`→`ml_claims`, `orders_v2`→`orders` (reuso da mesma normalização dos syncs existentes via `_shared/webhook-resource.ts`; EF genérica aceita tópicos futuros sem quebrar). Confiabilidade (auditoria antes de automação): evento salvo nunca se perde — falha vira `status=error`/`error_msg` e um cron novo `reprocess-webhook-events` (`*/10`, `attempts<5`) repesca. O **polling não é removido** — desacelera para rede de segurança (perguntas→de hora em hora, claims→a cada 2h; reversível por 1 linha). UI mínima sem redesenho: sinal de saúde "Tempo real ativo · último evento há X" no cabeçalho de `/perguntas` e `/devolucoes` + painel de eventos em `AdminMonitoring`. Dependência externa: registro da URL de callback no painel da app ML (`questions`/`claims`/`orders_v2`) é ação manual do Wesley — o agente entrega a URL exata + passo a passo; até lá valida por POST simulado. Esta é a **Phase A** de uma sequência A→B→C→D (B=responder reclamações, C=inbox unificado, D=IA — coordenar com n8n `nexo-ml-qa`), todas fora do escopo aqui. Supabase `ckcdevcxgvueywivefgx` (NÃO o do CLAUDE.md); RLS org-first em `ml_webhook_events`; deploy migration/EF só via MCP; smoke obrigatório (happy path por tópico, rejeição seller/secret, idempotência por `sent`, anti-IDOR, multi-conta 4 sellers, retry). Spec: `docs/superpowers/specs/2026-07-06-ml-webhook-tempo-real-design.md`.
+
+**Milestone:** v8.0 (Atendimento tempo real — fase A de 4)
+**Requirements**: Deno EF + Supabase (migration tabela+RLS+cron via MCP); React + TS + shadcn/ui (sinal de saúde + painel admin, stack existente). Reuso da normalização de `sync-ml-questions`/`sync-ml-claims`/`sync-ml-orders`.
+**Depends on:** none
+**Plans:** 0 plans
+
+**Success Criteria** (what must be TRUE):
+
+  1. POST simulado (`questions`/`claims`/`orders_v2`) com corpo real do ML → evento gravado em `ml_webhook_events`, resposta 200 em <500ms, upsert correto na tabela do tópico.
+  2. Rejeição: `user_id` fora de `ml_tokens` → `status=rejected` sem processar; secret errado no path → 200 sem gravar.
+  3. Idempotência: mesmo evento (mesmo `sent`) 2x → 1 linha, 1 processamento efetivo.
+  4. Anti-IDOR: evento do seller da org A só toca dados da org A; RLS impede org B de ler eventos de A.
+  5. Multi-conta: os 3 tópicos resolvem o token certo por `ml_user_id` (4 sellers).
+  6. Retry: evento forçado a `error` é repescado pelo cron e vira `processed`.
+  7. Polling desacelerado como rede de segurança (crons atualizados); `tsc` 0, `vitest` verde, build ok, advisors sem issue novo, deploy via MCP.
+  8. URL de callback + passo a passo entregues ao Wesley para registro no painel ML.
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 89 to break down)
+
+---
