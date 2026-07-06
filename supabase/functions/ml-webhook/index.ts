@@ -165,7 +165,7 @@ async function processEvent(sb: any, ev: {
       // Tópico desconhecido: deixa 'received' sem processar (aceita futuro sem quebrar).
       return;
     }
-    await markEvent(sb, ev.id, { status: "processed", processed_at: new Date().toISOString() });
+    await markEvent(sb, ev.id, { status: "processed", processed_at: new Date().toISOString(), error_msg: null });
   } catch (e: any) {
     const attempts = await bumpAttempts(sb, ev.id);
     await markEvent(sb, ev.id, { status: "error", error_msg: String(e?.message ?? e), attempts });
