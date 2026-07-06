@@ -1,10 +1,13 @@
 // ============================================================================
 // CostCompositionChart — Composição de Custos por Mês (barras empilhadas)
-// Consome useCostByMonth, pivot long→wide com useMemo, categorias dinâmicas
-// TESO-02 / D-12
+// Consome useCostByMonth; pivot/ranking/fold em src/lib/costCompositionData.
+// Cor por ÍNDICE a partir de paleta categórica CVD-safe (skill dataviz),
+// não por casamento de rótulo literal — categorias novas do Tiny recebem cor
+// automaticamente. TESO-02 / D-12 / Phase 85.
 // ============================================================================
 
 import { useMemo } from "react";
+import { useTheme } from "next-themes";
 import {
   BarChart,
   Bar,
@@ -18,63 +21,55 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCostByMonth } from "@/hooks/useCostByMonth";
+import {
+  buildCostComposition,
+  OTHER_LABEL,
+} from "@/lib/costCompositionData";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const currFmt = (v: number): string =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-// ─── Categoria color map (dinâmico — categorias novas recebem fallback) ───────
-
-const CATEGORY_COLORS: Record<string, string> = {
-  "Fornecedores":         "#64748b",
-  "Salários":             "#10b981",
-  "Impostos/taxas":       "#8b5cf6",
-  "Aluguéis/condomínio":  "#f59e0b",
-  "Contabilidade":        "#3b82f6",
-  "Cartão de crédito":    "#f43f5e",
-  "Água/luz":             "#06b6d4",
-  "Serviços gerais":      "#f97316",
-  "Empréstimo":           "#a855f7",
-  "Outros":               "hsl(220, 10%, 60%)",
-};
+// ─── Paleta categórica CVD-safe (skill dataviz — validada com validate_palette) ─
+// Slots em ordem FIXA (a ordem é o mecanismo de separação CVD, não cosmética).
+// Ambos os modos validam: light worst adjacent ΔE 24.2 · dark 10.3 (floor band,
+// legalizado pelo gap de superfície entre segmentos). O balde "Outros" é cinza
+// neutro de propósito — catch-all, nunca uma hue.
+const SERIES_LIGHT = [
+  "#2a78d6", // blue
+  "#1baf7a", // aqua
+  "#eda100", // yellow
+  "#008300", // green
+  "#4a3aa7", // violet
+  "#e34948", // red
+];
+const SERIES_DARK = [
+  "#3987e5",
+  "#199e70",
+  "#c98500",
+  "#008300",
+  "#9085e9",
+  "#e66767",
+];
+const OTHER_COLOR = "#898781"; // cinza neutro, mesmo em ambos os modos
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 export function CostCompositionChart() {
   const { data: rawData = [], isLoading } = useCostByMonth(9);
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
+  const series = isDark ? SERIES_DARK : SERIES_LIGHT;
 
-  // Pivot long→wide para recharts BarChart empilhado
-  const { wideData, allCategories } = useMemo(() => {
-    const monthMap = new Map<string, Record<string, number | string>>();
+  const { wideData, orderedCategories } = useMemo(
+    () => buildCostComposition(rawData),
+    [rawData]
+  );
 
-    for (const row of rawData) {
-      if (!monthMap.has(row.month)) {
-        // Display label: "2026-04" → "abr./26" → normalizado para "Abr/26"
-        const [y, m] = row.month.split("-");
-        const raw = new Date(Number(y), Number(m) - 1).toLocaleString("pt-BR", {
-          month: "short",
-          year: "2-digit",
-        });
-        // Normalizar: "abr. de 26" / "abr./26" / "abr. 26" → "Abr/26"
-        const label = raw
-          .replace(/\.\s*de\s*/gi, "/")
-          .replace(/\./g, "")
-          .replace(/\s+/g, "/")
-          .replace(/^(\w)/, (c) => c.toUpperCase());
-        monthMap.set(row.month, { month: label, _sort: row.month });
-      }
-      (monthMap.get(row.month) as Record<string, number | string>)[row.category] = row.total;
-    }
-
-    const wideData = [...monthMap.values()].sort((a, b) =>
-      String(a._sort).localeCompare(String(b._sort))
-    );
-
-    const allCategories = [...new Set(rawData.map((r) => r.category))];
-
-    return { wideData, allCategories };
-  }, [rawData]);
+  // Cor por índice: cada categoria mantida pega a slot i; "Outros" pega o cinza.
+  const colorFor = (cat: string, i: number): string =>
+    cat === OTHER_LABEL ? OTHER_COLOR : series[i] ?? OTHER_COLOR;
 
   if (isLoading) {
     return (
@@ -136,14 +131,23 @@ export function CostCompositionChart() {
               formatter={(v: unknown) => currFmt(Number(v))}
             />
             <Legend wrapperStyle={{ fontSize: 11 }} />
-            {allCategories.map((cat, i) => (
+            {orderedCategories.map((cat, i) => (
               <Bar
                 key={cat}
                 dataKey={cat}
                 stackId="stack"
-                fill={CATEGORY_COLORS[cat] ?? "#94a3b8"}
+                fill={colorFor(cat, i)}
+                // Gap de superfície entre segmentos empilhados (skill dataviz):
+                // hairline da cor do card → separa faixas adjacentes e serve de
+                // encoding secundário que legaliza a banda CVD 8–12 no dark.
+                stroke="hsl(var(--card))"
+                strokeWidth={1.5}
                 maxBarSize={40}
-                radius={i === allCategories.length - 1 ? [3, 3, 0, 0] : [0, 0, 0, 0]}
+                radius={
+                  i === orderedCategories.length - 1
+                    ? [3, 3, 0, 0]
+                    : [0, 0, 0, 0]
+                }
               />
             ))}
           </BarChart>
