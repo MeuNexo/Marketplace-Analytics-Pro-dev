@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { RefreshCw, Database, Users, HardDrive, TrendingUp } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { WebhookEventsPanel } from "@/components/admin/WebhookEventsPanel";
 
 interface CacheTableStat {
   table_name: string;
@@ -231,6 +232,8 @@ export default function AdminMonitoring() {
           </div>
         </CardContent>
       </Card>
+
+      <WebhookEventsPanel />
     </div>
   );
 }
