@@ -50,6 +50,7 @@ import { ConsultorLLMSummary } from "@/components/mercadolivre/ConsultorLLMSumma
 import { useConsultorInsights } from "@/hooks/useConsultorInsights";
 import { MLMcoStrip } from "@/components/mercadolivre/MLMcoStrip";
 import { computeMco } from "@/lib/mco";
+import { useDreOperational } from "@/hooks/useDreOperational";
 
 const currencyFmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -228,6 +229,10 @@ export default function MercadoLivre() {
     billingMonthIsCurrentMonth ? monthlyFrom : billingMonthFrom,
     billingMonthIsCurrentMonth ? monthlyTo   : billingMonthTo,
   );
+
+  // Custos operacionais (Pessoal/Estrutura/Serviços/Outros/Financeiro) do mesmo
+  // mês de competência exibido no card DRE — Phase 88.
+  const { data: dreOperational, isLoading: dreOperationalLoading } = useDreOperational(billingMonthFrom);
 
   // DRE: waterfall autoritativo para o mês exibido no card
   const dreWaterfall = billingMonthIsCurrentMonth ? monthlyCostWaterfall : filterMonthWaterfall;
@@ -787,6 +792,8 @@ export default function MercadoLivre() {
                   syncing={billingSyncing || dailySyncing}
                   faturaFrom={billingData?.invoiceFrom}
                   faturaTo={billingData?.invoiceTo}
+                  dreOperational={dreOperational ?? null}
+                  dreOperationalLoading={dreOperationalLoading}
                 />
                 <MLTopProducts products={effectiveProducts} marginMap={marginMap} />
               </div>
