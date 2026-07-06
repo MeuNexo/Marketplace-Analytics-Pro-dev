@@ -4,16 +4,16 @@ milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
 current_phase: 80
 status: completed
-stopped_at: Completed 83-01
-last_updated: "2026-07-03T12:33:23.438Z"
+stopped_at: "Completed 88-02 (Wave 1+2 executed: pure lib + hook + UI wiring, tsc clean, vitest 418/418 green)"
+last_updated: "2026-07-06T22:34:30.879Z"
 last_activity: 2026-07-02
 last_activity_desc: Phase 80 complete
 progress:
-  total_phases: 28
-  completed_phases: 15
-  total_plans: 65
-  completed_plans: 57
-  percent: 54
+  total_phases: 34
+  completed_phases: 18
+  total_plans: 72
+  completed_plans: 65
+  percent: 53
 current_phase_name: an-lise-de-pre-os-onde-vendo-bem
 ---
 
@@ -274,6 +274,8 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | Phase 80-an-lise-de-pre-os-onde-vendo-bem P02 | 35min | 3 tasks | 2 files |
 | 80 | 2 | - | - |
 | Phase 83-produtos-vendidos-mco-redesign P01 | 6min | 3 tasks | 5 files |
+| Phase 88 P01 | 15min | 2 tasks | 4 files |
+| Phase 88 P02 | 15min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -343,6 +345,8 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 - [Phase 80-02]: Tokens --chart-margin-saudavel/apertada/prejuizo criados dedicados ao histograma (nao reusar --success/--warning/--destructive globais) porque estes falham o check Lightness band do validador CVD quando usados lado a lado como marcas de grafico
 - [Phase 83-01]: Migration usa DROP FUNCTION + CREATE (nao CREATE OR REPLACE) para adicionar coluna marca a RPC get_margin_with_ads_by_product, pois RETURNS TABLE muda de forma
 - [Phase 83-01]: mcoPct do GRUPO em Produtos Vendidos = soma(lucro_pos_ads) / soma(receita) x 100 pos-ads, nunca a media dos mcoPct dos itens
+- [Phase 88]: aggregateOperationalBlocks allow-lists 5 blocos (nunca deny-list impostos_venda/excluido) para blindar contra double-count futuro
+- [Phase 88]: Resultado liquido reusa lucro ja calculado em MLCostCard (nao re-deriva margem, nao chama useMLCostWaterfall de novo)
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -397,10 +401,10 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-**Resume file:** None
+**Resume file:** 88-03-PLAN.md
 
-Last session: 2026-07-03T12:33:23.415Z
-Stopped at: Completed 83-01
+Last session: 2026-07-06T22:34:30.861Z
+Stopped at: Completed 88-02 (Wave 1+2 executed: pure lib + hook + UI wiring, tsc clean, vitest 418/418 green)
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
