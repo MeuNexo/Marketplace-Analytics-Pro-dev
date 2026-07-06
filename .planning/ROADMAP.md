@@ -695,7 +695,7 @@ Plans:
 **Milestone:** DRE de Resultado (fase 2 de 3)
 **Requirements**: Escopo só Mercado Livre. Anti-IDOR por `organization_id`. Reconciliação com um mês real fechado.
 **Depends on:** Phase 86 (competence_date em cash_outflows)
-**Plans:** 0 plans
+**Plans:** 2 plans
 
 **Success Criteria** (what must be TRUE):
 
@@ -707,7 +707,10 @@ Plans:
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 87 to break down)
+- [ ] 87-01-PLAN.md — RPC get_dre_operational_by_competence (categoria→bloco, exclusões, outros_operacionais, Financeiro isolado/aproximado; apply via MCP)
+- [ ] 87-02-PLAN.md — Reconciliação total-fechado junho/2026 + prova anti-IDOR (gate de cobertura ≥90%)
+
+> Nota: o texto do critério 1 acima ("aproximação SAC R$6.666,67/parcela") está OBSOLETO — 87-CONTEXT.md (mais recente, LOCKED) proíbe fechar o juro via SAC. O bloco Financeiro é isolado como aproximado/pendente (flag `financeiro_is_approximate`) até a tabela de amortização do banco.
 
 ### Phase 88: DRE — Frontend Resultado Completo (/vendas)
 
