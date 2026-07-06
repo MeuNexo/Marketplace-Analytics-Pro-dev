@@ -164,7 +164,7 @@ export default function MLDevolucoes() {
                       </td>
                       <td className="px-3 py-3 max-w-[200px] truncate">{claim.item_title ?? claim.item_id ?? "—"}</td>
                       <td className="px-3 py-3 text-muted-foreground whitespace-nowrap">{claimTipoLabel(claim.tipo)}</td>
-                      <td className="px-3 py-3 max-w-[140px] truncate text-muted-foreground">{claim.motivo ?? claim.descricao ?? "—"}</td>
+                      <td className="px-3 py-3 max-w-[180px] truncate text-muted-foreground" title={claim.motivo_texto ?? undefined}>{claim.motivo_texto ?? claim.descricao ?? "—"}</td>
                       <td className="px-6 py-3">{statusBadge(claim.status)}</td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">
                         <span className="inline-flex items-center gap-1 text-xs text-muted-foreground group-hover:text-primary transition-colors">

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { format, parseISO, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Send, RefreshCw, ShieldAlert, User, Scale, Store, Package, Banknote, Gavel } from "lucide-react";
+import { Send, RefreshCw, ShieldAlert, User, Scale, Store, Package, Banknote, Gavel, PackageCheck } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
@@ -27,17 +27,25 @@ function roleView(role: string | null): { label: string; side: "left" | "right" 
 }
 
 // Ações do vendedor: rótulo, ícone, tom e texto de confirmação (consequência).
-type ActionKind = "refund" | "open_dispute";
-const ACTION_META: Record<ActionKind, { label: string; icon: React.ReactNode; variant: "destructive" | "outline"; confirmTitle: string; confirmBody: string }> = {
+type ActionKind = "refund" | "open_dispute" | "allow_return";
+const ACTION_META: Record<ActionKind, { label: string; icon: React.ReactNode; variant: "destructive" | "outline"; confirmTitle: string; confirmBody: string; success: string }> = {
   refund: {
     label: "Reembolsar comprador", icon: <Banknote className="w-3.5 h-3.5 mr-1.5" />, variant: "destructive",
     confirmTitle: "Reembolsar o comprador?",
     confirmBody: "O valor será devolvido ao comprador e a reclamação será encerrada a favor dele. Esta ação é irreversível.",
+    success: "Reembolso solicitado ao Mercado Livre",
+  },
+  allow_return: {
+    label: "Autorizar devolução", icon: <PackageCheck className="w-3.5 h-3.5 mr-1.5" />, variant: "outline",
+    confirmTitle: "Autorizar a devolução?",
+    confirmBody: "O comprador receberá as instruções para devolver o produto. Após o retorno, o reembolso é processado. Esta ação é irreversível.",
+    success: "Devolução autorizada",
   },
   open_dispute: {
     label: "Acionar o Mercado Livre", icon: <Gavel className="w-3.5 h-3.5 mr-1.5" />, variant: "outline",
     confirmTitle: "Abrir disputa no Mercado Livre?",
     confirmBody: "A decisão passa para a mediação do Mercado Livre analisar o caso. Use quando não houver acordo com o comprador. Esta ação é irreversível.",
+    success: "Disputa aberta no Mercado Livre",
   },
 };
 
@@ -64,11 +72,14 @@ export function ClaimDetailSheet({ claim, onOpenChange }: Props) {
   const actionsKnown = !isLoading && detail !== undefined;
   const canRefund = actions.includes("refund");
   const canDispute = actions.includes("open_dispute");
-  // Mensagem: se o ML lista a ação; senão cai pro status (claim aberta).
+  const canAllowReturn = actions.includes("allow_return");
+  const hasActions = canRefund || canDispute || canAllowReturn;
+  // Mensagem: se o ML lista o envio (ao comprador ou mediador); senão cai pro status.
   const canMessage = actions.includes("send_message_to_complainant")
+    || actions.includes("send_message_to_mediator")
     || (actionsKnown && actions.length === 0 && claim ? isClaimOpen(claim.status) : false);
 
-  const motivo = detail?.reason?.detail ?? claim?.motivo ?? null;
+  const motivo = detail?.reason?.detail ?? claim?.motivo_texto ?? null;
 
   async function afterMutation() {
     await refetch();
@@ -103,7 +114,7 @@ export function ClaimDetailSheet({ claim, onOpenChange }: Props) {
         body: { claim_id: claim.claim_id, ml_user_id: claim.ml_user_id, action },
       });
       if (error || data?.error) throw new Error(data?.error || error?.message || "Falha na ação");
-      toast.success(action === "refund" ? "Reembolso solicitado ao Mercado Livre" : "Disputa aberta no Mercado Livre");
+      toast.success(ACTION_META[action].success);
       await afterMutation();
     } catch (e: any) {
       toast.error(e?.message ?? "Não foi possível concluir a ação");
@@ -174,9 +185,14 @@ export function ClaimDetailSheet({ claim, onOpenChange }: Props) {
             {/* Ações + resposta */}
             <Separator />
             <div className="px-5 py-4 space-y-3">
-              {/* Botões de decisão (só os que o ML permite) */}
-              {(canRefund || canDispute) && (
+              {/* Botões de decisão (só os que o ML permite p/ esta reclamação) */}
+              {hasActions && (
                 <div className="flex flex-wrap gap-2">
+                  {canAllowReturn && (
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => setPendingAction("allow_return")}>
+                      {ACTION_META.allow_return.icon}{ACTION_META.allow_return.label}
+                    </Button>
+                  )}
                   {canRefund && (
                     <Button size="sm" variant="destructive" disabled={busy} onClick={() => setPendingAction("refund")}>
                       {ACTION_META.refund.icon}{ACTION_META.refund.label}
@@ -206,7 +222,7 @@ export function ClaimDetailSheet({ claim, onOpenChange }: Props) {
                     </Button>
                   </div>
                 </div>
-              ) : actionsKnown && !canRefund && !canDispute ? (
+              ) : actionsKnown && !hasActions ? (
                 <p className="text-xs text-muted-foreground text-center py-2">
                   Esta reclamação está encerrada — não há ações disponíveis.
                 </p>

@@ -234,6 +234,20 @@ async function syncUser(
     }
   }
 
+  // Traduz o motivo (reason_id → texto legível) uma vez por código, cacheado,
+  // para a coluna motivo_texto aparecer já na tabela (sem abrir a reclamação).
+  const reasonCache = new Map<string, string | null>();
+  for (const r of allRows) {
+    const code = r.motivo as string | null;
+    if (!code) { r.motivo_texto = null; continue; }
+    if (!reasonCache.has(code)) {
+      const rd = await mlGet(ML_API + "/post-purchase/v1/claims/reasons/" + code, token);
+      reasonCache.set(code, (rd?.detail as string | undefined) ?? null);
+      await new Promise((res) => setTimeout(res, 120));
+    }
+    r.motivo_texto = reasonCache.get(code) ?? null;
+  }
+
   // Dedupe by claim_id within this user's batch: the ML claims search can return
   // the same claim under both 'opened' and 'closed' iterations (or across pages),
   // and Postgres ON CONFLICT DO UPDATE rejects a batch that touches the same

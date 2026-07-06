@@ -19,7 +19,7 @@ import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 const ML_API = "https://api.mercadolibre.com";
 
 // Whitelist — nunca aceitar ação arbitrária vinda do cliente.
-const ALLOWED_ACTIONS = ["refund", "open_dispute"] as const;
+const ALLOWED_ACTIONS = ["refund", "open_dispute", "allow_return"] as const;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
