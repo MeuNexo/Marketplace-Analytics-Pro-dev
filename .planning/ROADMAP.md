@@ -719,7 +719,7 @@ Plans:
 **Milestone:** DRE de Resultado (fase 3 de 3)
 **Requirements**: React + TS + shadcn/ui + Recharts (stack existente). Consistente com o resto do dashboard (tokens, BRL, light/dark, mobile).
 **Depends on:** Phase 87 (RPC de agregação da DRE)
-**Plans:** 0 plans
+**Plans:** 3 plans
 
 **Success Criteria** (what must be TRUE):
 
@@ -730,7 +730,9 @@ Plans:
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 88 to break down)
+- [ ] 88-01-PLAN.md — Camada de dados/lógica: lib pura dreOperational (resultado líquido + filtro de blocos) + hook useDreOperational + testes vitest (junho ≈ −R$29k)
+- [ ] 88-02-PLAN.md — UI no MLCostCard: seção operacional (Pessoal/Estrutura/Serviços/Outros → Resultado operacional → Financeiro [aproximado] → Resultado líquido), light/dark/mobile
+- [ ] 88-03-PLAN.md — Build + preview Vercel + validação visual do Wesley
 
 ---
 ### Phase 89: Webhook ML (tempo real) — perguntas, reclamações e pedidos
