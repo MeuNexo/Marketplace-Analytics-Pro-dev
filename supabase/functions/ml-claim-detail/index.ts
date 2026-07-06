@@ -2,11 +2,14 @@
  * ml-claim-detail — user-invoked edge function (read-only)
  * verify_jwt = true (user JWT required via Supabase Auth)
  *
- * Busca o detalhe de uma reclamação/mediação + a thread de mensagens no ML,
- * para exibir tudo DENTRO do dashboard (sem sair para o ML).
+ * Retorna, para exibir a reclamação DENTRO do dashboard (sem sair para o ML):
+ *   - messages:          thread de mensagens (comprador/mediador/vendedor)
+ *   - reason:            motivo traduzido ({ code, name, detail })
+ *   - available_actions: ações que o VENDEDOR pode tomar (ex.: refund, open_dispute,
+ *                        send_message_to_complainant) — vêm do player 'respondent'
+ *   - stage/type/status: contexto
  *
- * Gates: 1) JWT do usuário  2) validação do body  3) token por ml_user_id
- *        4) org membership (anti-IDOR)  5) GET detalhe + mensagens no ML.
+ * Gates: JWT do usuário → validação → token por ml_user_id → org membership (anti-IDOR).
  * Segurança (T-42-04): access_token nunca é logado nem retornado.
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -63,21 +66,40 @@ serve(async (req) => {
     if (!isMember) return jsonResponse({ error: "Forbidden" }, 403);
 
     const at = tokenRow.access_token;
-    // Detalhe (dual-URL, mesmo par do sync/webhook).
-    const detail = (await mlGetJson(`${ML_API}/v1/claims/${claim_id}`, at))
-                ?? (await mlGetJson(`${ML_API}/post-purchase/v1/claims/${claim_id}`, at));
-    // Mensagens (endpoint post-purchase). Retorna [] se indisponível.
-    const messagesRaw = (await mlGetJson(`${ML_API}/post-purchase/v1/claims/${claim_id}/messages`, at))
-                     ?? (await mlGetJson(`${ML_API}/v1/claims/${claim_id}/messages`, at));
 
-    const messages = Array.isArray(messagesRaw) ? messagesRaw
-                   : (messagesRaw?.data ?? messagesRaw?.messages ?? []);
+    // Detalhe + mensagens em paralelo.
+    const [detail, messagesRaw] = await Promise.all([
+      mlGetJson(`${ML_API}/post-purchase/v1/claims/${claim_id}`, at),
+      mlGetJson(`${ML_API}/post-purchase/v1/claims/${claim_id}/messages`, at),
+    ]);
+
+    const messages = Array.isArray(messagesRaw) ? messagesRaw : (messagesRaw?.data ?? messagesRaw?.messages ?? []);
+
+    // Ações disponíveis para o VENDEDOR (player respondent).
+    const respondent = Array.isArray(detail?.players)
+      ? detail.players.find((p: any) => p?.role === "respondent")
+      : null;
+    const available_actions: string[] = Array.isArray(respondent?.available_actions)
+      ? respondent.available_actions.map((a: any) => a?.action).filter(Boolean)
+      : [];
+
+    // Motivo traduzido.
+    let reason: { code: string | null; name: string | null; detail: string | null } = {
+      code: detail?.reason_id ?? null, name: null, detail: null,
+    };
+    if (detail?.reason_id) {
+      const r = await mlGetJson(`${ML_API}/post-purchase/v1/claims/reasons/${detail.reason_id}`, at);
+      if (r) reason = { code: r.id ?? detail.reason_id, name: r.name ?? null, detail: r.detail ?? null };
+    }
 
     return jsonResponse({
       ok: true,
-      detail: detail ?? null,
       messages,
-      available_actions: detail?.available_actions ?? detail?.actions_available ?? [],
+      reason,
+      available_actions,
+      stage:  detail?.stage ?? null,
+      type:   detail?.type ?? null,
+      status: detail?.status ?? null,
     });
   } catch (err) {
     console.error("ml-claim-detail error:", err);

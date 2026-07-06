@@ -1,11 +1,9 @@
 import { useState } from "react";
 import { format, parseISO, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Send, RefreshCw, ShieldAlert, User, Scale, Store, Package, ExternalLink } from "lucide-react";
+import { Send, RefreshCw, ShieldAlert, User, Scale, Store, Package, Banknote, Gavel } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  Sheet, SheetContent, SheetHeader, SheetTitle,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -16,18 +14,32 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { useMLClaimMessages } from "@/hooks/useMLClaimMessages";
+import { useMLClaimDetail } from "@/hooks/useMLClaimMessages";
 import { htmlToText } from "@/lib/htmlToText";
 import { claimStatusConfig, claimTipoLabel, isClaimOpen } from "@/lib/claimStatus";
 import type { MLClaimRow } from "@/hooks/useMLClaims";
 
-// Mapeia o papel do remetente da mensagem para rótulo + alinhamento visual.
 function roleView(role: string | null): { label: string; side: "left" | "right" | "center"; icon: React.ReactNode; tone: string } {
   if (role === "respondent") return { label: "Você", side: "right", icon: <Store className="w-3 h-3" />, tone: "bg-primary/10 border-primary/20" };
   if (role === "complainant") return { label: "Comprador", side: "left", icon: <User className="w-3 h-3" />, tone: "bg-muted border-border" };
   if (role === "mediator") return { label: "Mediação ML", side: "center", icon: <Scale className="w-3 h-3" />, tone: "bg-amber-500/10 border-amber-500/20" };
   return { label: role ?? "—", side: "left", icon: <User className="w-3 h-3" />, tone: "bg-muted border-border" };
 }
+
+// Ações do vendedor: rótulo, ícone, tom e texto de confirmação (consequência).
+type ActionKind = "refund" | "open_dispute";
+const ACTION_META: Record<ActionKind, { label: string; icon: React.ReactNode; variant: "destructive" | "outline"; confirmTitle: string; confirmBody: string }> = {
+  refund: {
+    label: "Reembolsar comprador", icon: <Banknote className="w-3.5 h-3.5 mr-1.5" />, variant: "destructive",
+    confirmTitle: "Reembolsar o comprador?",
+    confirmBody: "O valor será devolvido ao comprador e a reclamação será encerrada a favor dele. Esta ação é irreversível.",
+  },
+  open_dispute: {
+    label: "Acionar o Mercado Livre", icon: <Gavel className="w-3.5 h-3.5 mr-1.5" />, variant: "outline",
+    confirmTitle: "Abrir disputa no Mercado Livre?",
+    confirmBody: "A decisão passa para a mediação do Mercado Livre analisar o caso. Use quando não houver acordo com o comprador. Esta ação é irreversível.",
+  },
+};
 
 interface Props {
   claim: MLClaimRow | null;
@@ -37,36 +49,67 @@ interface Props {
 export function ClaimDetailSheet({ claim, onOpenChange }: Props) {
   const qc = useQueryClient();
   const [text, setText] = useState("");
-  const [confirming, setConfirming] = useState(false);
-  const [sending, setSending] = useState(false);
+  const [confirmingSend, setConfirmingSend] = useState(false);
+  const [pendingAction, setPendingAction] = useState<ActionKind | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const claimId = claim?.claim_id ?? null;
   const mlUserId = claim?.ml_user_id ?? null;
-  const { data: messages = [], isLoading, refetch } = useMLClaimMessages(claimId, mlUserId);
+  const { data: detail, isLoading, refetch } = useMLClaimDetail(claimId, mlUserId);
 
   const open = claim !== null;
   const status = claim ? claimStatusConfig(claim.status) : null;
-  const canReply = claim ? isClaimOpen(claim.status) : false;
+
+  const actions = detail?.available_actions ?? [];
+  const actionsKnown = !isLoading && detail !== undefined;
+  const canRefund = actions.includes("refund");
+  const canDispute = actions.includes("open_dispute");
+  // Mensagem: se o ML lista a ação; senão cai pro status (claim aberta).
+  const canMessage = actions.includes("send_message_to_complainant")
+    || (actionsKnown && actions.length === 0 && claim ? isClaimOpen(claim.status) : false);
+
+  const motivo = detail?.reason?.detail ?? claim?.motivo ?? null;
+
+  async function afterMutation() {
+    await refetch();
+    qc.invalidateQueries({ queryKey: ["atendimento-pendencias"] });
+    qc.invalidateQueries({ queryKey: ["ml_claims"] });
+  }
 
   async function handleSend() {
     if (!claim || !text.trim()) return;
-    setSending(true);
+    setBusy(true);
     try {
       const { data, error } = await supabase.functions.invoke("reply-ml-claim", {
         body: { claim_id: claim.claim_id, ml_user_id: claim.ml_user_id, text: text.trim() },
       });
-      if (error || (data && data.error)) {
-        throw new Error(data?.error || error?.message || "Falha ao enviar");
-      }
+      if (error || data?.error) throw new Error(data?.error || error?.message || "Falha ao enviar");
       toast.success("Mensagem enviada ao comprador");
       setText("");
-      await refetch();
-      qc.invalidateQueries({ queryKey: ["atendimento-pendencias"] });
+      await afterMutation();
     } catch (e: any) {
       toast.error(e?.message ?? "Não foi possível enviar a mensagem");
     } finally {
-      setSending(false);
-      setConfirming(false);
+      setBusy(false);
+      setConfirmingSend(false);
+    }
+  }
+
+  async function handleAction(action: ActionKind) {
+    if (!claim) return;
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("ml-claim-action", {
+        body: { claim_id: claim.claim_id, ml_user_id: claim.ml_user_id, action },
+      });
+      if (error || data?.error) throw new Error(data?.error || error?.message || "Falha na ação");
+      toast.success(action === "refund" ? "Reembolso solicitado ao Mercado Livre" : "Disputa aberta no Mercado Livre");
+      await afterMutation();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Não foi possível concluir a ação");
+    } finally {
+      setBusy(false);
+      setPendingAction(null);
     }
   }
 
@@ -87,8 +130,12 @@ export function ClaimDetailSheet({ claim, onOpenChange }: Props) {
                   <Package className="w-3.5 h-3.5 mt-0.5 shrink-0 text-muted-foreground" />
                   <span className="line-clamp-2">{claim.item_title ?? claim.item_id ?? "Produto não identificado"}</span>
                 </div>
+                {motivo && (
+                  <p className="text-xs text-muted-foreground">
+                    Motivo: <span className="text-foreground">{motivo}</span>
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                  {claim.motivo && <span>Motivo: <span className="text-foreground">{claim.motivo}</span></span>}
                   {claim.order_id && <span>Pedido: <span className="text-foreground font-mono">{claim.order_id}</span></span>}
                   {claim.valor != null && <span>Valor: <span className="text-foreground">{claim.valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span></span>}
                   {claim.data_abertura && <span>Aberta em {format(parseISO(claim.data_abertura), "dd/MM/yy", { locale: ptBR })}</span>}
@@ -96,25 +143,24 @@ export function ClaimDetailSheet({ claim, onOpenChange }: Props) {
               </div>
             </SheetHeader>
 
-            {/* Thread de mensagens */}
+            {/* Thread */}
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
               {isLoading ? (
                 <div className="flex flex-col items-center justify-center py-10 text-muted-foreground gap-2">
                   <RefreshCw className="w-6 h-6 animate-spin opacity-40" />
                   <p className="text-xs">Carregando conversa…</p>
                 </div>
-              ) : messages.length === 0 ? (
+              ) : (detail?.messages.length ?? 0) === 0 ? (
                 <p className="text-center text-sm text-muted-foreground py-10">Nenhuma mensagem nesta reclamação ainda.</p>
               ) : (
-                messages.map((m, i) => {
+                detail!.messages.map((m, i) => {
                   const rv = roleView(m.sender_role);
                   const when = m.message_date ?? m.date_created;
                   return (
                     <div key={i} className={`flex ${rv.side === "right" ? "justify-end" : rv.side === "center" ? "justify-center" : "justify-start"}`}>
                       <div className={`max-w-[85%] rounded-xl border px-3 py-2 ${rv.tone}`}>
                         <div className="flex items-center gap-1.5 mb-1 text-[11px] font-medium text-muted-foreground">
-                          {rv.icon}
-                          <span>{rv.label}</span>
+                          {rv.icon}<span>{rv.label}</span>
                           {when && <span className="font-normal">· {formatDistanceToNow(new Date(when), { addSuffix: true, locale: ptBR })}</span>}
                         </div>
                         <p className="text-sm whitespace-pre-wrap break-words text-foreground">{htmlToText(m.message)}</p>
@@ -125,11 +171,28 @@ export function ClaimDetailSheet({ claim, onOpenChange }: Props) {
               )}
             </div>
 
-            {/* Caixa de resposta */}
+            {/* Ações + resposta */}
             <Separator />
-            <div className="px-5 py-4 space-y-2">
-              {canReply ? (
-                <>
+            <div className="px-5 py-4 space-y-3">
+              {/* Botões de decisão (só os que o ML permite) */}
+              {(canRefund || canDispute) && (
+                <div className="flex flex-wrap gap-2">
+                  {canRefund && (
+                    <Button size="sm" variant="destructive" disabled={busy} onClick={() => setPendingAction("refund")}>
+                      {ACTION_META.refund.icon}{ACTION_META.refund.label}
+                    </Button>
+                  )}
+                  {canDispute && (
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => setPendingAction("open_dispute")}>
+                      {ACTION_META.open_dispute.icon}{ACTION_META.open_dispute.label}
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {/* Caixa de resposta */}
+              {canMessage ? (
+                <div className="space-y-2">
                   <Textarea
                     value={text}
                     onChange={(e) => setText(e.target.value.slice(0, 2000))}
@@ -137,37 +200,54 @@ export function ClaimDetailSheet({ claim, onOpenChange }: Props) {
                     className="min-h-[80px] resize-none text-sm"
                   />
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] text-muted-foreground">{text.length}/2000 · a mensagem vai ao comprador no ML</span>
-                    <Button size="sm" disabled={!text.trim() || sending} onClick={() => setConfirming(true)}>
-                      <Send className="w-3.5 h-3.5 mr-1.5" />
-                      {sending ? "Enviando…" : "Enviar resposta"}
+                    <span className="text-[11px] text-muted-foreground">{text.length}/2000 · vai ao comprador no ML</span>
+                    <Button size="sm" disabled={!text.trim() || busy} onClick={() => setConfirmingSend(true)}>
+                      <Send className="w-3.5 h-3.5 mr-1.5" />{busy ? "Enviando…" : "Enviar resposta"}
                     </Button>
                   </div>
-                </>
-              ) : (
+                </div>
+              ) : actionsKnown && !canRefund && !canDispute ? (
                 <p className="text-xs text-muted-foreground text-center py-2">
-                  Esta reclamação está encerrada — não é possível enviar novas mensagens.
+                  Esta reclamação está encerrada — não há ações disponíveis.
                 </p>
-              )}
+              ) : null}
             </div>
           </>
         )}
       </SheetContent>
 
-      {/* Confirmação (envio é irreversível) */}
-      <AlertDialog open={confirming} onOpenChange={(o) => { if (!o) setConfirming(false); }}>
+      {/* Confirmar envio de mensagem */}
+      <AlertDialog open={confirmingSend} onOpenChange={(o) => { if (!o) setConfirmingSend(false); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Enviar resposta?</AlertDialogTitle>
-            <AlertDialogDescription>
-              A mensagem será enviada ao comprador (e ao mediador do ML, se houver) e não pode ser desfeita.
-            </AlertDialogDescription>
+            <AlertDialogDescription>A mensagem será enviada ao comprador (e ao mediador, se houver) e não pode ser desfeita.</AlertDialogDescription>
           </AlertDialogHeader>
           <div className="rounded-lg bg-muted/50 p-3 text-sm whitespace-pre-wrap max-h-40 overflow-y-auto">{text}</div>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={sending}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={(e) => { e.preventDefault(); handleSend(); }} disabled={sending}>
-              {sending ? "Enviando…" : "Confirmar envio"}
+            <AlertDialogCancel disabled={busy}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={(e) => { e.preventDefault(); handleSend(); }} disabled={busy}>
+              {busy ? "Enviando…" : "Confirmar envio"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirmar ação (refund / open_dispute) */}
+      <AlertDialog open={pendingAction !== null} onOpenChange={(o) => { if (!o) setPendingAction(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{pendingAction ? ACTION_META[pendingAction].confirmTitle : ""}</AlertDialogTitle>
+            <AlertDialogDescription>{pendingAction ? ACTION_META[pendingAction].confirmBody : ""}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); if (pendingAction) handleAction(pendingAction); }}
+              disabled={busy}
+              className={pendingAction === "refund" ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : ""}
+            >
+              {busy ? "Processando…" : "Confirmar"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
