@@ -125,3 +125,8 @@ verify_jwt = false
 # verify_jwt=true — JWT do usuário obrigatório + is_org_member (anti-IDOR por org).
 [functions.nexo-chat]
 verify_jwt = true
+
+# ml-webhook: recebe notificações do ML (Phase 89). verify_jwt=false — auth por
+# secret no path (vault ml_webhook_secret) + Bearer service_role_key no modo reprocess.
+[functions.ml-webhook]
+verify_jwt = false
