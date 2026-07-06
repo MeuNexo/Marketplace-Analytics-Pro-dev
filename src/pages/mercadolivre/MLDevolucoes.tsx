@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
+import { WebhookHealthBadge } from "@/components/mercadolivre/WebhookHealthBadge";
 import { useMLStore } from "@/contexts/MLStoreContext";
 import { useMLClaims, type MLClaimRow } from "@/hooks/useMLClaims";
 
@@ -101,7 +102,9 @@ export default function MLDevolucoes() {
     <div className="space-y-6">
 
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <MLPageHeader title="Devoluções" lastUpdated={null} />
+        <MLPageHeader title="Devoluções" lastUpdated={null}>
+          <WebhookHealthBadge />
+        </MLPageHeader>
         <div className="flex items-center gap-2">
           <Button
             variant="outline"

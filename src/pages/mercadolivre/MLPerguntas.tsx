@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
+import { WebhookHealthBadge } from "@/components/mercadolivre/WebhookHealthBadge";
 import { useMLStore } from "@/contexts/MLStoreContext";
 import { useMLQuestions } from "@/hooks/useMLQuestions";
 import { supabase } from "@/integrations/supabase/client";
@@ -149,7 +150,9 @@ export default function MLPerguntas() {
 
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <MLPageHeader title="Perguntas" lastUpdated={null} />
+          <MLPageHeader title="Perguntas" lastUpdated={null}>
+            <WebhookHealthBadge />
+          </MLPageHeader>
           {summary.pending > 0 && (
             <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30 gap-1">
               <AlertTriangle className="w-3 h-3" /> {summary.pending} pendentes
