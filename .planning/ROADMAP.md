@@ -759,4 +759,22 @@ Plans:
 
 - [ ] TBD (run /gsd-plan-phase 89 to break down)
 
+### Phase 90: DRE — Imposto real e CMV cheio no fechamento do mês
+
+**Goal:** O DRE do `/vendas` passa a distinguir mês **ABERTO** vs **FECHADO**. No mês aberto mantém o comportamento atual (imposto pela estimativa automática por item `~tax_amount` = provisão; CMV a custo médio). No mês FECHADO (guia da competência já lançada na Tiny): (1) troca a estimativa pelo **imposto real** das guias `impostos_venda` por competência, via `get_dre_operational_by_competence`; (2) usa **CMV a preço de custo cheio** em vez de custo médio, pois a apuração de crédito/débito de ICMS/PIS/COFINS já está embutida na guia real (usar custo líquido + guia contaria o crédito 2×). Fecha o milestone "DRE de Resultado" alinhando a foto do mês com a DRE do Wesley.
+**Requirements**: Reusa `get_dre_operational_by_competence` (Phase 87, bloco `impostos_venda` por competência) e a composição de margem client-side do `/vendas` (Phase 84). Supabase `ckcdevcxgvueywivefgx`. **Bloqueia o merge da Phase 88** (fazer antes/junto, senão prod mostra −R$29k enganoso; com imposto real junho ≈ break-even = DRE do Wesley).
+**Depends on:** Phase 84, Phase 87
+**Success Criteria:**
+1. **Mês aberto** (guia da competência ainda NÃO existe na Tiny): zero regressão — imposto pela estimativa automática (provisão) + CMV custo médio, exatamente como hoje.
+2. **Mês fechado** (guia da competência JÁ existe na Tiny): imposto = soma real das guias `impostos_venda` daquela competência (não a estimativa); CMV = preço de custo cheio (não custo médio).
+3. Gatilho provisão→real = existência de guia `impostos_venda` para a competência (via RPC); determinístico e explicado na UI (selo "imposto real (guia)" vs "estimado (provisão)").
+4. Mapeado no código ANTES de implementar: qual base de custo o `/vendas` usa hoje no CMV (custo médio vs preço de custo) e onde exatamente a estimativa de imposto entra na margem. Não assumir.
+5. Reconciliação: um mês fechado com guia (mês de 2026 anterior a junho cuja guia já esteja na Tiny) bate com a DRE do Wesley (planilha). Junho fica em limbo (guia sai ~20-25/jul) → tratado como provisão; investigar o que é o R$4.793 já visto em `impostos_venda` de junho.
+6. Anti-IDOR (`organization_id`, SECURITY INVOKER), light+dark, mobile; validação visual Wesley.
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 90 to break down)
+
 ---

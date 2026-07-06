@@ -5,15 +5,15 @@ milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem
 current_phase: 80
 status: completed
 stopped_at: "Completed 88-02 (Wave 1+2 executed: pure lib + hook + UI wiring, tsc clean, vitest 418/418 green)"
-last_updated: "2026-07-06T22:34:30.879Z"
+last_updated: "2026-07-06T23:42:08.826Z"
 last_activity: 2026-07-02
 last_activity_desc: Phase 80 complete
 progress:
-  total_phases: 34
+  total_phases: 35
   completed_phases: 18
   total_plans: 72
   completed_plans: 65
-  percent: 53
+  percent: 51
 current_phase_name: an-lise-de-pre-os-onde-vendo-bem
 ---
 
@@ -384,6 +384,7 @@ Dashboard atual mostra:
 - Phase 78 added: Revisão mobile-first do dashboard inteiro (pedido Wesley 2026-07-01)
 - Phase 79 added: Análise de Preços com MCO — gráfico preço vs. break-even (spec 2026-07-02)
 - Phase 83 added: MCO por anúncio em Produtos Vendidos + redesign UX
+- Phase 90 added: DRE — Imposto real e CMV cheio no fechamento do mês (depends 84,87; bloqueia merge da 88)
 
 ## Deferred Items
 
