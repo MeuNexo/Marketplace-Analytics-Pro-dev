@@ -130,3 +130,11 @@ verify_jwt = true
 # secret no path (vault ml_webhook_secret) + Bearer service_role_key no modo reprocess.
 [functions.ml-webhook]
 verify_jwt = false
+
+# ml-claim-detail: leitura de detalhe+mensagens de reclamação (Phase B). JWT do usuário.
+[functions.ml-claim-detail]
+verify_jwt = true
+
+# reply-ml-claim: envia mensagem em reclamação (Phase B). JWT do usuário + anti-IDOR.
+[functions.reply-ml-claim]
+verify_jwt = true
