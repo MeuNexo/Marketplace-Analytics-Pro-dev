@@ -1,4 +1,4 @@
-import { Activity, Bell, Check, ChevronDown, LogOut, Menu, Settings, Store, User } from "lucide-react";
+import { Activity, Check, ChevronDown, LogOut, Menu, Settings, Store, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +16,7 @@ import { useOrganization } from "@/contexts/OrganizationContext";
 import { SellerMarketplaceBar } from "./SellerMarketplaceBar";
 import { OrganizationSwitcher } from "./OrganizationSwitcher";
 import { ThemeToggle } from "./ThemeToggle";
+import { AtendimentoBell } from "./AtendimentoBell";
 
 interface HeaderProps {
   title: string;
@@ -131,10 +132,7 @@ export function Header({ title, subtitle, showSellerSwitcher = true, showSellerM
 
         <ThemeToggle />
 
-        <Button variant="ghost" size="icon" className="relative rounded-xl hover:bg-secondary/50">
-          <Bell className="h-5 w-5 text-muted-foreground" />
-          <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-accent" />
-        </Button>
+        <AtendimentoBell />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

@@ -13,7 +13,8 @@ export interface MLClaimRow {
   order_id: string | null;
   tipo: string | null; // "mediations" | "returns"
   status: string | null; // "opened" | "closed" | etc.
-  motivo: string | null;
+  motivo: string | null;       // código do motivo (reason_id)
+  motivo_texto: string | null; // motivo traduzido para exibição
   descricao: string | null;
   item_id: string | null;
   item_title: string | null;

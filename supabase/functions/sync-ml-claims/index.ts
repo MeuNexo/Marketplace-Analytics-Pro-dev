@@ -234,6 +234,20 @@ async function syncUser(
     }
   }
 
+  // Traduz o motivo (reason_id → texto legível) uma vez por código, cacheado,
+  // para a coluna motivo_texto aparecer já na tabela (sem abrir a reclamação).
+  const reasonCache = new Map<string, string | null>();
+  for (const r of allRows) {
+    const code = r.motivo as string | null;
+    if (!code) { r.motivo_texto = null; continue; }
+    if (!reasonCache.has(code)) {
+      const rd = await mlGet(ML_API + "/post-purchase/v1/claims/reasons/" + code, token);
+      reasonCache.set(code, (rd?.detail as string | undefined) ?? null);
+      await new Promise((res) => setTimeout(res, 120));
+    }
+    r.motivo_texto = reasonCache.get(code) ?? null;
+  }
+
   // Dedupe by claim_id within this user's batch: the ML claims search can return
   // the same claim under both 'opened' and 'closed' iterations (or across pages),
   // and Postgres ON CONFLICT DO UPDATE rejects a batch that touches the same
@@ -245,12 +259,24 @@ async function syncUser(
 
   let upsertError: string | null = null;
   if (deduped.length > 0) {
-    const { error } = await sb
-      .from("ml_claims")
-      .upsert(deduped, { onConflict: "organization_id,ml_user_id,claim_id" });
-    if (error) {
-      upsertError = error.message;
-      console.error("sync-ml-claims upsert ml_user_id=" + mlUserId + ":", error.message);
+    // Blindagem contra defasagem do /claims/search (segue listando como 'opened'
+    // claims já fechadas): 'closed' é terminal e sempre sobrescreve; abertas só
+    // INSEREM (ignoreDuplicates) — o polling não reabre uma claim já fechada
+    // (reabertura real é capturada pelo webhook via GET individual, autoritativo).
+    const closed = deduped.filter((r) => r.status === "closed");
+    const open   = deduped.filter((r) => r.status !== "closed");
+
+    if (closed.length > 0) {
+      const { error } = await sb
+        .from("ml_claims")
+        .upsert(closed, { onConflict: "organization_id,ml_user_id,claim_id" });
+      if (error) { upsertError = error.message; console.error("sync-ml-claims upsert(closed) ml_user_id=" + mlUserId + ":", error.message); }
+    }
+    if (open.length > 0) {
+      const { error } = await sb
+        .from("ml_claims")
+        .upsert(open, { onConflict: "organization_id,ml_user_id,claim_id", ignoreDuplicates: true });
+      if (error) { upsertError = error.message; console.error("sync-ml-claims upsert(open) ml_user_id=" + mlUserId + ":", error.message); }
     }
   }
 

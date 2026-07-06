@@ -178,10 +178,28 @@ async function syncUser(
   }
 
   if (allRows.length > 0) {
-    const { error } = await sb
-      .from("ml_questions")
-      .upsert(allRows, { onConflict: "organization_id,ml_user_id,question_id" });
-    if (error) console.error("sync-ml-questions upsert ml_user_id=" + mlUserId + ":", error.message);
+    // Blindagem contra defasagem do /questions/search (o índice de busca do ML
+    // segue listando como UNANSWERED perguntas já respondidas): 'ANSWERED' é terminal
+    // e sempre sobrescreve; as demais só INSEREM (ignoreDuplicates) — nunca rebaixam
+    // uma pergunta já ANSWERED (ex.: corrigida em tempo real pelo webhook via GET
+    // individual, que é a fonte autoritativa). Dedup por question_id em cada grupo.
+    const dedup = (rows: Record<string, unknown>[]) =>
+      Array.from(new Map(rows.map((r) => [r.question_id, r])).values());
+    const answered = dedup(allRows.filter((r) => r.status === "ANSWERED"));
+    const others   = dedup(allRows.filter((r) => r.status !== "ANSWERED"));
+
+    if (answered.length > 0) {
+      const { error } = await sb
+        .from("ml_questions")
+        .upsert(answered, { onConflict: "organization_id,ml_user_id,question_id" });
+      if (error) console.error("sync-ml-questions upsert(answered) ml_user_id=" + mlUserId + ":", error.message);
+    }
+    if (others.length > 0) {
+      const { error } = await sb
+        .from("ml_questions")
+        .upsert(others, { onConflict: "organization_id,ml_user_id,question_id", ignoreDuplicates: true });
+      if (error) console.error("sync-ml-questions upsert(others) ml_user_id=" + mlUserId + ":", error.message);
+    }
   }
 
   console.log("sync-ml-questions done ml_user_id=" + mlUserId + ": questions=" + allRows.length);
