@@ -737,7 +737,8 @@ Plans:
 **Milestone:** v8.0 (Atendimento tempo real — fase A de 4)
 **Requirements**: Deno EF + Supabase (migration tabela+RLS+cron via MCP); React + TS + shadcn/ui (sinal de saúde + painel admin, stack existente). Reuso da normalização de `sync-ml-questions`/`sync-ml-claims`/`sync-ml-orders`.
 **Depends on:** none
-**Plans:** 0 plans
+**Status:** ✅ EXECUTADA (2026-07-06) — backend em prod (EF ml-webhook v4, tabela+RLS+RPC secret, crons); frontend no PR. Pendente: Wesley registra URL no painel ML + ok visual. Plano: `docs/superpowers/plans/2026-07-06-ml-webhook-tempo-real.md`.
+**Plans:** executado inline (não-GSD, deploy via MCP)
 
 **Success Criteria** (what must be TRUE):
 
@@ -750,8 +751,16 @@ Plans:
   7. Polling desacelerado como rede de segurança (crons atualizados); `tsc` 0, `vitest` verde, build ok, advisors sem issue novo, deploy via MCP.
   8. URL de callback + passo a passo entregues ao Wesley para registro no painel ML.
 
-Plans:
+Plans (executado inline, 9 tasks — smoke/anti-IDOR/retry verificados via MCP):
 
-- [ ] TBD (run /gsd-plan-phase 89 to break down)
+- [x] T1 migration `ml_webhook_events` + RLS org-first
+- [x] T2 EF ml-webhook: validação(secret vault via RPC)+persistência+200
+- [x] T3 processamento questions+claims em waitUntil
+- [x] T4 orders cutuca sync-ml-orders + debounce 60s
+- [x] T5 reprocess-cron + polling desacelerado (15min→hora / 30min→2h)
+- [x] T6 badge "tempo real ativo" em /perguntas e /devolucoes (5 testes vitest)
+- [x] T7 painel de eventos em AdminMonitoring
+- [x] T8 doc URL callback + passo a passo ML
+- [x] T9 verificação: tsc 0, vitest 421/421, build ok, advisors sem issue novo, anti-IDOR 0
 
 ---
