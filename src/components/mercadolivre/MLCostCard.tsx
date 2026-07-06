@@ -1,7 +1,10 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
-import { ChevronLeft, ChevronRight, Loader2, TrendingDown, TrendingUp } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ChevronLeft, ChevronRight, HelpCircle, Loader2, TrendingDown, TrendingUp } from "lucide-react";
 import type { BillingGroup } from "@/hooks/useMLBilling";
+import { computeResultadoLiquido, type DreOperationalBlocks } from "@/lib/dreOperational";
 
 const fmt = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
@@ -44,6 +47,10 @@ interface MLCostCardProps {
   /** Janela real da fatura ML (ciclo da conta) — YYYY-MM-DD, exibida quando fonte=billing */
   faturaFrom?: string | null;
   faturaTo?: string | null;
+  /** Custos operacionais (Pessoal/Estrutura/Serviços/Outros/Financeiro) do mesmo mês — Phase 88 */
+  dreOperational?: DreOperationalBlocks | null;
+  /** true enquanto useDreOperational ainda está buscando o mês exibido */
+  dreOperationalLoading?: boolean;
 }
 
 // ── Componente ─────────────────────────────────────────────────────────────
@@ -63,6 +70,8 @@ export function MLCostCard({
   syncing = false,
   faturaFrom,
   faturaTo,
+  dreOperational = null,
+  dreOperationalLoading = false,
 }: MLCostCardProps) {
   // Lucro do mês = receita − total tarifas − CMV − impostos
   const lucro =
@@ -72,6 +81,16 @@ export function MLCostCard({
     - (impostosMes ?? 0);
   const lucroPositivo = lucro >= 0;
   const margemPct = receitaMes > 0 ? ((lucro / receitaMes) * 100).toFixed(1) : "—";
+
+  // Resultado operacional / Resultado líquido — reusa `lucro` já calculado acima
+  // (não re-deriva a margem); só ANEXA os blocos operacionais (Phase 88).
+  const { resultadoOperacional, resultadoLiquido } = dreOperational
+    ? computeResultadoLiquido(lucro, dreOperational)
+    : { resultadoOperacional: 0, resultadoLiquido: 0 };
+  const resultadoLiquidoPositivo = resultadoLiquido >= 0;
+  const resultadoLiquidoPct = receitaMes > 0 ? ((resultadoLiquido / receitaMes) * 100).toFixed(1) : "—";
+
+  const [financeiroTooltipOpen, setFinanceiroTooltipOpen] = useState(false);
 
   return (
     <motion.div
@@ -262,6 +281,170 @@ export function MLCostCard({
                   {fmt(lucro)}
                 </span>
               </div>
+
+              {/* ── Custos operacionais → Resultado líquido (Phase 88) ── */}
+              {(dreOperational || dreOperationalLoading) && (
+                <div className="space-y-0">
+                  {!dreOperational && dreOperationalLoading ? (
+                    <div className="space-y-2 pt-2.5 mt-1.5 border-t border-border/40">
+                      {[...Array(3)].map((_, i) => (
+                        <div key={i} className="h-4 bg-muted/30 rounded animate-pulse" />
+                      ))}
+                    </div>
+                  ) : dreOperational ? (
+                    <>
+                      {/* Pessoal */}
+                      <div className="flex items-center justify-between text-xs py-1 mt-0.5 border-t border-border/40">
+                        <span className="text-muted-foreground flex items-center gap-1">
+                          <span className="text-muted-foreground/50">(−)</span>
+                          Pessoal
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground tabular-nums w-10 text-right">
+                            {pct(dreOperational.pessoal, receitaMes)}
+                          </span>
+                          <span className="font-semibold tabular-nums w-24 text-right text-foreground">
+                            {fmt(dreOperational.pessoal)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Estrutura */}
+                      <div className="flex items-center justify-between text-xs py-1">
+                        <span className="text-muted-foreground flex items-center gap-1">
+                          <span className="text-muted-foreground/50">(−)</span>
+                          Estrutura
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground tabular-nums w-10 text-right">
+                            {pct(dreOperational.estrutura, receitaMes)}
+                          </span>
+                          <span className="font-semibold tabular-nums w-24 text-right text-foreground">
+                            {fmt(dreOperational.estrutura)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Serviços */}
+                      <div className="flex items-center justify-between text-xs py-1">
+                        <span className="text-muted-foreground flex items-center gap-1">
+                          <span className="text-muted-foreground/50">(−)</span>
+                          Serviços
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground tabular-nums w-10 text-right">
+                            {pct(dreOperational.servicos, receitaMes)}
+                          </span>
+                          <span className="font-semibold tabular-nums w-24 text-right text-foreground">
+                            {fmt(dreOperational.servicos)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Outros */}
+                      <div className="flex items-center justify-between text-xs py-1">
+                        <span className="text-muted-foreground flex items-center gap-1">
+                          <span className="text-muted-foreground/50">(−)</span>
+                          Outros
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground tabular-nums w-10 text-right">
+                            {pct(dreOperational.outros_operacionais, receitaMes)}
+                          </span>
+                          <span className="font-semibold tabular-nums w-24 text-right text-foreground">
+                            {fmt(dreOperational.outros_operacionais)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* = Resultado operacional */}
+                      <div className="flex items-center justify-between text-xs pt-1.5 mt-0.5 border-t border-border/60">
+                        <span className="flex items-center gap-1 font-semibold text-foreground">
+                          <span className="text-muted-foreground/50">=</span>
+                          Resultado operacional
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground tabular-nums w-10 text-right">
+                            {pct(resultadoOperacional, receitaMes)}
+                          </span>
+                          <span className="font-bold tabular-nums w-24 text-right text-foreground">
+                            {fmt(resultadoOperacional)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Financeiro */}
+                      <div className="flex items-center justify-between text-xs py-1 mt-0.5 border-t border-border/40">
+                        <span className="text-muted-foreground flex items-center gap-1">
+                          <span className="text-muted-foreground/50">(−)</span>
+                          Financeiro
+                          {dreOperational.financeiro_is_approximate && (
+                            <>
+                              <span className="text-[9px] italic text-muted-foreground/80">
+                                (aproximado)
+                              </span>
+                              <Popover open={financeiroTooltipOpen} onOpenChange={setFinanceiroTooltipOpen}>
+                                <PopoverTrigger asChild>
+                                  <button
+                                    type="button"
+                                    aria-label="Ver definição de aproximado"
+                                    className="inline-flex w-3.5 h-3.5 items-center justify-center text-muted-foreground/50 hover:text-muted-foreground transition-colors focus:outline-none"
+                                    onMouseEnter={() => setFinanceiroTooltipOpen(true)}
+                                    onMouseLeave={() => setFinanceiroTooltipOpen(false)}
+                                    onClick={(e) => { e.stopPropagation(); setFinanceiroTooltipOpen((v) => !v); }}
+                                  >
+                                    <HelpCircle className="w-3.5 h-3.5" />
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent
+                                  side="top"
+                                  align="start"
+                                  sideOffset={6}
+                                  className="w-auto max-w-[240px] px-3 py-2 text-xs"
+                                  onOpenAutoFocus={(e) => e.preventDefault()}
+                                >
+                                  Valor aproximado — juros ainda não estão separados do principal
+                                  nos empréstimos (pendente detalhamento da tabela do banco).
+                                </PopoverContent>
+                              </Popover>
+                            </>
+                          )}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground tabular-nums w-10 text-right">
+                            {pct(dreOperational.financeiro, receitaMes)}
+                          </span>
+                          <span className="font-semibold tabular-nums w-24 text-right text-foreground">
+                            {fmt(dreOperational.financeiro)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* = Resultado líquido */}
+                      <div className="flex items-center justify-between text-xs pt-2.5 mt-1.5 border-t-2 border-border">
+                        <span className="flex items-center gap-1.5 font-semibold text-foreground">
+                          {resultadoLiquidoPositivo ? (
+                            <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
+                          ) : (
+                            <TrendingDown className="w-3.5 h-3.5 text-red-500" />
+                          )}
+                          Resultado líquido
+                          <span className="text-[10px] text-muted-foreground font-normal ml-0.5">
+                            ({resultadoLiquidoPct}%)
+                          </span>
+                        </span>
+                        <span
+                          className={`text-base font-bold tabular-nums w-24 text-right ${
+                            resultadoLiquidoPositivo ? "text-kpi-positive" : "text-kpi-negative"
+                          }`}
+                        >
+                          {fmt(resultadoLiquido)}
+                        </span>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              )}
             </div>
           )}
         </CardContent>
