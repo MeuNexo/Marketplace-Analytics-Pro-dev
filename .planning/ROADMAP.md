@@ -627,6 +627,108 @@ Plans:
 - [ ] 83-02-PLAN.md — [W2][BLOCKING] Orquestrador aplica migration via MCP em `ckcdevcxgvueywivefgx` + smoke: marca preenchida, retrocompat do consumidor useMLMarginWithAds, reconciliação de receita (paid+shipped+delivered), anti-IDOR
 - [ ] 83-03-PLAN.md — [W3] UI: `useMLMarginWithAds` expõe `marca` + reescrita de `MLProdutosVendidos.tsx` (coluna MCO% com semáforo+tooltip, % Ads, tabela ordenável, MCO% por marca no painel esquerdo, cabeçalho-resumo, cards mobile, aviso de custo ausente) + checkpoint visual Wesley (light+dark)
 
+### Phase 84: DRE por Competência de Venda (método Tiny)
+
+**Goal:** A DRE do Mês em `/vendas` (`MLCostCard`) passa a operar por **competência de venda** — igual ao método da página "custos ecommerce" do Tiny: escolhe-se o mês e ele traz receita/CMV/impostos + **todas as tarifas ML das vendas daquele mês**, independentemente de quando o ML cobrou. Hoje as tarifas são alocadas por `charge_date` (lançamento na fatura), causando (a) descasamento — pedido vendido em junho e cancelado em julho carrega tarifa cheia em junho e estorno em julho — e (b) estornos de venda fora da janela da fatura que a EF **descarta** (regra `within`), sumindo da DRE. Descoberta habilitadora: o ML já entrega `sales_info[].sale_date_time` em cada movimento de billing (a EF lê como `saleDate` em `sync-ml-billing/index.ts:136` e descarta na agregação) — **sem cruzar com `orders`**. (1) SCHEMA: `ml_billing_daily` ganha coluna `competence_date` (= `sale_date_time`; fallback `charge_date` p/ tarifas sem venda: mensalidade, `PADS`); `charge_date` permanece p/ reconciliar com a fatura ML; grão passa a `(competence_date, charge_date, charge_type)`. (2) EF `sync-ml-billing`: `aggregateInvoice()` agrega por `competence_date` e **remove a exclusão `within`** na trilha de competência (estornos de venda antiga passam a contar no mês da venda; sinal `B*` negativo mantido); trilha `ml_billing_monthly` (por lançamento, com `within`) intacta p/ reconciliação. (3) DRE `useMLBilling.ts` (`useMLBillingDaily`): filtro `.gte/lte("charge_date")` → `("competence_date")`. (4) UI: **dropdown de seleção direta de mês** no `MLCostCard` (hoje só setas ◄ ►, com trava no futuro). (5) BACKFILL: re-sync das faturas de **2026** via `net.http_post` + `service_role_key` do vault (Pattern B), fan-out multi-conta. Decisões travadas com Wesley (2026-07-03): regime = competência de venda p/ TODAS as tarifas; Tiny é referência de método (cálculo continua no ML); dropdown de mês; backfill 2026. Efeitos aceitos: meses fechados se remexem; a DRE (competência) deixa de bater linha-a-linha com a fatura ML de propósito (`ml_billing_monthly` é a visão "igual à fatura"); estornos de venda antiga que hoje somem passam a contar. Supabase `ckcdevcxgvueywivefgx` (NÃO o do CLAUDE.md); deploy migration/EF só via MCP; smoke obrigatório de invariante (nenhum movimento perdido/duplicado, dedup por `detail_id`) + anti-IDOR + reconciliação ao centavo de um mês de referência. Spec: `docs/superpowers/specs/2026-07-03-dre-competencia-venda-design.md`.
+**Requirements**: (phase ad-hoc — nenhum requirement ID)
+**Depends on:** Phase 83
+**Plans:** 6 plans
+
+Plans:
+
+- [ ] 84-01-PLAN.md — Autoria migration (competence_date + backfill + UNIQUE alargada + índice) + types.ts [Wave 1]
+- [ ] 84-02-PLAN.md — Autoria EF sync-ml-billing: aggregateMoves por competência + remove within + testes [Wave 1]
+- [ ] 84-03-PLAN.md — Frontend: DRE filtra por competence_date + dropdown de mês no MLCostCard [Wave 2]
+- [ ] 84-04-PLAN.md — [BLOCKING MCP] Verificar constraint + aplicar migration + provar backfill [Wave 2]
+- [ ] 84-05-PLAN.md — [BLOCKING MCP] Deploy EF + backfill 2026 sequencial + smoke/reconciliação/anti-IDOR/cross-month [Wave 3]
+- [ ] 84-06-PLAN.md — [Checkpoint visual] Wesley valida /vendas DRE+dropdown (light+dark) + merge [Wave 4]
+
+### Phase 85: Corrigir cores do gráfico Composição de Custos por Mês (fluxo de caixa)
+
+**Goal:** No gráfico de barras empilhadas "Composição de Custos por Mês" (`/fluxo-de-caixa`), cada categoria de custo deve receber uma cor visualmente distinta e legível em light e dark. Hoje só ~5 categorias aparecem coloridas e todas as demais colapsam em um único cinza, tornando a legenda inútil.
+
+**Causa raiz (já diagnosticada):** `src/components/financial/CostCompositionChart.tsx` mapeia cores por rótulo literal via `CATEGORY_COLORS`, mas as categorias vêm do campo livre `categoria.descricao` do Tiny (RPC `get_cost_by_month`, fallback `'Outros'`). As chaves do mapa usam variantes com barra (`Impostos/taxas`, `Água/luz`, `Aluguéis/condomínio`) enquanto os dados reais usam vírgula/"e" (`Impostos, taxas`, `Água, luz`, `Aluguéis e condomínio`), e rótulos como `Reembolso cliente`, `Telecomunicação, internet` e `Previsões de compra` nem existem no mapa. Tudo que não bate cai no fallback único `#94a3b8` (cinza). São ~13 categorias — acima do que uma paleta categórica distingue com segurança.
+
+**Abordagem sugerida:** substituir o casamento por rótulo literal por atribuição de cor **por índice** a partir de uma paleta categórica CVD-safe (ver skill `dataviz` — validar paleta com o script da skill); ordenar categorias de forma estável (ex.: por total desc) e agrupar a cauda de baixo valor em "Outros" para manter o número de cores distinguíveis; garantir contraste em light e dark. Não depende da Phase 84.
+
+**Requirements**: Sem novas dependências (recharts já presente). Preservar tooltip, formatação BRL e empilhamento atuais. Cores derivadas de tokens/paleta consistente com o resto do dashboard.
+**Depends on:** none
+**Plans:** 1 plan (executado direto — fix pontual)
+
+Plans:
+
+- [x] 85-SUMMARY.md — lib pura `costCompositionData` (top-6 + fold Outros) + componente com paleta CVD-safe por índice (light/dark) + 9 testes; tsc 0 / vitest 423/423
+
+**Success Criteria:**
+
+1. Toda categoria renderizada na legenda tem cor visualmente distinta das demais (nenhum par de categorias com a mesma cor); nenhum bloco cinza indistinto para categorias diferentes.
+2. Cores atribuídas por índice/paleta — categorias novas do Tiny recebem cor automaticamente, sem depender de casar rótulo literal.
+3. Legível em light e dark (contraste adequado das barras e da legenda).
+4. Paleta validada com o script da skill `dataviz`; tooltip BRL, empilhamento e eixos preservados; build (`tsc`) e testes (`vitest`) verdes.
+
+### Phase 86: DRE — Competência no Contas a Pagar
+
+**Goal:** Cada linha de `cash_outflows` passa a carregar a competência real do Tiny (`dataCompetencia`), viabilizando ler os custos por **mês de competência** (não por vencimento/caixa) — pré-requisito da DRE de Resultado. Reusa a infra das Phases 59 (`sync-tiny-payables`) e 61 (`enrich_harvest` já lê o detalhe `/contas-pagar/{id}`).
+
+**Milestone:** DRE de Resultado (fase 1 de 3)
+**Requirements**: Sem novas dependências. Enriquecimento continua fonte única (sync não sobrescreve). Preservar 100% do comportamento da DFC (Phase 60).
+**Depends on:** Phase 59 (sync-tiny-payables → cash_outflows), Phase 61 (enrich_harvest grava category/supplier do detalhe)
+**Plans:** 2 plans
+
+**Success Criteria** (what must be TRUE):
+
+  1. Nova coluna `competence_date` (date) em `cash_outflows`, populada com `dataCompetencia` do detalhe `/contas-pagar/{id}`.
+  2. `enrich_harvest` grava `competence_date` junto de `category`/`supplier`, sem sobrescrever enriquecimento existente (mesmo padrão ON CONFLICT da Phase 61 — contagem de linhas enriquecidas não cai após um sync).
+  3. Backfill de 2026: ≥90% das linhas com competência em 2026 têm `competence_date` não-nulo.
+  4. Sem regressão na DFC/Phase 60: `outflow_date` (vencimento/caixa) permanece intacto e `get_cashflow` inalterado; `competence_date` coexiste sem conflito.
+  5. Índice em `(organization_id, competence_date, category)` para leitura eficiente da DRE.
+
+Plans:
+
+- [ ] 86-01-PLAN.md — [W1] Migration: coluna `competence_date` + índice `(organization_id, competence_date, category)` + estende `enrich_enqueue_new`/`enrich_payable_step`/`enrich_harvest` (grava competência do detalhe Tiny; predicado de enfileiramento inclui `competence_date IS NULL`) — aplicada via MCP `apply_migration` (checkpoint do orquestrador)
+- [ ] 86-02-PLAN.md — [W2] Backfill 2026 via `enrich_enqueue_new` + drain dos crons `treasury_cat_*` até cobertura ≥90% + prova de não-regressão (DFC/`get_cashflow` intactos; `sync-tiny-payables` não sobrescreve) — checkpoints via MCP
+
+### Phase 87: DRE — Agregação de Resultado por Competência
+
+**Goal:** Uma RPC entrega a DRE mensal por competência lendo `cash_outflows` + `orders` (receita/CMV/impostos ML já existentes) e aplicando o mapa categoria→linha da DRE, pronta para o frontend consumir.
+
+**Milestone:** DRE de Resultado (fase 2 de 3)
+**Requirements**: Escopo só Mercado Livre. Anti-IDOR por `organization_id`. Reconciliação com um mês real fechado.
+**Depends on:** Phase 86 (competence_date em cash_outflows)
+**Plans:** 0 plans
+
+**Success Criteria** (what must be TRUE):
+
+  1. RPC agrega por `competence_date` e classifica categorias em blocos: **Impostos sobre venda** (`Imposto Venda - ICMS/PIS/COFINS`) deduzem a receita; **Pessoal** (`Salários`, `Pró-labore`, `Pessoal - INSS`), **Estrutura** (`Aluguéis e condomínio`, `Água, luz`, `Telecomunicação, internet`), **Serviços** (`Contabilidade`) + `Insumos`/`Itens do CD` = operacional; **Financeiro** = só o JURO do empréstimo (categoria `Empréstimo`; separar principal via aproximação SAC R$300.000/45 = R$6.666,67/parcela — principal excluído).
+  2. EXCLUI da DRE: `Fornecedores` e `Previsões de compra` (viram CMV), `Aporte` (capital), e categorias de outros canais (`ADS Shopee`, `Vendas Magalu`) — escopo só ML.
+  3. **Sem** IRPJ/CSLL (empresa não recolhe) e **sem** FGTS (só INSS) — DRE fecha no resultado líquido.
+  4. Anti-IDOR (`organization_id` = org do chamador, RPC SECURITY INVOKER); reconciliação com um mês real fechado (ex.: junho/2026).
+  5. Estrutura de saída pronta pro frontend: Receita → deduções → Margem de contribuição → operacional → Resultado operacional → Financeiro → Resultado líquido.
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 87 to break down)
+
+### Phase 88: DRE — Frontend Resultado Completo (/vendas)
+
+**Goal:** A DRE do mês em `/vendas` passa a mostrar o resultado real completo (margem de contribuição → resultado operacional → resultado líquido), consumindo a RPC da Phase 87 — respondendo "a operação faz sentido?".
+
+**Milestone:** DRE de Resultado (fase 3 de 3)
+**Requirements**: React + TS + shadcn/ui + Recharts (stack existente). Consistente com o resto do dashboard (tokens, BRL, light/dark, mobile).
+**Depends on:** Phase 87 (RPC de agregação da DRE)
+**Plans:** 0 plans
+
+**Success Criteria** (what must be TRUE):
+
+  1. A DRE exibe os blocos em ordem: Receita − impostos s/ venda − comissão/tarifas ML − frete − CMV − ads = **Margem de contribuição**; − Pessoal/Estrutura/Serviços = **Resultado operacional**; − Financeiro (juros) = **Resultado líquido**.
+  2. Alinhada por competência de venda, consistente com o restante da tela `/vendas`.
+  3. Legível em light e dark; responsiva no mobile (padrão Phase 78).
+  4. Validação visual do Wesley em produção.
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 88 to break down)
+
 ---
 ### Phase 89: Webhook ML (tempo real) — perguntas, reclamações e pedidos
 
