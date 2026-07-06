@@ -628,3 +628,20 @@ Plans:
 - [ ] 83-03-PLAN.md — [W3] UI: `useMLMarginWithAds` expõe `marca` + reescrita de `MLProdutosVendidos.tsx` (coluna MCO% com semáforo+tooltip, % Ads, tabela ordenável, MCO% por marca no painel esquerdo, cabeçalho-resumo, cards mobile, aviso de custo ausente) + checkpoint visual Wesley (light+dark)
 
 ---
+
+### Phase 85: Corrigir cores do gráfico Composição de Custos por Mês (fluxo de caixa)
+
+**Goal:** No gráfico de barras empilhadas "Composição de Custos por Mês" (`/fluxo-de-caixa`), cada categoria de custo recebe uma cor visualmente distinta e legível em light e dark. Antes só ~5 categorias apareciam coloridas e todas as demais colapsavam num único cinza.
+
+**Causa raiz:** `src/components/financial/CostCompositionChart.tsx` pintava por casamento de rótulo literal via `CATEGORY_COLORS`, mas as categorias vêm do campo livre `categoria.descricao` do Tiny (RPC `get_cost_by_month`, fallback `'Outros'`). As chaves do mapa usavam variantes com barra (`Impostos/taxas`, `Água/luz`, `Aluguéis/condomínio`) enquanto os dados usam vírgula/"e" (`Impostos, taxas`, `Água, luz`, `Aluguéis e condomínio`), e rótulos como `Reembolso cliente`, `Telecomunicação, internet`, `Previsões de compra` nem existiam → fallback único `#94a3b8`.
+
+**Solução:** lib pura `src/lib/costCompositionData.ts` (top-6 por total desc + fold da cauda/`Outros` num balde) + componente com atribuição de cor por índice a partir de paleta categórica CVD-safe validada (skill dataviz), steps próprios light/dark via `next-themes` (tema por classe). "Outros" = cinza neutro no topo; gap de superfície 1.5px entre segmentos.
+**Requirements**: (fix pontual — nenhum requirement ID)
+**Depends on:** none
+**Plans:** 1 plan (executado direto)
+
+Plans:
+
+- [x] 85-SUMMARY.md — lib pura `costCompositionData` (top-6 + fold Outros) + componente com paleta CVD-safe por índice (light/dark) + 9 testes; tsc 0 / vitest 423/423
+
+---
