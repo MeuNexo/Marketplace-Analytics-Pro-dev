@@ -24,7 +24,7 @@ Adicionar colunas derivadas:
 
 ### Derivação (função compartilhada nas EFs)
 A partir de `players.find(role==='respondent').available_actions` (cada item tem `action`, `mandatory`, `due_date`):
-- `seller_action_required` = existe **ao menos uma** ação que seja: (a) qualquer `send_message_to_*` com `mandatory=true`, **ou** (b) qualquer ação de decisão: `refund`, `allow_return`, `open_dispute`, `allow_partial_refund`. Um `send_message_to_*` **opcional** (mandatory=false), sozinho, NÃO marca como pendente (cai em "Aguardando" — você pode responder, mas o ML não está te cobrando).
+- **[CORRIGIDO 07-07 — alinhado ao ML "Próximas a serem atendidas"]** `seller_action_required` = existe **ao menos uma ação com `mandatory=true`** (o ML está cobrando o vendedor, tipicamente com prazo). Ações **opcionais** (`mandatory=false`) — `refund`, `allow_return`, `open_dispute`, `allow_partial_refund` ou `send_message_to_*` não-obrigatório — ficam quase sempre disponíveis como opção do vendedor e NÃO marcam como pendente (caem em "Aguardando"). *(A versão inicial do design contava ações de decisão opcionais como pendentes — isso inflava a contagem (10 vs 2 reais no ML) e foi corrigido.)*
 - `pending_action_type` (prioridade): mensagem obrigatória (`reply`) → decisão de devolução (`return` quando `allow_return`) → reembolso (`refund`/`allow_partial_refund`) → disputa (`dispute`).
 - `action_due_date` = `due_date` da ação que definiu o `pending_action_type` (quando presente).
 
