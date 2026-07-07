@@ -24,6 +24,7 @@ export interface MLClaimDetail {
   stage: string | null;
   type: string | null;
   status: string | null;
+  buyer_first_name: string | null; // Phase 90-02: capitalizado; null → "cliente" no frontend
 }
 
 /**
@@ -54,6 +55,7 @@ export function useMLClaimDetail(claimId: string | null, mlUserId: string | null
         stage: data?.stage ?? null,
         type: data?.type ?? null,
         status: data?.status ?? null,
+        buyer_first_name: data?.buyer_first_name ?? null,
       };
     },
   });
