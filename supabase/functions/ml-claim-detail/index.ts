@@ -38,6 +38,28 @@ async function mlGetJson(url: string, token: string): Promise<any | null> {
   return res.json().catch(() => null);
 }
 
+// Normaliza um item de message.attachments para um shape estável (ATTACH-01/ATTACH-02).
+// O front usa esse shape para decidir imagem vs arquivo. Tolerante: o item pode
+// vir como STRING pura (ex. "0f2d81a2-..._305860144.jpeg") OU como OBJETO
+// ({ id/attachment_id/filename/type/... }). Itens sem id resolvível -> null (descartados).
+type NormalizedAttachment = { id: string; filename: string | null; type: string | null };
+function normalizeAttachment(raw: unknown): NormalizedAttachment | null {
+  if (typeof raw === "string") {
+    const id = raw.trim();
+    if (!id) return null;
+    return { id, filename: id, type: null };
+  }
+  if (raw && typeof raw === "object") {
+    const o = raw as Record<string, unknown>;
+    const id = (o.id ?? o.attachment_id ?? o.filename ?? null) as string | null;
+    if (!id) return null;
+    const filename = (o.filename ?? o.original_filename ?? o.id ?? null) as string | null;
+    const type = (o.type ?? o.mimetype ?? null) as string | null;
+    return { id, filename, type };
+  }
+  return null;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -74,7 +96,17 @@ serve(async (req) => {
       mlGetJson(`${ML_API}/post-purchase/v1/claims/${claim_id}/messages`, at),
     ]);
 
-    const messages = Array.isArray(messagesRaw) ? messagesRaw : (messagesRaw?.data ?? messagesRaw?.messages ?? []);
+    const rawMessages = Array.isArray(messagesRaw) ? messagesRaw : (messagesRaw?.data ?? messagesRaw?.messages ?? []);
+    // Aditivo: normaliza attachments de cada mensagem para { id, filename, type }[]
+    // (vazio se ausente). Nenhum outro campo da mensagem é alterado (ATTACH-01/ATTACH-02).
+    const messages = Array.isArray(rawMessages)
+      ? rawMessages.map((m: any) => ({
+          ...m,
+          attachments: Array.isArray(m?.attachments)
+            ? m.attachments.map(normalizeAttachment).filter(Boolean)
+            : [],
+        }))
+      : [];
 
     // Ações disponíveis para o VENDEDOR (player respondent).
     const respondent = Array.isArray(detail?.players)
