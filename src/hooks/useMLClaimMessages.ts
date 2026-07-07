@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import type { ClaimAttachmentMeta } from "@/lib/claimAttachments";
 
 export interface MLClaimMessage {
   sender_role: string | null;    // "mediator" | "complainant" | "respondent"
@@ -8,7 +9,7 @@ export interface MLClaimMessage {
   date_created: string | null;
   message_date: string | null;
   stage: string | null;
-  attachments?: unknown[];
+  attachments?: ClaimAttachmentMeta[];  // normalizado pela EF ml-claim-detail (Phase 92)
 }
 
 export interface MLClaimReason {
