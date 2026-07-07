@@ -2,14 +2,19 @@
  * ml-claim-action — user-invoked edge function
  * verify_jwt = true (user JWT required via Supabase Auth)
  *
- * Executa uma AÇÃO do vendedor em uma reclamação do ML (reembolso, abrir disputa)
- * DENTRO do dashboard, sem sair para o ML. Ações são IRREVERSÍVEIS.
+ * Executa uma AÇÃO do vendedor em uma reclamação do ML (reembolso, autorizar
+ * devolução, abrir disputa) DENTRO do dashboard, sem sair para o ML.
+ * Ações são IRREVERSÍVEIS.
  *
- * Whitelist estrita: apenas 'refund' e 'open_dispute' (mensagem = reply-ml-claim).
- * Endpoint ML: POST /post-purchase/v1/claims/{claim_id}/actions/{action}
+ * Whitelist estrita: 'refund' | 'allow_return' | 'open_dispute' (mensagem = reply-ml-claim).
+ * Endpoints ML (doc oficial — NÃO é /actions/{action} genérico):
+ *   - refund       -> POST /post-purchase/v1/claims/{claim_id}/expected-resolutions/refund
+ *   - allow_return -> POST /post-purchase/v1/claims/{claim_id}/expected-resolutions/allow-return
+ *   - open_dispute -> POST /post-purchase/v1/claims/{claim_id}/actions/open-dispute
  *
  * Gates: JWT do usuário → validação (whitelist) → token por ml_user_id →
- *        org membership (anti-IDOR, fail-closed) → POST da ação.
+ *        org membership (anti-IDOR, fail-closed) → GET claim p/ revalidar
+ *        action ∈ available_actions do respondent (fail-closed) → POST da ação.
  * Segurança (T-42-04): access_token nunca é logado nem retornado.
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -28,6 +33,20 @@ const corsHeaders = {
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 }
+
+async function mlGetJson(url: string, token: string): Promise<any | null> {
+  const res = await fetch(url, { headers: { Authorization: "Bearer " + token, "api-version": "2" } });
+  if (!res.ok) return null;
+  return res.json().catch(() => null);
+}
+
+// Path correto por ação — doc oficial ML (gerenciar-resolucao-de-reclamacoes).
+// NUNCA /actions/{action} genérico: refund/allow_return usam /expected-resolutions/*.
+const ACTION_PATH: Record<(typeof ALLOWED_ACTIONS)[number], string> = {
+  refund:       "expected-resolutions/refund",
+  allow_return: "expected-resolutions/allow-return",
+  open_dispute: "actions/open-dispute",
+};
 
 const BodySchema = z.object({
   claim_id:   z.string().min(1),
@@ -64,9 +83,23 @@ serve(async (req) => {
     const { data: isMember } = await supabase.rpc("is_org_member", { _user_id: userId, _org_id: tokenRow.organization_id });
     if (!isMember) return jsonResponse({ error: "Forbidden" }, 403);
 
-    const mlRes = await fetch(`${ML_API}/post-purchase/v1/claims/${claim_id}/actions/${action}`, {
+    // Revalida a ação contra as available_actions reais do respondent (fail-closed)
+    // antes de disparar a ação irreversível.
+    const at = tokenRow.access_token;
+    const detail = await mlGetJson(`${ML_API}/post-purchase/v1/claims/${claim_id}`, at);
+    const respondent = Array.isArray(detail?.players)
+      ? detail.players.find((p: any) => p?.role === "respondent")
+      : null;
+    const availableActions: string[] = Array.isArray(respondent?.available_actions)
+      ? respondent.available_actions.map((a: any) => a?.action).filter(Boolean)
+      : [];
+    if (!availableActions.includes(action)) {
+      return jsonResponse({ error: "Ação '" + action + "' não disponível neste estágio da reclamação" }, 409);
+    }
+
+    const mlRes = await fetch(`${ML_API}/post-purchase/v1/claims/${claim_id}/${ACTION_PATH[action]}`, {
       method: "POST",
-      headers: { Authorization: "Bearer " + tokenRow.access_token, "Content-Type": "application/json", Accept: "application/json", "api-version": "2" },
+      headers: { Authorization: "Bearer " + at, "Content-Type": "application/json", Accept: "application/json", "api-version": "2" },
       body: JSON.stringify({}),
     });
     if (!mlRes.ok) {

@@ -7,10 +7,15 @@
  * O envio é irreversível (a mensagem vai ao comprador/mediador).
  *
  * Endpoint ML: POST /post-purchase/v1/claims/{claim_id}/actions/send-message
- * Body: { message }.
+ * Body: { receiver_role, message }. O ML deriva a action send_message_to_{role}
+ * a partir de receiver_role — sem esse campo retorna 400 "param action is null".
+ * receiver_role é derivado das available_actions reais do player 'respondent'
+ * (GET claim antes do POST), nunca hardcoded. Fail-closed se send_message_to_*
+ * não estiver disponível no estágio atual da reclamação.
  *
  * Gates: 1) JWT do usuário  2) validação do body  3) token por ml_user_id
- *        4) org membership (anti-IDOR)  5) POST send-message  6) log local.
+ *        4) org membership (anti-IDOR)  5) GET claim p/ derivar receiver_role
+ *        (fail-closed)  6) POST send-message  7) log local.
  * Segurança (T-42-04): access_token nunca é logado nem retornado.
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -26,6 +31,20 @@ const corsHeaders = {
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 }
+
+async function mlGetJson(url: string, token: string): Promise<any | null> {
+  const res = await fetch(url, { headers: { Authorization: "Bearer " + token, "api-version": "2" } });
+  if (!res.ok) return null;
+  return res.json().catch(() => null);
+}
+
+// Mapeia a action send_message_to_{role} disponível para o receiver_role
+// exigido pelo body do ML. Nunca hardcoded — vem das available_actions reais.
+const SEND_MESSAGE_ROLE_BY_ACTION: Record<string, string> = {
+  send_message_to_complainant: "complainant",
+  send_message_to_mediator:    "mediator",
+  send_message_to_respondent:  "respondent",
+};
 
 const BodySchema = z.object({
   claim_id:   z.string().min(1),
@@ -65,11 +84,26 @@ serve(async (req) => {
     const { data: isMember } = await supabase.rpc("is_org_member", { _user_id: userId, _org_id: tokenRow.organization_id });
     if (!isMember) return jsonResponse({ error: "Forbidden" }, 403);
 
-    // 5. Envia a mensagem no ML (não logar access_token)
+    // 5. Deriva receiver_role das available_actions reais do respondent (fail-closed).
+    const at = tokenRow.access_token;
+    const detail = await mlGetJson(`${ML_API}/post-purchase/v1/claims/${claim_id}`, at);
+    const respondent = Array.isArray(detail?.players)
+      ? detail.players.find((p: any) => p?.role === "respondent")
+      : null;
+    const availableActions: string[] = Array.isArray(respondent?.available_actions)
+      ? respondent.available_actions.map((a: any) => a?.action).filter(Boolean)
+      : [];
+    const sendMessageAction = availableActions.find((a) => a in SEND_MESSAGE_ROLE_BY_ACTION);
+    const receiverRole = sendMessageAction ? SEND_MESSAGE_ROLE_BY_ACTION[sendMessageAction] : null;
+    if (!receiverRole) {
+      return jsonResponse({ error: "Envio de mensagem não disponível neste estágio da reclamação" }, 409);
+    }
+
+    // 6. Envia a mensagem no ML (não logar access_token)
     const mlRes = await fetch(`${ML_API}/post-purchase/v1/claims/${claim_id}/actions/send-message`, {
       method: "POST",
-      headers: { Authorization: "Bearer " + tokenRow.access_token, "Content-Type": "application/json", Accept: "application/json", "api-version": "2" },
-      body: JSON.stringify({ message: text }),
+      headers: { Authorization: "Bearer " + at, "Content-Type": "application/json", Accept: "application/json", "api-version": "2" },
+      body: JSON.stringify({ receiver_role: receiverRole, message: text }),
     });
     if (!mlRes.ok) {
       let mlMessage = "ML API error";
