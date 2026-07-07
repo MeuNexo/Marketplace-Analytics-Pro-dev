@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { format, parseISO, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Send, RefreshCw, ShieldAlert, User, Scale, Store, Package, Banknote, Gavel, PackageCheck, FileText, Settings2 } from "lucide-react";
+import { Send, RefreshCw, ShieldAlert, User, Scale, Store, Package, Banknote, Gavel, PackageCheck, FileText, Settings2, Paperclip, X, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
@@ -19,6 +19,7 @@ import { useMLClaimDetail } from "@/hooks/useMLClaimMessages";
 import { useClaimTemplates } from "@/hooks/useClaimTemplates";
 import { ClaimTemplatesDialog } from "@/components/mercadolivre/ClaimTemplatesDialog";
 import { ClaimAttachment } from "@/components/mercadolivre/ClaimAttachment";
+import { useClaimAttachmentUpload } from "@/hooks/useClaimAttachmentUpload";
 import { applyTemplate } from "@/lib/applyTemplate";
 import { htmlToText } from "@/lib/htmlToText";
 import { claimStatusConfig, claimTipoLabel, isClaimOpen } from "@/lib/claimStatus";
@@ -54,6 +55,16 @@ const ACTION_META: Record<ActionKind, { label: string; icon: React.ReactNode; va
   },
 };
 
+// Anexo em upload na caixa de resposta: um item por arquivo selecionado.
+// `filename` é o nome gerado pelo ML (passado ao reply-ml-claim quando "done").
+type UploadItem = {
+  id: string;
+  name: string;
+  status: "uploading" | "done" | "error";
+  filename?: string;
+  error?: string;
+};
+
 interface Props {
   claim: MLClaimRow | null;
   onOpenChange: (open: boolean) => void;
@@ -67,6 +78,12 @@ export function ClaimDetailSheet({ claim, onOpenChange }: Props) {
   const [busy, setBusy] = useState(false);
   const [templatesDialogOpen, setTemplatesDialogOpen] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  const [attachments, setAttachments] = useState<UploadItem[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { uploadFile } = useClaimAttachmentUpload();
+
+  // Enviar fica bloqueado enquanto QUALQUER anexo ainda estiver subindo.
+  const anyUploading = attachments.some((a) => a.status === "uploading");
 
   const claimId = claim?.claim_id ?? null;
   const mlUserId = claim?.ml_user_id ?? null;
@@ -109,16 +126,48 @@ export function ClaimDetailSheet({ claim, onOpenChange }: Props) {
     qc.invalidateQueries({ queryKey: ["ml_claims"] });
   }
 
+  // Seleção de arquivos: cada um vira um chip e sobe via a EF de upload.
+  async function handleFilesSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = ""; // limpa p/ permitir re-selecionar o mesmo arquivo
+    if (!claim || files.length === 0) return;
+    for (const file of files) {
+      const id = typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random()}`;
+      setAttachments((prev) => [...prev, { id, name: file.name, status: "uploading" }]);
+      try {
+        const { filename } = await uploadFile(file, claim.claim_id, claim.ml_user_id);
+        setAttachments((prev) => prev.map((a) => (a.id === id ? { ...a, status: "done", filename } : a)));
+      } catch (err: any) {
+        const msg = err?.message ?? "Falha ao enviar o anexo";
+        setAttachments((prev) => prev.map((a) => (a.id === id ? { ...a, status: "error", error: msg } : a)));
+      }
+    }
+  }
+
+  function removeAttachment(id: string) {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  }
+
   async function handleSend() {
     if (!claim || !text.trim()) return;
     setBusy(true);
     try {
-      const { data, error } = await supabase.functions.invoke("reply-ml-claim", {
-        body: { claim_id: claim.claim_id, ml_user_id: claim.ml_user_id, text: text.trim() },
-      });
+      const filenames = attachments
+        .filter((a) => a.status === "done" && a.filename)
+        .map((a) => a.filename as string);
+      const body: { claim_id: string; ml_user_id: string; text: string; attachments?: string[] } = {
+        claim_id: claim.claim_id,
+        ml_user_id: claim.ml_user_id,
+        text: text.trim(),
+      };
+      if (filenames.length > 0) body.attachments = filenames;
+      const { data, error } = await supabase.functions.invoke("reply-ml-claim", { body });
       if (error || data?.error) throw new Error(data?.error || error?.message || "Falha ao enviar");
       toast.success("Mensagem enviada ao comprador");
       setText("");
+      setAttachments([]);
       await afterMutation();
     } catch (e: any) {
       toast.error(e?.message ?? "Não foi possível enviar a mensagem");
@@ -275,9 +324,55 @@ export function ClaimDetailSheet({ claim, onOpenChange }: Props) {
                     placeholder="Escreva sua resposta ao comprador…"
                     className="min-h-[80px] resize-none text-sm"
                   />
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] text-muted-foreground">{text.length}/2000 · vai ao comprador no ML</span>
-                    <Button size="sm" disabled={!text.trim() || busy} onClick={() => setConfirmingSend(true)}>
+                  {/* Chips dos anexos em upload (um por arquivo: enviando/ok/erro + remover) */}
+                  {attachments.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {attachments.map((att) => (
+                        <div
+                          key={att.id}
+                          className="flex items-center gap-1.5 rounded-md border bg-muted/50 px-2 py-1 text-xs max-w-[200px]"
+                          title={att.status === "error" ? att.error : att.name}
+                        >
+                          {att.status === "uploading" && <Loader2 className="w-3 h-3 shrink-0 animate-spin text-muted-foreground" />}
+                          {att.status === "done" && <CheckCircle2 className="w-3 h-3 shrink-0 text-emerald-600" />}
+                          {att.status === "error" && <AlertCircle className="w-3 h-3 shrink-0 text-destructive" />}
+                          <span className={`truncate ${att.status === "error" ? "text-destructive" : "text-foreground"}`}>{att.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => removeAttachment(att.id)}
+                            className="shrink-0 text-muted-foreground hover:text-foreground"
+                            aria-label={`Remover ${att.name}`}
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,application/pdf"
+                        multiple
+                        className="hidden"
+                        onChange={handleFilesSelected}
+                      />
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 w-8 p-0 shrink-0"
+                        disabled={busy}
+                        onClick={() => fileInputRef.current?.click()}
+                        aria-label="Anexar arquivo (JPG, PNG ou PDF)"
+                        title="Anexar arquivo (JPG, PNG ou PDF)"
+                      >
+                        <Paperclip className="w-4 h-4" />
+                      </Button>
+                      <span className="text-[11px] text-muted-foreground truncate">{text.length}/2000 · vai ao comprador no ML</span>
+                    </div>
+                    <Button size="sm" className="shrink-0" disabled={!text.trim() || busy || anyUploading} onClick={() => setConfirmingSend(true)}>
                       <Send className="w-3.5 h-3.5 mr-1.5" />{busy ? "Enviando…" : "Enviar resposta"}
                     </Button>
                   </div>
