@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAtendimentoPendencias, type PendenciaItem } from "@/hooks/useAtendimentoPendencias";
+import { useBellSeen } from "@/hooks/useBellSeen";
 
 function tempoRelativo(iso: string | null): string {
   if (!iso) return "";
@@ -37,22 +38,30 @@ function PendenciaRow({ item, onNavigate }: { item: PendenciaItem; onNavigate: (
 }
 
 export function AtendimentoBell() {
-  const { items, count, isLoading } = useAtendimentoPendencias();
+  const { items, count, isLoading, isReady } = useAtendimentoPendencias();
+  const { unreadCount, markAllSeen } = useBellSeen(items, isReady);
   const navigate = useNavigate();
 
+  const ariaLabel =
+    unreadCount > 0
+      ? `${unreadCount} novas notificações de atendimento`
+      : count > 0
+        ? `${count} pendências de atendimento`
+        : "Atendimento";
+
   return (
-    <Popover>
+    <Popover onOpenChange={(open) => { if (open) markAllSeen(); }}>
       <PopoverTrigger asChild>
         <Button
           variant="ghost"
           size="icon"
           className="relative rounded-xl hover:bg-secondary/50"
-          aria-label={count > 0 ? `${count} pendências de atendimento` : "Atendimento"}
+          aria-label={ariaLabel}
         >
           <Bell className="h-5 w-5 text-muted-foreground" />
-          {count > 0 && (
+          {unreadCount > 0 && (
             <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground">
-              {count > 9 ? "9+" : count}
+              {unreadCount > 9 ? "9+" : unreadCount}
             </span>
           )}
         </Button>
