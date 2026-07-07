@@ -30,7 +30,7 @@ function PendenciaRow({ item, onNavigate }: { item: PendenciaItem; onNavigate: (
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm text-foreground">{item.titulo}</p>
         <p className="text-[11px] text-muted-foreground">
-          {isQuestion ? "Pergunta" : "Devoluções"} · {tempoRelativo(item.data)}
+          {isQuestion ? "Pergunta" : "Reclamações"} · {tempoRelativo(item.data)}
         </p>
       </div>
     </button>

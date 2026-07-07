@@ -63,8 +63,8 @@ const apiSections: SidebarNavSection[] = [
         noSelfLink: true,
         children: [
           { icon: Star,          label: "Reputação",  path: "/reputacao"  },
-          { icon: PackageX,      label: "Devoluções", path: "/devolucoes" },
-          { icon: MessageCircle, label: "Mensagens",  path: "/perguntas"  },
+          { icon: PackageX,      label: "Reclamações", path: "/devolucoes" },
+          { icon: MessageCircle, label: "Perguntas",  path: "/perguntas"  },
         ],
       },
       {

@@ -33,8 +33,8 @@ export const MENU_SECTIONS = [
     label: "Pós-venda",
     items: [
       { label: "Reputação",  path: "/reputacao" },
-      { label: "Devoluções", path: "/devolucoes" },
-      { label: "Mensagens",  path: "/perguntas" },
+      { label: "Reclamações", path: "/devolucoes" },
+      { label: "Perguntas",  path: "/perguntas" },
     ],
   },
   {

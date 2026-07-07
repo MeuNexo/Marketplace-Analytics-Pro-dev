@@ -48,8 +48,8 @@ export const VIEWER_ELIGIBLE_ROUTES: { path: string; label: string }[] = [
   { path: "/precificacao", label: "Precificação" },
   // Atendimento
   { path: "/reputacao", label: "Reputação" },
-  { path: "/devolucoes", label: "Devoluções" },
-  { path: "/perguntas", label: "Mensagens" },
+  { path: "/devolucoes", label: "Reclamações" },
+  { path: "/perguntas", label: "Perguntas" },
   // Crescimento
   { path: "/metas", label: "Metas" },
 ];

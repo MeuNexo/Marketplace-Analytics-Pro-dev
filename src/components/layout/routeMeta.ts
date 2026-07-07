@@ -6,8 +6,8 @@ export const routeTitles: Record<string, { title: string; subtitle: string }> = 
   "/publicidade": { title: "Publicidade", subtitle: "Gestão e performance de publicidade" },
   "/financeiro":   { title: "Margem",   subtitle: "Análise de taxas, comissões e custo de frete" },
   "/reputacao":    { title: "Reputação",    subtitle: "Avaliações, reputação e histórico de feedback" },
-  "/devolucoes":   { title: "Devoluções",   subtitle: "Gestão de devoluções e reclamações" },
-  "/perguntas":    { title: "Mensagens",    subtitle: "Perguntas e mensagens dos compradores" },
+  "/devolucoes":   { title: "Reclamações",   subtitle: "Gestão de devoluções e reclamações" },
+  "/perguntas":    { title: "Perguntas",    subtitle: "Perguntas e mensagens dos compradores" },
   "/perfil": { title: "Perfil", subtitle: "Gerencie suas informações pessoais" },
   "/sellers": { title: "Sellers", subtitle: "Gerencie sellers e marketplaces ativos" },
   "/integracoes": {
