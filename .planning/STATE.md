@@ -5,14 +5,14 @@ milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem
 current_phase: 80
 status: completed
 stopped_at: Completed 83-01
-last_updated: "2026-07-07T12:57:47.132Z"
+last_updated: "2026-07-07T13:32:48.260Z"
 last_activity: 2026-07-02
 last_activity_desc: Phase 80 complete
 progress:
   total_phases: 36
   completed_phases: 16
-  total_plans: 67
-  completed_plans: 60
+  total_plans: 71
+  completed_plans: 61
   percent: 44
 current_phase_name: an-lise-de-pre-os-onde-vendo-bem
 ---
@@ -400,7 +400,7 @@ Dashboard atual mostra:
 
 **Resume file:** None
 
-Last session: 2026-07-03T12:33:23.415Z
+Last session: 2026-07-07T13:32:48.196Z
 Stopped at: Completed 83-01
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
