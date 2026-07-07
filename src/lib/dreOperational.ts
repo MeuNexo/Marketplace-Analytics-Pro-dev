@@ -80,3 +80,102 @@ export function computeResultadoLiquido(
   const resultadoLiquido = resultadoOperacional - blocks.financeiro;
   return { resultadoOperacional, resultadoLiquido };
 }
+
+// ============================================================================
+// evaluateGuiaReal + resolveTaxAndCmv — gatilho provisão→real (Phase 90,
+// Plan 03). A guia de imposto (ICMS/PIS/COFINS) só é considerada "real
+// apurada" quando há linha(s) status='paid' E TODA categoria paid presente
+// tem valor acima do threshold de placeholder — junho/2026 lançou
+// PIS/COFINS = R$0,01 antes da apuração real (90-DATA-FINDINGS.md), e esse
+// placeholder NÃO pode disparar o gatilho de "mês fechado".
+//
+// Source RPC: get_imposto_guia_by_competence(p_org_id, p_competence) — Plan 90-01.
+// Régua: para o mês de venda S, quem chama passa a competência S+1 (deslocamento
+// confirmado por Wesley — guia de competência C cobre vendas de C−1).
+// ============================================================================
+
+export interface ImpostoGuiaRow {
+  category: string;
+  total: number;
+  status: string;
+}
+
+export interface GuiaRealResult {
+  hasGuiaReal: boolean;
+  totalReal: number;
+}
+
+/** Guias com total <= R$1 são tratadas como placeholder (ex.: 0,01 de junho/2026). */
+const PLACEHOLDER_THRESHOLD = 1;
+
+/**
+ * Decide se a guia de imposto da competência consultada é "real apurada".
+ * - Sem linhas paid → não é real (previsão/pending não conta).
+ * - Toda linha paid deve ter total > PLACEHOLDER_THRESHOLD; uma única linha
+ *   paid placeholder (ex.: COFINS 0,01) já reprova o mês inteiro.
+ * - totalReal soma SÓ as linhas paid (linhas pending são ignoradas mesmo
+ *   quando misturadas na mesma competência).
+ */
+export function evaluateGuiaReal(rows: ImpostoGuiaRow[]): GuiaRealResult {
+  const paid = rows.filter((r) => r.status === "paid");
+  const hasGuiaReal = paid.length > 0 && paid.every((r) => Number(r.total) > PLACEHOLDER_THRESHOLD);
+  const totalReal = hasGuiaReal ? paid.reduce((sum, r) => sum + Number(r.total), 0) : 0;
+  return { hasGuiaReal, totalReal };
+}
+
+export type ImpostoFonte = "real" | "provisao";
+export type CmvFonte = "cheio" | "medio" | "medio_fallback";
+
+export interface ResolveTaxAndCmvInput {
+  /** Estimativa atual de imposto (total_tax do waterfall) — usada no mês aberto. */
+  estimatedTax: number | null;
+  hasTaxData: boolean;
+  /** CMV custo-médio (cmv do waterfall) — usado no mês aberto e como fallback no fechado. */
+  custoMedio: number | null;
+  hasCmv: boolean;
+  /** CMV cheio (cmv_cheio do waterfall) — só existe/é usado no mês fechado. */
+  cmvCheio: number | null;
+  hasCmvCheio: boolean;
+  /** Resultado de evaluateGuiaReal para a competência S+1 do mês exibido. */
+  guia: GuiaRealResult;
+}
+
+export interface ResolveTaxAndCmvResult {
+  impostosMes: number | null;
+  cmvMes: number | null;
+  impostoFonte: ImpostoFonte;
+  cmvFonte: CmvFonte;
+}
+
+/**
+ * Decide, por mês exibido, o par (impostosMes, cmvMes) + os selos de fonte.
+ *
+ * Mês ABERTO (!guia.hasGuiaReal): reproduz BYTE A BYTE as expressões legadas
+ * de MercadoLivre.tsx (linhas 258-260) — zero regressão (SC1):
+ *   impostosMes = has_tax_data ? total_tax : null
+ *   cmvMes      = has_cmv ? cmv : null
+ *
+ * Mês FECHADO (guia.hasGuiaReal): imposto = totalReal da guia (fonte "real");
+ * CMV = cheio quando disponível (fonte "cheio"), senão cai pro custo médio
+ * (fonte "medio_fallback" — inclusive quando nem o custo médio existe, cmvMes
+ * fica null mas a fonte permanece "medio_fallback" pois foi essa a tentativa).
+ */
+export function resolveTaxAndCmv(input: ResolveTaxAndCmvInput): ResolveTaxAndCmvResult {
+  const { estimatedTax, hasTaxData, custoMedio, hasCmv, cmvCheio, hasCmvCheio, guia } = input;
+
+  if (!guia.hasGuiaReal) {
+    return {
+      impostosMes: hasTaxData ? estimatedTax : null,
+      cmvMes: hasCmv ? custoMedio : null,
+      impostoFonte: "provisao",
+      cmvFonte: "medio",
+    };
+  }
+
+  return {
+    impostosMes: guia.totalReal,
+    cmvMes: hasCmvCheio ? cmvCheio : hasCmv ? custoMedio : null,
+    impostoFonte: "real",
+    cmvFonte: hasCmvCheio ? "cheio" : "medio_fallback",
+  };
+}

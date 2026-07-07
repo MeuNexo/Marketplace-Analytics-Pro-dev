@@ -9,7 +9,10 @@ import { describe, it, expect } from "vitest";
 import {
   aggregateOperationalBlocks,
   computeResultadoLiquido,
+  evaluateGuiaReal,
+  resolveTaxAndCmv,
   type DreOperationalRow,
+  type ImpostoGuiaRow,
 } from "./dreOperational";
 
 function row(partial: Partial<DreOperationalRow>): DreOperationalRow {
@@ -19,6 +22,15 @@ function row(partial: Partial<DreOperationalRow>): DreOperationalRow {
     total: 0,
     n: 1,
     financeiro_is_approximate: false,
+    ...partial,
+  };
+}
+
+function guiaRow(partial: Partial<ImpostoGuiaRow>): ImpostoGuiaRow {
+  return {
+    category: "Imposto Venda - ICMS/PIS/COFINS",
+    total: 0,
+    status: "paid",
     ...partial,
   };
 }
@@ -113,5 +125,210 @@ describe("computeResultadoLiquido", () => {
     const noisy = computeResultadoLiquido(JUNE_MARGEM, noisyBlocks);
     expect(noisy.resultadoLiquido).toBe(clean.resultadoLiquido);
     expect(Math.round(noisy.resultadoLiquido)).toBe(-29094);
+  });
+});
+
+// ============================================================================
+// evaluateGuiaReal + resolveTaxAndCmv — Phase 90 / Plan 03
+// Fixtures reais de 90-DATA-FINDINGS.md: Maio (real), Junho (placeholder),
+// Jul (previsão/pending).
+// ============================================================================
+
+describe("evaluateGuiaReal", () => {
+  it("linhas vazias → não real", () => {
+    expect(evaluateGuiaReal([])).toEqual({ hasGuiaReal: false, totalReal: 0 });
+  });
+
+  it("Maio: ICMS 12000 + PIS 716.19 + COFINS 3298.87, todas paid > R$1 → real, total 16015.06", () => {
+    const rows = [
+      guiaRow({ category: "ICMS", total: 12000 }),
+      guiaRow({ category: "PIS", total: 716.19 }),
+      guiaRow({ category: "COFINS", total: 3298.87 }),
+    ];
+    const result = evaluateGuiaReal(rows);
+    expect(result.hasGuiaReal).toBe(true);
+    expect(Math.round(result.totalReal * 100) / 100).toBe(16015.06);
+  });
+
+  it("Junho: ICMS 4793.21 paid + PIS 0.01 paid + COFINS 0.01 paid → placeholder reprova (não real)", () => {
+    const rows = [
+      guiaRow({ category: "ICMS", total: 4793.21 }),
+      guiaRow({ category: "PIS", total: 0.01 }),
+      guiaRow({ category: "COFINS", total: 0.01 }),
+    ];
+    expect(evaluateGuiaReal(rows)).toEqual({ hasGuiaReal: false, totalReal: 0 });
+  });
+
+  it("Jul: 3 linhas pending de 16015.06 (previsão) → nenhuma paid → não real", () => {
+    const rows = [
+      guiaRow({ category: "ICMS", total: 12000, status: "pending" }),
+      guiaRow({ category: "PIS", total: 716.19, status: "pending" }),
+      guiaRow({ category: "COFINS", total: 3298.87, status: "pending" }),
+    ];
+    expect(evaluateGuiaReal(rows)).toEqual({ hasGuiaReal: false, totalReal: 0 });
+  });
+
+  it("mistura paid + pending na mesma competência → considera só paid", () => {
+    const rows = [
+      guiaRow({ category: "ICMS", total: 12000, status: "paid" }),
+      guiaRow({ category: "PIS", total: 716.19, status: "paid" }),
+      guiaRow({ category: "COFINS", total: 3298.87, status: "pending" }), // ignorada
+    ];
+    const result = evaluateGuiaReal(rows);
+    expect(result.hasGuiaReal).toBe(true);
+    expect(Math.round(result.totalReal * 100) / 100).toBe(12716.19);
+  });
+
+  it("histórico com 2 categorias (ICMS+PIS, ambas paid > R$1) → real", () => {
+    const rows = [
+      guiaRow({ category: "ICMS", total: 17000, status: "paid" }),
+      guiaRow({ category: "PIS", total: 740.79, status: "paid" }),
+    ];
+    const result = evaluateGuiaReal(rows);
+    expect(result.hasGuiaReal).toBe(true);
+    expect(Math.round(result.totalReal * 100) / 100).toBe(17740.79);
+  });
+});
+
+describe("resolveTaxAndCmv", () => {
+  const guiaAberta = { hasGuiaReal: false, totalReal: 0 };
+  const guiaFechadaMaio = { hasGuiaReal: true, totalReal: 16015.06 };
+
+  it("aberto, has_tax_data true → impostosMes = estimatedTax, fonte provisao", () => {
+    const result = resolveTaxAndCmv({
+      estimatedTax: 5000,
+      hasTaxData: true,
+      custoMedio: 140607.33,
+      hasCmv: true,
+      cmvCheio: null,
+      hasCmvCheio: false,
+      guia: guiaAberta,
+    });
+    expect(result.impostosMes).toBe(5000);
+    expect(result.impostoFonte).toBe("provisao");
+  });
+
+  it("aberto, has_tax_data false → impostosMes null", () => {
+    const result = resolveTaxAndCmv({
+      estimatedTax: 5000,
+      hasTaxData: false,
+      custoMedio: null,
+      hasCmv: false,
+      cmvCheio: null,
+      hasCmvCheio: false,
+      guia: guiaAberta,
+    });
+    expect(result.impostosMes).toBeNull();
+  });
+
+  it("aberto, has_cmv true → cmvMes = custoMedio, fonte medio", () => {
+    const result = resolveTaxAndCmv({
+      estimatedTax: null,
+      hasTaxData: false,
+      custoMedio: 140607.33,
+      hasCmv: true,
+      cmvCheio: null,
+      hasCmvCheio: false,
+      guia: guiaAberta,
+    });
+    expect(result.cmvMes).toBe(140607.33);
+    expect(result.cmvFonte).toBe("medio");
+  });
+
+  it("aberto, has_cmv false → cmvMes null", () => {
+    const result = resolveTaxAndCmv({
+      estimatedTax: null,
+      hasTaxData: false,
+      custoMedio: null,
+      hasCmv: false,
+      cmvCheio: null,
+      hasCmvCheio: false,
+      guia: guiaAberta,
+    });
+    expect(result.cmvMes).toBeNull();
+  });
+
+  it("fechado → impostosMes = totalReal da guia, fonte real (ignora estimatedTax)", () => {
+    const result = resolveTaxAndCmv({
+      estimatedTax: 999999,
+      hasTaxData: true,
+      custoMedio: 140607.33,
+      hasCmv: true,
+      cmvCheio: 168486.68,
+      hasCmvCheio: true,
+      guia: guiaFechadaMaio,
+    });
+    expect(result.impostosMes).toBe(16015.06);
+    expect(result.impostoFonte).toBe("real");
+  });
+
+  it("fechado, has_cmv_cheio true → cmvMes = cmvCheio, fonte cheio", () => {
+    const result = resolveTaxAndCmv({
+      estimatedTax: null,
+      hasTaxData: false,
+      custoMedio: 140607.33,
+      hasCmv: true,
+      cmvCheio: 168486.68,
+      hasCmvCheio: true,
+      guia: guiaFechadaMaio,
+    });
+    expect(result.cmvMes).toBe(168486.68);
+    expect(result.cmvFonte).toBe("cheio");
+  });
+
+  it("fechado, has_cmv_cheio false + has_cmv true → cmvMes = custoMedio, fonte medio_fallback", () => {
+    const result = resolveTaxAndCmv({
+      estimatedTax: null,
+      hasTaxData: false,
+      custoMedio: 140607.33,
+      hasCmv: true,
+      cmvCheio: null,
+      hasCmvCheio: false,
+      guia: guiaFechadaMaio,
+    });
+    expect(result.cmvMes).toBe(140607.33);
+    expect(result.cmvFonte).toBe("medio_fallback");
+  });
+
+  it("fechado, ambos cmv ausentes → cmvMes null, fonte medio_fallback", () => {
+    const result = resolveTaxAndCmv({
+      estimatedTax: null,
+      hasTaxData: false,
+      custoMedio: null,
+      hasCmv: false,
+      cmvCheio: null,
+      hasCmvCheio: false,
+      guia: guiaFechadaMaio,
+    });
+    expect(result.cmvMes).toBeNull();
+    expect(result.cmvFonte).toBe("medio_fallback");
+  });
+
+  it("ZERO-REGRESSÃO: mês aberto devolve exatamente o par legado (has_tax_data ? total_tax : null, has_cmv ? cmv : null)", () => {
+    const cenarios = [
+      { total_tax: 5432.1, has_tax_data: true, cmv: 140607.33, has_cmv: true },
+      { total_tax: 0, has_tax_data: false, cmv: 0, has_cmv: false },
+      { total_tax: 12000, has_tax_data: true, cmv: 0, has_cmv: false },
+      { total_tax: 0, has_tax_data: false, cmv: 99999.99, has_cmv: true },
+    ];
+
+    for (const c of cenarios) {
+      // Expressões LEGADAS de MercadoLivre.tsx (linhas 258-260):
+      const legacyCmvMes = (c.has_cmv ? c.cmv : null) ?? null;
+      const legacyImpostosMes = (c.has_tax_data ? c.total_tax : null) ?? null;
+
+      const result = resolveTaxAndCmv({
+        estimatedTax: c.total_tax,
+        hasTaxData: c.has_tax_data,
+        custoMedio: c.cmv,
+        hasCmv: c.has_cmv,
+        cmvCheio: null,
+        hasCmvCheio: false,
+        guia: guiaAberta,
+      });
+
+      expect(result.impostosMes).toBe(legacyImpostosMes);
+      expect(result.cmvMes).toBe(legacyCmvMes);
+    }
   });
 });
