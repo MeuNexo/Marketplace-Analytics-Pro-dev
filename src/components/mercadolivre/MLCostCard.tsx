@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ChevronLeft, ChevronRight, HelpCircle, Loader2, TrendingDown, TrendingUp } from "lucide-react";
 import type { BillingGroup } from "@/hooks/useMLBilling";
-import { computeResultadoLiquido, type DreOperationalBlocks } from "@/lib/dreOperational";
+import { computeResultadoLiquido, type DreOperationalBlocks, type ImpostoFonte, type CmvFonte } from "@/lib/dreOperational";
 
 const fmt = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
@@ -33,6 +33,10 @@ interface MLCostCardProps {
   cmvMes: number | null;
   /** Impostos próprios do mês (regime fiscal) — null = sem config fiscal */
   impostosMes: number | null;
+  /** "real" = guia de imposto já apurada (mês fechado) | "provisao" = estimativa por item (mês aberto) — Phase 90 */
+  impostoFonte?: ImpostoFonte;
+  /** "cheio" = preço de custo cheio (mês fechado) | "medio" = custo médio (mês aberto) | "medio_fallback" = tentou cheio mas caiu p/ médio (~20% dos SKUs sem preço cheio) — Phase 90 */
+  cmvFonte?: CmvFonte;
   /** "competencia" = ml_billing_daily mês-calendário 01–31 | "billing" = fatura mensal (ciclo 06→05) | "estimado" = fallback de orders */
   fonte: "competencia" | "billing" | "estimado";
   loading?: boolean;
@@ -62,6 +66,8 @@ export function MLCostCard({
   totalTarifas,
   cmvMes,
   impostosMes,
+  impostoFonte = "provisao",
+  cmvFonte = "medio",
   fonte,
   loading,
   onPrevMonth,
@@ -91,6 +97,7 @@ export function MLCostCard({
   const resultadoLiquidoPct = receitaMes > 0 ? ((resultadoLiquido / receitaMes) * 100).toFixed(1) : "—";
 
   const [financeiroTooltipOpen, setFinanceiroTooltipOpen] = useState(false);
+  const [impostoTooltipOpen, setImpostoTooltipOpen] = useState(false);
 
   return (
     <motion.div
@@ -217,6 +224,16 @@ export function MLCostCard({
                 <span className="text-muted-foreground flex items-center gap-1">
                   <span className="text-muted-foreground/50">(−)</span>
                   CMV do mês
+                  {cmvMes != null && cmvFonte === "cheio" && (
+                    <span className="text-[9px] italic text-muted-foreground/80">
+                      custo cheio
+                    </span>
+                  )}
+                  {cmvMes != null && cmvFonte === "medio_fallback" && (
+                    <span className="text-[9px] italic text-muted-foreground/80">
+                      custo médio (sem preço cheio)
+                    </span>
+                  )}
                 </span>
                 <div className="flex items-center gap-2">
                   {cmvMes != null ? (
@@ -241,6 +258,44 @@ export function MLCostCard({
                 <span className="text-muted-foreground flex items-center gap-1">
                   <span className="text-muted-foreground/50">(−)</span>
                   Impostos próprios (regime fiscal)
+                  {impostosMes != null && (
+                    <>
+                      <span
+                        className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                          impostoFonte === "real"
+                            ? "bg-emerald-500/15 text-emerald-400"
+                            : "bg-amber-500/15 text-amber-400"
+                        }`}
+                      >
+                        {impostoFonte === "real" ? "imposto real (guia)" : "estimado (provisão)"}
+                      </span>
+                      <Popover open={impostoTooltipOpen} onOpenChange={setImpostoTooltipOpen}>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label="Ver definição da base do imposto"
+                            className="inline-flex w-3.5 h-3.5 items-center justify-center text-muted-foreground/50 hover:text-muted-foreground transition-colors focus:outline-none"
+                            onMouseEnter={() => setImpostoTooltipOpen(true)}
+                            onMouseLeave={() => setImpostoTooltipOpen(false)}
+                            onClick={(e) => { e.stopPropagation(); setImpostoTooltipOpen((v) => !v); }}
+                          >
+                            <HelpCircle className="w-3.5 h-3.5" />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent
+                          side="top"
+                          align="start"
+                          sideOffset={6}
+                          className="w-auto max-w-[240px] px-3 py-2 text-xs"
+                          onOpenAutoFocus={(e) => e.preventDefault()}
+                        >
+                          {impostoFonte === "real"
+                            ? "Imposto da guia de ICMS/PIS/COFINS já apurada — competência do mês seguinte à venda."
+                            : "Estimativa automática por item pelo regime fiscal, enquanto a guia real não é lançada."}
+                        </PopoverContent>
+                      </Popover>
+                    </>
+                  )}
                 </span>
                 <div className="flex items-center gap-2">
                   {impostosMes != null ? (
