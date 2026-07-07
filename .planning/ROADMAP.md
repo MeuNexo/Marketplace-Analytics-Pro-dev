@@ -838,4 +838,10 @@ Plans:
 **Requirements**: ATTACH-01 (exibir imagem inline), ATTACH-02 (baixar arquivo não-imagem), ATTACH-03 (proxy anti-IDOR por org). *(feature nova — IDs locais)*
 **Depends on:** Phase 89/90 (ml-claim-detail + ClaimDetailSheet)
 **Verificação alvo:** tsc 0, vitest (normalização de attachments + util puro), build ok. EF nova com verify_jwt=true + anti-IDOR provado (403 cross-org). Ref API ML: download `/post-purchase/v1/claims/{id}/attachments/{att_id}/download`, metadata `/attachments/{att_id}` (Bearer vendedor).
+**Plans:** 2 plans (2 waves)
+
+Plans:
+- [ ] 92-01-PLAN.md — Backend: EF nova ml-claim-attachment (proxy base64, anti-IDOR) + ml-claim-detail normaliza attachments + deploy/smoke (checkpoint)
+- [ ] 92-02-PLAN.md — Frontend: lib pura (normalização + imagem-vs-arquivo) + hook useClaimAttachment + componente ClaimAttachment + fiação no ClaimDetailSheet
+
 **Planejada 2026-07-07.**
