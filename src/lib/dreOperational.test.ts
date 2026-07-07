@@ -332,3 +332,57 @@ describe("resolveTaxAndCmv", () => {
     }
   });
 });
+
+// ============================================================================
+// Reconciliação ABRIL/2026 — fixture de regressão (Phase 90, Plan 04).
+//
+// Abril/2026 é o mês FECHADO de referência: vendas de abril são cobertas pela
+// guia de imposto de competência MAIO (régua S+1, LOCKED), que é `paid` e sem
+// placeholder (90-DATA-FINDINGS.md). Valores confirmados em prod (org Pé
+// Vermeio 7f615df7, projeto ckcdevcxgvueywivefgx):
+//   - get_cost_waterfall abril: paid_revenue 309.475,91 · cmv (médio) 140.607,33
+//     · cmv_cheio 168.486,68 · 1141 pedidos (Plan 90-02).
+//   - get_imposto_guia_by_competence('2026-05-01'): ICMS 12.000 + PIS 716,19 +
+//     COFINS 3.298,87 = 16.015,06, todas status='paid' (Plan 90-01).
+//
+// Este teste NÃO recalcula tarifas ML/ads/blocos operacionais (fora do escopo
+// de resolveTaxAndCmv) — apenas prova que o par (imposto real, cmv cheio) é
+// selecionado corretamente para abril e computa o resultado PARCIAL
+// (receita − cmv_cheio − imposto real), usado no SUMMARY para comparar com a
+// planilha do Wesley.
+describe("Reconciliação ABRIL/2026 (mês fechado, guia competência maio)", () => {
+  const RECEITA_ABRIL = 309475.91;
+  const CMV_MEDIO_ABRIL = 140607.33;
+  const CMV_CHEIO_ABRIL = 168486.68;
+  const GUIA_MAIO_REAL = 16015.06; // 12000 + 716.19 + 3298.87
+
+  it("abril usa imposto real da guia de maio + cmv cheio (não a estimativa/custo médio)", () => {
+    const guiaMaio = evaluateGuiaReal([
+      { category: "ICMS", total: 12000, status: "paid" },
+      { category: "PIS", total: 716.19, status: "paid" },
+      { category: "COFINS", total: 3298.87, status: "paid" },
+    ]);
+    expect(guiaMaio.hasGuiaReal).toBe(true);
+    expect(guiaMaio.totalReal).toBeCloseTo(GUIA_MAIO_REAL, 2);
+
+    const result = resolveTaxAndCmv({
+      estimatedTax: 61895.18, // estimativa ilustrativa (~20% da receita) — não usada quando fechado
+      hasTaxData: true,
+      custoMedio: CMV_MEDIO_ABRIL,
+      hasCmv: true,
+      cmvCheio: CMV_CHEIO_ABRIL,
+      hasCmvCheio: true,
+      guia: guiaMaio,
+    });
+
+    expect(result.impostoFonte).toBe("real");
+    expect(result.cmvFonte).toBe("cheio");
+    expect(result.impostosMes).toBeCloseTo(GUIA_MAIO_REAL, 2);
+    expect(result.cmvMes).toBe(CMV_CHEIO_ABRIL);
+
+    // Resultado PARCIAL (antes de tarifas ML/ads/blocos operacionais) — usado
+    // no SUMMARY para comparar com a planilha do Wesley.
+    const resultadoParcial = RECEITA_ABRIL - result.cmvMes! - result.impostosMes!;
+    expect(resultadoParcial).toBeCloseTo(124974.17, 2);
+  });
+});
