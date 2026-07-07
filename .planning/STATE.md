@@ -2,24 +2,24 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 80
-status: completed
+current_phase: 90
+current_phase_name: dre-imposto-real-cmv-fechamento
+status: executing
 stopped_at: "Completed 88-02 (Wave 1+2 executed: pure lib + hook + UI wiring, tsc clean, vitest 418/418 green)"
-last_updated: "2026-07-06T23:42:08.826Z"
-last_activity: 2026-07-02
-last_activity_desc: Phase 80 complete
+last_updated: "2026-07-07T00:19:26.842Z"
+last_activity: 2026-07-07
+last_activity_desc: Phase 90 execution started
 progress:
   total_phases: 35
   completed_phases: 18
-  total_plans: 72
+  total_plans: 76
   completed_plans: 65
   percent: 51
-current_phase_name: an-lise-de-pre-os-onde-vendo-bem
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
 
-- **Status:** Milestone complete
+- **Status:** Executing Phase 90
 - **Backend:** tabela `purchase_orders` (migration `20260665000000`, RLS org-first); EF `sync-tiny-purchase-orders` v1 (endpoint Tiny correto = `/ordem-compra` singular; waitUntil 202; `organization_id` no insert); RPC `get_replenishment_by_sku` (migration `20260665000100`, +CTE `incoming_by_sku`, +colunas `qtd_a_caminho`/`data_proxima_chegada`, desconta TODA a qtd a caminho — decisão Wesley); cron `sync-tiny-purchase-orders-daily` (jobid 34, 03:15 UTC).
 - **Prova:** sync 22 OCs/135 SKUs/1.885 un; RPC 93 SKUs a caminho, 80 zeraram sugestão, cobertura parcial preserva gatilho (ex `11011273-CAFE3374G` → ainda sugere 10). tsc 0 + 208 testes + build ok.
 - **Decisão tunável:** "a caminho" = situação `3` (aguardando recebimento); ampliar p/ `2` (aprovada) = 1 linha em `SITUACOES_A_CAMINHO` na EF.
@@ -131,14 +131,14 @@ See: .planning/PROJECT.md
 
 **Milestone:** v8.0 — Consultor v2 (Inteligência)
 **Core value:** Consultor que explica, prioriza e ajuda a agir — LLM sob demanda + ações com aprovação, sobre o motor determinístico do v1.
-**Current focus:** Phase 80 — an-lise-de-pre-os-onde-vendo-bem
+**Current focus:** Phase 90 — dre-imposto-real-cmv-fechamento
 
 ## Current Position
 
-Phase: 80
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-07-02 — Phase 80 complete
+Phase: 90 (dre-imposto-real-cmv-fechamento) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 90
+Last activity: 2026-07-07 — Phase 90 execution started
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
 
 ### Phase 54 — Wave 1 EXECUTADA (2026-06-24), Wave 2 PENDENTE
