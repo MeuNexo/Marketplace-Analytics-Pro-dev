@@ -771,10 +771,13 @@ Plans:
 4. Mapeado no código ANTES de implementar: qual base de custo o `/vendas` usa hoje no CMV (custo médio vs preço de custo) e onde exatamente a estimativa de imposto entra na margem. Não assumir.
 5. Reconciliação: um mês fechado com guia (mês de 2026 anterior a junho cuja guia já esteja na Tiny) bate com a DRE do Wesley (planilha). Junho fica em limbo (guia sai ~20-25/jul) → tratado como provisão; investigar o que é o R$4.793 já visto em `impostos_venda` de junho.
 6. Anti-IDOR (`organization_id`, SECURITY INVOKER), light+dark, mobile; validação visual Wesley.
-**Plans:** 0 plans
+**Plans:** 4 plans (3 waves)
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 90 to break down)
+- [ ] 90-01-PLAN.md — [W1] Track A backend: RPC `get_imposto_guia_by_competence` (imposto real por competência, status-aware + granularidade por categoria p/ guarda de placeholder); apply via MCP + provas (Maio real / Junho placeholder / Jul pending / anti-IDOR)
+- [ ] 90-02-PLAN.md — [W1] Track B backend: schema `cost_full`/`custo_unit_cheio` + `get_cost_waterfall` com `cmv_cheio` + EFs sync-tiny-costs/recalc-order-costs (grava ambos) + backfill; deploy via MCP + prova cmv_cheio abril
+- [ ] 90-03-PLAN.md — [W2] Frontend lógica: `evaluateGuiaReal` + `resolveTaxAndCmv` (puras, zero-regressão testada) + hook `useImpostoGuia` (competência S+1) + threading `cmv_cheio` no waterfall + vitest
+- [ ] 90-04-PLAN.md — [W3] Frontend UI: composição real/provisão + régua S+1 em MercadoLivre.tsx + selo "imposto real (guia)"/"estimado (provisão)" + nota de base do CMV no MLCostCard + reconciliação Abril + checkpoint visual Wesley
 
 ---
