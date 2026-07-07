@@ -17,6 +17,7 @@
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { deriveSellerAction } from "../_shared/claimActions.ts";
 
 const SUPABASE_URL     = (Deno.env.get("SUPABASE_URL") ?? "").trim();
 const SERVICE_KEY      = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
@@ -222,6 +223,14 @@ async function syncUser(
           data_limite:     (c.resolution_due_date ?? "").substring(0, 10) || null,
           solucao:         c.resolution?.type ?? null,
           synced_at:       new Date().toISOString(),
+          // T-90-01: default "não pendente" — só claims OPEN recebem o GET
+          // individual (abaixo) que deriva os valores reais. Fechadas ficam
+          // assim (design: "Fechadas não precisam", seller_action_required=false).
+          seller_action_required: false,
+          pending_action_type:    null,
+          action_due_date:        null,
+          available_actions:      null,
+          stage:                  null,
         });
       }
 
@@ -246,6 +255,29 @@ async function syncUser(
       await new Promise((res) => setTimeout(res, 120));
     }
     r.motivo_texto = reasonCache.get(code) ?? null;
+  }
+
+  // T-90-01: triagem "de quem é a vez" — o search resumido NÃO traz
+  // `available_actions`, então buscamos o claim individual (dual-URL, mesmo
+  // par usado pelo ml-webhook) só para as claims ABERTAS. Fechadas mantêm os
+  // defaults seller_action_required=false / null definidos acima — sem GET
+  // extra (T-90-04: mantém a EF dentro do orçamento de wall-clock).
+  for (const r of allRows) {
+    if (r.status === "closed") continue;
+    const claimId = r.claim_id as string;
+    let detail = await mlGet(ML_API + "/v1/claims/" + claimId, token);
+    if (!detail) detail = await mlGet(ML_API + "/post-purchase/v1/claims/" + claimId, token);
+    if (detail) {
+      const derived = deriveSellerAction(detail.players);
+      r.seller_action_required = derived.seller_action_required;
+      r.pending_action_type    = derived.pending_action_type;
+      r.action_due_date        = derived.action_due_date;
+      r.available_actions      = derived.available_actions;
+      r.stage                  = detail.stage ?? null;
+    }
+    // T-42-07: inter-request sleep (ML rate limit), same pattern as the
+    // reason-cache lookups above (120-200ms).
+    await new Promise((res) => setTimeout(res, 150));
   }
 
   // Dedupe by claim_id within this user's batch: the ML claims search can return

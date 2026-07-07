@@ -8,6 +8,7 @@
 // Modo reprocess (cron, Pattern B): POST com Bearer service_role_key repesca eventos presos.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { deriveSellerAction } from "../_shared/claimActions.ts";
 
 const SUPABASE_URL     = (Deno.env.get("SUPABASE_URL") ?? "").trim();
 const SERVICE_KEY      = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
@@ -100,6 +101,9 @@ function questionRow(q: any, orgId: string, mlUserId: string) {
   };
 }
 function claimRow(c: any, orgId: string, mlUserId: string) {
+  // T-90-01: o GET individual do claim já traz `players` — deriva a triagem
+  // "de quem é a vez" sem custo extra de requisição.
+  const derived = deriveSellerAction(c.players);
   return {
     organization_id: orgId, ml_user_id: mlUserId, claim_id: String(c.id ?? ""),
     order_id: c.resource_id != null ? String(c.resource_id) : null,
@@ -108,6 +112,11 @@ function claimRow(c: any, orgId: string, mlUserId: string) {
     data_abertura: (c.date_created ?? "").substring(0, 10) || null,
     data_limite: (c.resolution_due_date ?? "").substring(0, 10) || null,
     solucao: c.resolution?.type ?? null, synced_at: new Date().toISOString(),
+    seller_action_required: derived.seller_action_required,
+    pending_action_type: derived.pending_action_type,
+    action_due_date: derived.action_due_date,
+    available_actions: derived.available_actions,
+    stage: c.stage ?? null,
   };
 }
 
