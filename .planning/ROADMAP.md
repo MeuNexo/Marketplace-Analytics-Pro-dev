@@ -818,3 +818,24 @@ Plans:
 
 **Plans:** 1/1 plan complete (wave única)
 - [x] 91-01-PLAN.md — lib pura bellSeen (computeUnread/mergeAndPruneSeen/shouldSeed) + hook useBellSeen (localStorage bell-seen:{orgId}) + isReady em useAtendimentoPendencias + fiação do AtendimentoBell (badge=unreadCount, abrir=markAllSeen)
+
+---
+
+### Phase 92: Anexos nas mensagens de reclamação (exibição)
+
+**Goal:** No thread de mensagens de uma reclamação (`ClaimDetailSheet` em `/devolucoes`), as **imagens e arquivos anexados** (pelo cliente OU pelo vendedor) aparecem — hoje só o texto é exibido. Imagem inline (miniatura → zoom); outros arquivos como botão de download. Tudo dentro do dashboard, sem sair para o ML.
+
+**Causa raiz:** a EF `ml-claim-detail` repassa as mensagens cruas (cada uma já traz um array `attachments` com IDs), mas o `ClaimDetailSheet` renderiza só `htmlToText(m.message)`. Anexos do ML **exigem download autenticado com o token do vendedor** (`GET /post-purchase/v1/claims/{claim_id}/attachments/{attachment_id}/download`, Bearer) — não é URL pública —, então um `<img src>` direto não funciona: precisa de uma ponte no backend.
+
+**Design (client + 1 EF nova, sem migration):**
+- **EF nova `ml-claim-attachment`** (proxy autenticado, verify_jwt=true) — mesmo gate anti-IDOR das outras (JWT→getUser→token por `ml_user_id`→`is_org_member`). Recebe `{ claim_id, ml_user_id, attachment_id }`, baixa o binário do ML com o token do vendedor e devolve **base64 + content-type** (data URI). Fotos de claim são pequenas; base64 via `functions.invoke` (com JWT) casa com o padrão existente e evita URL assinada. `access_token` nunca logado (T-42-04).
+- **EF `ml-claim-detail`:** normaliza `message.attachments` para um shape estável `{ id, filename, type }` (tolerando item string OU objeto — confirmar shape real contra uma claim viva no 1º passo). Nada mais muda.
+- **Frontend `ClaimDetailSheet` / novo `ClaimAttachment`:** para cada mensagem com anexos, renderiza os anexos abaixo do texto. Imagem (`type` image/* ou extensão) → busca via proxy (hook lazy `useClaimAttachment`, cache por id) e mostra miniatura clicável (zoom em Dialog); não-imagem → botão "Baixar" (invoke → blob → download). Estados loading/erro por anexo.
+- Tipo do frontend já tem `attachments?: unknown[]` — passa a ser tipado.
+
+**Fora de escopo (deferido):** **enviar** anexo novo na resposta do vendedor (`POST .../attachments` + fluxo de upload) — vira phase própria (send).
+
+**Requirements**: ATTACH-01 (exibir imagem inline), ATTACH-02 (baixar arquivo não-imagem), ATTACH-03 (proxy anti-IDOR por org). *(feature nova — IDs locais)*
+**Depends on:** Phase 89/90 (ml-claim-detail + ClaimDetailSheet)
+**Verificação alvo:** tsc 0, vitest (normalização de attachments + util puro), build ok. EF nova com verify_jwt=true + anti-IDOR provado (403 cross-org). Ref API ML: download `/post-purchase/v1/claims/{id}/attachments/{att_id}/download`, metadata `/attachments/{att_id}` (Bearer vendedor).
+**Planejada 2026-07-07.**
