@@ -292,9 +292,7 @@ async function syncUser(
   let upsertError: string | null = null;
   if (deduped.length > 0) {
     // Blindagem contra defasagem do /claims/search (segue listando como 'opened'
-    // claims já fechadas): 'closed' é terminal e sempre sobrescreve; abertas só
-    // INSEREM (ignoreDuplicates) — o polling não reabre uma claim já fechada
-    // (reabertura real é capturada pelo webhook via GET individual, autoritativo).
+    // claims já fechadas): 'closed' é terminal e sempre sobrescreve.
     const closed = deduped.filter((r) => r.status === "closed");
     const open   = deduped.filter((r) => r.status !== "closed");
 
@@ -305,10 +303,28 @@ async function syncUser(
       if (error) { upsertError = error.message; console.error("sync-ml-claims upsert(closed) ml_user_id=" + mlUserId + ":", error.message); }
     }
     if (open.length > 0) {
-      const { error } = await sb
+      // T-90-01: as abertas precisam ATUALIZAR as colunas de triagem
+      // (seller_action_required etc.), não só inserir — senão claims abertas
+      // pré-existentes nunca recebem a triagem. Para não reabrir uma claim já
+      // fechada no banco (defasagem do search resumido, que ainda a lista como
+      // 'opened'), removemos do lote as que já estão 'closed' no banco e damos
+      // upsert com MERGE nas demais (atualiza existentes + insere novas).
+      const openIds = open.map((r) => r.claim_id as string);
+      const { data: closedInDb } = await sb
         .from("ml_claims")
-        .upsert(open, { onConflict: "organization_id,ml_user_id,claim_id", ignoreDuplicates: true });
-      if (error) { upsertError = error.message; console.error("sync-ml-claims upsert(open) ml_user_id=" + mlUserId + ":", error.message); }
+        .select("claim_id")
+        .eq("organization_id", orgId)
+        .eq("ml_user_id", mlUserId)
+        .in("claim_id", openIds)
+        .eq("status", "closed");
+      const closedSet = new Set((closedInDb ?? []).map((r: any) => r.claim_id as string));
+      const openToUpsert = open.filter((r) => !closedSet.has(r.claim_id as string));
+      if (openToUpsert.length > 0) {
+        const { error } = await sb
+          .from("ml_claims")
+          .upsert(openToUpsert, { onConflict: "organization_id,ml_user_id,claim_id" });
+        if (error) { upsertError = error.message; console.error("sync-ml-claims upsert(open) ml_user_id=" + mlUserId + ":", error.message); }
+      }
     }
   }
 
