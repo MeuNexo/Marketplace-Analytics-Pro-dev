@@ -4,8 +4,8 @@ milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
 current_phase: 80
 status: completed
-stopped_at: Completed 83-01
-last_updated: "2026-07-07T13:32:48.260Z"
+stopped_at: Completed 90-01 (triagem backend); 90-02/03/04 pending
+last_updated: "2026-07-07T13:34:22.631Z"
 last_activity: 2026-07-02
 last_activity_desc: Phase 80 complete
 progress:
@@ -274,6 +274,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | Phase 80-an-lise-de-pre-os-onde-vendo-bem P02 | 35min | 3 tasks | 2 files |
 | 80 | 2 | - | - |
 | Phase 83-produtos-vendidos-mco-redesign P01 | 6min | 3 tasks | 5 files |
+| Phase 90 P01 | 7min | 4 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -343,6 +344,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 - [Phase 80-02]: Tokens --chart-margin-saudavel/apertada/prejuizo criados dedicados ao histograma (nao reusar --success/--warning/--destructive globais) porque estes falham o check Lightness band do validador CVD quando usados lado a lado como marcas de grafico
 - [Phase 83-01]: Migration usa DROP FUNCTION + CREATE (nao CREATE OR REPLACE) para adicionar coluna marca a RPC get_margin_with_ads_by_product, pois RETURNS TABLE muda de forma
 - [Phase 83-01]: mcoPct do GRUPO em Produtos Vendidos = soma(lucro_pos_ads) / soma(receita) x 100 pos-ads, nunca a media dos mcoPct dos itens
+- [Phase 90]: Phase 90-01: regra LOCKED 'Pende voce' em deriveSellerAction (mensagem mandatory OU decisao refund/allow_return/open_dispute/allow_partial_refund; opcional isolada=Aguardando); prioridade reply>return>refund>dispute; sync-ml-claims GET individual so de claims OPEN
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -400,8 +402,8 @@ Dashboard atual mostra:
 
 **Resume file:** None
 
-Last session: 2026-07-07T13:32:48.196Z
-Stopped at: Completed 83-01
+Last session: 2026-07-07T13:34:22.555Z
+Stopped at: Completed 90-01 (triagem backend); 90-02/03/04 pending
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
