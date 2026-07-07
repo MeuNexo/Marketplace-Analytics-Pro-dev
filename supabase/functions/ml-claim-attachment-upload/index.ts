@@ -131,30 +131,40 @@ serve(async (req) => {
     const filename = sanitizeFilename(file instanceof File ? file.name : "");
 
     // 6. Só DEPOIS do gate + validação: monta multipart novo e sobe ao ML.
-    //    `append` de 3 argumentos passa o filename REAL (não "blob") — o ML
-    //    aplica a regra de nome ≤125/safe-chars sobre esse nome. NÃO setar
-    //    Content-Type manualmente: o runtime injeta o boundary do multipart.
+    //    Reconstrói o arquivo como Blob com Content-Type EXPLÍCITO — reencaixar o
+    //    File vindo de req.formData() pode gerar uma parte multipart sem type, que
+    //    o ML rejeita. NÃO setar Content-Type manualmente (runtime injeta boundary).
     const at = tokenRow.access_token;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const blob = new Blob([bytes], { type: file.type || "application/octet-stream" });
     const uploadForm = new FormData();
-    uploadForm.append("file", file, filename);
+    uploadForm.append("file", blob, filename);
 
+    // Sem `api-version: 2` aqui — a doc do ML para POST /attachments não usa esse
+    // header e ele pode interferir no parse do multipart.
     const uploadUrl = `${ML_API}/post-purchase/v1/claims/${claim_id}/attachments`;
     const res = await fetch(uploadUrl, {
       method: "POST",
-      headers: { Authorization: "Bearer " + at, "api-version": "2" },
+      headers: { Authorization: "Bearer " + at },
       body: uploadForm,
     });
+
+    // Lê o corpo como texto UMA vez e tenta parsear — permite expor a resposta
+    // crua do ML no diagnóstico sem re-consumir o stream (não vaza token).
+    const rawText = await res.text().catch(() => "");
+    let mlBody: any = null;
+    try { mlBody = JSON.parse(rawText); } catch { /* corpo não-JSON */ }
+
     if (!res.ok) {
-      // Não vazar corpo sensível nem token; log só com status/claim_id/ml_user_id.
-      console.error("ml-claim-attachment-upload: ML upload status=" + res.status + " claim_id=" + claim_id + " ml_user_id=" + ml_user_id);
-      return jsonResponse({ error: "ML attachment upload failed", ml_status: res.status }, res.status >= 500 ? 502 : res.status);
+      console.error("ml-claim-attachment-upload: ML upload status=" + res.status + " claim_id=" + claim_id + " ml_user_id=" + ml_user_id + " body=" + rawText.slice(0, 200));
+      return jsonResponse({ error: "ML attachment upload failed", ml_status: res.status, ml_body: rawText.slice(0, 300) }, res.status >= 500 ? 502 : res.status);
     }
 
-    const body = await res.json().catch(() => null);
-    const uploadedFilename = body?.filename;
+    // ML devolve { user_id, filename }. Aceita shape em array por robustez.
+    const uploadedFilename = mlBody?.filename ?? (Array.isArray(mlBody) ? mlBody[0]?.filename : null) ?? null;
     if (!uploadedFilename) {
-      console.error("ml-claim-attachment-upload: ML resposta sem filename claim_id=" + claim_id + " ml_user_id=" + ml_user_id);
-      return jsonResponse({ error: "ML attachment upload failed" }, 502);
+      console.error("ml-claim-attachment-upload: sem filename status=" + res.status + " claim_id=" + claim_id + " body=" + rawText.slice(0, 200));
+      return jsonResponse({ error: "ML attachment upload failed", ml_status: res.status, ml_body: rawText.slice(0, 300) }, 502);
     }
 
     return jsonResponse({ ok: true, filename: uploadedFilename });
