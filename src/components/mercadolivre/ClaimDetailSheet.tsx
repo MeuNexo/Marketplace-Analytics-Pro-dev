@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { format, parseISO, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Send, RefreshCw, ShieldAlert, User, Scale, Store, Package, Banknote, Gavel, PackageCheck } from "lucide-react";
+import { Send, RefreshCw, ShieldAlert, User, Scale, Store, Package, Banknote, Gavel, PackageCheck, FileText, Settings2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
@@ -12,9 +12,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useMLClaimDetail } from "@/hooks/useMLClaimMessages";
+import { useClaimTemplates } from "@/hooks/useClaimTemplates";
+import { ClaimTemplatesDialog } from "@/components/mercadolivre/ClaimTemplatesDialog";
+import { applyTemplate } from "@/lib/applyTemplate";
 import { htmlToText } from "@/lib/htmlToText";
 import { claimStatusConfig, claimTipoLabel, isClaimOpen } from "@/lib/claimStatus";
 import type { MLClaimRow } from "@/hooks/useMLClaims";
@@ -60,10 +64,27 @@ export function ClaimDetailSheet({ claim, onOpenChange }: Props) {
   const [confirmingSend, setConfirmingSend] = useState(false);
   const [pendingAction, setPendingAction] = useState<ActionKind | null>(null);
   const [busy, setBusy] = useState(false);
+  const [templatesDialogOpen, setTemplatesDialogOpen] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
 
   const claimId = claim?.claim_id ?? null;
   const mlUserId = claim?.ml_user_id ?? null;
   const { data: detail, isLoading, refetch } = useMLClaimDetail(claimId, mlUserId);
+  const { templates } = useClaimTemplates();
+
+  // Variáveis de substituição ({{nome}}/{{produto}}/{{pedido}}) para o modelo escolhido
+  // e para a prévia do dialog "Gerenciar modelos" — sempre os dados da reclamação atual.
+  const templateVars = {
+    nome: detail?.buyer_first_name ?? "cliente",
+    produto: claim?.item_title ?? claim?.item_id ?? "",
+    pedido: claim?.order_id ?? "",
+  };
+
+  function handleTemplateSelect(templateId: string) {
+    setSelectedTemplateId(templateId);
+    const template = templates.find((t) => t.id === templateId);
+    if (template) setText(applyTemplate(template.body, templateVars));
+  }
 
   const open = claim !== null;
   const status = claim ? claimStatusConfig(claim.status) : null;
@@ -209,6 +230,31 @@ export function ClaimDetailSheet({ claim, onOpenChange }: Props) {
               {/* Caixa de resposta */}
               {canMessage ? (
                 <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Select
+                      value={selectedTemplateId}
+                      onValueChange={handleTemplateSelect}
+                      disabled={templates.length === 0}
+                    >
+                      <SelectTrigger className="h-8 text-xs flex-1">
+                        <FileText className="w-3.5 h-3.5 mr-1.5 shrink-0 opacity-60" />
+                        <SelectValue placeholder={templates.length === 0 ? "Nenhum modelo criado ainda" : "Usar modelo…"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {templates.map((t) => (
+                          <SelectItem key={t.id} value={t.id} className="text-xs">{t.title}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 text-xs shrink-0"
+                      onClick={() => setTemplatesDialogOpen(true)}
+                    >
+                      <Settings2 className="w-3.5 h-3.5 mr-1.5" />Gerenciar modelos
+                    </Button>
+                  </div>
                   <Textarea
                     value={text}
                     onChange={(e) => setText(e.target.value.slice(0, 2000))}
@@ -268,6 +314,13 @@ export function ClaimDetailSheet({ claim, onOpenChange }: Props) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Gerenciar modelos ("mensagens rápidas") */}
+      <ClaimTemplatesDialog
+        open={templatesDialogOpen}
+        onOpenChange={setTemplatesDialogOpen}
+        claimVars={templateVars}
+      />
     </Sheet>
   );
 }
