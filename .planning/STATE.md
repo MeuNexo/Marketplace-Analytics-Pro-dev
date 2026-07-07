@@ -4,15 +4,15 @@ milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
 current_phase: 80
 status: completed
-stopped_at: Completed 90-01 (triagem backend); 90-02/03/04 pending
-last_updated: "2026-07-07T13:34:22.631Z"
+stopped_at: Completed 90-02 (ml_claim_templates + buyer_first_name aplicado em prod); 90-03/04 pending
+last_updated: "2026-07-07T13:42:00.000Z"
 last_activity: 2026-07-02
 last_activity_desc: Phase 80 complete
 progress:
   total_phases: 36
   completed_phases: 16
   total_plans: 71
-  completed_plans: 61
+  completed_plans: 63
   percent: 44
 current_phase_name: an-lise-de-pre-os-onde-vendo-bem
 ---
