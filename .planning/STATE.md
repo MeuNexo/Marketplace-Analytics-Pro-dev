@@ -4,8 +4,8 @@ milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
 current_phase: 93
 status: completed
-stopped_at: "Phase 93 (Enviar anexo na resposta da reclamação) EXECUTADA + VERIFICADA 10/10 via GSD completo. EF ml-claim-attachment-upload (multipart→ML, anti-IDOR) + reply-ml-claim v3 aditivo attachments deployadas via MCP; frontend clipe/chips. API aterrada no MCP oficial ML. Pendente: E2E Wesley (subir foto+enviar) + push."
-last_updated: "2026-07-07T19:00:00.000Z"
+stopped_at: "Phase 93 (enviar anexo) EXECUTADA+VERIFICADA + FIX 93-03 (E2E Wesley): 3 bugs do upload real corrigidos (sanitize nome, ML file_name vs filename, multipart Blob) — EF upload v4 em prod. Upload E2E OK."
+last_updated: "2026-07-07T20:15:00.000Z"
 last_activity: 2026-07-07
 last_activity_desc: Phase 93 complete (enviar anexo na reclamação)
 progress:
