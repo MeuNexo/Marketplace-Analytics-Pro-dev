@@ -16,6 +16,10 @@ export interface CostWaterfallData {
   cmv: number;
   /** true se ao menos 1 pedido pago tem custo_unit preenchido */
   has_cmv: boolean;
+  /** CMV cheio (custo_unit_cheio, com fallback custo médio já embutido pela RPC) — Phase 90 */
+  cmv_cheio: number;
+  /** true se ao menos 1 pedido pago tem custo_unit_cheio preenchido (cmv_cheio > 0) */
+  has_cmv_cheio: boolean;
   /** SUM(tax_amount) dos pedidos pagos */
   total_tax: number;
   /** true se ao menos 1 pedido pago tem tax_amount > 0 */
@@ -47,6 +51,7 @@ export function useMLCostWaterfall(from: string, to: string) {
 
       const paid_revenue   = Number(r.paid_revenue);
       const cmv            = Number(r.cmv);
+      const cmv_cheio      = Number(r.cmv_cheio ?? 0);
       const total_comissao = Number(r.total_comissao);
       const total_frete    = Number(r.total_frete);
       const total_tax      = Number(r.total_tax);
@@ -63,6 +68,8 @@ export function useMLCostWaterfall(from: string, to: string) {
         total_frete,
         cmv: Math.round(cmv * 100) / 100,
         has_cmv: cmv > 0,
+        cmv_cheio: Math.round(cmv_cheio * 100) / 100,
+        has_cmv_cheio: cmv_cheio > 0,
         total_tax: Math.round(total_tax * 100) / 100,
         has_tax_data: total_tax > 0,
         revenue_per_store: new Map(),  // não disponível em agregação server-side
