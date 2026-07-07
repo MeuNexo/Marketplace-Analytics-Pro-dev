@@ -18,6 +18,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useMLClaimDetail } from "@/hooks/useMLClaimMessages";
 import { useClaimTemplates } from "@/hooks/useClaimTemplates";
 import { ClaimTemplatesDialog } from "@/components/mercadolivre/ClaimTemplatesDialog";
+import { ClaimAttachment } from "@/components/mercadolivre/ClaimAttachment";
 import { applyTemplate } from "@/lib/applyTemplate";
 import { htmlToText } from "@/lib/htmlToText";
 import { claimStatusConfig, claimTipoLabel, isClaimOpen } from "@/lib/claimStatus";
@@ -196,6 +197,19 @@ export function ClaimDetailSheet({ claim, onOpenChange }: Props) {
                           {when && <span className="font-normal">· {formatDistanceToNow(new Date(when), { addSuffix: true, locale: ptBR })}</span>}
                         </div>
                         <p className="text-sm whitespace-pre-wrap break-words text-foreground">{htmlToText(m.message)}</p>
+                        {/* Anexos da mensagem (Phase 92): imagem→thumb+zoom ATTACH-01 / arquivo→Baixar ATTACH-02 */}
+                        {m.attachments?.length ? (
+                          <div className="mt-2 space-y-1.5">
+                            {m.attachments.map((att) => (
+                              <ClaimAttachment
+                                key={att.id}
+                                attachment={att}
+                                claimId={claimId!}
+                                mlUserId={mlUserId!}
+                              />
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   );
