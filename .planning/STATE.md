@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 80
+current_phase: 91
 status: completed
-stopped_at: "Completed 90-04 (applyTemplate + useClaimTemplates + ClaimTemplatesDialog + seletor no ClaimDetailSheet) — Phase 90 (4/4 plans) COMPLETE"
-last_updated: "2026-07-07T13:59:53.319Z"
-last_activity: 2026-07-02
-last_activity_desc: Phase 80 complete
+stopped_at: "Phase 91 (Sino da navbar — marcar como lido / badge só novidades) EXECUTADA + VERIFICADA 7/7 via GSD completo. Pendente: ok visual Wesley + push (main local)."
+last_updated: "2026-07-07T18:00:00.000Z"
+last_activity: 2026-07-07
+last_activity_desc: Phase 91 complete (bell mark-as-read)
 progress:
   total_phases: 36
   completed_phases: 17
