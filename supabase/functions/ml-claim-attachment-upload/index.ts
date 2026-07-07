@@ -160,8 +160,10 @@ serve(async (req) => {
       return jsonResponse({ error: "ML attachment upload failed", ml_status: res.status, ml_body: rawText.slice(0, 300) }, res.status >= 500 ? 502 : res.status);
     }
 
-    // ML devolve { user_id, filename }. Aceita shape em array por robustez.
-    const uploadedFilename = mlBody?.filename ?? (Array.isArray(mlBody) ? mlBody[0]?.filename : null) ?? null;
+    // ML devolve { user_id, file_name } (com underscore — a doc mostra "filename"
+    // mas a API real usa "file_name"). Aceita ambos + shape em array por robustez.
+    const pickName = (o: any) => o?.file_name ?? o?.filename ?? null;
+    const uploadedFilename = pickName(mlBody) ?? (Array.isArray(mlBody) ? pickName(mlBody[0]) : null);
     if (!uploadedFilename) {
       console.error("ml-claim-attachment-upload: sem filename status=" + res.status + " claim_id=" + claim_id + " body=" + rawText.slice(0, 200));
       return jsonResponse({ error: "ML attachment upload failed", ml_status: res.status, ml_body: rawText.slice(0, 300) }, 502);
