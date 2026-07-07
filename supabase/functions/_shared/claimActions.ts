@@ -6,16 +6,19 @@
  * importável tanto pelas edge functions Deno (import relativo) quanto pelo
  * vitest (node). NÃO faz nenhuma chamada de rede/IO.
  *
- * Regra LOCKED "Pende você" (docs/superpowers/specs/2026-07-07-atendimento-reclamacoes-design.md):
- * - seller_action_required = existe ao menos uma ação do respondent que seja:
- *     (a) qualquer send_message_to_* com mandatory=true, OU
- *     (b) qualquer ação de decisão: refund | allow_return | open_dispute | allow_partial_refund.
- *   Um send_message_to_* OPCIONAL (mandatory=false), sozinho, NÃO marca como
- *   pendente — cai em "Aguardando" (comprador/ML).
- * - pending_action_type, por prioridade quando várias se aplicam:
- *     'reply' (mensagem mandatory) > 'return' (allow_return)
- *     > 'refund' (refund | allow_partial_refund) > 'dispute' (open_dispute).
- * - action_due_date = due_date da ação que definiu pending_action_type.
+ * Regra "Pende você" (alinhada ao ML — "Próximas a serem atendidas"):
+ * - seller_action_required = existe ao menos uma ação do respondent com
+ *   `mandatory=true`, ou seja, uma ação que o ML está COBRANDO do vendedor
+ *   (tipicamente com prazo, "resolver até X").
+ *   Ações OPCIONAIS (mandatory=false) — refund, open_dispute, allow_return,
+ *   allow_partial_refund, ou send_message não-obrigatório — ficam quase sempre
+ *   disponíveis como opção do vendedor, mas NÃO significam que a bola está com
+ *   ele (o ML as trata como "aguardando comprador"). Por isso NÃO marcam como
+ *   pendente — caem em "Aguardando".
+ * - pending_action_type: derivado das ações MANDATORY, por prioridade quando
+ *   várias se aplicam: 'reply' (mensagem) > 'return' (allow_return)
+ *   > 'refund' (refund | allow_partial_refund) > 'dispute' (open_dispute).
+ * - action_due_date = due_date da ação mandatory que definiu pending_action_type.
  */
 
 export type PendingActionType = "reply" | "return" | "refund" | "dispute" | null;
@@ -37,26 +40,12 @@ interface RespondentActionItem {
 // send_message_to_mediator, send_message_to_respondent, etc.
 const SEND_MESSAGE_PREFIX = "send_message_to_";
 
-// Ações de decisão do vendedor e o pending_action_type que cada uma contribui.
-// A ordem aqui NÃO define prioridade — a prioridade final é aplicada
-// explicitamente em `resolvePendingType` (reply > return > refund > dispute).
-const DECISION_ACTION_TYPE: Record<string, Exclude<PendingActionType, "reply" | null>> = {
-  allow_return: "return",
-  refund: "refund",
-  allow_partial_refund: "refund",
-  open_dispute: "dispute",
-};
-
-function isMandatorySendMessage(item: RespondentActionItem): boolean {
-  return (
-    typeof item.action === "string" &&
-    item.action.startsWith(SEND_MESSAGE_PREFIX) &&
-    item.mandatory === true
-  );
+function isMandatory(item: RespondentActionItem): boolean {
+  return item.mandatory === true;
 }
 
-function isDecisionAction(item: RespondentActionItem): boolean {
-  return typeof item.action === "string" && item.action in DECISION_ACTION_TYPE;
+function actionOf(item: RespondentActionItem): string {
+  return typeof item.action === "string" ? item.action : "";
 }
 
 function dueDateOf(item: RespondentActionItem): string | null {
@@ -79,6 +68,27 @@ function findRespondentActions(players: unknown): RespondentActionItem[] {
 }
 
 /**
+ * Classifica uma ação (mandatory) no pending_action_type correspondente.
+ * Retorna null para ações que não se encaixam nos 4 tipos conhecidos.
+ */
+function typeOfAction(item: RespondentActionItem): PendingActionType {
+  const a = actionOf(item);
+  if (a.startsWith(SEND_MESSAGE_PREFIX)) return "reply";
+  if (a === "allow_return") return "return";
+  if (a === "refund" || a === "allow_partial_refund") return "refund";
+  if (a === "open_dispute") return "dispute";
+  return null;
+}
+
+// Prioridade LOCKED do pending_action_type (menor índice = maior prioridade).
+const TYPE_PRIORITY: Record<Exclude<PendingActionType, null>, number> = {
+  reply: 0,
+  return: 1,
+  refund: 2,
+  dispute: 3,
+};
+
+/**
  * Deriva seller_action_required / pending_action_type / action_due_date /
  * available_actions a partir do array `players` de um claim detail do ML.
  *
@@ -96,38 +106,38 @@ export function deriveSellerAction(players: unknown): DeriveSellerActionResult {
     };
   }
 
-  const mandatoryMessage = respondentActions.find(isMandatorySendMessage);
-  const allowReturn = respondentActions.find((i) => i.action === "allow_return");
-  const refundAction = respondentActions.find(
-    (i) => i.action === "refund" || i.action === "allow_partial_refund",
-  );
-  const openDispute = respondentActions.find((i) => i.action === "open_dispute");
+  // "Pende você" = o ML está COBRANDO uma ação do vendedor = há ação mandatory.
+  const mandatoryActions = respondentActions.filter(isMandatory);
+  const sellerActionRequired = mandatoryActions.length > 0;
 
-  // Prioridade LOCKED: reply > return > refund > dispute.
-  let pendingActionType: PendingActionType = null;
-  let dueDateSource: RespondentActionItem | undefined;
-
-  if (mandatoryMessage) {
-    pendingActionType = "reply";
-    dueDateSource = mandatoryMessage;
-  } else if (allowReturn) {
-    pendingActionType = "return";
-    dueDateSource = allowReturn;
-  } else if (refundAction) {
-    pendingActionType = "refund";
-    dueDateSource = refundAction;
-  } else if (openDispute) {
-    pendingActionType = "dispute";
-    dueDateSource = openDispute;
+  if (!sellerActionRequired) {
+    return {
+      seller_action_required: false,
+      pending_action_type: null,
+      action_due_date: null,
+      available_actions: respondentActions,
+    };
   }
 
-  const sellerActionRequired =
-    !!mandatoryMessage || respondentActions.some(isDecisionAction);
+  // Escolhe, entre as ações mandatory, a de maior prioridade (reply > return
+  // > refund > dispute). Ações mandatory de tipo desconhecido não definem um
+  // tipo, mas ainda marcam seller_action_required=true (fallback due_date da 1ª).
+  let chosen: RespondentActionItem | undefined;
+  let chosenType: PendingActionType = null;
+  for (const item of mandatoryActions) {
+    const t = typeOfAction(item);
+    if (t === null) continue;
+    if (chosenType === null || TYPE_PRIORITY[t] < TYPE_PRIORITY[chosenType]) {
+      chosenType = t;
+      chosen = item;
+    }
+  }
+  if (!chosen) chosen = mandatoryActions[0]; // só mandatory(s) de tipo desconhecido
 
   return {
-    seller_action_required: sellerActionRequired,
-    pending_action_type: sellerActionRequired ? pendingActionType : null,
-    action_due_date: sellerActionRequired && dueDateSource ? dueDateOf(dueDateSource) : null,
+    seller_action_required: true,
+    pending_action_type: chosenType,
+    action_due_date: chosen ? dueDateOf(chosen) : null,
     available_actions: respondentActions,
   };
 }

@@ -1,8 +1,8 @@
 /**
- * claimActions.test.ts — prova a regra LOCKED "Pende você" (Phase 90 Plan 01,
- * T-90-01). Cobre cada bullet do <behavior> do PLAN.md: mensagem mandatory,
- * mensagem opcional isolada, cada ação de decisão, prioridade combinada, e
- * ausência de respondent/available_actions.
+ * claimActions.test.ts — prova a regra "Pende você" alinhada ao ML
+ * ("Próximas a serem atendidas" = ação mandatory pendente). Só ações
+ * `mandatory=true` marcam como pendente; ações opcionais (refund/open_dispute/
+ * allow_return/send_message não-obrigatório) caem em "Aguardando".
  */
 import { describe, it, expect } from "vitest";
 import { deriveSellerAction } from "./claimActions";
@@ -33,7 +33,30 @@ describe("deriveSellerAction", () => {
     expect(result.action_due_date).toBeNull();
   });
 
-  it("allow_return -> return", () => {
+  // O caso real que inflava a contagem: send_message + refund + open_dispute,
+  // TODAS opcionais. O ML não cobra o vendedor -> "Aguardando", não "Pende você".
+  it("only optional decision actions (refund/open_dispute/send_message) -> aguardando", () => {
+    const result = deriveSellerAction(
+      players([
+        { action: "send_message_to_complainant", mandatory: false, due_date: null },
+        { action: "refund", mandatory: false, due_date: null },
+        { action: "open_dispute", mandatory: false, due_date: null },
+      ]),
+    );
+    expect(result.seller_action_required).toBe(false);
+    expect(result.pending_action_type).toBeNull();
+    expect(result.action_due_date).toBeNull();
+    // available_actions cruas são preservadas mesmo quando não pendente.
+    expect(result.available_actions).toHaveLength(3);
+  });
+
+  it("optional refund alone -> aguardando", () => {
+    const result = deriveSellerAction(players([{ action: "refund", mandatory: false, due_date: "2026-07-12T00:00:00Z" }]));
+    expect(result.seller_action_required).toBe(false);
+    expect(result.pending_action_type).toBeNull();
+  });
+
+  it("mandatory allow_return -> return", () => {
     const result = deriveSellerAction(
       players([{ action: "allow_return", mandatory: true, due_date: "2026-07-11T00:00:00Z" }]),
     );
@@ -42,31 +65,31 @@ describe("deriveSellerAction", () => {
     expect(result.action_due_date).toBe("2026-07-11T00:00:00Z");
   });
 
-  it("refund -> refund", () => {
-    const result = deriveSellerAction(players([{ action: "refund", due_date: "2026-07-12T00:00:00Z" }]));
+  it("mandatory refund -> refund", () => {
+    const result = deriveSellerAction(players([{ action: "refund", mandatory: true, due_date: "2026-07-12T00:00:00Z" }]));
     expect(result.seller_action_required).toBe(true);
     expect(result.pending_action_type).toBe("refund");
     expect(result.action_due_date).toBe("2026-07-12T00:00:00Z");
   });
 
-  it("allow_partial_refund -> refund", () => {
-    const result = deriveSellerAction(players([{ action: "allow_partial_refund", due_date: "2026-07-13T00:00:00Z" }]));
+  it("mandatory allow_partial_refund -> refund", () => {
+    const result = deriveSellerAction(players([{ action: "allow_partial_refund", mandatory: true, due_date: "2026-07-13T00:00:00Z" }]));
     expect(result.seller_action_required).toBe(true);
     expect(result.pending_action_type).toBe("refund");
     expect(result.action_due_date).toBe("2026-07-13T00:00:00Z");
   });
 
-  it("open_dispute -> dispute", () => {
-    const result = deriveSellerAction(players([{ action: "open_dispute", due_date: "2026-07-14T00:00:00Z" }]));
+  it("mandatory open_dispute -> dispute", () => {
+    const result = deriveSellerAction(players([{ action: "open_dispute", mandatory: true, due_date: "2026-07-14T00:00:00Z" }]));
     expect(result.seller_action_required).toBe(true);
     expect(result.pending_action_type).toBe("dispute");
     expect(result.action_due_date).toBe("2026-07-14T00:00:00Z");
   });
 
-  it("combined priority: mandatory message + refund -> reply wins", () => {
+  it("priority among mandatory: message + refund (both mandatory) -> reply wins", () => {
     const result = deriveSellerAction(
       players([
-        { action: "refund", due_date: "2026-07-15T00:00:00Z" },
+        { action: "refund", mandatory: true, due_date: "2026-07-15T00:00:00Z" },
         { action: "send_message_to_complainant", mandatory: true, due_date: "2026-07-16T00:00:00Z" },
       ]),
     );
@@ -75,25 +98,26 @@ describe("deriveSellerAction", () => {
     expect(result.action_due_date).toBe("2026-07-16T00:00:00Z");
   });
 
-  it("combined priority: return + refund + dispute -> return wins", () => {
+  it("priority among mandatory: return + refund + dispute -> return wins", () => {
     const result = deriveSellerAction(
       players([
-        { action: "open_dispute", due_date: "2026-07-17T00:00:00Z" },
-        { action: "refund", due_date: "2026-07-18T00:00:00Z" },
-        { action: "allow_return", due_date: "2026-07-19T00:00:00Z" },
+        { action: "open_dispute", mandatory: true, due_date: "2026-07-17T00:00:00Z" },
+        { action: "refund", mandatory: true, due_date: "2026-07-18T00:00:00Z" },
+        { action: "allow_return", mandatory: true, due_date: "2026-07-19T00:00:00Z" },
       ]),
     );
     expect(result.pending_action_type).toBe("return");
     expect(result.action_due_date).toBe("2026-07-19T00:00:00Z");
   });
 
-  it("combined priority: refund + dispute -> refund wins", () => {
+  it("mandatory decision ignores optional higher-priority action (optional message + mandatory refund -> refund)", () => {
     const result = deriveSellerAction(
       players([
-        { action: "open_dispute", due_date: "2026-07-20T00:00:00Z" },
-        { action: "refund", due_date: "2026-07-21T00:00:00Z" },
+        { action: "send_message_to_complainant", mandatory: false, due_date: "2026-07-20T00:00:00Z" },
+        { action: "refund", mandatory: true, due_date: "2026-07-21T00:00:00Z" },
       ]),
     );
+    expect(result.seller_action_required).toBe(true);
     expect(result.pending_action_type).toBe("refund");
     expect(result.action_due_date).toBe("2026-07-21T00:00:00Z");
   });
@@ -128,15 +152,22 @@ describe("deriveSellerAction", () => {
   });
 
   it("available_actions returned is the raw respondent action objects", () => {
-    const actions = [{ action: "refund", due_date: "2026-07-22T00:00:00Z", extra: "keep-me" }];
+    const actions = [{ action: "refund", mandatory: true, due_date: "2026-07-22T00:00:00Z", extra: "keep-me" }];
     const result = deriveSellerAction(players(actions));
     expect(result.available_actions).toEqual(actions);
   });
 
-  it("missing due_date on the winning action -> action_due_date null", () => {
-    const result = deriveSellerAction(players([{ action: "open_dispute" }]));
+  it("missing due_date on the winning mandatory action -> action_due_date null", () => {
+    const result = deriveSellerAction(players([{ action: "open_dispute", mandatory: true }]));
     expect(result.seller_action_required).toBe(true);
     expect(result.pending_action_type).toBe("dispute");
     expect(result.action_due_date).toBeNull();
+  });
+
+  it("mandatory action of unknown type -> required but type null", () => {
+    const result = deriveSellerAction(players([{ action: "some_future_action", mandatory: true, due_date: "2026-07-23T00:00:00Z" }]));
+    expect(result.seller_action_required).toBe(true);
+    expect(result.pending_action_type).toBeNull();
+    expect(result.action_due_date).toBe("2026-07-23T00:00:00Z");
   });
 });
