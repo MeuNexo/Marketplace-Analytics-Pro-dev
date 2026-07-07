@@ -4,16 +4,16 @@ milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
 current_phase: 80
 status: completed
-stopped_at: "Completed 90-03 (triagem frontend: buckets + badges + KPI + sino); 90-04 pending"
-last_updated: "2026-07-07T13:50:17.570Z"
+stopped_at: "Completed 90-04 (applyTemplate + useClaimTemplates + ClaimTemplatesDialog + seletor no ClaimDetailSheet) — Phase 90 (4/4 plans) COMPLETE"
+last_updated: "2026-07-07T13:59:53.319Z"
 last_activity: 2026-07-02
 last_activity_desc: Phase 80 complete
 progress:
   total_phases: 36
-  completed_phases: 16
+  completed_phases: 17
   total_plans: 71
-  completed_plans: 63
-  percent: 44
+  completed_plans: 64
+  percent: 47
 current_phase_name: an-lise-de-pre-os-onde-vendo-bem
 ---
 
@@ -276,6 +276,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | Phase 83-produtos-vendidos-mco-redesign P01 | 6min | 3 tasks | 5 files |
 | Phase 90 P01 | 7min | 4 tasks | 5 files |
 | Phase 90 P03 | 5min | 3 tasks | 5 files |
+| Phase 90 P04 | 12min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -348,6 +349,9 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 - [Phase 90]: Phase 90-01: regra LOCKED 'Pende voce' em deriveSellerAction (mensagem mandatory OU decisao refund/allow_return/open_dispute/allow_partial_refund; opcional isolada=Aguardando); prioridade reply>return>refund>dispute; sync-ml-claims GET individual so de claims OPEN
 - [Phase 90-03]: claimBucket/pendingActionLabel/dueDateLabel counted over full claims list (unaffected by Tipo filter) so KPI, tab counts, and navbar bell agree — matches success criteria 'counters and bell agree'
 - [Phase 90-03]: dueDateLabel compares calendar days (local midnight to midnight), not raw ms deltas — stable wording for 'vence hoje'/'atrasada'/'vence em N dias' regardless of time-of-day; server runs UTC
+- [Phase 90-04]: applyTemplate trata chave ausente (undefined) igual a desconhecida — token literal em ambos; caller resolve fallback (nome: buyer_first_name ?? 'cliente') antes de chamar
+- [Phase 90-04]: supabase.from('table_name') tipa OK mesmo sem a tabela em src/integrations/supabase/types.ts (confirmado com ml_claims desde a 90-01 e agora ml_claim_templates) — não precisa regenerar types.ts nem usar 'as any' no .from()
+- [Phase 90-04]: Phase 90 FECHADA — 4/4 plans (backend triagem+templates, frontend triagem, frontend mensagens rápidas), tudo frontend-only nesta 04 (nenhum EF/migration tocado)
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -405,8 +409,8 @@ Dashboard atual mostra:
 
 **Resume file:** None
 
-Last session: 2026-07-07T13:49:25.587Z
-Stopped at: Completed 90-03 (triagem frontend: buckets + badges + KPI + sino); 90-04 pending
+Last session: 2026-07-07T13:59:53.319Z
+Stopped at: Completed 90-04 (mensagens rápidas: applyTemplate + useClaimTemplates + ClaimTemplatesDialog + seletor no ClaimDetailSheet) — Phase 90 COMPLETE (4/4 plans)
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 

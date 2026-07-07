@@ -785,13 +785,13 @@ Plans:
 **Goal:** No /devolucoes, o lojista vê "de quem é a vez" (🔴 Pende você / 🟡 Aguardando / ✅ Resolvida com selo de tipo de pendência e prazo, batendo com o sininho) e responde reclamações com modelos compartilhados da loja que auto-preenchem nome/produto/pedido.
 **Requirements**: TRIAGE-01..04, TPL-01..03
 **Depends on:** Phase 89
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 
 Plans:
 
 - [x] 90-01-PLAN.md — Wave 1: colunas de triagem em ml_claims + helper compartilhado claimActions + wiring no ml-webhook/sync-ml-claims
 - [x] 90-02-PLAN.md — Wave 1: tabela ml_claim_templates (RLS org-first) + buyer_first_name no ml-claim-detail
 - [x] 90-03-PLAN.md — Wave 2: 3 baldes + selos + prazo + KPI "Pendem você" + sininho (depende de 90-01)
-- [ ] 90-04-PLAN.md — Wave 2: applyTemplate + useClaimTemplates + ClaimTemplatesDialog + seletor no ClaimDetailSheet (depende de 90-02)
+- [x] 90-04-PLAN.md — Wave 2: applyTemplate + useClaimTemplates + ClaimTemplatesDialog + seletor no ClaimDetailSheet (depende de 90-02)
 
 ---
