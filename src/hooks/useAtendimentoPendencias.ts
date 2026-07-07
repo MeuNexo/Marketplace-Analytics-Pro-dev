@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMLStore } from "@/contexts/MLStoreContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { supabase } from "@/integrations/supabase/client";
+import { pendingActionLabel } from "@/lib/claimStatus";
 
 export type PendenciaTipo = "question" | "claim";
 
@@ -13,9 +14,6 @@ export interface PendenciaItem {
   href: string;        // rota de destino ao clicar
 }
 
-// Claims que ainda pedem ação (abertas / em análise).
-const CLAIM_ABERTA = ["opened", "under_review"];
-
 function claimLabel(tipo: string | null): string {
   if (tipo === "returns") return "Devolução";
   return "Reclamação";
@@ -23,7 +21,9 @@ function claimLabel(tipo: string | null): string {
 
 /**
  * Pendências de atendimento da conta atual = perguntas não respondidas +
- * reclamações/devoluções abertas. Mesmo escopo das telas (org + multi-loja).
+ * reclamações/devoluções que pendem do vendedor (seller_action_required),
+ * mesmo critério da aba "Pende você" em /devolucoes (Phase 90-03).
+ * Mesmo escopo das telas (org + multi-loja).
  * Refetch a cada 45s → o sino reflete o webhook em quase-tempo-real.
  */
 export function useAtendimentoPendencias() {
@@ -51,10 +51,10 @@ export function useAtendimentoPendencias() {
           .limit(100),
         supabase
           .from("ml_claims")
-          .select("claim_id,tipo,status,data_abertura")
+          .select("claim_id,tipo,status,data_abertura,seller_action_required,pending_action_type")
           .eq("organization_id", orgId)
           .in("ml_user_id", resolvedMLUserIds)
-          .in("status", CLAIM_ABERTA)
+          .eq("seller_action_required", true)
           .order("data_abertura", { ascending: false })
           .limit(100),
       ]);
@@ -67,13 +67,21 @@ export function useAtendimentoPendencias() {
         href: "/perguntas",
       }));
 
-      const cItems: PendenciaItem[] = (claims ?? []).map((c: any) => ({
-        key: `c-${c.claim_id}`,
-        tipo: "claim",
-        titulo: `${claimLabel(c.tipo)} aberta`,
-        data: c.data_abertura ?? null,
-        href: "/devolucoes",
-      }));
+      const cItems: PendenciaItem[] = (claims ?? []).map((c: any) => {
+        const actionLabel = pendingActionLabel(c.pending_action_type ?? null);
+        // "Responder" fica mais claro combinado ao tipo ("Responder reclamação");
+        // as demais ações (Decidir devolução/reembolso, Falar com o ML) já são autoexplicativas.
+        const titulo = actionLabel === "Responder"
+          ? `Responder ${claimLabel(c.tipo).toLowerCase()}`
+          : actionLabel ?? `${claimLabel(c.tipo)} aberta`;
+        return {
+          key: `c-${c.claim_id}`,
+          tipo: "claim",
+          titulo,
+          data: c.data_abertura ?? null,
+          href: "/devolucoes",
+        };
+      });
 
       return [...qItems, ...cItems].sort((a, b) => {
         const ta = a.data ? new Date(a.data).getTime() : 0;
