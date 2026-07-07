@@ -15,6 +15,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { capitalizeName } from "../_shared/capitalizeName.ts";
 
 const ML_API = "https://api.mercadolibre.com";
 
@@ -92,6 +93,17 @@ serve(async (req) => {
       if (r) reason = { code: r.id ?? detail.reason_id, name: r.name ?? null, detail: r.detail ?? null };
     }
 
+    // Nome do comprador (T-90-02): GET /orders/{order_id} -> buyer.first_name,
+    // capitalizado. order_id vem do detail já buscado acima (resource_id);
+    // nenhum GET extra de claim é feito. Falta de order_id/buyer -> null
+    // (o frontend mapeia null -> "cliente").
+    let buyer_first_name: string | null = null;
+    const orderId = detail?.resource_id;
+    if (orderId) {
+      const order = await mlGetJson(`${ML_API}/orders/${orderId}`, at);
+      buyer_first_name = capitalizeName(order?.buyer?.first_name);
+    }
+
     return jsonResponse({
       ok: true,
       messages,
@@ -100,6 +112,7 @@ serve(async (req) => {
       stage:  detail?.stage ?? null,
       type:   detail?.type ?? null,
       status: detail?.status ?? null,
+      buyer_first_name,
     });
   } catch (err) {
     console.error("ml-claim-detail error:", err);
