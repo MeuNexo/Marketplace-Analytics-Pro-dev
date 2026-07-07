@@ -866,3 +866,7 @@ Plans:
 **Depends on:** Phase 92 (display) + Phase 89/90 (reply-ml-claim + ClaimDetailSheet)
 **Verificação alvo:** tsc 0, vitest (validação de arquivo pura), build ok. EF upload verify_jwt=true + anti-IDOR (403 cross-org) + rejeição de tipo/tamanho inválidos. Ref ML: upload `POST /post-purchase/v1/claims/{id}/attachments` (multipart file), enviar `attachments:[filename]` no send-message.
 **Planejada 2026-07-07.**
+
+**Plans:** 2 plans
+- [ ] 93-01-PLAN.md — Backend: EF nova ml-claim-attachment-upload (validação server-side + anti-IDOR) + reply-ml-claim aditivo attachments + deploy/smoke (wave 1, SEND-ATT-01/02)
+- [ ] 93-02-PLAN.md — Frontend: lib pura de validação + useClaimAttachmentUpload + clipe/chips no ClaimDetailSheet (wave 2, SEND-ATT-01/03)
