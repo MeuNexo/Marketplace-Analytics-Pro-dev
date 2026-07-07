@@ -13,6 +13,13 @@
  * (GET claim antes do POST), nunca hardcoded. Fail-closed se send_message_to_*
  * não estiver disponível no estágio atual da reclamação.
  *
+ * Campo aditivo `attachments?: string[]` (filenames já subidos via
+ * ml-claim-attachment-upload): quando presente e não-vazio, entra no corpo do
+ * send-message ({ receiver_role, message, attachments }); ausente/vazio → o
+ * corpo permanece byte-idêntico ao comportamento atual (campo omitido). O texto
+ * segue SEMPRE obrigatório (min(1)) — anexos são adicionais, não substituem o
+ * texto. Filenames são revalidados defensivamente (T-93-06).
+ *
  * Gates: 1) JWT do usuário  2) validação do body  3) token por ml_user_id
  *        4) org membership (anti-IDOR)  5) GET claim p/ derivar receiver_role
  *        (fail-closed)  6) POST send-message  7) log local.
@@ -46,10 +53,19 @@ const SEND_MESSAGE_ROLE_BY_ACTION: Record<string, string> = {
   send_message_to_respondent:  "respondent",
 };
 
+// Regra de nome de anexo do ML (espelha ml-claim-attachment-upload): ≤125 chars
+// e só [a-zA-Z0-9_.-]. Revalidado aqui como defesa em profundidade (T-93-06),
+// já que os filenames chegam do front após o upload.
+const FILENAME_MAX_CHARS = 125;
+const FILENAME_SAFE_RE = /^[a-zA-Z0-9_.-]+$/;
+
 const BodySchema = z.object({
   claim_id:   z.string().min(1),
   text:       z.string().min(1).max(2000),
   ml_user_id: z.string().min(1),
+  // Aditivo: filenames já subidos ao ML. Texto continua obrigatório (min(1)).
+  // Cada filename é revalidado defensivamente no handler (T-93-06).
+  attachments: z.array(z.string()).optional(),
 });
 
 serve(async (req) => {
@@ -71,7 +87,17 @@ serve(async (req) => {
     try { rawBody = await req.json(); } catch { return jsonResponse({ error: "Invalid JSON body" }, 400); }
     const parsed = BodySchema.safeParse(rawBody);
     if (!parsed.success) return jsonResponse({ error: "Validation error", details: parsed.error.flatten() }, 400);
-    const { claim_id, text, ml_user_id } = parsed.data;
+    const { claim_id, text, ml_user_id, attachments } = parsed.data;
+
+    // Defesa em profundidade (T-93-06): revalidar cada filename de anexo
+    // (≤125 chars, só [a-zA-Z0-9_.-]) antes de repassar ao ML, já que chegam
+    // do front. Mesma regra da EF ml-claim-attachment-upload.
+    if (attachments && attachments.length > 0) {
+      const invalid = attachments.some(
+        (f) => f.length === 0 || f.length > FILENAME_MAX_CHARS || !FILENAME_SAFE_RE.test(f),
+      );
+      if (invalid) return jsonResponse({ error: "Validation error", details: "attachments contém filename inválido" }, 400);
+    }
 
     // 3. Token por ml_user_id
     const { data: tokenRow } = await supabase
@@ -99,11 +125,19 @@ serve(async (req) => {
       return jsonResponse({ error: "Envio de mensagem não disponível neste estágio da reclamação" }, 409);
     }
 
-    // 6. Envia a mensagem no ML (não logar access_token)
+    // 6. Envia a mensagem no ML (não logar access_token). Corpo aditivo:
+    //    com attachments não-vazio → { receiver_role, message, attachments };
+    //    sem attachments (ausente/vazio) → { receiver_role, message } byte-idêntico
+    //    ao comportamento atual (campo omitido — nunca manda `[]`).
+    const messageBody: { receiver_role: string; message: string; attachments?: string[] } = {
+      receiver_role: receiverRole,
+      message: text,
+    };
+    if (attachments && attachments.length > 0) messageBody.attachments = attachments;
     const mlRes = await fetch(`${ML_API}/post-purchase/v1/claims/${claim_id}/actions/send-message`, {
       method: "POST",
       headers: { Authorization: "Bearer " + at, "Content-Type": "application/json", Accept: "application/json", "api-version": "2" },
-      body: JSON.stringify({ receiver_role: receiverRole, message: text }),
+      body: JSON.stringify(messageBody),
     });
     if (!mlRes.ok) {
       let mlMessage = "ML API error";
