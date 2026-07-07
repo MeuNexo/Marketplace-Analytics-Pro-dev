@@ -865,8 +865,9 @@ Plans:
 **Requirements**: SEND-ATT-01 (upload valida tipo/tamanho/nome + anti-IDOR), SEND-ATT-02 (reply-ml-claim inclui attachments), SEND-ATT-03 (UI: anexar/remover/enviar com chips). *(feature nova — IDs locais)*
 **Depends on:** Phase 92 (display) + Phase 89/90 (reply-ml-claim + ClaimDetailSheet)
 **Verificação alvo:** tsc 0, vitest (validação de arquivo pura), build ok. EF upload verify_jwt=true + anti-IDOR (403 cross-org) + rejeição de tipo/tamanho inválidos. Ref ML: upload `POST /post-purchase/v1/claims/{id}/attachments` (multipart file), enviar `attachments:[filename]` no send-message.
+**EXECUTADA + VERIFICADA (10/10 must-haves) 2026-07-07 via GSD completo (plan→checker→executor×2→verifier):** EF nova **`ml-claim-attachment-upload`** (ACTIVE v1, verify_jwt=true — recebe FormData, gate anti-IDOR clonado exato ANTES de qualquer chamada ML, validação server-side autoridade tipo/≤5MB/nome≤125, `formData.append("file",file,filename)` 3-arg sem Content-Type manual, claim_id path-guard, access_token nunca logado) + **`reply-ml-claim` v3** aditivo `attachments?: string[]` (texto SEMPRE obrigatório min(1) — anexo NÃO substitui; campo omitido quando vazio = byte-idêntico; revalidação defensiva de filenames). Frontend: lib pura `src/lib/attachmentUploadValidation.ts` (15 testes) + hook `useClaimAttachmentUpload` (invoke FormData) + clipe/chips no `ClaimDetailSheet` (Send disabled se `!text.trim()||anyUploading`). API aterrada no **MCP oficial ML** (upload campo `file`→`{filename}`; send `attachments:[filename]`; JPG/PNG/PDF/5MB/125-chars). Blocker do checker resolvido (texto sempre obrigatório; reconciliado front↔schema). Smoke 401 OK nas 2 EFs. tsc 0, vitest **520/520**, build ok. Commits `750a52a3`→`f5626a7a`. **Deferido: anexo em perguntas.** Pendente: E2E Wesley (subir foto+enviar numa claim aberta).
 **Planejada 2026-07-07.**
 
-**Plans:** 2 plans
-- [ ] 93-01-PLAN.md — Backend: EF nova ml-claim-attachment-upload (validação server-side + anti-IDOR) + reply-ml-claim aditivo attachments + deploy/smoke (wave 1, SEND-ATT-01/02)
-- [ ] 93-02-PLAN.md — Frontend: lib pura de validação + useClaimAttachmentUpload + clipe/chips no ClaimDetailSheet (wave 2, SEND-ATT-01/03)
+**Plans:** 2/2 plans complete
+- [x] 93-01-PLAN.md — Backend: EF ml-claim-attachment-upload (validação server-side + anti-IDOR) + reply-ml-claim aditivo attachments + deploy/smoke MCP (wave 1, SEND-ATT-01/02)
+- [x] 93-02-PLAN.md — Frontend: lib pura de validação + useClaimAttachmentUpload + clipe/chips no ClaimDetailSheet (wave 2, SEND-ATT-01/03)
