@@ -795,3 +795,26 @@ Plans:
 - [x] 90-04-PLAN.md — Wave 2: applyTemplate + useClaimTemplates + ClaimTemplatesDialog + seletor no ClaimDetailSheet (depende de 90-02)
 
 ---
+
+### Phase 91: Sino da navbar — marcar notificações como lidas (badge só conta novidades)
+
+**Goal:** O badge vermelho do sino (`AtendimentoBell`) deixa de contar o total de pendências e passa a contar só as **novidades ainda não vistas**. Abrir o sino marca tudo como lido e zera o badge; ele volta a subir apenas quando chega algo NOVO via webhook (pergunta/reclamação). A lista dentro do popover continua mostrando todas as pendências vivas até serem resolvidas de fato na origem — o "lido" afeta só o alerta, não a fila de trabalho.
+
+**Comportamento (decisão Wesley 2026-07-07):** modelo "badge de novidades" (padrão clássico de sino), não "dispensar item individual". Não há botão por item; abrir o popover já marca todas as pendências atuais como vistas.
+
+**Design (client-only, sem backend):**
+- Estado "visto" persistido em `localStorage`, chaveado por org (`bell-seen:{orgId}`) = conjunto de `key`s de pendência já vistas (as keys estáveis `q-{question_id}` / `c-{claim_id}` que `useAtendimentoPendencias` já produz).
+- `unreadCount` = nº de itens atuais cuja `key` não está no conjunto visto. O badge usa `unreadCount`; o header do popover ("X item(s)") e a lista continuam usando o total de pendências.
+- Ao abrir o popover (`onOpenChange → true`): faz merge das keys atuais no conjunto visto **e** faz prune das keys que não estão mais entre as pendências vivas (item resolvido some da lista → sua key sai do set), evitando crescimento infinito e o caso "voltou a pender depois de resolvido" reaparecer como novidade.
+- Comparar por `key` (não por timestamp) evita a imprecisão de `data_abertura` de claim ser só data (granularidade de dia).
+- Lógica pura extraída (`computeUnread(items, seen)` + `mergeAndPruneSeen(seen, items)`) com testes vitest.
+
+**Escopo:** por dispositivo/navegador (localStorage). Não sincroniza entre aparelhos — aprovado por ser UX simples; sincronização cross-device fica para uma phase futura se houver necessidade real.
+
+**Requirements**: BELL-01 (badge = não-vistos), BELL-02 (abrir zera + persiste), BELL-03 (prune de keys resolvidas). *(feature nova pequena — IDs locais, sem entrada em REQUIREMENTS.md)*
+**Depends on:** Phase 90 (AtendimentoBell + useAtendimentoPendencias)
+**Verificação alvo:** tsc 0, vitest (novos testes das funções puras), build ok. Sem EF/RPC/migration → anti-IDOR N/A (client-only).
+**Planejada 2026-07-07.**
+
+**Plans:** 1 plan (wave única)
+- [ ] 91-01-PLAN.md — lib pura bellSeen (computeUnread/mergeAndPruneSeen) + hook useBellSeen (localStorage bell-seen:{orgId}) + fiação do AtendimentoBell (badge=unreadCount, abrir=markAllSeen)
