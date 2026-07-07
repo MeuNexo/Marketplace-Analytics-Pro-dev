@@ -51,6 +51,8 @@ import { useConsultorInsights } from "@/hooks/useConsultorInsights";
 import { MLMcoStrip } from "@/components/mercadolivre/MLMcoStrip";
 import { computeMco } from "@/lib/mco";
 import { useDreOperational } from "@/hooks/useDreOperational";
+import { useImpostoGuia } from "@/hooks/useImpostoGuia";
+import { resolveTaxAndCmv } from "@/lib/dreOperational";
 
 const currencyFmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -234,6 +236,18 @@ export default function MercadoLivre() {
   // mês de competência exibido no card DRE — Phase 88.
   const { data: dreOperational, isLoading: dreOperationalLoading } = useDreOperational(billingMonthFrom);
 
+  // Competência da guia de imposto = mês SEGUINTE ao mês de venda exibido
+  // (régua S+1 LOCKED — guia de competência C cobre vendas de C−1; ver
+  // 90-DATA-FINDINGS.md). billingMonth é "YYYY-MM" (mês humano); Date.UTC(y, m, 1)
+  // com m já 1-based aponta para o dia 1 do mês SEGUINTE (0-based internamente).
+  const guiaCompetenceFrom = useMemo(() => {
+    const [y, m] = billingMonth.split("-").map(Number);
+    const d = new Date(Date.UTC(y, m, 1));
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-01`;
+  }, [billingMonth]);
+  const { data: guiaData } = useImpostoGuia(guiaCompetenceFrom);
+  const guia = guiaData ?? { hasGuiaReal: false, totalReal: 0 };
+
   // DRE: waterfall autoritativo para o mês exibido no card
   const dreWaterfall = billingMonthIsCurrentMonth ? monthlyCostWaterfall : filterMonthWaterfall;
   // Loading do DRE acompanha o waterfall que alimenta o card — evita flash de
@@ -256,8 +270,18 @@ export default function MercadoLivre() {
 
   // Receita, CMV e impostos do mês do filtro
   const receitaMes = dreWaterfall?.paid_revenue ?? 0;
-  const cmvMes = (dreWaterfall?.has_cmv ? dreWaterfall.cmv : null) ?? null;
-  const impostosMes = (dreWaterfall?.has_tax_data ? dreWaterfall.total_tax : null) ?? null;
+  // Mês ABERTO (guia S+1 ainda não real): reproduz exatamente o comportamento
+  // legado (estimativa + custo médio) — zero-regressão (SC1). Mês FECHADO
+  // (guia S+1 real apurada): imposto real da guia + CMV cheio (Plan 90-03/90-04).
+  const { impostosMes, cmvMes, impostoFonte, cmvFonte } = resolveTaxAndCmv({
+    estimatedTax: dreWaterfall?.total_tax ?? null,
+    hasTaxData: !!dreWaterfall?.has_tax_data,
+    custoMedio: dreWaterfall?.cmv ?? null,
+    hasCmv: !!dreWaterfall?.has_cmv,
+    cmvCheio: dreWaterfall?.cmv_cheio ?? null,
+    hasCmvCheio: !!dreWaterfall?.has_cmv_cheio,
+    guia,
+  });
 
   // Fallback estimado: ads do mês do filtro somado para linha de publicidade
   const adsSpendMes = useMemo(
@@ -784,6 +808,8 @@ export default function MercadoLivre() {
                   totalTarifas={totalTarifasEfetivo}
                   cmvMes={cmvMes}
                   impostosMes={impostosMes}
+                  impostoFonte={impostoFonte}
+                  cmvFonte={cmvFonte}
                   fonte={dreFonte}
                   loading={dreWaterfallLoading}
                   onPrevMonth={handleDrePrevMonth}
