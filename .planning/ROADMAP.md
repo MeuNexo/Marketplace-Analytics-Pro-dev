@@ -838,10 +838,8 @@ Plans:
 **Requirements**: ATTACH-01 (exibir imagem inline), ATTACH-02 (baixar arquivo não-imagem), ATTACH-03 (proxy anti-IDOR por org). *(feature nova — IDs locais)*
 **Depends on:** Phase 89/90 (ml-claim-detail + ClaimDetailSheet)
 **Verificação alvo:** tsc 0, vitest (normalização de attachments + util puro), build ok. EF nova com verify_jwt=true + anti-IDOR provado (403 cross-org). Ref API ML: download `/post-purchase/v1/claims/{id}/attachments/{att_id}/download`, metadata `/attachments/{att_id}` (Bearer vendedor).
-**Plans:** 2 plans (2 waves)
+**EXECUTADA + VERIFICADA (10/10 must-haves) 2026-07-07 via GSD completo (plan→checker→executor×2→verifier):** EF nova **`ml-claim-attachment`** (proxy base64, ACTIVE v1, verify_jwt=true — gate anti-IDOR clonado exato: JWT→getUser→token por ml_user_id→org null→is_org_member→403 ANTES de qualquer chamada ML; attachment_id regex `[A-Za-z0-9._-]+`+reject `..`; guarda 5MB→413; access_token nunca logado) + `ml-claim-detail` v4 normaliza `message.attachments`→`{id,filename,type}` (tolerante string|objeto, aditivo). Frontend: lib pura `src/lib/claimAttachments.ts` (`normalizeClaimAttachments`/`isImageAttachment`, 12 testes) + hook lazy `useClaimAttachment` (React Query cache por attachment_id, invoke c/ JWT, data URI, trata 413) + componente `ClaimAttachment` (imagem→thumb+zoom Dialog / arquivo→Baixar blob) fiado no `ClaimDetailSheet` por anexo (sem filtro de sender_role → cliente E vendedor). 2 warnings do checker dobradas (`encode as encodeBase64` no std 0.168.0; guarda de tamanho). Smoke 401 (sem JWT + JWT lixo) OK nas 2 EFs. tsc 0, vitest **505/505**, build ok. Commits `b2578194`→`c58ea616`. **Deferido: ENVIAR anexo na resposta (upload) = phase própria.** Pendente: ok visual Wesley (foto real renderizando em /devolucoes).
 
-Plans:
-- [ ] 92-01-PLAN.md — Backend: EF nova ml-claim-attachment (proxy base64, anti-IDOR) + ml-claim-detail normaliza attachments + deploy/smoke (checkpoint)
-- [ ] 92-02-PLAN.md — Frontend: lib pura (normalização + imagem-vs-arquivo) + hook useClaimAttachment + componente ClaimAttachment + fiação no ClaimDetailSheet
-
-**Planejada 2026-07-07.**
+**Plans:** 2/2 plans complete (2 waves)
+- [x] 92-01-PLAN.md — Backend: EF nova ml-claim-attachment (proxy base64, anti-IDOR) + ml-claim-detail normaliza attachments + deploy/smoke via MCP (orquestrador)
+- [x] 92-02-PLAN.md — Frontend: lib pura (normalização + imagem-vs-arquivo) + hook useClaimAttachment + componente ClaimAttachment + fiação no ClaimDetailSheet

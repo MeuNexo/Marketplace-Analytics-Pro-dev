@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 91
+current_phase: 92
 status: completed
-stopped_at: "Phase 91 (Sino da navbar — marcar como lido / badge só novidades) EXECUTADA + VERIFICADA 7/7 via GSD completo. Pendente: ok visual Wesley + push (main local)."
-last_updated: "2026-07-07T18:00:00.000Z"
+stopped_at: "Phase 92 (Anexos nas reclamações — exibição) EXECUTADA + VERIFICADA 10/10 via GSD completo. EF ml-claim-attachment (proxy base64 anti-IDOR) + ml-claim-detail v4 deployadas via MCP; frontend renderiza imagem/arquivo no thread. Pendente: ok visual Wesley (foto real em /devolucoes) + push."
+last_updated: "2026-07-07T18:30:00.000Z"
 last_activity: 2026-07-07
-last_activity_desc: Phase 91 complete (bell mark-as-read)
+last_activity_desc: Phase 92 complete (anexos reclamações — exibição)
 progress:
   total_phases: 36
   completed_phases: 17
