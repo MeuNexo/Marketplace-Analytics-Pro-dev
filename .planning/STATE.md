@@ -5,15 +5,15 @@ milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem
 current_phase: 80
 status: completed
 stopped_at: Completed 83-01
-last_updated: "2026-07-03T12:33:23.438Z"
+last_updated: "2026-07-07T12:57:47.132Z"
 last_activity: 2026-07-02
 last_activity_desc: Phase 80 complete
 progress:
-  total_phases: 28
-  completed_phases: 15
-  total_plans: 65
-  completed_plans: 57
-  percent: 54
+  total_phases: 36
+  completed_phases: 16
+  total_plans: 67
+  completed_plans: 60
+  percent: 44
 current_phase_name: an-lise-de-pre-os-onde-vendo-bem
 ---
 
@@ -380,6 +380,7 @@ Dashboard atual mostra:
 - Phase 78 added: Revisão mobile-first do dashboard inteiro (pedido Wesley 2026-07-01)
 - Phase 79 added: Análise de Preços com MCO — gráfico preço vs. break-even (spec 2026-07-02)
 - Phase 83 added: MCO por anúncio em Produtos Vendidos + redesign UX
+- Phase 90 added: Atendimento de reclamações: triagem + mensagens rápidas (spec em docs/superpowers/specs/2026-07-07-atendimento-reclamacoes-design.md)
 
 ## Deferred Items
 

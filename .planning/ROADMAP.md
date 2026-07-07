@@ -780,4 +780,15 @@ Plans:
 
 - [x] 85-SUMMARY.md — lib pura `costCompositionData` (top-6 + fold Outros) + componente com paleta CVD-safe por índice (light/dark) + 9 testes; tsc 0 / vitest 423/423
 
+### Phase 90: Atendimento de reclamações: triagem de pendências + mensagens rápidas
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 89
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 90 to break down)
+
 ---
