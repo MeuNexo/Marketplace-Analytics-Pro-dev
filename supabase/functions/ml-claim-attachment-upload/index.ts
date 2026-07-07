@@ -42,7 +42,31 @@ const ML_API = "https://api.mercadolibre.com";
 const ALLOWED_UPLOAD_TYPES = ["image/jpeg", "image/png", "application/pdf"];
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
 const FILENAME_MAX_CHARS = 125;
-const FILENAME_SAFE_RE = /^[a-zA-Z0-9_.-]+$/;
+
+// Higieniza QUALQUER nome de arquivo para o formato aceito pelo ML
+// (`[a-zA-Z0-9_.-]`, ≤125, preserva extensão). Espelha src/lib/attachmentUploadValidation.ts.
+// DECISÃO (fix 93-03): nome com espaço/acento não barra o upload — higieniza-se.
+function sanitizeFilename(rawName: string): string {
+  const name = (rawName ?? "").trim();
+  const stripAccents = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const lastDot = name.lastIndexOf(".");
+  const hasExt = lastDot > 0 && lastDot < name.length - 1;
+  const rawBase = hasExt ? name.slice(0, lastDot) : name;
+  const rawExt = hasExt ? name.slice(lastDot + 1) : "";
+  let base = stripAccents(rawBase)
+    .replace(/[^a-zA-Z0-9_.-]+/g, "_")
+    .replace(/_{2,}/g, "_")
+    .replace(/^[._-]+|[._-]+$/g, "");
+  const ext = stripAccents(rawExt).replace(/[^a-zA-Z0-9]+/g, "").toLowerCase();
+  if (!base) base = "arquivo";
+  const extPart = ext ? `.${ext}` : "";
+  let out = `${base}${extPart}`;
+  if (out.length > FILENAME_MAX_CHARS) {
+    const keep = Math.max(1, FILENAME_MAX_CHARS - extPart.length);
+    out = `${base.slice(0, keep)}${extPart}`;
+  }
+  return out;
+}
 
 // claim_id vai direto no PATH da URL do ML — só caracteres seguros.
 // Rejeita `/` e qualquer `..` (T-93-05).
@@ -97,22 +121,14 @@ serve(async (req) => {
     // 5. Validação server-side do arquivo (autoridade — SEND-ATT-01/T-93-02),
     //    ANTES de subir ao ML. Estes limites espelham EXATAMENTE
     //    `src/lib/attachmentUploadValidation.ts` (Plano 02).
-    const filename = file instanceof File && file.name ? file.name : "";
+    // Só TIPO e TAMANHO barram. O nome é HIGIENIZADO (fix 93-03) — nunca rejeitado.
     if (!ALLOWED_UPLOAD_TYPES.includes(file.type)) {
       return jsonResponse({ error: "Tipo de arquivo não permitido. Envie JPG, PNG ou PDF." }, 400);
     }
     if (file.size > MAX_UPLOAD_BYTES) {
       return jsonResponse({ error: "Arquivo muito grande. O limite é 5 MB." }, 400);
     }
-    if (!filename) {
-      return jsonResponse({ error: "Nome de arquivo ausente." }, 400);
-    }
-    if (filename.length > FILENAME_MAX_CHARS) {
-      return jsonResponse({ error: "Nome de arquivo muito longo (máx. 125 caracteres)." }, 400);
-    }
-    if (!FILENAME_SAFE_RE.test(filename)) {
-      return jsonResponse({ error: "Nome de arquivo inválido. Use apenas letras, números, ponto, hífen e sublinhado." }, 400);
-    }
+    const filename = sanitizeFilename(file instanceof File ? file.name : "");
 
     // 6. Só DEPOIS do gate + validação: monta multipart novo e sobe ao ML.
     //    `append` de 3 argumentos passa o filename REAL (não "blob") — o ML

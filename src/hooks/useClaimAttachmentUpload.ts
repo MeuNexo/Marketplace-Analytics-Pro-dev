@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { validateUploadFile } from "@/lib/attachmentUploadValidation";
+import { validateUploadFile, sanitizeFilename } from "@/lib/attachmentUploadValidation";
 
 /**
  * Hook de upload de anexo de reclamação (Phase 93-02).
@@ -48,8 +48,11 @@ export function useClaimAttachmentUpload() {
       setError(null);
       try {
         const formData = new FormData();
-        // 3-arg append preserva o nome real do arquivo (não "blob").
-        formData.append("file", file, file.name);
+        // 3-arg append define o nome que o ML recebe. Higienizamos (espaço/acento
+        // → seguro) para não barrar fotos de celular/WhatsApp; a EF re-higieniza
+        // por garantia. Preserva a extensão.
+        const safeName = sanitizeFilename(file.name);
+        formData.append("file", file, safeName);
         formData.append("claim_id", claimId);
         formData.append("ml_user_id", mlUserId);
 
