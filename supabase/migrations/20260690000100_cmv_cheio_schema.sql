@@ -69,7 +69,12 @@ AS $$
     COALESCE(SUM(o.frete), 0)                                    AS total_frete,
     COALESCE(SUM(o.tax_amount), 0)                               AS total_tax,
     COUNT(*)                                                     AS orders_count,
-    COALESCE(SUM(o.custo_unit_cheio * o.quantidade), 0)          AS cmv_cheio
+    -- CMV a preço de custo cheio COM fallback para custo médio por linha quando
+    -- o SKU não tem preço de custo cadastrado no Tiny (revenda / cost_full NULL).
+    -- Sem o COALESCE interno, linhas sem cost_full somariam 0 → subestimariam o
+    -- CMV → superestimariam o lucro (direção errada p/ número conciliado). Fallback
+    -- = custo médio (custo_unit) é a melhor estimativa do custo bruto nesses casos.
+    COALESCE(SUM(COALESCE(o.custo_unit_cheio, o.custo_unit) * o.quantidade), 0) AS cmv_cheio
   FROM public.orders o
   WHERE
     o.organization_id = p_org_id
