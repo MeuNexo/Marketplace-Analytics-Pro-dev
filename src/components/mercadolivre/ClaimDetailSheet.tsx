@@ -349,6 +349,16 @@ export function ClaimDetailSheet({ claim, onOpenChange }: Props) {
                       ))}
                     </div>
                   )}
+                  {/* Motivo do erro visível inline (não só no tooltip) — o usuário
+                      precisa saber POR QUE o anexo falhou (tipo/tamanho/ML). */}
+                  {attachments.some((a) => a.status === "error") && (
+                    <p className="text-[11px] leading-snug text-destructive">
+                      {attachments
+                        .filter((a) => a.status === "error")
+                        .map((a) => `${a.name}: ${a.error ?? "falha ao enviar"}`)
+                        .join(" · ")}
+                    </p>
+                  )}
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <input
