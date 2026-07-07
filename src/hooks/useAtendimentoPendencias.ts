@@ -92,5 +92,11 @@ export function useAtendimentoPendencias() {
   });
 
   const items = query.data ?? [];
-  return { items, count: items.length, isLoading: query.isLoading };
+  // Sinal de prontidão robusto para gatear a semeadura do sino: no TanStack v5
+  // uma query DESABILITADA tem isLoading === false, então !isLoading NÃO distingue
+  // "carregou vazio" de "ainda desabilitada" (janela fria: orgId truthy,
+  // resolvedMLUserIds ainda [], items=[]). enabled && query.isFetched só é true
+  // depois que a query realmente buscou ao menos uma vez.
+  const isReady = enabled && query.isFetched;
+  return { items, count: items.length, isLoading: query.isLoading, isReady };
 }
