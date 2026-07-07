@@ -814,7 +814,7 @@ Plans:
 **Requirements**: BELL-01 (badge = não-vistos), BELL-02 (abrir zera + persiste), BELL-03 (prune de keys resolvidas). *(feature nova pequena — IDs locais, sem entrada em REQUIREMENTS.md)*
 **Depends on:** Phase 90 (AtendimentoBell + useAtendimentoPendencias)
 **Verificação alvo:** tsc 0, vitest (novos testes das funções puras), build ok. Sem EF/RPC/migration → anti-IDOR N/A (client-only).
-**Planejada 2026-07-07.**
+**EXECUTADA + VERIFICADA (7/7 must-haves) 2026-07-07 via GSD completo (plan→checker→executor→verifier):** lib pura `src/lib/bellSeen.ts` (3 fns: computeUnread/mergeAndPruneSeen/**shouldSeed**) + `src/hooks/useBellSeen.ts` (localStorage `bell-seen:{orgId}`, SSR+try/catch, `itemsKey` memoizado) + `useAtendimentoPendencias` expõe `isReady = enabled && query.isFetched` (aditivo) + fiação do `AtendimentoBell` (badge=unreadCount, `onOpenChange(true)`→markAllSeen, header/lista mantêm total). **Blocker do plan-checker resolvido:** semeadura gateada por `isReady` (não `!isLoading`) — no TanStack v5 query desabilitada tem `isLoading===false`, o que explodiria o badge no cold-start. tsc 0, vitest **493/493** (11 novos em bellSeen.test.ts), build ok. Commits `96a17820`→`6d61b506`. **Escopo por dispositivo (localStorage); não sincroniza cross-device.** Pendente: ok visual Wesley (ciclo do badge no navegador) + push (main local).
 
-**Plans:** 1 plan (wave única)
-- [ ] 91-01-PLAN.md — lib pura bellSeen (computeUnread/mergeAndPruneSeen) + hook useBellSeen (localStorage bell-seen:{orgId}) + fiação do AtendimentoBell (badge=unreadCount, abrir=markAllSeen)
+**Plans:** 1/1 plan complete (wave única)
+- [x] 91-01-PLAN.md — lib pura bellSeen (computeUnread/mergeAndPruneSeen/shouldSeed) + hook useBellSeen (localStorage bell-seen:{orgId}) + isReady em useAtendimentoPendencias + fiação do AtendimentoBell (badge=unreadCount, abrir=markAllSeen)
