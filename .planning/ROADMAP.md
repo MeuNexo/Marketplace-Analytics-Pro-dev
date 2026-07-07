@@ -843,3 +843,26 @@ Plans:
 **Plans:** 2/2 plans complete (2 waves)
 - [x] 92-01-PLAN.md — Backend: EF nova ml-claim-attachment (proxy base64, anti-IDOR) + ml-claim-detail normaliza attachments + deploy/smoke via MCP (orquestrador)
 - [x] 92-02-PLAN.md — Frontend: lib pura (normalização + imagem-vs-arquivo) + hook useClaimAttachment + componente ClaimAttachment + fiação no ClaimDetailSheet
+
+---
+
+### Phase 93: Enviar anexo na resposta da reclamação (upload)
+
+**Goal:** Na resposta a uma reclamação (`ClaimDetailSheet` em `/devolucoes`), o vendedor pode **anexar arquivos** (foto/PDF) à mensagem que envia ao cliente — hoje só dá pra mandar texto. Complementa a Phase 92 (que só EXIBE anexos). Junto o vendedor consegue ler e responder com anexo, fechando a conversa dentro do dashboard.
+
+**Fluxo ML (confirmado — doc oficial via WebSearch):**
+1. **Upload:** `POST /post-purchase/v1/claims/{claim_id}/attachments` como `multipart/form-data` (campo `file`) → devolve o **filename** gerado.
+2. **Enviar mensagem com anexo:** o send-message atual (`POST .../actions/send-message`, `{ receiver_role, message }`) ganha o campo `attachments: [filename]` com os filenames do passo 1.
+3. **Limites ML:** JPG/PNG/PDF, ≤5 MB, filename ≤125 chars, chars `[A-Za-z0-9._-]`.
+
+**Design (1 EF nova + estender reply-ml-claim + frontend):**
+- **EF nova `ml-claim-attachment-upload`** (verify_jwt=true, mesmo gate anti-IDOR das irmãs). Recebe o arquivo (via `FormData` no `functions.invoke`), valida tipo (JPG/PNG/PDF)/tamanho (≤5MB)/nome (≤125, safe chars) ANTES de subir, faz `POST` multipart ao ML com o token do vendedor, devolve `{ filename }`. `access_token` nunca logado.
+- **`reply-ml-claim` (aditivo):** aceita `attachments?: string[]` (filenames já subidos) no body; se presente, inclui no `body` do send-message. Sem anexo → comportamento atual intacto.
+- **Frontend `ClaimDetailSheet`:** botão de clipe na caixa de resposta → input de arquivo (accept image/*,application/pdf). Ao selecionar, sobe via a EF de upload, mostra chip com progresso/erro + remover; ao enviar, passa os filenames ao `reply-ml-claim`. Limites espelhados no cliente (feedback rápido) + validados no servidor (autoridade).
+
+**Fora de escopo:** anexos em perguntas (só reclamações); múltiplos formatos além de JPG/PNG/PDF.
+
+**Requirements**: SEND-ATT-01 (upload valida tipo/tamanho/nome + anti-IDOR), SEND-ATT-02 (reply-ml-claim inclui attachments), SEND-ATT-03 (UI: anexar/remover/enviar com chips). *(feature nova — IDs locais)*
+**Depends on:** Phase 92 (display) + Phase 89/90 (reply-ml-claim + ClaimDetailSheet)
+**Verificação alvo:** tsc 0, vitest (validação de arquivo pura), build ok. EF upload verify_jwt=true + anti-IDOR (403 cross-org) + rejeição de tipo/tamanho inválidos. Ref ML: upload `POST /post-purchase/v1/claims/{id}/attachments` (multipart file), enviar `attachments:[filename]` no send-message.
+**Planejada 2026-07-07.**
