@@ -695,7 +695,9 @@ Plans:
 **Milestone:** DRE de Resultado (fase 2 de 3)
 **Requirements**: Escopo só Mercado Livre. Anti-IDOR por `organization_id`. Reconciliação com um mês real fechado.
 **Depends on:** Phase 86 (competence_date em cash_outflows)
-**Plans:** 0 plans
+**Plans:** 1 plan
+
+> **Nota (planejamento 2026-07-08):** a RPC `get_dre_operational_by_competence` JÁ existe em prod (drift de branch não mergeada). Phase 87 = RECONCILIAR ao mapa LOCKED do 87-CONTEXT + codificar como migration rastreada. Overrides do CONTEXT sobre este SC: Empréstimo usa a parcela CHEIA (sem split SAC); Cartão de crédito ENTRA como operacional (com flag `double_count_risk` visível); `competence_date` NULL cai no mês do `outflow_date` (COALESCE).
 
 **Success Criteria** (what must be TRUE):
 
@@ -707,7 +709,7 @@ Plans:
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 87 to break down)
+- [ ] 87-01-PLAN.md — Reconciliar get_dre_operational_by_competence ao mapa 87-CONTEXT (DROP+CREATE, COALESCE fallback, Cartão→operacional+double_count_risk, Empréstimo cheio) + aplicar via MCP + reconciliar junho/2026 + anti-IDOR
 
 ### Phase 88: DRE — Frontend Resultado Completo (/vendas)
 
