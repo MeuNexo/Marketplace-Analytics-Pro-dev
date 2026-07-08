@@ -685,8 +685,8 @@ Plans:
 
 Plans:
 
-- [ ] 86-01-PLAN.md — [W1] Migration: coluna `competence_date` + índice `(organization_id, competence_date, category)` + estende `enrich_enqueue_new`/`enrich_payable_step`/`enrich_harvest` (grava competência do detalhe Tiny; predicado de enfileiramento inclui `competence_date IS NULL`) — aplicada via MCP `apply_migration` (checkpoint do orquestrador)
-- [ ] 86-02-PLAN.md — [W2] Backfill 2026 via `enrich_enqueue_new` + drain dos crons `treasury_cat_*` até cobertura ≥90% + prova de não-regressão (DFC/`get_cashflow` intactos; `sync-tiny-payables` não sobrescreve) — checkpoints via MCP
+- [x] 86-01-PLAN.md — [W1] Migration: coluna `competence_date` + índice `(organization_id, competence_date, category)` + estende `enrich_enqueue_new`/`enrich_payable_step`/`enrich_harvest` (grava competência do detalhe Tiny; predicado de enfileiramento inclui `competence_date IS NULL`) — **aplicada via MCP `apply_migration` (codifica drift já em prod) 2026-07-08**
+- [x] 86-02-PLAN.md — [W2] Backfill 2026 via `enrich_enqueue_new` + drain dos crons `treasury_cat_*` até cobertura ≥90% + prova de não-regressão (DFC/`get_cashflow` intactos; `sync-tiny-payables` não sobrescreve) — **91,3% em prod (575/630), DFC intacta, advisors OK 2026-07-08**
 
 ### Phase 87: DRE — Agregação de Resultado por Competência
 
