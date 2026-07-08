@@ -92,3 +92,16 @@ None beyond what the plan's own `<threat_model>` already covers (T-87-01/02/03, 
 - `supabase/migrations/20260692000000_dre_operational_reconcile_context_map.sql` — FOUND
 - Commit `5d09150e` — FOUND in `git log --oneline`
 - Grep verification gate — printed `DRE_MIGRATION_OK`
+
+## PROVA EM PROD (Task 2 — orquestrador, 2026-07-08)
+
+Migration `20260692000000` aplicada via MCP `apply_migration` em `ckcdevcxgvueywivefgx` (`{"success":true}`).
+
+**Reconciliação junho/2026 (Pé Vermeio):** RPC Σ = R$217.820,60 == agregado direto (COALESCE-adjusted) R$217.820,60 → **delta R$0,00** ✅
+**Breakdown junho por bloco:** excluido R$139.968 (Fornecedores→CMV) · pessoal R$27.852 · financeiro R$20.027 (Empréstimo cheio) · operacional R$15.715 (Cartão de crédito, `double_count_risk=true`) · nao_classificado R$7.360 (Outros, VISÍVEL) · impostos_venda R$4.793 (ICMS/COFINS/PIS deduz receita) · servicos R$2.103.
+
+**Anti-IDOR (role authenticated real):** própria org → 11 linhas; Thales→Pé Vermeio → **0 linhas**; policy `is_org_member(auth.uid(), organization_id)`; RPC `prosecdef=false` (INVOKER). ✅
+**Privilégios:** anon=0 EXECUTE, authenticated=1 ✅
+**Zero regressão:** `get_cashflow` e `get_imposto_guia_by_competence` intactos ✅
+
+**Hand-off Phase 88:** escolher UMA fonte de imposto sobre venda — o bloco `impostos_venda` desta RPC OU `get_imposto_guia_by_competence`, NUNCA as duas (senão dobra o imposto).
