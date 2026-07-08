@@ -177,7 +177,7 @@ async function fetchClaimsPage(
 async function syncUser(
   sb: ReturnType<typeof createClient>,
   row: { ml_user_id: string; user_id: string; organization_id: string; seller_id: string | null },
-): Promise<{ claims: number }> {
+): Promise<{ claims: number; error?: string | null; reconciled?: number; reconcile_error?: string | null }> {
   const { ml_user_id: mlUserId, organization_id: orgId } = row;
   const token = await getAccessToken(sb, mlUserId);
 
@@ -188,6 +188,13 @@ async function syncUser(
 
   const allRows: Record<string, unknown>[] = [];
 
+  // (debug: claims-fechadas-presas-opened) claim_ids seen in a COMPLETE,
+  // untruncated sweep of status=opened this run. Used below for
+  // "reconciliation by absence" — see rationale where openedScanComplete is
+  // consumed.
+  const openedIdsSeen = new Set<string>();
+  let openedScanComplete = false;
+
   // Safety bound so the EF always finishes inside the 150s wall-clock limit:
   // claims search returns newest-first, so once a full page falls outside the
   // 90-day window the rest are older too — stop. MAX_PAGES is a hard backstop
@@ -196,12 +203,25 @@ async function syncUser(
   for (const statusFilter of ["opened", "closed"]) {
     let offset = 0;
     let pages = 0;
+    let naturalStop = false;   // reached a real end-of-results condition
+    let fetchFailed = false;   // both primary+fallback URLs failed on some page
     while (pages < MAX_PAGES_PER_STATUS) {
       const result = await fetchClaimsPage(token, statusFilter, offset);
-      if (!result) break; // Both URLs failed
+      if (!result) { fetchFailed = true; break; } // Both URLs failed
 
       const { items, total } = result;
       pages++;
+
+      // Track every claim_id ML currently reports as 'opened' — BEFORE the
+      // 90-day window filter below, so the completeness signal reflects what
+      // ML actually returned, not what we chose to persist.
+      if (statusFilter === "opened") {
+        for (const c of items) {
+          const id = String(c.id ?? "");
+          if (id) openedIdsSeen.add(id);
+        }
+      }
+
       let inWindow = 0;
 
       for (const c of items) {
@@ -237,9 +257,19 @@ async function syncUser(
       offset += items.length;
       // Stop when: no more items, past the reported total, or an entire page is
       // already older than the cutoff (newest-first → rest are older too).
-      if (items.length === 0 || offset >= total || inWindow === 0) break;
+      if (items.length === 0 || offset >= total || inWindow === 0) { naturalStop = true; break; }
       // T-42-07: 200ms sleep between pages (ML rate limit)
       await new Promise(r => setTimeout(r, 200));
+    }
+
+    if (statusFilter === "opened") {
+      // Reconciliation by absence (below) is only safe to trust when this sweep
+      // saw the ENTIRE current 'opened' result set from ML: no page-cap
+      // truncation (a claim could be sitting on an unread page) and no
+      // transport failure (both URLs down — we'd wrongly treat every DB row as
+      // absent). naturalStop=false + fetchFailed=false means the while loop
+      // exhausted MAX_PAGES_PER_STATUS without reaching a real end — truncated.
+      openedScanComplete = naturalStop && !fetchFailed;
     }
   }
 
@@ -328,9 +358,65 @@ async function syncUser(
     }
   }
 
-  console.log("sync-ml-claims done ml_user_id=" + mlUserId + ": fetched=" + allRows.length + " upserted=" + (upsertError ? 0 : deduped.length));
+  // ── Reconciliation by absence ─────────────────────────────────────────────
+  // Root cause (2026-07-08 debug session claims-fechadas-presas-opened):
+  // ML's /v1/claims/search?status=closed reliably returns [] even when closed
+  // claims exist (confirmed empirically against the live API) — so a claim
+  // that closes on ML simply vanishes from the 'opened' scan and is never
+  // seen again by this sync. The "Blindagem" above only overwrites a row when
+  // ML hands us a status='closed' item, which never happens organically —
+  // so claims stayed 'opened' in our DB forever once they closed on ML.
+  //
+  // Fix: treat "was 'opened' in our DB, absent from a COMPLETE current
+  // 'opened' sweep, still inside the 90-day window this EF already covers"
+  // as reliable evidence the claim closed. Gated on openedScanComplete so a
+  // truncated (page-cap) or failed sweep never mass-closes real open claims.
+  let reconciled = 0;
+  let reconcileError: string | null = null;
+  if (openedScanComplete) {
+    const { data: staleOpened, error: staleErr } = await sb
+      .from("ml_claims")
+      .select("claim_id")
+      .eq("organization_id", orgId)
+      .eq("ml_user_id", mlUserId)
+      .eq("status", "opened")
+      .gte("data_abertura", cutoffStr);
+
+    if (staleErr) {
+      reconcileError = staleErr.message;
+      console.error("sync-ml-claims reconcile-select ml_user_id=" + mlUserId + ":", staleErr.message);
+    } else {
+      const staleIds = (staleOpened ?? [])
+        .map((r: any) => r.claim_id as string)
+        .filter((id) => !openedIdsSeen.has(id));
+
+      if (staleIds.length > 0) {
+        const { error } = await sb
+          .from("ml_claims")
+          .update({ status: "closed", synced_at: new Date().toISOString() })
+          .eq("organization_id", orgId)
+          .eq("ml_user_id", mlUserId)
+          .in("claim_id", staleIds);
+        if (error) {
+          reconcileError = error.message;
+          console.error("sync-ml-claims reconcile-update ml_user_id=" + mlUserId + ":", error.message);
+        } else {
+          reconciled = staleIds.length;
+        }
+      }
+    }
+  }
+
+  console.log(
+    "sync-ml-claims done ml_user_id=" + mlUserId +
+    ": fetched=" + allRows.length +
+    " upserted=" + (upsertError ? 0 : deduped.length) +
+    " reconciled_closed=" + reconciled +
+    " opened_scan_complete=" + openedScanComplete +
+    (reconcileError ? " reconcile_error=" + reconcileError : "")
+  );
   // Report the count actually persisted (0 on error) so the caller/smoke is honest.
-  return { claims: upsertError ? 0 : deduped.length, error: upsertError };
+  return { claims: upsertError ? 0 : deduped.length, error: upsertError, reconciled, reconcile_error: reconcileError };
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
