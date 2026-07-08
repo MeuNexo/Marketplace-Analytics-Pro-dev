@@ -718,7 +718,7 @@ Plans:
 **Milestone:** DRE de Resultado (fase 3 de 3)
 **Requirements**: React + TS + shadcn/ui + Recharts (stack existente). Consistente com o resto do dashboard (tokens, BRL, light/dark, mobile).
 **Depends on:** Phase 87 (RPC de agregação da DRE)
-**Plans:** 0 plans
+**Plans:** 1 plan
 
 **Success Criteria** (what must be TRUE):
 
@@ -729,7 +729,7 @@ Plans:
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 88 to break down)
+- [ ] 88-01-PLAN.md — Estende MLCostCard para a cascata completa (Margem de contribuição → Resultado operacional → Resultado líquido): nova função pura dreCascade (guardrail anti dupla-contagem de imposto) + hook useDreOperational (RPC 87) + wiring/render no MLCostCard e MercadoLivre.tsx
 
 ---
 ### Phase 89: Webhook ML (tempo real) — perguntas, reclamações e pedidos
