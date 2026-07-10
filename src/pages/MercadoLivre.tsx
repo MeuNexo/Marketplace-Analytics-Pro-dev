@@ -50,6 +50,8 @@ import { ConsultorLLMSummary } from "@/components/mercadolivre/ConsultorLLMSumma
 import { useConsultorInsights } from "@/hooks/useConsultorInsights";
 import { MLMcoStrip } from "@/components/mercadolivre/MLMcoStrip";
 import { computeMco } from "@/lib/mco";
+import { useDreOperational } from "@/hooks/useDreOperational";
+import { buildDreCascade } from "@/lib/dreCascade";
 
 const currencyFmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -229,6 +231,13 @@ export default function MercadoLivre() {
     billingMonthIsCurrentMonth ? monthlyTo   : billingMonthTo,
   );
 
+  // DRE — linhas operacionais/financeiro por competência (Phase 88, RPC 87).
+  // MESMO eixo de mês do waterfall (paridade de mês-calendário); p_month é
+  // sempre primeiro-dia-do-mês ("YYYY-MM-01"), nunca billingMonth cru (Pitfall 3).
+  const { data: dreOperationalRows } = useDreOperational(
+    billingMonthIsCurrentMonth ? monthlyFrom : billingMonthFrom,
+  );
+
   // DRE: waterfall autoritativo para o mês exibido no card
   const dreWaterfall = billingMonthIsCurrentMonth ? monthlyCostWaterfall : filterMonthWaterfall;
   // Loading do DRE acompanha o waterfall que alimenta o card — evita flash de
@@ -286,6 +295,20 @@ export default function MercadoLivre() {
   const totalTarifasEfetivo = useMemo(
     () => gruposTarifasEfetivos.reduce((s, g) => s + g.amount, 0),
     [gruposTarifasEfetivos],
+  );
+
+  // ── DRE: cascata do resultado (Phase 88) ──
+  // Margem de contribuição = MESMO cálculo do subtotal do card
+  // (receita − tarifas ML − CMV − impostos). Alimenta buildDreCascade junto
+  // com as linhas operacionais/financeiro da RPC 87 → Resultado operacional e
+  // Resultado líquido. Guardrail SC-3 (impostos_venda/excluido) é do helper.
+  const margemContribuicao = useMemo(
+    () => receitaMes - totalTarifasEfetivo - (cmvMes ?? 0) - (impostosMes ?? 0),
+    [receitaMes, totalTarifasEfetivo, cmvMes, impostosMes],
+  );
+  const dreCascade = useMemo(
+    () => buildDreCascade(dreOperationalRows ?? [], margemContribuicao),
+    [dreOperationalRows, margemContribuicao],
   );
 
   const currentGrossProfit = useMemo(() => {
@@ -787,6 +810,10 @@ export default function MercadoLivre() {
                   syncing={billingSyncing || dailySyncing}
                   faturaFrom={billingData?.invoiceFrom}
                   faturaTo={billingData?.invoiceTo}
+                  blocosOperacionais={dreCascade.operacionalBlocos}
+                  resultadoOperacional={dreCascade.resultadoOperacional}
+                  financeiro={dreCascade.financeiro}
+                  resultadoLiquido={dreCascade.resultadoLiquido}
                 />
                 <MLTopProducts products={effectiveProducts} marginMap={marginMap} />
               </div>

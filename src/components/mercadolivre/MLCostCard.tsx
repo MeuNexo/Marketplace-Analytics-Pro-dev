@@ -1,7 +1,14 @@
 import { motion } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
-import { ChevronLeft, ChevronRight, Loader2, TrendingDown, TrendingUp } from "lucide-react";
+import { ChevronLeft, ChevronRight, HelpCircle, Loader2, TrendingDown, TrendingUp } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { BillingGroup } from "@/hooks/useMLBilling";
+import type { DreCascadeBlocoLine, DreFinanceiroLine } from "@/lib/dreCascade";
 
 const fmt = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
@@ -44,6 +51,15 @@ interface MLCostCardProps {
   /** Janela real da fatura ML (ciclo da conta) — YYYY-MM-DD, exibida quando fonte=billing */
   faturaFrom?: string | null;
   faturaTo?: string | null;
+  // ── Cascata do resultado (Phase 88, da RPC 87 via buildDreCascade) ──
+  /** Linhas operacionais agregadas por bloco (Pessoal/Estrutura/Serviços/Operacional/Não classificado). */
+  blocosOperacionais?: DreCascadeBlocoLine[];
+  /** Margem de contribuição − deduções operacionais. */
+  resultadoOperacional?: number;
+  /** Linha financeira agregada (Empréstimo) ou null se ausente. */
+  financeiro?: DreFinanceiroLine | null;
+  /** Resultado operacional − financeiro. */
+  resultadoLiquido?: number;
 }
 
 // ── Componente ─────────────────────────────────────────────────────────────
@@ -63,8 +79,12 @@ export function MLCostCard({
   syncing = false,
   faturaFrom,
   faturaTo,
+  blocosOperacionais = [],
+  resultadoOperacional,
+  financeiro = null,
+  resultadoLiquido,
 }: MLCostCardProps) {
-  // Lucro do mês = receita − total tarifas − CMV − impostos
+  // Margem de contribuição = receita − total tarifas − CMV − impostos
   const lucro =
     receitaMes
     - totalTarifas
@@ -72,6 +92,17 @@ export function MLCostCard({
     - (impostosMes ?? 0);
   const lucroPositivo = lucro >= 0;
   const margemPct = receitaMes > 0 ? ((lucro / receitaMes) * 100).toFixed(1) : "—";
+
+  // ── Cascata do resultado (Phase 88) ──
+  // Degradação graciosa: sem linhas operacionais e sem financeiro, o card para
+  // na Margem de contribuição (RPC vazia/loading não quebra o layout).
+  const temCascata = blocosOperacionais.length > 0 || financeiro != null;
+  const resultadoOperacionalVal = resultadoOperacional ?? lucro;
+  const resultadoLiquidoVal = resultadoLiquido ?? resultadoOperacionalVal;
+  const operacionalPositivo = resultadoOperacionalVal >= 0;
+  const liquidoPositivo = resultadoLiquidoVal >= 0;
+  const liquidoPct =
+    receitaMes > 0 ? ((resultadoLiquidoVal / receitaMes) * 100).toFixed(1) : "—";
 
   return (
     <motion.div
@@ -241,7 +272,7 @@ export function MLCostCard({
                 </div>
               </div>
 
-              {/* ── Lucro do mês ── */}
+              {/* ── Margem de contribuição (subtotal médio) ── */}
               <div className="flex items-center justify-between text-xs pt-2.5 mt-1.5 border-t-2 border-border">
                 <span className="flex items-center gap-1.5 font-semibold text-foreground">
                   {lucroPositivo ? (
@@ -249,7 +280,7 @@ export function MLCostCard({
                   ) : (
                     <TrendingDown className="w-3.5 h-3.5 text-red-500" />
                   )}
-                  Lucro do mês
+                  Margem de contribuição
                   <span className="text-[10px] text-muted-foreground font-normal ml-0.5">
                     ({margemPct}%)
                   </span>
@@ -262,6 +293,120 @@ export function MLCostCard({
                   {fmt(lucro)}
                 </span>
               </div>
+
+              {/* ── Cascata do resultado (custos operacionais + financeiro, RPC 87) ── */}
+              {temCascata && (
+                <>
+                  {/* Linhas dos blocos operacionais */}
+                  {blocosOperacionais.map((b) => (
+                    <div
+                      key={b.bloco}
+                      className="flex items-center justify-between text-xs py-1 first:mt-0.5"
+                    >
+                      <span className="text-muted-foreground flex items-center gap-1">
+                        <span className="text-muted-foreground/50">(−)</span>
+                        {b.label}
+                        {b.doubleCountRisk && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="cursor-default inline-flex">
+                                  <HelpCircle className="w-3 h-3 text-muted-foreground/60" />
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-[200px] text-xs text-center">
+                                Pode conter fatura ML já contabilizada na margem
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-muted-foreground tabular-nums w-10 text-right">
+                          {pct(b.total, receitaMes)}
+                        </span>
+                        <span className="font-semibold tabular-nums w-24 text-right text-foreground">
+                          {fmt(b.total)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Subtotal: Resultado operacional */}
+                  <div className="flex items-center justify-between text-xs pt-1.5 mt-0.5 border-t border-border/60">
+                    <span className="flex items-center gap-1 font-semibold text-foreground">
+                      <span className="text-muted-foreground/50">=</span>
+                      Resultado operacional
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-muted-foreground tabular-nums w-10 text-right">
+                        {pct(resultadoOperacionalVal, receitaMes)}
+                      </span>
+                      <span
+                        className={`font-bold tabular-nums w-24 text-right ${
+                          operacionalPositivo ? "text-kpi-positive" : "text-kpi-negative"
+                        }`}
+                      >
+                        {fmt(resultadoOperacionalVal)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Linha: Financeiro (Empréstimo) */}
+                  {financeiro != null && (
+                    <div className="flex items-center justify-between text-xs py-1 mt-0.5 border-t border-border/40">
+                      <span className="text-muted-foreground flex items-center gap-1">
+                        <span className="text-muted-foreground/50">(−)</span>
+                        Financeiro (Empréstimo)
+                        {financeiro.doubleCountRisk && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="cursor-default inline-flex">
+                                  <HelpCircle className="w-3 h-3 text-muted-foreground/60" />
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-[200px] text-xs text-center">
+                                Pode conter fatura ML já contabilizada na margem
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-muted-foreground tabular-nums w-10 text-right">
+                          {pct(financeiro.total, receitaMes)}
+                        </span>
+                        <span className="font-semibold tabular-nums w-24 text-right text-foreground">
+                          {fmt(financeiro.total)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Subtotal final: Resultado líquido (mais destacado, sinal verde/vermelho) */}
+                  <div className="flex items-center justify-between text-xs pt-2.5 mt-1.5 border-t-2 border-border">
+                    <span className="flex items-center gap-1.5 font-bold text-foreground">
+                      {liquidoPositivo ? (
+                        <TrendingUp className="w-4 h-4 text-emerald-500" />
+                      ) : (
+                        <TrendingDown className="w-4 h-4 text-red-500" />
+                      )}
+                      Resultado líquido
+                      <span className="text-[10px] text-muted-foreground font-normal ml-0.5">
+                        ({liquidoPct}%)
+                      </span>
+                    </span>
+                    <span
+                      className={`text-base font-bold tabular-nums w-24 text-right ${
+                        liquidoPositivo ? "text-kpi-positive" : "text-kpi-negative"
+                      }`}
+                    >
+                      {fmt(resultadoLiquidoVal)}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </CardContent>
