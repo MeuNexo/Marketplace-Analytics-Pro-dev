@@ -2,24 +2,24 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 93
-status: completed
+current_phase: 84
+current_phase_name: DRE por Competência de Venda (método Tiny
+status: executing
 stopped_at: "Phase 93 (enviar anexo) EXECUTADA+VERIFICADA + FIX 93-03 (E2E Wesley): 3 bugs do upload real corrigidos (sanitize nome, ML file_name vs filename, multipart Blob) — EF upload v4 em prod. Upload E2E OK."
-last_updated: "2026-07-07T20:15:00.000Z"
-last_activity: 2026-07-07
-last_activity_desc: Phase 93 complete (enviar anexo na reclamação)
+last_updated: "2026-07-10T14:21:09.682Z"
+last_activity: 2026-07-03
+last_activity_desc: Phase 84 execution started
 progress:
-  total_phases: 36
-  completed_phases: 17
-  total_plans: 71
-  completed_plans: 64
-  percent: 47
-current_phase_name: an-lise-de-pre-os-onde-vendo-bem
+  total_phases: 39
+  completed_phases: 21
+  total_plans: 78
+  completed_plans: 71
+  percent: 54
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
 
-- **Status:** Executing Phase 84
+- **Status:** Ready to execute
 - **Backend:** tabela `purchase_orders` (migration `20260665000000`, RLS org-first); EF `sync-tiny-purchase-orders` v1 (endpoint Tiny correto = `/ordem-compra` singular; waitUntil 202; `organization_id` no insert); RPC `get_replenishment_by_sku` (migration `20260665000100`, +CTE `incoming_by_sku`, +colunas `qtd_a_caminho`/`data_proxima_chegada`, desconta TODA a qtd a caminho — decisão Wesley); cron `sync-tiny-purchase-orders-daily` (jobid 34, 03:15 UTC).
 - **Prova:** sync 22 OCs/135 SKUs/1.885 un; RPC 93 SKUs a caminho, 80 zeraram sugestão, cobertura parcial preserva gatilho (ex `11011273-CAFE3374G` → ainda sugere 10). tsc 0 + 208 testes + build ok.
 - **Decisão tunável:** "a caminho" = situação `3` (aguardando recebimento); ampliar p/ `2` (aprovada) = 1 linha em `SITUACOES_A_CAMINHO` na EF.
@@ -136,8 +136,8 @@ See: .planning/PROJECT.md
 ## Current Position
 
 Phase: 84 (DRE por Competência de Venda (método Tiny)) — EXECUTING
-Plan: 1 of 6
-Status: Executing Phase 84
+Plan: 2 of 6
+Status: Ready to execute
 Last activity: 2026-07-03 — Phase 84 execution started
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
 
@@ -277,6 +277,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | Phase 90 P01 | 7min | 4 tasks | 5 files |
 | Phase 90 P03 | 5min | 3 tasks | 5 files |
 | Phase 90 P04 | 12min | 3 tasks | 6 files |
+| Phase 88 P01 | 8 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -413,7 +414,7 @@ Dashboard atual mostra:
 
 **Resume file:** None
 
-Last session: 2026-07-07T13:59:53.319Z
+Last session: 2026-07-10T14:21:00.181Z
 Stopped at: Completed 90-04 (mensagens rápidas: applyTemplate + useClaimTemplates + ClaimTemplatesDialog + seletor no ClaimDetailSheet) — Phase 90 COMPLETE (4/4 plans)
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)

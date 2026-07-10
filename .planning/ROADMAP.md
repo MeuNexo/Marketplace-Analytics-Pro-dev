@@ -718,7 +718,7 @@ Plans:
 **Milestone:** DRE de Resultado (fase 3 de 3)
 **Requirements**: React + TS + shadcn/ui + Recharts (stack existente). Consistente com o resto do dashboard (tokens, BRL, light/dark, mobile).
 **Depends on:** Phase 87 (RPC de agregação da DRE)
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 **Success Criteria** (what must be TRUE):
 
@@ -729,7 +729,7 @@ Plans:
 
 Plans:
 
-- [ ] 88-01-PLAN.md — Estende MLCostCard para a cascata completa (Margem de contribuição → Resultado operacional → Resultado líquido): nova função pura dreCascade (guardrail anti dupla-contagem de imposto) + hook useDreOperational (RPC 87) + wiring/render no MLCostCard e MercadoLivre.tsx
+- [x] 88-01-PLAN.md — Estende MLCostCard para a cascata completa (Margem de contribuição → Resultado operacional → Resultado líquido): nova função pura dreCascade (guardrail anti dupla-contagem de imposto) + hook useDreOperational (RPC 87) + wiring/render no MLCostCard e MercadoLivre.tsx
 
 ---
 ### Phase 89: Webhook ML (tempo real) — perguntas, reclamações e pedidos
@@ -805,6 +805,7 @@ Plans:
 **Comportamento (decisão Wesley 2026-07-07):** modelo "badge de novidades" (padrão clássico de sino), não "dispensar item individual". Não há botão por item; abrir o popover já marca todas as pendências atuais como vistas.
 
 **Design (client-only, sem backend):**
+
 - Estado "visto" persistido em `localStorage`, chaveado por org (`bell-seen:{orgId}`) = conjunto de `key`s de pendência já vistas (as keys estáveis `q-{question_id}` / `c-{claim_id}` que `useAtendimentoPendencias` já produz).
 - `unreadCount` = nº de itens atuais cuja `key` não está no conjunto visto. O badge usa `unreadCount`; o header do popover ("X item(s)") e a lista continuam usando o total de pendências.
 - Ao abrir o popover (`onOpenChange → true`): faz merge das keys atuais no conjunto visto **e** faz prune das keys que não estão mais entre as pendências vivas (item resolvido some da lista → sua key sai do set), evitando crescimento infinito e o caso "voltou a pender depois de resolvido" reaparecer como novidade.
@@ -819,6 +820,7 @@ Plans:
 **EXECUTADA + VERIFICADA (7/7 must-haves) 2026-07-07 via GSD completo (plan→checker→executor→verifier):** lib pura `src/lib/bellSeen.ts` (3 fns: computeUnread/mergeAndPruneSeen/**shouldSeed**) + `src/hooks/useBellSeen.ts` (localStorage `bell-seen:{orgId}`, SSR+try/catch, `itemsKey` memoizado) + `useAtendimentoPendencias` expõe `isReady = enabled && query.isFetched` (aditivo) + fiação do `AtendimentoBell` (badge=unreadCount, `onOpenChange(true)`→markAllSeen, header/lista mantêm total). **Blocker do plan-checker resolvido:** semeadura gateada por `isReady` (não `!isLoading`) — no TanStack v5 query desabilitada tem `isLoading===false`, o que explodiria o badge no cold-start. tsc 0, vitest **493/493** (11 novos em bellSeen.test.ts), build ok. Commits `96a17820`→`6d61b506`. **Escopo por dispositivo (localStorage); não sincroniza cross-device.** Pendente: ok visual Wesley (ciclo do badge no navegador) + push (main local).
 
 **Plans:** 1/1 plan complete (wave única)
+
 - [x] 91-01-PLAN.md — lib pura bellSeen (computeUnread/mergeAndPruneSeen/shouldSeed) + hook useBellSeen (localStorage bell-seen:{orgId}) + isReady em useAtendimentoPendencias + fiação do AtendimentoBell (badge=unreadCount, abrir=markAllSeen)
 
 ---
@@ -830,6 +832,7 @@ Plans:
 **Causa raiz:** a EF `ml-claim-detail` repassa as mensagens cruas (cada uma já traz um array `attachments` com IDs), mas o `ClaimDetailSheet` renderiza só `htmlToText(m.message)`. Anexos do ML **exigem download autenticado com o token do vendedor** (`GET /post-purchase/v1/claims/{claim_id}/attachments/{attachment_id}/download`, Bearer) — não é URL pública —, então um `<img src>` direto não funciona: precisa de uma ponte no backend.
 
 **Design (client + 1 EF nova, sem migration):**
+
 - **EF nova `ml-claim-attachment`** (proxy autenticado, verify_jwt=true) — mesmo gate anti-IDOR das outras (JWT→getUser→token por `ml_user_id`→`is_org_member`). Recebe `{ claim_id, ml_user_id, attachment_id }`, baixa o binário do ML com o token do vendedor e devolve **base64 + content-type** (data URI). Fotos de claim são pequenas; base64 via `functions.invoke` (com JWT) casa com o padrão existente e evita URL assinada. `access_token` nunca logado (T-42-04).
 - **EF `ml-claim-detail`:** normaliza `message.attachments` para um shape estável `{ id, filename, type }` (tolerando item string OU objeto — confirmar shape real contra uma claim viva no 1º passo). Nada mais muda.
 - **Frontend `ClaimDetailSheet` / novo `ClaimAttachment`:** para cada mensagem com anexos, renderiza os anexos abaixo do texto. Imagem (`type` image/* ou extensão) → busca via proxy (hook lazy `useClaimAttachment`, cache por id) e mostra miniatura clicável (zoom em Dialog); não-imagem → botão "Baixar" (invoke → blob → download). Estados loading/erro por anexo.
@@ -843,6 +846,7 @@ Plans:
 **EXECUTADA + VERIFICADA (10/10 must-haves) 2026-07-07 via GSD completo (plan→checker→executor×2→verifier):** EF nova **`ml-claim-attachment`** (proxy base64, ACTIVE v1, verify_jwt=true — gate anti-IDOR clonado exato: JWT→getUser→token por ml_user_id→org null→is_org_member→403 ANTES de qualquer chamada ML; attachment_id regex `[A-Za-z0-9._-]+`+reject `..`; guarda 5MB→413; access_token nunca logado) + `ml-claim-detail` v4 normaliza `message.attachments`→`{id,filename,type}` (tolerante string|objeto, aditivo). Frontend: lib pura `src/lib/claimAttachments.ts` (`normalizeClaimAttachments`/`isImageAttachment`, 12 testes) + hook lazy `useClaimAttachment` (React Query cache por attachment_id, invoke c/ JWT, data URI, trata 413) + componente `ClaimAttachment` (imagem→thumb+zoom Dialog / arquivo→Baixar blob) fiado no `ClaimDetailSheet` por anexo (sem filtro de sender_role → cliente E vendedor). 2 warnings do checker dobradas (`encode as encodeBase64` no std 0.168.0; guarda de tamanho). Smoke 401 (sem JWT + JWT lixo) OK nas 2 EFs. tsc 0, vitest **505/505**, build ok. Commits `b2578194`→`c58ea616`. **Deferido: ENVIAR anexo na resposta (upload) = phase própria.** Pendente: ok visual Wesley (foto real renderizando em /devolucoes).
 
 **Plans:** 2/2 plans complete (2 waves)
+
 - [x] 92-01-PLAN.md — Backend: EF nova ml-claim-attachment (proxy base64, anti-IDOR) + ml-claim-detail normaliza attachments + deploy/smoke via MCP (orquestrador)
 - [x] 92-02-PLAN.md — Frontend: lib pura (normalização + imagem-vs-arquivo) + hook useClaimAttachment + componente ClaimAttachment + fiação no ClaimDetailSheet
 
@@ -853,11 +857,13 @@ Plans:
 **Goal:** Na resposta a uma reclamação (`ClaimDetailSheet` em `/devolucoes`), o vendedor pode **anexar arquivos** (foto/PDF) à mensagem que envia ao cliente — hoje só dá pra mandar texto. Complementa a Phase 92 (que só EXIBE anexos). Junto o vendedor consegue ler e responder com anexo, fechando a conversa dentro do dashboard.
 
 **Fluxo ML (confirmado — doc oficial via WebSearch):**
+
 1. **Upload:** `POST /post-purchase/v1/claims/{claim_id}/attachments` como `multipart/form-data` (campo `file`) → devolve o **filename** gerado.
 2. **Enviar mensagem com anexo:** o send-message atual (`POST .../actions/send-message`, `{ receiver_role, message }`) ganha o campo `attachments: [filename]` com os filenames do passo 1.
 3. **Limites ML:** JPG/PNG/PDF, ≤5 MB, filename ≤125 chars, chars `[A-Za-z0-9._-]`.
 
 **Design (1 EF nova + estender reply-ml-claim + frontend):**
+
 - **EF nova `ml-claim-attachment-upload`** (verify_jwt=true, mesmo gate anti-IDOR das irmãs). Recebe o arquivo (via `FormData` no `functions.invoke`), valida tipo (JPG/PNG/PDF)/tamanho (≤5MB)/nome (≤125, safe chars) ANTES de subir, faz `POST` multipart ao ML com o token do vendedor, devolve `{ filename }`. `access_token` nunca logado.
 - **`reply-ml-claim` (aditivo):** aceita `attachments?: string[]` (filenames já subidos) no body; se presente, inclui no `body` do send-message. Sem anexo → comportamento atual intacto.
 - **Frontend `ClaimDetailSheet`:** botão de clipe na caixa de resposta → input de arquivo (accept image/*,application/pdf). Ao selecionar, sobe via a EF de upload, mostra chip com progresso/erro + remover; ao enviar, passa os filenames ao `reply-ml-claim`. Limites espelhados no cliente (feedback rápido) + validados no servidor (autoridade).
@@ -872,5 +878,6 @@ Plans:
 **Planejada 2026-07-07.**
 
 **Plans:** 2/2 plans complete
+
 - [x] 93-01-PLAN.md — Backend: EF ml-claim-attachment-upload (validação server-side + anti-IDOR) + reply-ml-claim aditivo attachments + deploy/smoke MCP (wave 1, SEND-ATT-01/02)
 - [x] 93-02-PLAN.md — Frontend: lib pura de validação + useClaimAttachmentUpload + clipe/chips no ClaimDetailSheet (wave 2, SEND-ATT-01/03)
