@@ -877,13 +877,13 @@ Plans:
 
 **Design (refinado com <db_reality> — M+1 vive no frontend, RPC grande INTOCADA):** o shift M+1 NÃO modifica `get_dre_operational_by_competence` (zero regressão nos outros 7 blocos + DFC). Em vez disso o hook chama a RPC já-viva `get_imposto_guia_by_competence(org, M+1)` no modo apuração. Backend desta fase = só a tabela nova `dre_month_close`. `get_cost_waterfall.cmv_cheio` já existe em prod — só falta enfiar no hook.
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 
 - [x] 94-01-PLAN.md — Backend: tabela `dre_month_close` (RLS org-first owner-only, reversível por DELETE) + apply MCP + prova anti-IDOR (wave 1, autonomous:false, SC1/SC5/SC6)
 - [x] 94-02-PLAN.md — Frontend data + lógica pura: `cmv_cheio` no waterfall + `useDreMonthClose` + `useImpostoGuiaReal` (shift M+1) + `dreRegime.ts` (nunca misturar bases; previsão byte-idêntica; reconciliação junho) (wave 2, SC2/SC3/SC6)
-- [ ] 94-03-PLAN.md — Frontend UI: selo do regime + botão owner-only marcar/reabrir + empurrãozinho 🟢 + human-verify junho/2026 (wave 3, autonomous:false, SC4/SC6)
+- [x] 94-03-PLAN.md — Frontend UI: selo do regime + botão owner-only marcar/reabrir + empurrãozinho 🟢 + human-verify junho/2026 (wave 3, autonomous:false, SC4/SC6)
 
 ---
 

@@ -4,22 +4,22 @@ milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
 current_phase: 94
 current_phase_name: dre-regime-previsao-apuracao-imposto-real-cmv-cheio-no-fecha
-status: executing
-stopped_at: Completed 94-02-PLAN.md
-last_updated: "2026-07-11T13:12:53.918Z"
+status: verifying
+stopped_at: Completed 94-03-PLAN.md (implementation done; human-verify checkpoint pending)
+last_updated: "2026-07-11T13:20:52.757Z"
 last_activity: 2026-07-11
 last_activity_desc: Phase 94 execution started
 progress:
   total_phases: 40
-  completed_phases: 21
+  completed_phases: 22
   total_plans: 81
-  completed_plans: 73
-  percent: 53
+  completed_plans: 74
+  percent: 55
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
 
-- **Status:** Ready to execute
+- **Status:** Phase complete — ready for verification
 - **Backend:** tabela `purchase_orders` (migration `20260665000000`, RLS org-first); EF `sync-tiny-purchase-orders` v1 (endpoint Tiny correto = `/ordem-compra` singular; waitUntil 202; `organization_id` no insert); RPC `get_replenishment_by_sku` (migration `20260665000100`, +CTE `incoming_by_sku`, +colunas `qtd_a_caminho`/`data_proxima_chegada`, desconta TODA a qtd a caminho — decisão Wesley); cron `sync-tiny-purchase-orders-daily` (jobid 34, 03:15 UTC).
 - **Prova:** sync 22 OCs/135 SKUs/1.885 un; RPC 93 SKUs a caminho, 80 zeraram sugestão, cobertura parcial preserva gatilho (ex `11011273-CAFE3374G` → ainda sugere 10). tsc 0 + 208 testes + build ok.
 - **Decisão tunável:** "a caminho" = situação `3` (aguardando recebimento); ampliar p/ `2` (aprovada) = 1 linha em `SITUACOES_A_CAMINHO` na EF.
@@ -137,7 +137,7 @@ See: .planning/PROJECT.md
 
 Phase: 94 (dre-regime-previsao-apuracao-imposto-real-cmv-cheio-no-fecha) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-11 — Phase 94 execution started
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
 
@@ -280,6 +280,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | Phase 88 P01 | 8 min | 3 tasks | 6 files |
 | Phase 94 P01 | 15min | 1 tasks | 1 files |
 | Phase 94 P02 | 12min | 3 tasks | 5 files |
+| Phase 94 P03 | 15min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -359,6 +360,8 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 - [Phase 94-02]: TDD RED/GREEN split into two commits for dreRegime.ts (test-only failing commit, then implementation commit) per Task 1's tdd=true
 - [Phase 94-02]: useImpostoGuiaNudge does a direct RLS cash_outflows read (narrow, 3 categories x 2 months, never summed client-side) instead of a new RPC — justified against the repo's PROIBIDO broad-aggregation convention
 - [Phase 94-02]: reopen() on useDreMonthClose = DELETE the dre_month_close row (no UPDATE policy exists per 94-01)
+- [Phase 94-03]: closeBusy wired to monthClose.isMutating (94-02 hook's actual single busy flag) instead of the plan text's isClosing/isReopening, which do not exist on the hook
+- [Phase 94-03]: Added toast.error around close()/reopen() owner mutations (Rule 2), matching the ReplenishmentParamsDialog/ml_tax_config error-toast convention
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -422,8 +425,8 @@ Dashboard atual mostra:
 
 **Resume file:** None
 
-Last session: 2026-07-11T13:12:53.897Z
-Stopped at: Completed 94-02-PLAN.md
+Last session: 2026-07-11T13:20:52.742Z
+Stopped at: Completed 94-03-PLAN.md (implementation done; human-verify checkpoint pending)
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
