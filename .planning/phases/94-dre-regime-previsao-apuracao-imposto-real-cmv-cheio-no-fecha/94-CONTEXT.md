@@ -89,7 +89,30 @@ A virada é disparada por um **clique manual do owner** ("marcar mês como apura
 - Categorização na fonte (Tiny) e limpeza de `nao_classificado`/cartão — fase separada, trabalho do Wesley na fonte.
 </deferred>
 
+<db_reality>
+## DB REALITY VERIFIED (Wave 0 já resolvido — 2026-07-11 via MCP em ckcdevcxgvueywivefgx)
+
+O researcher alertou "schema-drift" porque as migrations de CMV cheio / RPCs de DRE **não estão no repo git do garment-glow-test** (foram aplicadas via MCP / vivem no worktree `/root/garment-glow-dre`). **Verifiquei o banco de PRODUÇÃO direto: está TUDO lá.** Isso NÃO é bloqueio — só significa que o SQL fonte-da-verdade dessas RPCs não está no repo (padrão conhecido; migrations via MCP). Como esta fase NÃO modifica essas RPCs (só ADICIONA tabela + frontend), o risco de drift é mínimo.
+
+**Fatos confirmados (não re-investigar):**
+- `orders.custo_unit_cheio` **EXISTE** (numeric) em prod. `orders.custo_unit`, `tax_amount`, `data_pedido` (text), `sku`, `item_id`, `status` também.
+- `get_cost_waterfall(p_org_id uuid, p_user_ids text[], p_from date, p_to date)` INVOKER → `TABLE(paid_revenue, cmv, total_comissao, total_frete, total_tax, orders_count, cmv_cheio)`. **`cmv`=médio, `cmv_cheio`=cheio, `total_tax`=estimado.** A fonte de CMV muda conforme o regime; a fonte de imposto também.
+- `get_dre_operational_by_competence(p_org_id uuid, p_month date)` INVOKER → `TABLE(bloco, category, total, n, double_count_risk)`. Agrupa TODOS os blocos por UMA janela `[M, M+1)` sobre `COALESCE(competence_date, date_trunc('month',outflow_date))`. O card da Phase 88 **já FILTRA o bloco `impostos_venda` fora** (usa `total_tax` estimado). **Portanto o shift M+1 NÃO precisa mexer nesta RPC** (evita regressão nos outros blocos operacionais).
+- `get_imposto_guia_by_competence(p_org_id uuid, p_competence date)` INVOKER → `TABLE(category, total, status, n)` das 3 categorias `Imposto Venda - ICMS/PIS/COFINS`, por `competence_date` no mês, agrupado por category+status. **Esta é a fonte da guia REAL: no modo apuração, o hook chama com `p_competence = M+1` e soma os totais.** O `status` (paid/pending) serve pro empurrãozinho.
+- `is_org_member(_user_id uuid, _org_id uuid)` DEFINER e `get_org_role(_user_id uuid, _org_id uuid)` DEFINER existem (helpers de RLS).
+- Template de RLS owner-only já no repo: `supabase/migrations/20260515120000_ml_tax_config.sql` (owner INSERT/UPDATE/DELETE via `get_org_role(...)='owner'`, member SELECT via `is_org_member`). Clonar pra `dre_month_close`.
+
+**Desenho refinado por esses fatos (mais simples e baixo risco):**
+- **M+1 vive no frontend/hook**, não na RPC grande: modo apuração chama `get_imposto_guia_by_competence(org, M+1)` e soma como a linha de imposto real; modo previsão usa `total_tax`. `get_dre_operational_by_competence` fica INTOCADA (zero regressão nos outros blocos).
+- **Regime derivado da presença em `dre_month_close`**: mês fechado → CMV `cmv_cheio` + imposto = guia real (M+1); mês aberto → CMV `cmv` + imposto = `total_tax`. Nunca cruzar.
+- **`dre_month_close`**: PK `(organization_id, competence_month date)`; presença da linha = fechado; DELETE = reabrir. Member SELECT (is_org_member), owner INSERT/DELETE (get_org_role='owner'), SECURITY INVOKER na policy. Migration criada no repo E aplicada via MCP.
+- **Empurrãozinho** (frontend): `get_imposto_guia_by_competence(org, M+1)` traz as 3 categorias + status → se as 3 presentes com status=paid OU valor≠placeholder do mês anterior → 🟢 "parece pronto pra fechar". Dica, não trava.
+
+**Verificação-alvo de reconciliação:** junho/2026 (sales-month=jun, p_month=2026-06) em apuração usa `get_imposto_guia_by_competence(org, 2026-07)` → ICMS 5.151,56 (a guia de julho = imposto das vendas de junho), NÃO a de junho (4.793,21). CMV = 133.264,87 (cheio).
+</db_reality>
+
 ---
 
 *Phase: 94-dre-regime-previsao-apuracao*
 *Context gathered: 2026-07-11 via discussão ao vivo + viabilidade no banco de produção*
+*DB reality verified: 2026-07-11 via MCP*
