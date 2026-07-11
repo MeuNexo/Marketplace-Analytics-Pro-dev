@@ -20,6 +20,10 @@ export interface CostWaterfallData {
   total_tax: number;
   /** true se ao menos 1 pedido pago tem tax_amount > 0 */
   has_tax_data: boolean;
+  /** CMV cheio da nota (SUM(custo_unit_cheio * quantidade)) — base do regime APURAÇÃO (Phase 94) */
+  cmv_cheio: number;
+  /** true se ao menos 1 pedido pago tem custo_unit_cheio preenchido */
+  has_cmv_cheio: boolean;
   /** Receita bruta por ml_user_id (para calcular impostos no caller) */
   revenue_per_store: Map<string, number>;
 }
@@ -50,6 +54,7 @@ export function useMLCostWaterfall(from: string, to: string) {
       const total_comissao = Number(r.total_comissao);
       const total_frete    = Number(r.total_frete);
       const total_tax      = Number(r.total_tax);
+      const cmv_cheio      = Number(r.cmv_cheio ?? 0);
 
       // paid_revenue=0 significa sem pedidos pagos no período (receita_bruta nula ou tabela vazia).
       // Retornar null força o caller a usar ml_daily_cache + estimativas hardcoded de forma consistente,
@@ -65,6 +70,8 @@ export function useMLCostWaterfall(from: string, to: string) {
         has_cmv: cmv > 0,
         total_tax: Math.round(total_tax * 100) / 100,
         has_tax_data: total_tax > 0,
+        cmv_cheio: Math.round(cmv_cheio * 100) / 100,
+        has_cmv_cheio: cmv_cheio > 0,
         revenue_per_store: new Map(),  // não disponível em agregação server-side
       };
     },
