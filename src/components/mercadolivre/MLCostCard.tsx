@@ -60,6 +60,23 @@ interface MLCostCardProps {
   financeiro?: DreFinanceiroLine | null;
   /** Resultado operacional − financeiro. */
   resultadoLiquido?: number;
+  // ── Regime PREVISÃO/APURAÇÃO (Phase 94) ──
+  /** "previsao" (mês aberto) | "apuracao" (mês fechado pelo owner). */
+  regime?: "previsao" | "apuracao";
+  /** Presença de linha em dre_month_close para o mês exibido. */
+  mesClosed?: boolean;
+  /** "MM/YYYY" da guia real usada (M+1 do mês de venda exibido). */
+  guiaCompetenceLabel?: string;
+  /** true apenas para orgRole==="owner" — RLS é a autoridade real. */
+  canClose?: boolean;
+  /** Empurrãozinho: dica visual de que as 3 guias parecem lançadas — NUNCA fecha sozinho. */
+  nudgeClose?: boolean;
+  /** Marca o mês como apurado (owner-only). */
+  onClose?: () => void;
+  /** Reabre o mês (volta para previsão). */
+  onReopen?: () => void;
+  /** true durante a mutação de fechar/reabrir. */
+  closeBusy?: boolean;
 }
 
 // ── Componente ─────────────────────────────────────────────────────────────
@@ -83,6 +100,14 @@ export function MLCostCard({
   resultadoOperacional,
   financeiro = null,
   resultadoLiquido,
+  regime,
+  mesClosed = false,
+  guiaCompetenceLabel,
+  canClose = false,
+  nudgeClose = false,
+  onClose,
+  onReopen,
+  closeBusy = false,
 }: MLCostCardProps) {
   // Margem de contribuição = receita − total tarifas − CMV − impostos
   const lucro =
@@ -151,6 +176,19 @@ export function MLCostCard({
             >
               {fonte === "competencia" ? "mês 01–31" : fonte === "billing" ? "fatura ML" : "estimado"}
             </span>
+            {regime && (
+              <span
+                className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                  regime === "apuracao"
+                    ? "bg-emerald-500/15 text-emerald-400"
+                    : "bg-amber-500/15 text-amber-400"
+                }`}
+              >
+                {regime === "apuracao"
+                  ? `Apurado — guias de ${guiaCompetenceLabel ?? ""}`
+                  : "Previsão"}
+              </span>
+            )}
           </div>
         </div>
 
@@ -161,6 +199,40 @@ export function MLCostCard({
             <span className="text-[10px] text-muted-foreground tabular-nums">
               Tarifas da fatura ML: {fmtDayMonth(faturaFrom)} → {fmtDayMonth(faturaTo)}
             </span>
+          </div>
+        )}
+
+        {/* Regime: empurrãozinho (dica, nunca gatilho) + botão owner-only de
+            marcar/reabrir o mês como apurado. RLS de dre_month_close é a
+            autoridade real — este gate é só UX (94-CONTEXT.md). */}
+        {(canClose || (nudgeClose && !mesClosed)) && (
+          <div className="px-4 pb-2 -mt-1 flex items-center justify-end gap-2">
+            {nudgeClose && !mesClosed && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="text-[10px] text-emerald-500 inline-flex items-center gap-1 cursor-default">
+                      🟢 Guias parecem lançadas
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-[220px] text-xs text-center">
+                    As 3 guias (ICMS/PIS/COFINS) de {guiaCompetenceLabel ?? "M+1"} parecem lançadas —
+                    fechar mês?
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+            {canClose && (
+              <button
+                type="button"
+                onClick={mesClosed ? onReopen : onClose}
+                disabled={closeBusy || (mesClosed ? !onReopen : !onClose)}
+                className="text-[10px] font-medium px-2 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-40 disabled:pointer-events-none transition-colors inline-flex items-center gap-1"
+              >
+                {closeBusy && <Loader2 className="w-3 h-3 animate-spin" />}
+                {mesClosed ? "Reabrir mês" : "Marcar mês como apurado"}
+              </button>
+            )}
           </div>
         )}
 
