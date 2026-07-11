@@ -136,3 +136,8 @@ None - no external service configuration required. No new npm packages (matches 
 ---
 *Phase: 94-dre-regime-previsao-apuracao-imposto-real-cmv-cheio-no-fecha*
 *Completed: 2026-07-11*
+
+## Self-Check: PASSED
+
+- Files exist: `src/lib/dreRegime.ts`, `src/lib/dreRegime.test.ts`, `src/hooks/useDreMonthClose.ts`, `src/hooks/useImpostoGuiaReal.ts`, this SUMMARY.md — all FOUND.
+- Commits exist: `4d00e738`, `a88b45a2`, `acbd600f`, `d994a78d`, `b0a20b4e` — all FOUND in git log.

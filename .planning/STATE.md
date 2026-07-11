@@ -5,15 +5,15 @@ milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem
 current_phase: 94
 current_phase_name: dre-regime-previsao-apuracao-imposto-real-cmv-cheio-no-fecha
 status: executing
-stopped_at: "Phase 93 (enviar anexo) EXECUTADA+VERIFICADA + FIX 93-03 (E2E Wesley): 3 bugs do upload real corrigidos (sanitize nome, ML file_name vs filename, multipart Blob) — EF upload v4 em prod. Upload E2E OK."
-last_updated: "2026-07-11T13:03:53.085Z"
+stopped_at: Completed 94-02-PLAN.md
+last_updated: "2026-07-11T13:12:53.918Z"
 last_activity: 2026-07-11
 last_activity_desc: Phase 94 execution started
 progress:
   total_phases: 40
   completed_phases: 21
   total_plans: 81
-  completed_plans: 72
+  completed_plans: 73
   percent: 53
 ---
 
@@ -136,7 +136,7 @@ See: .planning/PROJECT.md
 ## Current Position
 
 Phase: 94 (dre-regime-previsao-apuracao-imposto-real-cmv-cheio-no-fecha) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-07-11 — Phase 94 execution started
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
@@ -279,6 +279,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | Phase 90 P04 | 12min | 3 tasks | 6 files |
 | Phase 88 P01 | 8 min | 3 tasks | 6 files |
 | Phase 94 P01 | 15min | 1 tasks | 1 files |
+| Phase 94 P02 | 12min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -355,6 +356,9 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 - [Phase 90-04]: supabase.from('table_name') tipa OK mesmo sem a tabela em src/integrations/supabase/types.ts (confirmado com ml_claims desde a 90-01 e agora ml_claim_templates) — não precisa regenerar types.ts nem usar 'as any' no .from()
 - [Phase 90-04]: Phase 90 FECHADA — 4/4 plans (backend triagem+templates, frontend triagem, frontend mensagens rápidas), tudo frontend-only nesta 04 (nenhum EF/migration tocado)
 - [Phase ?]: Phase 94-01: dre_month_close (PK org-first) presenca=APURACAO/ausencia=PREVISAO; reabrir=DELETE sem UPDATE policy; RLS clonada do ml_tax_config; anti-IDOR provado Thales->Pe Vermeio SELECT 0 / INSERT 42501 / DELETE 0
+- [Phase 94-02]: TDD RED/GREEN split into two commits for dreRegime.ts (test-only failing commit, then implementation commit) per Task 1's tdd=true
+- [Phase 94-02]: useImpostoGuiaNudge does a direct RLS cash_outflows read (narrow, 3 categories x 2 months, never summed client-side) instead of a new RPC — justified against the repo's PROIBIDO broad-aggregation convention
+- [Phase 94-02]: reopen() on useDreMonthClose = DELETE the dre_month_close row (no UPDATE policy exists per 94-01)
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -418,8 +422,8 @@ Dashboard atual mostra:
 
 **Resume file:** None
 
-Last session: 2026-07-11T13:03:29.949Z
-Stopped at: Completed 90-04 (mensagens rápidas: applyTemplate + useClaimTemplates + ClaimTemplatesDialog + seletor no ClaimDetailSheet) — Phase 90 COMPLETE (4/4 plans)
+Last session: 2026-07-11T13:12:53.897Z
+Stopped at: Completed 94-02-PLAN.md
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
