@@ -872,11 +872,15 @@ Plans:
 6. Sem regressão na Phase 88 (previsão continua idêntica ao validado por Wesley em 07-10) nem no `get_cashflow`/DFC.
 
 **Depends on:** Phase 87 (RPC `get_dre_operational_by_competence`) + Phase 88 (card "DRE do Mês" em `/vendas`, em prod)
-**Plans:** 0 plans
+
+**Design (refinado com <db_reality> — M+1 vive no frontend, RPC grande INTOCADA):** o shift M+1 NÃO modifica `get_dre_operational_by_competence` (zero regressão nos outros 7 blocos + DFC). Em vez disso o hook chama a RPC já-viva `get_imposto_guia_by_competence(org, M+1)` no modo apuração. Backend desta fase = só a tabela nova `dre_month_close`. `get_cost_waterfall.cmv_cheio` já existe em prod — só falta enfiar no hook.
+
+**Plans:** 3 plans
 
 Plans:
-
-- [ ] TBD (run /gsd-plan-phase 94 to break down)
+- [ ] 94-01-PLAN.md — Backend: tabela `dre_month_close` (RLS org-first owner-only, reversível por DELETE) + apply MCP + prova anti-IDOR (wave 1, autonomous:false, SC1/SC5/SC6)
+- [ ] 94-02-PLAN.md — Frontend data + lógica pura: `cmv_cheio` no waterfall + `useDreMonthClose` + `useImpostoGuiaReal` (shift M+1) + `dreRegime.ts` (nunca misturar bases; previsão byte-idêntica; reconciliação junho) (wave 2, SC2/SC3/SC6)
+- [ ] 94-03-PLAN.md — Frontend UI: selo do regime + botão owner-only marcar/reabrir + empurrãozinho 🟢 + human-verify junho/2026 (wave 3, autonomous:false, SC4/SC6)
 
 ---
 
