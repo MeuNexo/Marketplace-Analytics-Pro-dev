@@ -52,6 +52,10 @@ import { MLMcoStrip } from "@/components/mercadolivre/MLMcoStrip";
 import { computeMco } from "@/lib/mco";
 import { useDreOperational } from "@/hooks/useDreOperational";
 import { buildDreCascade } from "@/lib/dreCascade";
+import { resolveDreRegime, shouldNudgeClose, monthPlusOne } from "@/lib/dreRegime";
+import { useDreMonthClose } from "@/hooks/useDreMonthClose";
+import { useImpostoGuiaReal, useImpostoGuiaNudge } from "@/hooks/useImpostoGuiaReal";
+import { toast } from "sonner";
 
 const currencyFmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -95,7 +99,7 @@ export default function MercadoLivre() {
   const { user } = useAuth();
   const { stores, selectedStore, setSalesCache, scopeKey, sellerId, resolvedMLUserIds, hasMLConnection, loading: storeLoading } = useMLStore();
   const { selectedSeller, selectedStoreIds } = useSeller();
-  const { currentOrg } = useOrganization();
+  const { currentOrg, orgRole } = useOrganization();
 
   // ── Dashboard layout personalização ──
   const { widgets, toggleWidget, moveUp, moveDown, resetLayout, isVisible } = useDashboardLayout();
@@ -258,10 +262,65 @@ export default function MercadoLivre() {
     return `${monthName.charAt(0).toUpperCase() + monthName.slice(1)}/${year}`;
   }, [billingMonth]);
 
-  // Receita, CMV e impostos do mês do filtro
+  // Receita do mês do filtro
   const receitaMes = dreWaterfall?.paid_revenue ?? 0;
-  const cmvMes = (dreWaterfall?.has_cmv ? dreWaterfall.cmv : null) ?? null;
-  const impostosMes = (dreWaterfall?.has_tax_data ? dreWaterfall.total_tax : null) ?? null;
+
+  // ── Regime PREVISÃO/APURAÇÃO (Phase 94) ──
+  // Mesmo eixo de mês do dreWaterfall (mês corrente → monthlyFrom; navegado →
+  // billingMonthFrom). dre_month_close usa sempre "YYYY-MM-01" (Pitfall 3).
+  const dreSaleMonth = billingMonthIsCurrentMonth ? monthlyFrom : billingMonthFrom;
+  const monthClose = useDreMonthClose(dreSaleMonth);
+  const guiaReal = useImpostoGuiaReal(dreSaleMonth);
+  const guiaNudge = useImpostoGuiaNudge(dreSaleMonth);
+
+  // CMV e impostos do mês — CONSEQUÊNCIA do regime resolvido acima, nunca um
+  // toggle solto (nunca-misturar). Enquanto o mês está aberto (isClosed=false)
+  // reproduz byte-a-byte a expressão legada (SC6 — zero regressão Phase 88).
+  const regimeResult = resolveDreRegime({
+    isClosed: monthClose.isClosed,
+    cmvMedio: dreWaterfall?.cmv ?? 0,
+    hasCmv: !!dreWaterfall?.has_cmv,
+    cmvCheio: dreWaterfall?.cmv_cheio ?? 0,
+    hasCmvCheio: !!dreWaterfall?.has_cmv_cheio,
+    totalTaxEstimado: dreWaterfall?.total_tax ?? 0,
+    hasTaxData: !!dreWaterfall?.has_tax_data,
+    guiaReal: guiaReal.data ?? null,
+  });
+  const cmvMes = regimeResult.cmvMes;
+  const impostosMes = regimeResult.impostosMes;
+
+  // Empurrãozinho (dica visual, NUNCA gatilho) + gate owner-only do botão
+  // marcar/reabrir (RLS de dre_month_close é a autoridade real — este gate é
+  // só UX, igual ao ReplenishmentParamsDialog/ml_tax_config).
+  const nudgeClose = shouldNudgeClose({
+    rows: guiaNudge.data ?? [],
+    targetCompetence: monthPlusOne(dreSaleMonth),
+  });
+  const canClose = orgRole === "owner";
+  const guiaCompetenceLabel = useMemo(() => {
+    const [year, month] = monthPlusOne(dreSaleMonth).split("-").map(Number);
+    return `${String(month).padStart(2, "0")}/${year}`;
+  }, [dreSaleMonth]);
+
+  const handleCloseDreMonth = useCallback(async () => {
+    try {
+      await monthClose.close();
+    } catch (err) {
+      toast.error("Erro ao marcar mês como apurado", {
+        description: err instanceof Error ? err.message : undefined,
+      });
+    }
+  }, [monthClose]);
+
+  const handleReopenDreMonth = useCallback(async () => {
+    try {
+      await monthClose.reopen();
+    } catch (err) {
+      toast.error("Erro ao reabrir mês", {
+        description: err instanceof Error ? err.message : undefined,
+      });
+    }
+  }, [monthClose]);
 
   // Fallback estimado: ads do mês do filtro somado para linha de publicidade
   const adsSpendMes = useMemo(
@@ -814,6 +873,14 @@ export default function MercadoLivre() {
                   resultadoOperacional={dreCascade.resultadoOperacional}
                   financeiro={dreCascade.financeiro}
                   resultadoLiquido={dreCascade.resultadoLiquido}
+                  regime={regimeResult.regime}
+                  mesClosed={monthClose.isClosed}
+                  guiaCompetenceLabel={guiaCompetenceLabel}
+                  canClose={canClose}
+                  nudgeClose={nudgeClose}
+                  onClose={handleCloseDreMonth}
+                  onReopen={handleReopenDreMonth}
+                  closeBusy={monthClose.isMutating}
                 />
                 <MLTopProducts products={effectiveProducts} marginMap={marginMap} />
               </div>
