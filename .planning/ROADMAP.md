@@ -857,6 +857,7 @@ Plans:
 **Contexto/decisões (já discutidas e validadas com Wesley — NÃO re-discutir):** `/root/.claude/projects/-root/memory/project_garment_dre_ponto_verdade.md` (seções DESENHO FECHADO + VIABILIDADE CONFIRMADA NO BANCO) e `feedback_garment_dre_imposto_apuracao.md` (as DUAS DREs A/B). Supabase proj **ckcdevcxgvueywivefgx** (NÃO o ID do CLAUDE.md), org Pé Vermeio `7f615df7-7bac-45e5-8a93-827fb9ddeec7`. Deploy de RPC/EF via MCP (sem token CLI).
 
 **Regras travadas:**
+
 1. **Mês inteiro ou nada** (Opção A): só apura quando ICMS+PIS+COFINS do mês estiverem reais. O imposto estimado (`tax_amount`) é um número borrado ~20% por produto (não quebrado por tipo), então não dá pra substituir só um imposto.
 2. **Casamento M+1:** imposto do mês de venda M = guia com `competence_date = M+1` (a apuração paga este mês é sobre as vendas do mês passado). Hoje `get_dre_operational_by_competence` casa pela competência crua → **precisa do shift**.
 3. **CMV cheio×médio é consequência do regime**, nunca um toggle separado.
@@ -864,6 +865,7 @@ Plans:
 5. Enquanto o mês está aberto, **ignora a linha recorrente do Tiny** (placeholder) e usa a estimativa própria.
 
 **Success Criteria** (o que precisa ser VERDADE):
+
 1. Tabela `dre_month_close` (PK org-first: `organization_id`, `competence_month`) criada com RLS org-first; escrita restrita a owner; reversível (reabrir mês). Migration aplicada em ckcdevcxgvueywivefgx via MCP; advisors sem erro novo.
 2. RPC de resultado por competência ganha o **shift M+1** no bloco de impostos: DRE do mês M usa guias com `competence_date = M+1`. Reconciliação de junho/2026 ao centavo (imposto real = guia jul, não a de jun).
 3. Regime derivado do fechamento: mês SEM registro em `dre_month_close` → previsão (CMV médio + imposto estimado); mês fechado → apuração (CMV cheio + guias reais). Bases nunca misturadas (teste que prova que médio+guia-real não coexistem).
@@ -875,10 +877,11 @@ Plans:
 
 **Design (refinado com <db_reality> — M+1 vive no frontend, RPC grande INTOCADA):** o shift M+1 NÃO modifica `get_dre_operational_by_competence` (zero regressão nos outros 7 blocos + DFC). Em vez disso o hook chama a RPC já-viva `get_imposto_guia_by_competence(org, M+1)` no modo apuração. Backend desta fase = só a tabela nova `dre_month_close`. `get_cost_waterfall.cmv_cheio` já existe em prod — só falta enfiar no hook.
 
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 Plans:
-- [ ] 94-01-PLAN.md — Backend: tabela `dre_month_close` (RLS org-first owner-only, reversível por DELETE) + apply MCP + prova anti-IDOR (wave 1, autonomous:false, SC1/SC5/SC6)
+
+- [x] 94-01-PLAN.md — Backend: tabela `dre_month_close` (RLS org-first owner-only, reversível por DELETE) + apply MCP + prova anti-IDOR (wave 1, autonomous:false, SC1/SC5/SC6)
 - [ ] 94-02-PLAN.md — Frontend data + lógica pura: `cmv_cheio` no waterfall + `useDreMonthClose` + `useImpostoGuiaReal` (shift M+1) + `dreRegime.ts` (nunca misturar bases; previsão byte-idêntica; reconciliação junho) (wave 2, SC2/SC3/SC6)
 - [ ] 94-03-PLAN.md — Frontend UI: selo do regime + botão owner-only marcar/reabrir + empurrãozinho 🟢 + human-verify junho/2026 (wave 3, autonomous:false, SC4/SC6)
 
