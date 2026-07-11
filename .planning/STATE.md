@@ -6,15 +6,15 @@ current_phase: 84
 current_phase_name: DRE por Competência de Venda (método Tiny
 status: executing
 stopped_at: "Phase 93 (enviar anexo) EXECUTADA+VERIFICADA + FIX 93-03 (E2E Wesley): 3 bugs do upload real corrigidos (sanitize nome, ML file_name vs filename, multipart Blob) — EF upload v4 em prod. Upload E2E OK."
-last_updated: "2026-07-10T14:21:09.682Z"
+last_updated: "2026-07-11T12:16:18.572Z"
 last_activity: 2026-07-03
 last_activity_desc: Phase 84 execution started
 progress:
-  total_phases: 39
+  total_phases: 40
   completed_phases: 21
   total_plans: 78
   completed_plans: 71
-  percent: 54
+  percent: 53
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
@@ -395,6 +395,7 @@ Dashboard atual mostra:
 - Phase 87 added: DRE — Agregação de Resultado por Competência
 - Phase 88 added: DRE — Frontend Resultado Completo
 - Phase 90 added: Atendimento de reclamações: triagem + mensagens rápidas (spec em docs/superpowers/specs/2026-07-07-atendimento-reclamacoes-design.md)
+- Phase 94 added: DRE Regime Previsão↔Apuração (imposto real + CMV cheio no fechamento manual do mês)
 
 ## Deferred Items
 

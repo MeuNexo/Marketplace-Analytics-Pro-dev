@@ -850,6 +850,34 @@ Plans:
 - [x] 92-01-PLAN.md — Backend: EF nova ml-claim-attachment (proxy base64, anti-IDOR) + ml-claim-detail normaliza attachments + deploy/smoke via MCP (orquestrador)
 - [x] 92-02-PLAN.md — Frontend: lib pura (normalização + imagem-vs-arquivo) + hook useClaimAttachment + componente ClaimAttachment + fiação no ClaimDetailSheet
 
+### Phase 94: DRE Regime Previsão↔Apuração (imposto real + CMV cheio no fechamento manual do mês)
+
+**Goal:** O card "DRE do Mês" em `/vendas` passa a ter DOIS regimes por mês de venda, com a virada disparada por um clique manual do owner ("marcar mês como apurado"). **PREVISÃO** (default, mês em aberto) = CMV médio (`orders.custo_unit` → `get_cost_waterfall.cmv`) + imposto estimado (~20%, `orders.tax_amount`). **APURAÇÃO** (mês fechado pelo owner) = CMV cheio (`orders.custo_unit_cheio` → `cmv_cheio`) + guias reais de imposto (bloco `impostos_venda`), parando de estimar. As duas bases nunca se misturam (senão o crédito de ICMS/PIS/COFINS conta 2×). O lojista deixa de ver um número que oscila R$40-48k conforme a régua: enquanto o mês está aberto vê a previsão honesta; quando a contabilidade entrega as guias e ele fecha, vê o resultado real.
+
+**Contexto/decisões (já discutidas e validadas com Wesley — NÃO re-discutir):** `/root/.claude/projects/-root/memory/project_garment_dre_ponto_verdade.md` (seções DESENHO FECHADO + VIABILIDADE CONFIRMADA NO BANCO) e `feedback_garment_dre_imposto_apuracao.md` (as DUAS DREs A/B). Supabase proj **ckcdevcxgvueywivefgx** (NÃO o ID do CLAUDE.md), org Pé Vermeio `7f615df7-7bac-45e5-8a93-827fb9ddeec7`. Deploy de RPC/EF via MCP (sem token CLI).
+
+**Regras travadas:**
+1. **Mês inteiro ou nada** (Opção A): só apura quando ICMS+PIS+COFINS do mês estiverem reais. O imposto estimado (`tax_amount`) é um número borrado ~20% por produto (não quebrado por tipo), então não dá pra substituir só um imposto.
+2. **Casamento M+1:** imposto do mês de venda M = guia com `competence_date = M+1` (a apuração paga este mês é sobre as vendas do mês passado). Hoje `get_dre_operational_by_competence` casa pela competência crua → **precisa do shift**.
+3. **CMV cheio×médio é consequência do regime**, nunca um toggle separado.
+4. **Gatilho = clique manual**, persistido em nova tabela `dre_month_close` (RLS org-first, reversível). Sinal de data (vencimento≠21) / `status='paid'` / valor≠recorrente é só EMPURRÃOZINHO visual ("parece pronto pra fechar"), NUNCA gatilho automático — o dado real é ambíguo demais (vários apurados reais ficam no dia 21).
+5. Enquanto o mês está aberto, **ignora a linha recorrente do Tiny** (placeholder) e usa a estimativa própria.
+
+**Success Criteria** (o que precisa ser VERDADE):
+1. Tabela `dre_month_close` (PK org-first: `organization_id`, `competence_month`) criada com RLS org-first; escrita restrita a owner; reversível (reabrir mês). Migration aplicada em ckcdevcxgvueywivefgx via MCP; advisors sem erro novo.
+2. RPC de resultado por competência ganha o **shift M+1** no bloco de impostos: DRE do mês M usa guias com `competence_date = M+1`. Reconciliação de junho/2026 ao centavo (imposto real = guia jul, não a de jun).
+3. Regime derivado do fechamento: mês SEM registro em `dre_month_close` → previsão (CMV médio + imposto estimado); mês fechado → apuração (CMV cheio + guias reais). Bases nunca misturadas (teste que prova que médio+guia-real não coexistem).
+4. Card `/vendas` mostra selo do regime ("Previsão" / "Apurado — baseado nas guias de DD/MM") + botão owner-only "marcar mês como apurado" / "reabrir"; empurrãozinho 🟢 quando as 3 guias saíram do placeholder.
+5. Anti-IDOR provado (SECURITY INVOKER / policy is_org_member): JWT de uma org não fecha nem lê o fechamento de outra.
+6. Sem regressão na Phase 88 (previsão continua idêntica ao validado por Wesley em 07-10) nem no `get_cashflow`/DFC.
+
+**Depends on:** Phase 87 (RPC `get_dre_operational_by_competence`) + Phase 88 (card "DRE do Mês" em `/vendas`, em prod)
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 94 to break down)
+
 ---
 
 ### Phase 93: Enviar anexo na resposta da reclamação (upload)
