@@ -3,8 +3,10 @@
 // Modelo futuro-only (2026-06-18):
 //   - 3 cards: Caixa Hoje, Projeção Futura, Capacidade de Compra
 //   - Gráfico: Como meu dinheiro vai evoluir? (120 dias à frente)
-//   - Botão "Ajustar saldo de hoje" (owner only) → Dialog c/ upsert financial_settings
-// CASH-04
+//   - Botão "Ajustar saldo de hoje" (owner only) → Dialog c/ RPC set_financial_balance
+//     (grava initial_balance + balance_anchor_date atomicamente — Phase 95)
+//   - Faixa de saúde dos dados (CashflowHealthBanner) acima das Tabs
+// CASH-04 / CASH-95-05 / CASH-95-06
 // ============================================================================
 
 import { useMemo, useState } from "react";
@@ -27,6 +29,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { CashFlowChart } from "@/components/financial/CashFlowChart";
+import { CashflowHealthBanner } from "@/components/financial/CashflowHealthBanner";
 import { TreasuryPanel } from "@/components/financial/TreasuryPanel";
 import { CostCompositionChart } from "@/components/financial/CostCompositionChart";
 import { SupplierExposureChart } from "@/components/financial/SupplierExposureChart";
@@ -92,12 +95,10 @@ function AdjustBalanceDialog({
 
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from("financial_settings")
-        .upsert(
-          { organization_id: orgId, initial_balance: parsed },
-          { onConflict: "organization_id" }
-        );
+      const { error } = await supabase.rpc("set_financial_balance", {
+        p_org_id: orgId,
+        p_amount: parsed,
+      });
 
       if (error) throw error;
 
@@ -106,6 +107,8 @@ function AdjustBalanceDialog({
       await queryClient.invalidateQueries({ queryKey: ["cashflow"] });
       await queryClient.invalidateQueries({ queryKey: ["today_balance"] });
       await queryClient.invalidateQueries({ queryKey: ["projected_balance"] });
+      // Banner de saúde reavalia a âncora imediatamente após reancorar (Phase 95)
+      await queryClient.invalidateQueries({ queryKey: ["cashflow", "data_health", orgId] });
 
       toast.success("Saldo de hoje atualizado com sucesso.");
       onOpenChange(false);
@@ -219,6 +222,9 @@ export default function MLFluxoCaixa() {
       <div className="sticky -top-4 md:-top-6 lg:-top-8 z-20 -mx-4 md:-mx-6 lg:-mx-8 -mt-4 md:-mt-6 lg:-mt-8 px-4 md:px-6 lg:px-8 pb-4 pt-4 bg-background/95 backdrop-blur-sm border-b border-border/40">
         <MLPageHeader title="Fluxo de Caixa" />
       </div>
+
+      {/* ── Faixa de saúde dos dados — visível em Caixa Real e Simulador ── */}
+      <CashflowHealthBanner />
 
       {/* ── Tabs: Caixa Real | Simulador ── */}
       <Tabs defaultValue="real" className="space-y-6">
