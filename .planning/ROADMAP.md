@@ -859,9 +859,9 @@ Plans:
 
 Plans:
 
-- [ ] 95-01-PLAN.md — Backend: coluna balance_anchor_date + get_rolled_opening_balance + 3 RPCs consumidoras + set_financial_balance + get_cashflow_data_health (wave 1, autoria das 4 migrations)
-- [ ] 95-02-PLAN.md — Frontend: hook useCashflowDataHealth (TDD) + CashflowHealthBanner + wire MLFluxoCaixa (banner + set_financial_balance) (wave 2, depends 95-01)
-- [ ] 95-03-PLAN.md — Checkpoint MCP: aplicar migrations ao vivo + provar não-regressão/roll/health/anti-IDOR + ok visual (wave 3, depends 95-01+95-02)
+- [x] 95-01-PLAN.md — Backend: coluna balance_anchor_date + get_rolled_opening_balance + 3 RPCs consumidoras + set_financial_balance + get_cashflow_data_health (wave 1, autoria das 4 migrations). **Feito (48c56c40/2f63a975/4d335548).**
+- [x] 95-02-PLAN.md — Frontend: hook useCashflowDataHealth (TDD) + CashflowHealthBanner + wire MLFluxoCaixa (banner + set_financial_balance) (wave 2, depends 95-01). **Feito (c4bdb0a2/48e94716/05ad302b); 542 testes verdes.**
+- [~] 95-03-PLAN.md — Checkpoint MCP: aplicar migrations ao vivo + provar não-regressão/roll/health/anti-IDOR + ok visual (wave 3, depends 95-01+95-02). **Migrations APLICADAS em prod + provas SQL PASS (f54ebf0b). PENDENTE: ok visual do Wesley + reancorar saldo real PV + "approved".**
 
 ---
 
