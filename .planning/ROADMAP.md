@@ -850,6 +850,19 @@ Plans:
 - [x] 92-01-PLAN.md — Backend: EF nova ml-claim-attachment (proxy base64, anti-IDOR) + ml-claim-detail normaliza attachments + deploy/smoke via MCP (orquestrador)
 - [x] 92-02-PLAN.md — Frontend: lib pura (normalização + imagem-vs-arquivo) + hook useClaimAttachment + componente ClaimAttachment + fiação no ClaimDetailSheet
 
+### Phase 95: Fluxo de Caixa Confiável — saldo âncora + roll-forward e faixa de saúde dos dados (ver .planning/specs/2026-07-13-fluxo-caixa-confiavel.md)
+
+**Goal:** Tornar a página /fluxo-de-caixa confiável eliminando os dois furos silenciosos: (A) saldo de abertura que envelhece — trocar o campo manual por âncora + roll-forward (saldo rola sozinho da última âncora usando entradas MP − contas pagas), e (B) dados que congelam sem aviso — faixa de saúde no topo que alerta quando Tiny >6h, MP >6h ou âncora >7d. Design em .planning/specs/2026-07-13-fluxo-caixa-confiavel.md.
+**Requirements**: get_rolled_opening_balance() consumida por get_cashflow/get_projected_balance_summary/get_treasury_panel; coluna balance_anchor_date; RPC get_cashflow_data_health(); faixa em MLFluxoCaixa.tsx. RPCs SECURITY INVOKER anti-IDOR. TDD (não-regressão: âncora=hoje → curva idêntica à atual).
+**Depends on:** none (independente da Phase 94/DRE — toca apenas fluxo de caixa; nasce de origin/main = prod)
+**Plans:** 3 plans
+
+Plans:
+
+- [ ] 95-01-PLAN.md — Backend: coluna balance_anchor_date + get_rolled_opening_balance + 3 RPCs consumidoras + set_financial_balance + get_cashflow_data_health (wave 1, autoria das 4 migrations)
+- [ ] 95-02-PLAN.md — Frontend: hook useCashflowDataHealth (TDD) + CashflowHealthBanner + wire MLFluxoCaixa (banner + set_financial_balance) (wave 2, depends 95-01)
+- [ ] 95-03-PLAN.md — Checkpoint MCP: aplicar migrations ao vivo + provar não-regressão/roll/health/anti-IDOR + ok visual (wave 3, depends 95-01+95-02)
+
 ---
 
 ### Phase 93: Enviar anexo na resposta da reclamação (upload)
