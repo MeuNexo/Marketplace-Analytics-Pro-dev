@@ -62,9 +62,9 @@ describe("simulateCashflow", () => {
 
   it("criticalDate (1º cruzamento da margem) ≠ valeDate (ponto mais fundo)", () => {
     const base = makeBase();
-    // gastoExtra=3000/dia: cenario = SMA[i] - 3000*(i+1).
-    //   idx3 (22/06)=6000 → 1º dia < margem 10000 (criticalDate)
-    //   idx6 (25/06)=-2000 → menor saldo (valeDate), bem depois do 1º cruzamento.
+    // gastoExtra=3000/dia: cenario = SMA[i] - 3000*i (hoje=i0 não desconta).
+    //   idx3 (22/06)=9000 → 1º dia < margem 10000 (criticalDate)
+    //   idx6 (25/06)=1000 → menor saldo (valeDate), depois do 1º cruzamento.
     const { verdict } = simulateCashflow(base, params({ gastoExtra: 3000 }));
 
     expect(verdict.status).toBe("risco");
@@ -74,7 +74,7 @@ describe("simulateCashflow", () => {
   });
 
   it("gastoExtra empurra menorSaldo abaixo da margem → status risco + necessidadeReceitaDia > 0", () => {
-    // gastoExtra=2000/dia. No vale (idx 4, diasDecorridos=5): 15000 - 2000*5 = 5000 < margem 10000.
+    // gastoExtra=2000/dia (hoje=i0 não desconta). No vale (idx 4): 15000 - 2000*4 = 7000 < margem 10000.
     const base = makeBase();
     const { verdict } = simulateCashflow(base, params({ gastoExtra: 2000 }));
 
@@ -93,6 +93,17 @@ describe("simulateCashflow", () => {
     expect(verdict.folgaGastoDia).toBeGreaterThan(0);
     expect(verdict.necessidadeReceitaDia).toBe(0);
     expect(verdict.ativa).toBe(true);
+  });
+
+  it("média diária NÃO move o dia 0 (hoje = âncora absoluta); começa a valer amanhã", () => {
+    const base = makeBase();
+    const { series } = simulateCashflow(base, params({ gastoExtra: 1000 }));
+    // hoje (i=0): 0 dias de extra → idêntico ao baseline (não desce)
+    expect(series[0].cenario).toBe(SMA[0]);
+    // amanhã (i=1): 1 dia de extra
+    expect(series[1].cenario).toBe(SMA[1] - 1000);
+    // depois de amanhã (i=2): 2 dias
+    expect(series[2].cenario).toBe(SMA[2] - 2000);
   });
 
   it("evento de saída pontual rebaixa o saldo a partir da data certa (não antes)", () => {

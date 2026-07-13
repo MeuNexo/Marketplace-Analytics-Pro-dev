@@ -82,8 +82,13 @@ export function simulateCashflow(
   }
 
   // Série simulada ponto a ponto (spec §5).
+  // diasDecorridos = i (NÃO i+1): o dia 0 (hoje) é o saldo âncora ABSOLUTO — a
+  // média extra/dia só passa a valer de AMANHÃ em diante (i>=1). Alinha o
+  // simulador à decisão "hoje = exatamente meu número" (Wesley 2026-07-13); antes
+  // aplicava 1 dia de extra já em cima de hoje. Eventos pontuais continuam valendo
+  // na data exata escolhida (inclusive hoje, se o usuário marcar).
   const series: SimPoint[] = base.map((ponto, i) => {
-    const diasDecorridos = i + 1;
+    const diasDecorridos = i;
     const deltaMediaAcum = (recebExtra - gastoExtra) * diasDecorridos;
     // Datas yyyy-MM-dd: comparação lexicográfica == cronológica.
     const eventosAcum = eventos.reduce((acc, ev) => {

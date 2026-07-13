@@ -159,8 +159,6 @@ export function CashFlowChart({
     );
   }
 
-  const hasNegative = data.some((p) => p.isNegative);
-
   // Intervalo de tick para não sobrecarregar o eixo X
   const tickInterval =
     data.length <= 30 ? 2 : data.length <= 60 ? 7 : Math.floor(data.length / 10);
@@ -178,6 +176,14 @@ export function CashFlowChart({
         });
       })()
     : data;
+
+  // Alerta de saldo negativo: quando há simulação ativa, o risco segue a LINHA
+  // SIMULADA (azul) — não o confirmado do baseline (senão o alerta fica preso no
+  // cenário real e ignora a simulação, mesmo que a curva azul nunca fique negativa).
+  // Sem simulação, mantém o comportamento atual (linha confirmada verde).
+  const hasNegative = hasSimulated
+    ? chartData.some((p) => typeof p.cenario === "number" && p.cenario < 0)
+    : data.some((p) => p.isNegative);
 
   return (
     <Card>
