@@ -293,9 +293,12 @@ const lastDayOfMonth = (periodMonth: string): string => {
 };
 
 /**
- * Soma ml_billing_daily por tipo no range 01–fim do mês-calendário (competência
- * = data de lançamento). É a fonte exata do DRE: tarifas dos dias 01–31 do mês,
- * sem o viés do ciclo de fechamento da fatura (06→05). Retorna null sem dados.
+ * Soma ml_billing_daily por tipo no range 01–fim do mês-calendário, filtrando
+ * por competence_date (mês da VENDA que gerou a cobrança — não o mês em que o
+ * ML cobrou). É a fonte exata do DRE: tarifas cuja venda caiu nos dias 01–31
+ * do mês, sem o viés do ciclo de fechamento da fatura (06→05) nem do atraso
+ * entre venda e cobrança. `coverageTo` continua pela charge_date (indicador de
+ * "até quando sincronizamos", não de competência). Retorna null sem dados.
  */
 export function useMLBillingDaily(periodMonth: string) {
   const { resolvedMLUserIds } = useMLStore();
@@ -303,24 +306,30 @@ export function useMLBillingDaily(periodMonth: string) {
   const orgId = currentOrg?.id ?? null;
 
   return useQuery<DailyBillingResult | null>({
-    queryKey: ["ml", "billing-daily", orgId, resolvedMLUserIds, periodMonth],
+    queryKey: ["ml", "billing-daily-v2", orgId, resolvedMLUserIds, periodMonth],
     queryFn: async (): Promise<DailyBillingResult | null> => {
       if (!orgId || resolvedMLUserIds.length === 0 || !periodMonth) return null;
       const from = `${periodMonth}-01`;
       const to = lastDayOfMonth(periodMonth);
 
       // Pagina defensivamente (>1000 linhas em multi-loja) — PostgREST trunca em 1000
-      type Row = { charge_type: string; charge_label: string; amount: number; charge_date: string };
+      type Row = {
+        charge_type: string;
+        charge_label: string;
+        amount: number;
+        charge_date: string;
+        competence_date: string;
+      };
       const rows: Row[] = [];
       const PAGE = 1000;
       for (let offset = 0; ; offset += PAGE) {
         const { data, error } = await supabase
           .from("ml_billing_daily")
-          .select("charge_type, charge_label, amount, charge_date")
+          .select("charge_type, charge_label, amount, charge_date, competence_date")
           .eq("organization_id", orgId)
           .in("ml_user_id", resolvedMLUserIds)
-          .gte("charge_date", from)
-          .lte("charge_date", to)
+          .gte("competence_date", from)
+          .lte("competence_date", to)
           .range(offset, offset + PAGE - 1);
         if (error) throw error;
         if (!data || data.length === 0) break;
