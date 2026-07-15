@@ -5,15 +5,15 @@ milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem
 current_phase: 94
 current_phase_name: dre-regime-previsao-apuracao-imposto-real-cmv-cheio-no-fecha
 status: verifying
-stopped_at: Completed 96-01-PLAN.md (C2/C5 blacklist parcelamento + C4 competence_date)
-last_updated: "2026-07-15T22:18:36.474Z"
+stopped_at: Completed 96-04-PLAN.md
+last_updated: "2026-07-15T22:23:14.158Z"
 last_activity: 2026-07-11
 last_activity_desc: Phase 94 execution started
 progress:
   total_phases: 41
   completed_phases: 22
   total_plans: 90
-  completed_plans: 76
+  completed_plans: 77
   percent: 54
 ---
 
@@ -283,6 +283,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | Phase 94 P03 | 15min | 2 tasks | 2 files |
 | Phase 96 P02 | 12min | 2 tasks | 5 files |
 | Phase 96 P01 | 20min | 2 tasks | 2 files |
+| Phase 96 P04 | 35min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -368,6 +369,10 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 - [Phase 96]: canApurarImposto nunca lê o campo total — status='paid' é o único sinal confiável (R$0,01 pago = crédito de Lucro Real, não placeholder)
 - [Phase 96]: Grupo parcelamento vira excluded:true em vez de dropado — preserva linha auditável na tela (96-05 cuida da renderização)
 - [Phase 96]: coverageTo de useMLBillingDaily continua por charge_date (sync), competence_date só no filtro de range (C4)
+- [Phase 96]: 96-04: partially_refunded entra em get_cancelled_revenue junto com cancelled (decisao Wesley: reembolso = cancelamento). Receita bruta maio = 261.666,41; liquida inalterada em 247.216,12
+- [Phase 96]: 96-04: get_cost_waterfall.paid_revenue NAO alterada (6 consumidores) — receita cancelada vive em RPC nova isolada; composicao da bruta acontece no card (96-05)
+- [Phase 96]: 96-04: dre_bloco_for_category e copia literal do CASE da RPC 87 (que fica intocada); equivalencia provada em prod = 0 divergencias sobre todas as categorias vivas
+- [Phase 96]: 96-04: hooks nunca devolvem null — mes sem cancelamento (0) e competencia sem nao-classificado ([]) sao estados validos, nao ausencia de dado
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -432,8 +437,8 @@ Dashboard atual mostra:
 
 **Resume file:** 
 
-Last session: 2026-07-15T22:18:36.452Z
-Stopped at: Completed 96-01-PLAN.md (C2/C5 blacklist parcelamento + C4 competence_date)
+None
+Stopped at: Completed 96-04-PLAN.md
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
