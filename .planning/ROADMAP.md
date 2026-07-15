@@ -920,12 +920,12 @@ Plans:
 5. Previsão (mês aberto) permanece byte-a-byte igual à atual — zero regressão da Phase 88/94.
 6. INSS continua no bloco Pessoal; nenhum valor migra para a linha de impostos.
 
-**Plans:** 8 plans
+**Plans:** 2/8 plans executed
 
 Plans:
 
-- [ ] 96-01-PLAN.md — [C2/C5] blacklist do parcelamento (CFONPN+BFONPN) em `groupBillingCharges` + [C4] `useMLBillingDaily` por `competence_date` (wave 1, TDD, SC2)
-- [ ] 96-02-PLAN.md — [C7] `dreCloseGate.ts` puro: `canApurarImposto` (status, nunca o valor) + `resolveCloseGate` + [C11] teste de regressão do INSS (wave 1, TDD, SC4/SC6)
+- [x] 96-01-PLAN.md — [C2/C5] blacklist do parcelamento (CFONPN+BFONPN) em `groupBillingCharges` + [C4] `useMLBillingDaily` por `competence_date` (wave 1, TDD, SC2)
+- [x] 96-02-PLAN.md — [C7] `dreCloseGate.ts` puro: `canApurarImposto` (status, nunca o valor) + `resolveCloseGate` + [C11] teste de regressão do INSS (wave 1, TDD, SC4/SC6)
 - [ ] 96-04-PLAN.md — [C1/C8-backend] `get_cancelled_revenue` (cancelamento + reembolso = 14.450,29) + `dre_bloco_for_category` + `get_dre_nao_classificado_items` + 2 hooks (wave 1, autonomous:false, aditivo, SC1)
 - [ ] 96-03-PLAN.md — [C6-backend] `get_cost_waterfall` com `cmv_cheio` puro (DROP+CREATE) + RPC `get_cmv_cheio_gaps` + `useCmvCheioGate` (wave 2, autonomous:false, SC1/SC3/SC5)
 - [ ] 96-05-PLAN.md — [C1-frontend] receita bruta 261.666,41 + linha Cancelamentos 14.450,29 + `computeMargemContribuicao` (mata as 3 duplicações) (wave 2, TDD, SC1/SC2)
