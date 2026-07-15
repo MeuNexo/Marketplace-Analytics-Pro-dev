@@ -57,6 +57,9 @@ import { computeMargemContribuicao } from "@/lib/dreMargem";
 import { resolveDreRegime, shouldNudgeClose, monthPlusOne } from "@/lib/dreRegime";
 import { useDreMonthClose } from "@/hooks/useDreMonthClose";
 import { useImpostoGuiaReal, useImpostoGuiaNudge } from "@/hooks/useImpostoGuiaReal";
+import { useCmvCheioGate } from "@/hooks/useCmvCheioGate";
+import { useNaoClassificadoItems } from "@/hooks/useNaoClassificadoItems";
+import { resolveCloseGate } from "@/lib/dreCloseGate";
 import { toast } from "sonner";
 
 const currencyFmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -288,6 +291,31 @@ export default function MercadoLivre() {
   const guiaReal = useImpostoGuiaReal(dreSaleMonth);
   const guiaNudge = useImpostoGuiaNudge(dreSaleMonth);
 
+  // [C6] Gate de CMV cheio — MESMO eixo de mês do dreWaterfall (billingMonthIsCurrentMonth
+  // decide monthlyFrom/To vs billingMonthFrom/To). Eixo diferente = o gate olha
+  // um mês e o CMV outro.
+  const cmvGate = useCmvCheioGate(
+    billingMonthIsCurrentMonth ? monthlyFrom : billingMonthFrom,
+    billingMonthIsCurrentMonth ? monthlyTo : billingMonthTo,
+  );
+
+  // [C6/C7] Gate combinado de fechamento. resolveCloseGate trata gaps === null
+  // (useQuery ainda carregando) como fail-closed — por isso `cmvGate.data ?? null`,
+  // nunca `cmvGate.data` cru (que seria `undefined` durante o loading e
+  // desarmaria o fail-closed, já que `undefined !== null`).
+  // O gate SÓ vale para FECHAR: um mês já fechado (isClosed) continua
+  // reabrível mesmo com gate bloqueado, senão um mês fechado com dado
+  // faltando fica preso para sempre (T-96-19).
+  const closeGate = resolveCloseGate({
+    gaps: cmvGate.data ?? null,
+    guia: guiaReal.data ?? null,
+  });
+  const closeBlocked = !monthClose.isClosed && closeGate.blocked;
+
+  // [C8] Lançamentos do bloco "Não classificado" da competência de VENDA
+  // (dreSaleMonth) — não o M+1 da guia (M+1 é exclusivo do imposto).
+  const naoClassificadoItemsQuery = useNaoClassificadoItems(dreSaleMonth);
+
   // CMV e impostos do mês — CONSEQUÊNCIA do regime resolvido acima, nunca um
   // toggle solto (nunca-misturar). Enquanto o mês está aberto (isClosed=false)
   // reproduz byte-a-byte a expressão legada (SC6 — zero regressão Phase 88).
@@ -318,6 +346,15 @@ export default function MercadoLivre() {
   }, [dreSaleMonth]);
 
   const handleCloseDreMonth = useCallback(async () => {
+    // [C6/C7] Defesa em profundidade: o `disabled` do botão é UX (MLCostCard);
+    // esta é a segunda barreira antes de chamar monthClose.close(). A RLS de
+    // dre_month_close só checa owner — não conhece o gate (T-96-18, aceito).
+    if (closeBlocked) {
+      toast.error("Não é possível marcar o mês como apurado", {
+        description: closeGate.reasons.join(" · "),
+      });
+      return;
+    }
     try {
       await monthClose.close();
     } catch (err) {
@@ -325,7 +362,7 @@ export default function MercadoLivre() {
         description: err instanceof Error ? err.message : undefined,
       });
     }
-  }, [monthClose]);
+  }, [monthClose, closeBlocked, closeGate.reasons]);
 
   const handleReopenDreMonth = useCallback(async () => {
     try {
@@ -911,6 +948,10 @@ export default function MercadoLivre() {
                   onClose={handleCloseDreMonth}
                   onReopen={handleReopenDreMonth}
                   closeBusy={monthClose.isMutating}
+                  closeBlocked={closeBlocked}
+                  closeBlockReasons={closeGate.reasons}
+                  cmvGaps={cmvGate.data ?? []}
+                  naoClassificadoItems={naoClassificadoItemsQuery.data ?? []}
                 />
                 <MLTopProducts products={effectiveProducts} marginMap={marginMap} />
               </div>
