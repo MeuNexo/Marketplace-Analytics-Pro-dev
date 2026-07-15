@@ -158,9 +158,23 @@ async function runSync(mlUserId: string, userId: string | null): Promise<void> {
         const nome = String(p?.nome || "").trim();
         if (!id || !sku) continue;
         const precos = p?.precos ?? {};
-        const cost = Number(precos.precoCustoMedio ?? 0) || Number(precos.precoCusto ?? 0);
+        // Fase 96-07: os dois preços do Tiny são lidos SEPARADAMENTE (nunca
+        // médio × fator) — precoCustoMedio → cost (médio), precoCusto → cost_full
+        // (cheio). O fallback de `cost` é mantido intacto para não regredir os
+        // produtos onde o Tiny só devolve um dos dois campos.
+        const costMedio = Number(precos.precoCustoMedio ?? 0);
+        const costCheio = Number(precos.precoCusto ?? 0);
+        const cost = costMedio || costCheio;
         if (cost > 0) {
-          pageRows.push({ user_id: scopeUserId, organization_id: orgId, item_id: `TINY_${sku}`, seller_sku: sku, cost, updated_at: syncAt });
+          pageRows.push({
+            user_id: scopeUserId,
+            organization_id: orgId,
+            item_id: `TINY_${sku}`,
+            seller_sku: sku,
+            cost,
+            cost_full: costCheio > 0 ? costCheio : null,
+            updated_at: syncAt,
+          });
         } else {
           withoutPrice.push({ id, sku, nome, cost: 0 });
         }
@@ -195,10 +209,20 @@ async function runSync(mlUserId: string, userId: string | null): Promise<void> {
           const rawDetail = await tinyGet(tinyToken, `/produtos/${prod.id}`);
           const detail = rawDetail?.produto ?? rawDetail;
           const precos = detail?.precos ?? {};
-          const cost = Number(precos.precoCustoMedio ?? 0) || Number(precos.precoCusto ?? 0);
+          const costMedio = Number(precos.precoCustoMedio ?? 0);
+          const costCheio = Number(precos.precoCusto ?? 0);
+          const cost = costMedio || costCheio;
           const sku  = String(detail?.codigo || detail?.sku || prod.sku || "").trim();
           if (sku && cost > 0) {
-            rows.push({ user_id: scopeUserId, organization_id: orgId, item_id: `TINY_${sku}`, seller_sku: sku, cost, updated_at: syncAt });
+            rows.push({
+              user_id: scopeUserId,
+              organization_id: orgId,
+              item_id: `TINY_${sku}`,
+              seller_sku: sku,
+              cost,
+              cost_full: costCheio > 0 ? costCheio : null,
+              updated_at: syncAt,
+            });
           }
         } catch (_err) { errors++; }
         await sleep(RATE_MS);
