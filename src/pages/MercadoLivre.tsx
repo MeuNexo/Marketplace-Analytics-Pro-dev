@@ -51,7 +51,9 @@ import { useConsultorInsights } from "@/hooks/useConsultorInsights";
 import { MLMcoStrip } from "@/components/mercadolivre/MLMcoStrip";
 import { computeMco } from "@/lib/mco";
 import { useDreOperational } from "@/hooks/useDreOperational";
+import { useCancelledRevenue } from "@/hooks/useCancelledRevenue";
 import { buildDreCascade } from "@/lib/dreCascade";
+import { computeMargemContribuicao } from "@/lib/dreMargem";
 import { resolveDreRegime, shouldNudgeClose, monthPlusOne } from "@/lib/dreRegime";
 import { useDreMonthClose } from "@/hooks/useDreMonthClose";
 import { useImpostoGuiaReal, useImpostoGuiaNudge } from "@/hooks/useImpostoGuiaReal";
@@ -248,6 +250,15 @@ export default function MercadoLivre() {
   // receita R$0 com lucro negativo ao navegar entre meses
   const dreWaterfallLoading = filterMonthWaterfallLoading;
 
+  // [C1] Receita cancelada — MESMO eixo de mês do dreWaterfall (mês corrente →
+  // monthlyFrom/monthlyTo; mês navegado → billingMonthFrom/billingMonthTo).
+  // Um eixo diferente faz bruto e líquido discordarem.
+  const { data: cancelledRevenueData } = useCancelledRevenue(
+    billingMonthIsCurrentMonth ? monthlyFrom : billingMonthFrom,
+    billingMonthIsCurrentMonth ? monthlyTo : billingMonthTo,
+  );
+  const cancelamentosVendas = cancelledRevenueData?.cancelledRevenue ?? 0;
+
   // Grupos de tarifas — fonte primária daily (mês-calendário), senão fatura mensal
   const { groups: gruposTarifas, totalTarifas } = useMemo(
     () => groupBillingCharges(dailyBilling?.charges ?? billingData?.charges ?? []),
@@ -264,6 +275,10 @@ export default function MercadoLivre() {
 
   // Receita do mês do filtro
   const receitaMes = dreWaterfall?.paid_revenue ?? 0;
+  // [C1] Receita bruta = líquida + cancelada — exclusiva do card do DRE. Os
+  // blocos de MCO e meta de lucro deste arquivo preservam a receita paga
+  // (líquida), inalterados por esta phase.
+  const receitaBrutaMes = receitaMes + cancelamentosVendas;
 
   // ── Regime PREVISÃO/APURAÇÃO (Phase 94) ──
   // Mesmo eixo de mês do dreWaterfall (mês corrente → monthlyFrom; navegado →
@@ -333,37 +348,49 @@ export default function MercadoLivre() {
   const dreFonte: "competencia" | "billing" | "estimado" =
     dailyBilling ? "competencia" : billingData ? "billing" : "estimado";
 
-  // Quando não há billing real (daily nem mensal), grupos estimados de orders
-  const gruposTarifasEfetivos = useMemo(() => {
-    if (dailyBilling || billingData) return gruposTarifas;
+  // Grupos + total de tarifas — memo ÚNICO (Phase 96 Plan 05: os dois memos
+  // separados que existiam antes tinham `totalTarifasEfetivo` RE-SOMANDO o
+  // array de grupos, descartando a exclusão do parcelamento (`excluded`) que
+  // o hook já aplica em `totalTarifas`. Com billing real, o total que chega
+  // à tela e à fórmula é o do hook — nunca uma re-soma local.
+  const { groups: gruposTarifasEfetivos, totalTarifas: totalTarifasEfetivo } = useMemo(() => {
+    if (dailyBilling || billingData) return { groups: gruposTarifas, totalTarifas };
     // fallback: grupos estimados de orders (comissão=total_comissao, frete, ads)
+    // — parcelamento estimado é sempre 0, então a exclusão é inócua aqui, mas
+    // o shape do retorno precisa ser o mesmo dos dois ramos.
     const comissao = dreWaterfall?.total_comissao ?? 0;
     const frete    = dreWaterfall?.total_frete    ?? 0;
     const ads      = adsSpendMes;
-    return [
-      { key: "tarifas_venda", label: "Tarifas de venda",          amount: comissao },
-      { key: "envios_ml",     label: "Envios Mercado Livre",       amount: frete    },
-      { key: "parcelamento",  label: "Taxas de parcelamento",      amount: 0        },
-      { key: "publicidade",   label: "Campanhas de publicidade",   amount: ads      },
-      { key: "tarifas_full",  label: "Tarifas Full",               amount: 0        },
-      { key: "difal",         label: "Impostos cobrados pelo ML (DIFAL)", amount: 0 },
-      { key: "afiliados_outras", label: "Outras tarifas",          amount: 0        },
+    const groups = [
+      { key: "tarifas_venda", label: "Tarifas de venda",          amount: comissao, excluded: false },
+      { key: "envios_ml",     label: "Envios Mercado Livre",       amount: frete,    excluded: false },
+      { key: "parcelamento",  label: "Taxas de parcelamento",      amount: 0,        excluded: true  },
+      { key: "publicidade",   label: "Campanhas de publicidade",   amount: ads,      excluded: false },
+      { key: "tarifas_full",  label: "Tarifas Full",               amount: 0,        excluded: false },
+      { key: "difal",         label: "Impostos cobrados pelo ML (DIFAL)", amount: 0, excluded: false },
+      { key: "afiliados_outras", label: "Outras tarifas",          amount: 0,        excluded: false },
     ];
-  }, [dailyBilling, billingData, gruposTarifas, dreWaterfall, adsSpendMes]);
-
-  const totalTarifasEfetivo = useMemo(
-    () => gruposTarifasEfetivos.reduce((s, g) => s + g.amount, 0),
-    [gruposTarifasEfetivos],
-  );
+    const total = groups.filter((g) => !g.excluded).reduce((s, g) => s + g.amount, 0);
+    return { groups, totalTarifas: total };
+  }, [dailyBilling, billingData, gruposTarifas, totalTarifas, dreWaterfall, adsSpendMes]);
 
   // ── DRE: cascata do resultado (Phase 88) ──
-  // Margem de contribuição = MESMO cálculo do subtotal do card
-  // (receita − tarifas ML − CMV − impostos). Alimenta buildDreCascade junto
-  // com as linhas operacionais/financeiro da RPC 87 → Resultado operacional e
-  // Resultado líquido. Guardrail SC-3 (impostos_venda/excluido) é do helper.
+  // Margem de contribuição = fonte única (dreMargem.ts, Phase 96 Plan 05).
+  // [C1] receitaBrutaMes − cancelamentosVendas === receitaMes (algebricamente
+  // idêntico à expressão legada — SC5/SC6, prova em dreMargem.test.ts Test 2).
+  // Alimenta buildDreCascade junto com as linhas operacionais/financeiro da
+  // RPC 87 → Resultado operacional e Resultado líquido. Guardrail SC-3
+  // (impostos_venda/excluido) é do helper buildDreCascade.
   const margemContribuicao = useMemo(
-    () => receitaMes - totalTarifasEfetivo - (cmvMes ?? 0) - (impostosMes ?? 0),
-    [receitaMes, totalTarifasEfetivo, cmvMes, impostosMes],
+    () =>
+      computeMargemContribuicao({
+        receitaBruta: receitaBrutaMes,
+        cancelamentosVendas,
+        totalTarifas: totalTarifasEfetivo,
+        cmvMes,
+        impostosMes,
+      }),
+    [receitaBrutaMes, cancelamentosVendas, totalTarifasEfetivo, cmvMes, impostosMes],
   );
   const dreCascade = useMemo(
     () => buildDreCascade(dreOperationalRows ?? [], margemContribuicao),
@@ -857,6 +884,9 @@ export default function MercadoLivre() {
                 <MLCostCard
                   mesLabel={mesLabel}
                   receitaMes={receitaMes}
+                  receitaBruta={receitaBrutaMes}
+                  cancelamentosVendas={cancelamentosVendas}
+                  margemContribuicao={margemContribuicao}
                   gruposTarifas={gruposTarifasEfetivos}
                   totalTarifas={totalTarifasEfetivo}
                   cmvMes={cmvMes}
