@@ -926,12 +926,12 @@ Plans:
 
 - [ ] 96-01-PLAN.md — [C2/C5] blacklist do parcelamento (CFONPN+BFONPN) em `groupBillingCharges` + [C4] `useMLBillingDaily` por `competence_date` (wave 1, TDD, SC2)
 - [ ] 96-02-PLAN.md — [C7] `dreCloseGate.ts` puro: `canApurarImposto` (status, nunca o valor) + `resolveCloseGate` + [C11] teste de regressão do INSS (wave 1, TDD, SC4/SC6)
+- [ ] 96-04-PLAN.md — [C1/C8-backend] `get_cancelled_revenue` (cancelamento + reembolso = 14.450,29) + `dre_bloco_for_category` + `get_dre_nao_classificado_items` + 2 hooks (wave 1, autonomous:false, aditivo, SC1)
 - [ ] 96-03-PLAN.md — [C6-backend] `get_cost_waterfall` com `cmv_cheio` puro (DROP+CREATE) + RPC `get_cmv_cheio_gaps` + `useCmvCheioGate` (wave 2, autonomous:false, SC1/SC3/SC5)
-- [ ] 96-04-PLAN.md — [C1/C8-backend] `get_cancelled_revenue` + `dre_bloco_for_category` + `get_dre_nao_classificado_items` + 2 hooks (wave 2, autonomous:false, aditivo, SC1)
-- [ ] 96-05-PLAN.md — [C1-frontend] receita bruta + linha Cancelamentos de vendas + `computeMargemContribuicao` (mata as 3 duplicações) (wave 3, TDD, SC1/SC2)
-- [ ] 96-06-PLAN.md — [C6/C7] gate no botão com motivo + [C8] lista do não classificado + [C9] double-count com valor (wave 4, SC3/SC4/SC5)
-- [ ] 96-07-PLAN.md — [C6-backfill] EFs `sync-tiny-costs`/`recalc-order-costs` gravando o cheio + backfill idempotente (34 dos 39 SKUs) (wave 5, autonomous:false)
-- [ ] 96-08-PLAN.md — provas SC1..SC6 contra prod (swing R$52.496,21) + checkpoint visual Wesley + decisão `partially_refunded` (wave 6, autonomous:false)
+- [ ] 96-05-PLAN.md — [C1-frontend] receita bruta 261.666,41 + linha Cancelamentos 14.450,29 + `computeMargemContribuicao` (mata as 3 duplicações) (wave 2, TDD, SC1/SC2)
+- [ ] 96-06-PLAN.md — [C6/C7] gate no botão com motivo + [C8] lista do não classificado + [C9] double-count com valor (wave 3, SC3/SC4/SC5)
+- [ ] 96-07-PLAN.md — [C6-backfill] port OBRIGATÓRIO das EFs `sync-tiny-costs`/`recalc-order-costs` (jul só 32,9% de cobertura) + backfill idempotente (34 dos 39 SKUs) (wave 4, autonomous:false)
+- [ ] 96-08-PLAN.md — provas SC1..SC6 contra prod (swing R$52.496,21) + distinção SC2×SC5 + checkpoint visual Wesley (wave 5, autonomous:false)
 
 ---
 
