@@ -6,14 +6,14 @@ current_phase: 94
 current_phase_name: dre-regime-previsao-apuracao-imposto-real-cmv-cheio-no-fecha
 status: verifying
 stopped_at: Completed 96-05-PLAN.md
-last_updated: "2026-07-15T22:35:15.013Z"
+last_updated: "2026-07-15T22:45:00.293Z"
 last_activity: 2026-07-11
 last_activity_desc: Phase 94 execution started
 progress:
   total_phases: 41
   completed_phases: 22
   total_plans: 90
-  completed_plans: 79
+  completed_plans: 80
   percent: 54
 ---
 
@@ -285,6 +285,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | Phase 96 P01 | 20min | 2 tasks | 2 files |
 | Phase 96 P04 | 35min | 3 tasks | 3 files |
 | Phase 96 P05 | 8min | 3 tasks | 4 files |
+| Phase 96 P06 | 25min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -375,6 +376,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 - [Phase 96]: 96-04: dre_bloco_for_category e copia literal do CASE da RPC 87 (que fica intocada); equivalencia provada em prod = 0 divergencias sobre todas as categorias vivas
 - [Phase 96]: 96-04: hooks nunca devolvem null — mes sem cancelamento (0) e competencia sem nao-classificado ([]) sao estados validos, nao ausencia de dado
 - [Phase 96]: 96-05: computeMargemContribuicao extraído como fonte única e pura, eliminando a duplicação tripla da fórmula da margem (MercadoLivre.tsx + MLCostCard.tsx + re-soma de totalTarifasEfetivo); receita bruta composta no card (paid_revenue + cancelledRevenue), nunca na RPC get_cost_waterfall
+- [Phase 96]: 96-06: shouldNudgeClose não foi alinhado ao gate — contradição visual (nudge 🟢 x botão bloqueado) resolvida no tooltip do botão, não suprimindo o nudge
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -437,7 +439,7 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-**Last session:** 2026-07-15T22:35:14.995Z
+**Last session:** 2026-07-15T22:44:15.934Z
 
 **Resume file:** 
 

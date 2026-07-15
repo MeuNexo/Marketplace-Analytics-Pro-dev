@@ -920,7 +920,7 @@ Plans:
 5. Previsão (mês aberto) permanece byte-a-byte igual à atual — zero regressão da Phase 88/94.
 6. INSS continua no bloco Pessoal; nenhum valor migra para a linha de impostos.
 
-**Plans:** 5/8 plans executed
+**Plans:** 6/8 plans executed
 
 Plans:
 
@@ -929,7 +929,7 @@ Plans:
 - [x] 96-04-PLAN.md — [C1/C8-backend] `get_cancelled_revenue` (cancelamento + reembolso = 14.450,29) + `dre_bloco_for_category` + `get_dre_nao_classificado_items` + 2 hooks (wave 1, autonomous:false, aditivo, SC1)
 - [x] 96-03-PLAN.md — [C6-backend] `get_cost_waterfall` com `cmv_cheio` puro (DROP+CREATE) + RPC `get_cmv_cheio_gaps` + `useCmvCheioGate` (wave 2, autonomous:false, SC1/SC3/SC5)
 - [x] 96-05-PLAN.md — [C1-frontend] receita bruta 261.666,41 + linha Cancelamentos 14.450,29 + `computeMargemContribuicao` (mata as 3 duplicações) (wave 2, TDD, SC1/SC2)
-- [ ] 96-06-PLAN.md — [C6/C7] gate no botão com motivo + [C8] lista do não classificado + [C9] double-count com valor (wave 3, SC3/SC4/SC5)
+- [x] 96-06-PLAN.md — [C6/C7] gate no botão com motivo + [C8] lista do não classificado + [C9] double-count com valor (wave 3, SC3/SC4/SC5)
 - [ ] 96-07-PLAN.md — [C6-backfill] port OBRIGATÓRIO das EFs `sync-tiny-costs`/`recalc-order-costs` (jul só 32,9% de cobertura) + backfill idempotente (34 dos 39 SKUs) (wave 4, autonomous:false)
 - [ ] 96-08-PLAN.md — provas SC1..SC6 contra prod (swing R$52.496,21) + distinção SC2×SC5 + checkpoint visual Wesley (wave 5, autonomous:false)
 
