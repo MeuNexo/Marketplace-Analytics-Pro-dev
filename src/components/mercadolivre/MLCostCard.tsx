@@ -1,17 +1,27 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
-import { ChevronLeft, ChevronRight, HelpCircle, Loader2, TrendingDown, TrendingUp } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, HelpCircle, Loader2, TrendingDown, TrendingUp } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { BillingGroup } from "@/hooks/useMLBilling";
 import type { DreCascadeBlocoLine, DreFinanceiroLine } from "@/lib/dreCascade";
+import type { CmvCheioGap } from "@/lib/dreCloseGate";
+import type { NaoClassificadoItem } from "@/hooks/useNaoClassificadoItems";
 
 const fmt = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+
+// Formato com centavos — usado nas listas (Popover) do C6/C8, onde o valor
+// exato é o que o Wesley precisa conferir contra o Tiny (fmt() acima arredonda
+// para inteiro, o que basta para os totais do card mas não para auditoria linha a linha).
+const fmtCents = (v: number) =>
+  v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 const pct = (v: number, base: number) =>
   base > 0 ? `${((v / base) * 100).toFixed(1)}%` : "—";
@@ -21,6 +31,127 @@ const fmtDayMonth = (iso: string) => {
   const [, m, d] = iso.split("-");
   return m && d ? `${d}/${m}` : iso;
 };
+
+// ── [C6] Lista dos SKUs sem custo cheio — Popover tap-friendly (Phase 46:
+// Radix Tooltip não dispara no touch; padrão hover+tap clonado de MLMcoStrip). ──
+function CmvGapsTrigger({ gaps }: { gaps: CmvCheioGap[] }) {
+  const [open, setOpen] = useState(false);
+  const totalReceita = gaps.reduce((s, g) => s + g.receita, 0);
+  const top = [...gaps].sort((a, b) => b.receita - a.receita).slice(0, 10);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500 hover:bg-amber-500/25 transition-colors inline-flex items-center gap-1"
+          onMouseEnter={() => setOpen(true)}
+          onMouseLeave={() => setOpen(false)}
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen((v) => !v);
+          }}
+        >
+          <AlertTriangle className="w-3 h-3" />
+          {gaps.length} SKUs sem custo cheio
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        side="bottom"
+        align="end"
+        sideOffset={6}
+        className="w-[320px] max-h-[360px] overflow-y-auto p-3 text-xs"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        <p className="font-medium text-foreground mb-1">
+          {fmtCents(totalReceita)} em receita sem custo cheio confirmado
+        </p>
+        <p className="text-muted-foreground mb-2">
+          O gate de apuração bloqueia até esses SKUs terem o custo cheio no Tiny.
+        </p>
+        <div className="space-y-1.5">
+          {top.map((g) => (
+            <div
+              key={g.sku}
+              className="flex items-center justify-between gap-2 border-t border-border/40 pt-1.5 first:border-t-0 first:pt-0"
+            >
+              <div className="min-w-0">
+                <p className="truncate font-medium text-foreground">{g.sku}</p>
+                <p className="text-muted-foreground">
+                  {g.marca ?? "—"} · {g.unidades}un ·{" "}
+                  {g.temCustoMedio ? "falta o custo cheio" : "sem custo nenhum — cadastrar no Tiny"}
+                </p>
+              </div>
+              <span className="tabular-nums font-semibold text-foreground shrink-0">
+                {fmtCents(g.receita)}
+              </span>
+            </div>
+          ))}
+        </div>
+        {gaps.length > top.length && (
+          <p className="text-muted-foreground mt-2">+{gaps.length - top.length} outros SKUs</p>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// ── [C8] Lista dos lançamentos "Não classificado" — Popover tap-friendly,
+// mesmo padrão. Sistema SÓ informa: nunca move/corrige lançamento. ──
+function NaoClassificadoTrigger({ items, total }: { items: NaoClassificadoItem[]; total: number }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="Ver lançamentos não classificados"
+          className="cursor-default inline-flex text-amber-500 hover:text-amber-400 transition-colors"
+          onMouseEnter={() => setOpen(true)}
+          onMouseLeave={() => setOpen(false)}
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen((v) => !v);
+          }}
+        >
+          <AlertTriangle className="w-3 h-3" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        side="bottom"
+        align="start"
+        sideOffset={6}
+        className="w-[320px] max-h-[360px] overflow-y-auto p-3 text-xs"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        <p className="font-medium text-foreground mb-1">{fmtCents(total)} para recategorizar no Tiny</p>
+        <p className="text-muted-foreground mb-2">
+          O sistema só informa — Wesley recategoriza cada lançamento no Tiny; nada é corrigido
+          sozinho.
+        </p>
+        <div className="space-y-1.5">
+          {items.map((it, i) => (
+            <div
+              key={`${it.outflowDate}-${i}`}
+              className="flex items-center justify-between gap-2 border-t border-border/40 pt-1.5 first:border-t-0 first:pt-0"
+            >
+              <div className="min-w-0">
+                <p className="truncate font-medium text-foreground">{it.supplier ?? it.category}</p>
+                <p className="text-muted-foreground truncate">
+                  {it.description} · {fmtDayMonth(it.outflowDate)}
+                </p>
+              </div>
+              <span className="tabular-nums font-semibold text-foreground shrink-0">
+                {fmtCents(it.amount)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 // ── Tipos ──────────────────────────────────────────────────────────────────
 
@@ -83,6 +214,15 @@ interface MLCostCardProps {
   onReopen?: () => void;
   /** true durante a mutação de fechar/reabrir. */
   closeBusy?: boolean;
+  // ── [C6/C7] Gate de fechamento (Phase 96 Plan 06 — resolveCloseGate) ──
+  /** true quando o gate (CMV cheio + guia real) bloqueia o fechamento. Só se aplica ao caminho de FECHAR — nunca ao de reabrir. */
+  closeBlocked?: boolean;
+  /** Frases pt-BR curtas explicando o que falta — exibidas no tooltip do botão bloqueado. */
+  closeBlockReasons?: string[];
+  /** [C6] SKUs vendidos no mês sem custo_unit_cheio — alimenta a lista do gate. */
+  cmvGaps?: CmvCheioGap[];
+  /** [C8] Lançamentos crus do bloco "Não classificado" da competência — só para informar, nunca corrige sozinho. */
+  naoClassificadoItems?: NaoClassificadoItem[];
 }
 
 // ── Componente ─────────────────────────────────────────────────────────────
@@ -117,6 +257,10 @@ export function MLCostCard({
   onClose,
   onReopen,
   closeBusy = false,
+  closeBlocked = false,
+  closeBlockReasons = [],
+  cmvGaps = [],
+  naoClassificadoItems = [],
 }: MLCostCardProps) {
   // Margem de contribuição: fonte única = computeMargemContribuicao (dreMargem.ts),
   // calculada pelo caller e recebida por prop. Nenhuma aritmética de margem
@@ -211,8 +355,8 @@ export function MLCostCard({
         {/* Regime: empurrãozinho (dica, nunca gatilho) + botão owner-only de
             marcar/reabrir o mês como apurado. RLS de dre_month_close é a
             autoridade real — este gate é só UX (94-CONTEXT.md). */}
-        {(canClose || (nudgeClose && !mesClosed)) && (
-          <div className="px-4 pb-2 -mt-1 flex items-center justify-end gap-2">
+        {(canClose || (nudgeClose && !mesClosed) || (!mesClosed && cmvGaps.length > 0)) && (
+          <div className="px-4 pb-2 -mt-1 flex items-center justify-end gap-2 flex-wrap">
             {nudgeClose && !mesClosed && (
               <TooltipProvider>
                 <Tooltip>
@@ -224,20 +368,54 @@ export function MLCostCard({
                   <TooltipContent className="max-w-[220px] text-xs text-center">
                     As 3 guias (ICMS/PIS/COFINS) de {guiaCompetenceLabel ?? "M+1"} parecem lançadas —
                     fechar mês?
+                    {closeBlocked && (
+                      <>
+                        <br />
+                        Ainda assim, o gate de fechamento está bloqueado — veja o motivo no botão.
+                      </>
+                    )}
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}
+            {/* [C6] Gatilho da lista de SKUs sem custo cheio — "diga exatamente o
+                que preencher" do objetivo da phase, não escondido atrás de um
+                ícone de 12px. */}
+            {!mesClosed && cmvGaps.length > 0 && <CmvGapsTrigger gaps={cmvGaps} />}
             {canClose && (
-              <button
-                type="button"
-                onClick={mesClosed ? onReopen : onClose}
-                disabled={closeBusy || (mesClosed ? !onReopen : !onClose)}
-                className="text-[10px] font-medium px-2 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-40 disabled:pointer-events-none transition-colors inline-flex items-center gap-1"
-              >
-                {closeBusy && <Loader2 className="w-3 h-3 animate-spin" />}
-                {mesClosed ? "Reabrir mês" : "Marcar mês como apurado"}
-              </button>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    {/* wrapper span: botão disabled não dispara eventos de ponteiro
+                        (disabled:pointer-events-none), então o hover do Tooltip
+                        precisa do span ao redor para continuar funcionando. */}
+                    <span className="inline-flex">
+                      <button
+                        type="button"
+                        onClick={mesClosed ? onReopen : onClose}
+                        disabled={closeBusy || (mesClosed ? !onReopen : !onClose || closeBlocked)}
+                        className="text-[10px] font-medium px-2 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-40 disabled:pointer-events-none transition-colors inline-flex items-center gap-1"
+                      >
+                        {closeBusy && <Loader2 className="w-3 h-3 animate-spin" />}
+                        {mesClosed ? "Reabrir mês" : "Marcar mês como apurado"}
+                      </button>
+                    </span>
+                  </TooltipTrigger>
+                  {/* Resolve o Pitfall 10: o 🟢 "Guias parecem lançadas" pode
+                      estar aceso ao lado de um botão desabilitado — o tooltip
+                      explica o porquê em vez de deixar a contradição muda. */}
+                  {!mesClosed && closeBlocked && closeBlockReasons.length > 0 && (
+                    <TooltipContent className="max-w-[240px] text-xs text-left">
+                      <p className="font-medium mb-1 text-center">Falta para apurar:</p>
+                      <ul className="list-disc list-inside space-y-0.5">
+                        {closeBlockReasons.map((reason, i) => (
+                          <li key={i}>{reason}</li>
+                        ))}
+                      </ul>
+                    </TooltipContent>
+                  )}
+                </Tooltip>
+              </TooltipProvider>
             )}
           </div>
         )}
@@ -432,11 +610,22 @@ export function MLCostCard({
                                   <HelpCircle className="w-3 h-3 text-muted-foreground/60" />
                                 </span>
                               </TooltipTrigger>
-                              <TooltipContent className="max-w-[200px] text-xs text-center">
-                                Pode conter fatura ML já contabilizada na margem
+                              {/* [C9] valor da linha no texto — sem número é fácil
+                                  de ignorar. A cascata CONTINUA somando o valor
+                                  cheio (nada de auto-netting); a flag só sinaliza. */}
+                              <TooltipContent className="max-w-[220px] text-xs text-center">
+                                Pode conter fatura ML já contabilizada na margem — {fmt(b.total)}{" "}
+                                nesta linha em risco de double-count. O valor continua somado; Wesley
+                                corrige na fonte (Tiny).
                               </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
+                        )}
+                        {/* [C8] lista dos lançamentos crus — só informa, nunca
+                            move/corrige. Renderiza junto do bloco não_classificado
+                            quando há lançamentos para o Wesley recategorizar. */}
+                        {b.bloco === "nao_classificado" && naoClassificadoItems.length > 0 && (
+                          <NaoClassificadoTrigger items={naoClassificadoItems} total={b.total} />
                         )}
                       </span>
                       <div className="flex items-center gap-2">
@@ -484,8 +673,11 @@ export function MLCostCard({
                                   <HelpCircle className="w-3 h-3 text-muted-foreground/60" />
                                 </span>
                               </TooltipTrigger>
-                              <TooltipContent className="max-w-[200px] text-xs text-center">
-                                Pode conter fatura ML já contabilizada na margem
+                              {/* [C9] valor da linha — mesma regra: sinaliza, nunca desconta. */}
+                              <TooltipContent className="max-w-[220px] text-xs text-center">
+                                Pode conter fatura ML já contabilizada na margem — {fmt(financeiro.total)}{" "}
+                                nesta linha em risco de double-count. O valor continua somado; Wesley
+                                corrige na fonte (Tiny).
                               </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
