@@ -99,10 +99,29 @@ do médio**; aplicando isso aos 226, o CMV real ≈ **138.633,69** e o resultado
 - Wesley citou "INSS 3.852,19 e ICMS 4.793,21" juntos, mas **INSS é encargo de folha, não imposto sobre venda**, e **já está na DRE** no bloco `pessoal` (Salários 24.000 + INSS 3.852,19 = 27.852,19), depois da margem.
 - Nenhuma correção pode movê-lo pra linha de impostos — seria double-count.
 
-### Backfill do custo cheio
-- Wesley autorizou: *"Sobre o backfill segue com ele para ter todos os custos"*.
-- **Fonte = custo cheio REAL da nota do Tiny. NUNCA médio×fator** (isso reintroduz o C6 disfarçado).
-- Liga com `project_cmv_history_validation` e com o bug de `custo_unit` null de marcas de revenda.
+### Backfill do custo cheio — ✅ DESBLOQUEADO (Wesley, 2026-07-15)
+
+**Wesley confirmou a semântica dos campos do Tiny:**
+> *"Pode confiar nos valores que estão na Tiny, no que está preço custo e o cheio, e o preço custo médio e o descontado automaticamente ou manualmente o ICMS, pis e cofins do produto"*
+
+Ou seja:
+- `precos.precoCusto` → **custo CHEIO, confiável** (é a fonte de `ml_product_costs.cost_full` → `orders.custo_unit_cheio`).
+- `precos.precoCustoMedio` → o **mesmo custo com ICMS/PIS/COFINS descontados** (automática ou manualmente).
+
+Isso **valida o Cenário A** investigado no `96-RESEARCH.md` (adendo): a razão cheio/médio de 1,2522 (261 produtos)
+= `1/(1−0,2014)` é consequência da estrutura tributária, não de um `médio × fator`. O código já lê os dois campos
+separados (`sync-tiny-costs:161-162`) e o backfill (`20260690000200`) só **copia** — **a restrição "nunca médio×fator"
+não é violada.** Backfill é LEGÍTIMO.
+
+**Plano do backfill:** re-rodar (idempotente, só toca `custo_unit_cheio IS NULL`) → fecha **34 dos 39 SKUs de maio**.
+Os **4 restantes** (`K2CTXCB191380PTOBRANM`, `K2CTXCB191380PTOBRANGG`, `K2CTXCB191380PTOBRANP`, `180128333315NATP`)
+Wesley cadastra no Tiny (tarefa manual já entregue) → re-sync → gate do C6 libera maio.
+
+**⚠️ Achado de qualidade de dado (não bloqueia):** pela definição do Wesley, o médio é o cheio MENOS impostos —
+logo médio > cheio é **impossível**. Mas **7 SKUs** têm médio > cheio, todos da mesma família `1156120*`
+(ex.: `1156120NATP` médio 157,00 × cheio 107,81). Impacto desprezível: só 2 venderam em 2026 (R$396 no total).
+Ficha do Tiny provavelmente com os dois campos invertidos. Candidato natural ao alerta de dado ruim (mesma
+família do C8: informar, nunca auto-corrigir).
 
 ---
 
