@@ -149,3 +149,66 @@ describe("buildDreCascade — fixture reconciliação junho/2026 (Phase 87)", ()
     expect(OPERACIONAL_BLOCOS).not.toContain("financeiro");
   });
 });
+
+describe("buildDreCascade — C11: INSS fica no bloco Pessoal (NÃO-mudança)", () => {
+  // C11 é uma NÃO-mudança: nenhuma linha de dreCascade.ts muda por causa
+  // deste describe. Estes 4 testes são a trava que impede alguém de
+  // "consertar" o mapa categoria→bloco depois — o INSS é encargo de folha,
+  // não imposto sobre venda, e já está corretamente em `pessoal`. Movê-lo
+  // para a linha de impostos dupla-contaria: a linha de impostos do card já
+  // consome a guia real de ICMS/PIS/COFINS da competência M+1 separadamente.
+  // Se algum dos 4 testes falhar, o mapa do backend divergiu do esperado e
+  // o C11 deixou de ser uma não-mudança — não editar dreCascade.ts.
+
+  it("Test 1: Salários 24000 + Pessoal - INSS 3852.19 somam 27852.19 no bloco pessoal com label 'Pessoal'", () => {
+    const rows: DreOperationalRow[] = [
+      row("pessoal", 24000, { category: "Salários" }),
+      row("pessoal", 3852.19, { category: "Pessoal - INSS" }),
+    ];
+    const c = buildDreCascade(rows, 100000);
+
+    const pessoal = c.operacionalBlocos.find((b) => b.bloco === "pessoal");
+    expect(pessoal).toBeDefined();
+    expect(pessoal?.total).toBe(27852.19);
+    expect(pessoal?.label).toBe("Pessoal");
+  });
+
+  it("Test 2: a mesma fixture não produz nenhuma linha de imposto na cascata", () => {
+    const rows: DreOperationalRow[] = [
+      row("pessoal", 24000, { category: "Salários" }),
+      row("pessoal", 3852.19, { category: "Pessoal - INSS" }),
+    ];
+    const c = buildDreCascade(rows, 100000);
+
+    expect(OPERACIONAL_BLOCOS).not.toContain("impostos_venda");
+    expect(c.operacionalBlocos.every((b) => b.bloco !== "impostos_venda")).toBe(true);
+  });
+
+  it("Test 3: uma linha impostos_venda misturada na fixture é filtrada e não altera resultadoOperacional", () => {
+    const semImposto: DreOperationalRow[] = [
+      row("pessoal", 24000, { category: "Salários" }),
+      row("pessoal", 3852.19, { category: "Pessoal - INSS" }),
+    ];
+    const comImposto: DreOperationalRow[] = [
+      ...semImposto,
+      row("impostos_venda", 16015.06, { category: "Imposto Venda - ICMS" }),
+    ];
+
+    const margem = 51969.93;
+    const cSem = buildDreCascade(semImposto, margem);
+    const cCom = buildDreCascade(comImposto, margem);
+
+    expect(cCom.resultadoOperacional).toBe(cSem.resultadoOperacional);
+  });
+
+  it("Test 4: o INSS entra no resultadoOperacional DEPOIS da margem de contribuição (dedução operacional)", () => {
+    const rows: DreOperationalRow[] = [
+      row("pessoal", 24000, { category: "Salários" }),
+      row("pessoal", 3852.19, { category: "Pessoal - INSS" }),
+    ];
+    const margem = 51969.93;
+    const c = buildDreCascade(rows, margem);
+
+    expect(c.resultadoOperacional).toBe(24117.74);
+  });
+});
