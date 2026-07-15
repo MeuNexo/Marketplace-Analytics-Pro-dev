@@ -27,7 +27,7 @@
 export type DreRegime = "previsao" | "apuracao";
 
 /** The 3 real-tax categories that must all be present for a coherent apuração. */
-const IMPOSTO_VENDA_CATEGORIES = [
+export const IMPOSTO_VENDA_CATEGORIES = [
   "Imposto Venda - ICMS",
   "Imposto Venda - PIS",
   "Imposto Venda - COFINS",

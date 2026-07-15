@@ -27,16 +27,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrganization } from "@/contexts/OrganizationContext";
-import { monthPlusOne } from "@/lib/dreRegime";
+import { monthPlusOne, IMPOSTO_VENDA_CATEGORIES } from "@/lib/dreRegime";
 import type { GuiaRealCategoryTotal, NudgeRow } from "@/lib/dreRegime";
 
 export type { GuiaRealCategoryTotal, NudgeRow };
-
-const IMPOSTO_VENDA_CATEGORIES = [
-  "Imposto Venda - ICMS",
-  "Imposto Venda - PIS",
-  "Imposto Venda - COFINS",
-] as const;
 
 /**
  * The M+1 real-tax source for the resolver.
