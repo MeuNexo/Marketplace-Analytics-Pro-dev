@@ -50,7 +50,11 @@ do médio**; aplicando isso aos 226, o CMV real ≈ **138.633,69** e o resultado
 - Fix: exibir receita **BRUTA** + nova linha **"Cancelamentos de vendas"** (−).
 - **ARMADILHA:** o cancelamento tem que entrar na **FÓRMULA** da margem (`MercadoLivre.tsx:305`), não só na tela — senão a margem infla R$14.063,90. Bottom line tem que continuar **247.216,12**.
 - Maio: bruto 261.280,02 = paid 247.216,12 + cancelled 14.063,90.
-- **Aberto:** `partially_refunded` (1 pedido, R$386,39) — hoje fica FORA da receita. Decidir: tratar como líquido (parte mantida) ou manter fora.
+- **✅ `partially_refunded` RESOLVIDO (Wesley, 2026-07-15):** *"reembolso fica de fora da receita e e considerado como cancelamento"* → entra na receita **BRUTA** e sai na linha **"Cancelamentos de vendas"**. Líquida inalterada.
+- **Números finais de maio p/ o C1:**
+  - Receita bruta = **261.666,41** = paid 247.216,12 + cancelled 14.063,90 + partially_refunded 386,39
+  - (−) Cancelamentos de vendas = **−14.450,29** = cancelled 14.063,90 + partially_refunded 386,39
+  - = Receita líquida = **247.216,12** — idêntica à de hoje (zero regressão no bottom line)
 
 ### [C2/C5] Tarifas — blacklist do parcelamento
 - Wesley: taxa de parcelamento **não é custo nosso** — quem paga é o cliente (acréscimo no preço do comprador), e não está na `receita_bruta`.
@@ -112,6 +116,31 @@ Isso **valida o Cenário A** investigado no `96-RESEARCH.md` (adendo): a razão 
 = `1/(1−0,2014)` é consequência da estrutura tributária, não de um `médio × fator`. O código já lê os dois campos
 separados (`sync-tiny-costs:161-162`) e o backfill (`20260690000200`) só **copia** — **a restrição "nunca médio×fator"
 não é violada.** Backfill é LEGÍTIMO.
+
+### 🚨 O PIPELINE DO CUSTO CHEIO ESTÁ QUEBRADO — port da EF é OBRIGATÓRIO (medido 2026-07-15)
+
+Cobertura de `custo_unit_cheio` em `orders` (org Pé Vermeio, status paid, 2026):
+
+| mês | % com cheio | % com médio | receita sem cheio |
+|---|---:|---:|---:|
+| jan | 86,4% | 95,0% | 20.251,12 |
+| fev | 79,4% | 89,5% | 22.230,72 |
+| mar | 77,2% | 91,1% | 42.207,27 |
+| abr | 80,5% | 94,6% | 49.725,66 |
+| mai | 79,8% | 98,5% | 23.828,31 |
+| jun | 85,6% | 99,4% | 21.778,87 |
+| **jul** | **32,9%** | **94,9%** | **99.780,24** |
+
+**Diagnóstico:** o médio segue em ~95% (sync do Tiny vivo), mas o cheio **despenca em julho**. Os ~80% dos meses
+antigos vieram do **backfill que rodou UMA vez** (o drift); tudo que entrou depois ficou sem. Julho está em 32,9%
+só porque ~1/3 dos pedidos do mês é anterior a esse backfill. **Nada em produção grava `custo_unit_cheio` em pedido novo.**
+
+**Consequência dura:** ligar o gate do C6 sem portar a EF = **todo mês novo nasce com custo faltando e o gate barra
+para sempre**. O sistema viraria uma porta trancada — Wesley nunca mais fecharia um mês. Isso confirma, com dado,
+o risco #5 que o planner levantou como hipótese.
+
+**→ O port da EF (gravar `custo_unit_cheio` no fluxo vivo) É ESCOPO OBRIGATÓRIO da Phase 96, não opcional.**
+**Autorizado por Wesley (2026-07-15):** *"Pode fazer tudo"* — incluindo mexer no banco de produção.
 
 **Plano do backfill:** re-rodar (idempotente, só toca `custo_unit_cheio IS NULL`) → fecha **34 dos 39 SKUs de maio**.
 Os **4 restantes** (`K2CTXCB191380PTOBRANM`, `K2CTXCB191380PTOBRANGG`, `K2CTXCB191380PTOBRANP`, `180128333315NATP`)
