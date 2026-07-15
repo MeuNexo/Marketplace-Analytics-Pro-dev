@@ -27,11 +27,17 @@ const fmtDayMonth = (iso: string) => {
 interface MLCostCardProps {
   /** Label do mês em pt-BR, ex.: "Junho/2026" */
   mesLabel: string;
-  /** Receita do mês (pedidos pagos) */
+  /** Receita LÍQUIDA do mês (pedidos pagos) — base de TODOS os pct() do card, nunca a bruta (SC5). */
   receitaMes: number;
+  /** [C1] Receita BRUTA do mês (paid_revenue + cancelledRevenue) — novo destaque do topo. */
+  receitaBruta: number;
+  /** [C1] (−) Cancelamentos de vendas (cancelled + partially_refunded). 0/ausente = mês sem cancelamento. */
+  cancelamentosVendas?: number;
+  /** Margem de contribuição já calculada pelo caller via computeMargemContribuicao (fonte única — dreMargem.ts). */
+  margemContribuicao: number;
   /** Grupos de tarifas ML agrupados por groupBillingCharges().groups */
   gruposTarifas: BillingGroup[];
-  /** Soma total dos grupos de tarifas */
+  /** Soma total dos grupos de tarifas (já excluindo grupos `excluded`, ex.: parcelamento) */
   totalTarifas: number;
   /** CMV do mês — null = sem custo cadastrado */
   cmvMes: number | null;
@@ -84,6 +90,9 @@ interface MLCostCardProps {
 export function MLCostCard({
   mesLabel,
   receitaMes,
+  receitaBruta,
+  cancelamentosVendas = 0,
+  margemContribuicao,
   gruposTarifas,
   totalTarifas,
   cmvMes,
@@ -109,20 +118,17 @@ export function MLCostCard({
   onReopen,
   closeBusy = false,
 }: MLCostCardProps) {
-  // Margem de contribuição = receita − total tarifas − CMV − impostos
-  const lucro =
-    receitaMes
-    - totalTarifas
-    - (cmvMes ?? 0)
-    - (impostosMes ?? 0);
-  const lucroPositivo = lucro >= 0;
-  const margemPct = receitaMes > 0 ? ((lucro / receitaMes) * 100).toFixed(1) : "—";
+  // Margem de contribuição: fonte única = computeMargemContribuicao (dreMargem.ts),
+  // calculada pelo caller e recebida por prop. Nenhuma aritmética de margem
+  // sobrevive neste componente (Phase 96 Plan 05 — elimina a duplicação).
+  const margemPositiva = margemContribuicao >= 0;
+  const margemPct = receitaMes > 0 ? ((margemContribuicao / receitaMes) * 100).toFixed(1) : "—";
 
   // ── Cascata do resultado (Phase 88) ──
   // Degradação graciosa: sem linhas operacionais e sem financeiro, o card para
   // na Margem de contribuição (RPC vazia/loading não quebra o layout).
   const temCascata = blocosOperacionais.length > 0 || financeiro != null;
-  const resultadoOperacionalVal = resultadoOperacional ?? lucro;
+  const resultadoOperacionalVal = resultadoOperacional ?? margemContribuicao;
   const resultadoLiquidoVal = resultadoLiquido ?? resultadoOperacionalVal;
   const operacionalPositivo = resultadoOperacionalVal >= 0;
   const liquidoPositivo = resultadoLiquidoVal >= 0;
@@ -245,17 +251,36 @@ export function MLCostCard({
             </div>
           ) : (
             <div className="space-y-0">
-              {/* ── Receita do mês ── */}
+              {/* ── Receita bruta do mês [C1] ── */}
               <div className="flex items-end justify-between pb-2 mb-1.5 border-b border-border">
                 <div>
                   <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                    Receita do mês (vendas pagas)
+                    Receita bruta do mês
                   </p>
                   <p className="text-xl font-bold tabular-nums text-foreground">
-                    {fmt(receitaMes)}
+                    {fmt(receitaBruta)}
                   </p>
                 </div>
               </div>
+
+              {/* ── Cancelamentos de vendas [C1] — venda, não tarifa; fica FORA do
+                  .map de gruposTarifas para não contaminar "Total de tarifas ML" ── */}
+              {cancelamentosVendas !== 0 && (
+                <div className="flex items-center justify-between text-xs py-1">
+                  <span className="text-muted-foreground flex items-center gap-1">
+                    <span className="text-muted-foreground/50">(−)</span>
+                    Cancelamentos de vendas
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-muted-foreground tabular-nums w-10 text-right">
+                      {pct(cancelamentosVendas, receitaMes)}
+                    </span>
+                    <span className="font-semibold tabular-nums w-24 text-right text-foreground">
+                      {fmt(cancelamentosVendas)}
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* ── Grupos de tarifas ── */}
               <div className="space-y-0">
@@ -264,15 +289,36 @@ export function MLCostCard({
                     key={grupo.key}
                     className="flex items-center justify-between text-xs py-1"
                   >
-                    <span className="text-muted-foreground flex items-center gap-1">
-                      <span className="text-muted-foreground/50">(−)</span>
-                      {grupo.label}
-                    </span>
+                    {grupo.excluded ? (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="text-muted-foreground/60 flex items-center gap-1 cursor-default">
+                              {grupo.label}
+                              <HelpCircle className="w-3 h-3 text-muted-foreground/50" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-[220px] text-xs text-center">
+                            Taxa paga pelo comprador (acréscimo no preço dele) — não é custo da
+                            loja, por isso não entra no Total de tarifas ML.
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : (
+                      <span className="text-muted-foreground flex items-center gap-1">
+                        <span className="text-muted-foreground/50">(−)</span>
+                        {grupo.label}
+                      </span>
+                    )}
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] text-muted-foreground tabular-nums w-10 text-right">
                         {pct(grupo.amount, receitaMes)}
                       </span>
-                      <span className="font-semibold tabular-nums w-24 text-right text-foreground">
+                      <span
+                        className={`font-semibold tabular-nums w-24 text-right ${
+                          grupo.excluded ? "text-muted-foreground/60" : "text-foreground"
+                        }`}
+                      >
                         {fmt(grupo.amount)}
                       </span>
                     </div>
@@ -347,7 +393,7 @@ export function MLCostCard({
               {/* ── Margem de contribuição (subtotal médio) ── */}
               <div className="flex items-center justify-between text-xs pt-2.5 mt-1.5 border-t-2 border-border">
                 <span className="flex items-center gap-1.5 font-semibold text-foreground">
-                  {lucroPositivo ? (
+                  {margemPositiva ? (
                     <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
                   ) : (
                     <TrendingDown className="w-3.5 h-3.5 text-red-500" />
@@ -359,10 +405,10 @@ export function MLCostCard({
                 </span>
                 <span
                   className={`text-base font-bold tabular-nums w-24 text-right ${
-                    lucroPositivo ? "text-kpi-positive" : "text-kpi-negative"
+                    margemPositiva ? "text-kpi-positive" : "text-kpi-negative"
                   }`}
                 >
-                  {fmt(lucro)}
+                  {fmt(margemContribuicao)}
                 </span>
               </div>
 
