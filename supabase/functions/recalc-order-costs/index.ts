@@ -118,7 +118,16 @@ serve(async (req) => {
       .gte("data_pedido", date_from)
       .lte("data_pedido", date_to);
     if (only_missing) {
-      query = query.or("custo_unit.is.null,tax_amount.is.null");
+      // Fase 96-07 (Trava A): `custo_unit_cheio.is.null` faz parte do predicado.
+      // Sem ele, um pedido com custo_unit (médio) JÁ preenchido e
+      // custo_unit_cheio NULL nunca entrava no SELECT — a função sabia gravar o
+      // cheio (costFullBySku/patch abaixo), mas nunca enxergava as linhas que
+      // precisavam dele. Era este filtro, e não a falta do código de escrita,
+      // que congelava a cobertura do cheio: pedido novo nasce com médio+imposto
+      // via sync, então o predicado antigo já dava "nada faltando" e o cheio
+      // ficava NULL para sempre. É a causa raiz dos 32,9% de cobertura em julho
+      // (contra 94,9% do médio).
+      query = query.or("custo_unit.is.null,custo_unit_cheio.is.null,tax_amount.is.null");
     }
     const { data: ordersData, error: oerr } = await query;
     if (oerr) throw oerr;
