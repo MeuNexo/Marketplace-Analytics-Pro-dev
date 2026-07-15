@@ -887,6 +887,47 @@ Plans:
 
 ---
 
+### Phase 96: DRE — correções da revisão linha a linha (C1–C9, C11): fechar a DRE com número verdadeiro
+
+**Goal:** A DRE do card `/vendas` passa a fechar o mês com número verdadeiro — maio/2026 sai de **−R$43.423,27** para **~zero a zero** — e **nunca** deixa um mês ser apurado com dado faltando: quando falta custo cheio ou guia de imposto, o sistema **bloqueia o fechamento e diz exatamente o que preencher**, em vez de mascarar com fallback silencioso.
+
+**Contexto:** Saída de 2 sessões de revisão linha a linha da DRE com Wesley (mês de referência maio/2026, org Pé Vermeio `7f615df7-7bac-45e5-8a93-827fb9ddeec7`). Revisão ENCERRADA; todas as correções foram acordadas e decididas pelo dono. Contexto completo, com os números e as armadilhas: `96-CONTEXT.md`.
+
+**Requirements:**
+
+- **[C1] Receita simétrica:** exibir receita BRUTA + nova linha "Cancelamentos de vendas" (−), espelhando "Cancelamentos de tarifas". O cancelamento entra na **fórmula** da margem (`MercadoLivre.tsx:305`), não só na tela. Bottom line permanece 247.216,12 em maio.
+- **[C2/C5] Tarifas — blacklist de parcelamento:** remover `CFONPN` + `BFONPN` de `totalTarifas`. Todo o resto ENTRA (MP "Custo por cobrar", Taxa de recebimento, devolução como frete, Minha Página, DIFAL, afiliados).
+- **[C4] Billing por competência:** filtro `charge_date` → `competence_date` em `useMLBillingDaily`.
+- **[C6] CMV sem máscara:** `get_cost_waterfall.cmv_cheio` usa `COALESCE(custo_unit_cheio, custo_unit)` — a apuração NUNCA pode usar COALESCE. Gate no "marcar mês como apurado" bloqueando quando houver `custo_unit_cheio IS NULL`, **listando os SKUs faltantes**. Previsão (médio) intacta.
+- **[C7] Gate de imposto por status:** o sinal é `status='paid'` nas 3 guias da competência M+1 — **não** o valor `0,01` (0,01 = apurado, deu zero por crédito de Lucro Real).
+- **[C8] Alerta de não classificado:** quando `nao_classificado > 0`, INFORMAR e listar os lançamentos para recategorização no Tiny. Nunca auto-corrigir.
+- **[C9] Alerta de double-count:** expor o `double_count_risk` (hoje a flag só sinaliza, mas o valor É somado na cascata).
+- **[C11] INSS fica no bloco pessoal** — nenhuma correção pode movê-lo para a linha de impostos.
+- **Backfill** do `custo_unit_cheio` REAL (da nota do Tiny, nunca médio×fator) — autorizado por Wesley.
+
+**Fora de escopo (Wesley faz manual no Tiny durante julho/2026):** corrigir as 6 faturas históricas do cartão, recategorizar 7 notas Outros→Fornecedores, cadastrar 4 SKUs sem custo nenhum.
+
+**Rejeitado:** [C10] separar juros de principal do empréstimo — Wesley: *"O empréstimo é tudo, juros mais o valor. Vamos manter assim."*
+
+**Depends on:** Phase 94 (regime previsão/apuração + `dre_month_close` + `resolveDreRegime`)
+
+**Success Criteria:**
+
+1. Maio/2026 fechado reconcilia a cascata com **swing de R$52.496,21** = tarifas 11.248,96 + CMV 9.887,92 + cartão 20.550,13 + não classificado 10.809,20 (bate exato, sem sobra).
+2. Tarifas de maio por competência sem parcelamento = **R$63.878,37** (hoje 75.127,33).
+3. O gate **IMPEDE** o fechamento de maio enquanto os 39 SKUs / 226 linhas / R$23.828,31 não tiverem custo cheio, e lista quais são.
+4. O gate de imposto aceita maio (3 guias `paid`) e rejeita mês com guia `pending`; `0,01` **não** bloqueia.
+5. Previsão (mês aberto) permanece byte-a-byte igual à atual — zero regressão da Phase 88/94.
+6. INSS continua no bloco Pessoal; nenhum valor migra para a linha de impostos.
+
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 96 to break down)
+
+---
+
 ### Phase 93: Enviar anexo na resposta da reclamação (upload)
 
 **Goal:** Na resposta a uma reclamação (`ClaimDetailSheet` em `/devolucoes`), o vendedor pode **anexar arquivos** (foto/PDF) à mensagem que envia ao cliente — hoje só dá pra mandar texto. Complementa a Phase 92 (que só EXIBE anexos). Junto o vendedor consegue ler e responder com anexo, fechando a conversa dentro do dashboard.

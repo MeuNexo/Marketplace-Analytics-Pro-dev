@@ -6,15 +6,15 @@ current_phase: 94
 current_phase_name: dre-regime-previsao-apuracao-imposto-real-cmv-cheio-no-fecha
 status: verifying
 stopped_at: Completed 94-03-PLAN.md (implementation done; human-verify checkpoint pending)
-last_updated: "2026-07-11T13:20:52.757Z"
+last_updated: "2026-07-15T19:57:00.576Z"
 last_activity: 2026-07-11
 last_activity_desc: Phase 94 execution started
 progress:
-  total_phases: 40
+  total_phases: 41
   completed_phases: 22
   total_plans: 81
   completed_plans: 74
-  percent: 55
+  percent: 54
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
@@ -406,6 +406,7 @@ Dashboard atual mostra:
 - Phase 90 added: Atendimento de reclamações: triagem + mensagens rápidas (spec em docs/superpowers/specs/2026-07-07-atendimento-reclamacoes-design.md)
 - Phase 94 added: DRE Regime Previsão↔Apuração (imposto real + CMV cheio no fechamento manual do mês)
 - Phase 94 planned: 3 planos/3 waves, plan-checker PASS; M+1 no frontend, dre_month_close nova
+- Phase 96 added: DRE — correções da revisão linha a linha (C1–C9, C11); C10 rejeitado pelo dono; ramificada do main (Phase 95 em voo)
 
 ## Deferred Items
 
