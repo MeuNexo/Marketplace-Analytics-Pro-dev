@@ -21,6 +21,8 @@ export interface BillingGroup {
   key: string;
   label: string;
   amount: number;
+  /** true = valor informativo, NÃO entra em totalTarifas (ex.: parcelamento — custo do comprador, não nosso) */
+  excluded?: boolean;
 }
 
 export interface GroupedBillingResult {
@@ -32,7 +34,7 @@ export interface GroupedBillingResult {
  * Mapas de types → grupos (conforme plano 41-04).
  * Todos os types não mapeados caem no bucket "Outras tarifas".
  */
-const BILLING_GROUP_MAP: Array<{ key: string; label: string; types: Set<string> }> = [
+const BILLING_GROUP_MAP: Array<{ key: string; label: string; types: Set<string>; excluded?: boolean }> = [
   {
     key: "tarifas_venda",
     label: "Tarifas de venda",
@@ -47,6 +49,8 @@ const BILLING_GROUP_MAP: Array<{ key: string; label: string; types: Set<string> 
     key: "parcelamento",
     label: "Taxas de parcelamento",
     types: new Set(["CFONPN"]),
+    // Custo do comprador (acréscimo no parcelamento), não custo nosso — fica FORA de totalTarifas.
+    excluded: true,
   },
   {
     key: "publicidade",
@@ -74,16 +78,24 @@ const OUTRAS_KEY = "outras";
 const OUTRAS_LABEL = "Outras tarifas";
 const CANCELAMENTOS_KEY = "cancelamentos";
 const CANCELAMENTOS_LABEL = "Cancelamentos de tarifas";
+const PARCELAMENTO_KEY = "parcelamento";
+/** Cobrança (CFONPN) + estorno dela (BFONPN) — únicos types removidos de totalTarifas (C2/C5). */
+const PARCELAMENTO_TYPES = new Set(["CFONPN", "BFONPN"]);
 
 /**
  * Agrupa cobranças de billing em grupos semânticos conforme plano 41-04.
  * Valores somados com sinal (estornos negativos subtraem).
- * Types B* (bonuses — BVVML, BFONPN, BFFE, BXDED...) são cancelamentos/estornos
- * de tarifas, valores NEGATIVOS, agrupados em "Cancelamentos de tarifas" como
+ * Types B* (bonuses — BVVML, BFFE, BXDED...) são cancelamentos/estornos de
+ * tarifas, valores NEGATIVOS, agrupados em "Cancelamentos de tarifas" como
  * última linha (igual à fatura ML). NÃO caem no bucket Outras.
  * Demais types não mapeados caem em "Outras tarifas" — nunca dropados.
- * totalTarifas = soma de TODOS os grupos incluindo cancelamentos (líquido,
- * bate com total_amount oficial da fatura).
+ * EXCEÇÃO: parcelamento (CFONPN + o estorno dele, BFONPN) é o ÚNICO par
+ * removido de totalTarifas — é custo do comprador (acréscimo no preço),
+ * não custo nosso. O grupo continua na lista `groups` com `excluded: true`
+ * (linha informativa, não dropada) — checado ANTES do fallback B*, senão
+ * BFONPN cai em "Cancelamentos" (armadilha do prefixo).
+ * totalTarifas = soma de todos os grupos NÃO excluídos (líquido, bate com
+ * total_amount oficial da fatura menos o parcelamento).
  */
 export function groupBillingCharges(
   charges: Array<{ type: string; label: string; amount: number }>,
@@ -95,6 +107,12 @@ export function groupBillingCharges(
   accumulators[CANCELAMENTOS_KEY] = 0;
 
   for (const charge of charges) {
+    // Parcelamento (CFONPN + estorno BFONPN) — checado ANTES do fallback B*,
+    // senão BFONPN é engolido por "Cancelamentos" pelo prefixo "B".
+    if (PARCELAMENTO_TYPES.has(charge.type)) {
+      accumulators[PARCELAMENTO_KEY] += charge.amount;
+      continue;
+    }
     // Types B* = cancelamentos/estornos (bonuses) — capturados ANTES do fallback Outras
     if (charge.type.startsWith("B")) {
       accumulators[CANCELAMENTOS_KEY] += charge.amount;
@@ -113,6 +131,7 @@ export function groupBillingCharges(
     key: g.key,
     label: g.label,
     amount: accumulators[g.key],
+    excluded: g.excluded === true,
   }));
 
   // "Afiliados / Outras tarifas" — exibe combinado se ambos tiverem valor,
@@ -125,9 +144,10 @@ export function groupBillingCharges(
       key: "afiliados_outras",
       label: afiliadosAmt !== 0 ? "Afiliados / Outras tarifas" : OUTRAS_LABEL,
       amount: afiliadosAmt + outrasAmt,
+      excluded: false,
     };
   } else {
-    groups.push({ key: OUTRAS_KEY, label: OUTRAS_LABEL, amount: accumulators[OUTRAS_KEY] });
+    groups.push({ key: OUTRAS_KEY, label: OUTRAS_LABEL, amount: accumulators[OUTRAS_KEY], excluded: false });
   }
 
   // Cancelamentos de tarifas — última linha, igual à fatura ML (valores negativos)
@@ -135,9 +155,12 @@ export function groupBillingCharges(
     key: CANCELAMENTOS_KEY,
     label: CANCELAMENTOS_LABEL,
     amount: accumulators[CANCELAMENTOS_KEY],
+    excluded: false,
   });
 
-  const totalTarifas = groups.reduce((sum, g) => sum + g.amount, 0);
+  const totalTarifas = groups
+    .filter((g) => !g.excluded)
+    .reduce((sum, g) => sum + g.amount, 0);
 
   return { groups, totalTarifas };
 }
