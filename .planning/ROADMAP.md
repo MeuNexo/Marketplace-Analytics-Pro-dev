@@ -983,9 +983,13 @@ Plans:
 **Plans:** 3 plans
 
 Plans:
+**Wave 1**
 
 - [ ] 99-01-PLAN.md — Backend: migration com as 3 RPCs (get_dre_cash/items/history, SECURITY INVOKER, caixa puro) + checkpoint apply MCP com provas authenticated <8s e anti-IDOR (wave 1, DREC-01/02/03/05)
 - [ ] 99-02-PLAN.md — Lib pura dreCashCascade.ts (TDD vitest, cascata+badge+previsão) + hooks useDreCash/Items/History/CashFreshness (wave 1, DREC-04/05/06)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 99-03-PLAN.md — Página /dre-caixa completa + wiring rota/role/meta/menu desktop+mobile + checkpoint reconciliação MP × mês fechado e ok visual Wesley (wave 2, DREC-04/05/06)
 
 ---
