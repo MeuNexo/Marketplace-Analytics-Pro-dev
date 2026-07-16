@@ -118,10 +118,17 @@ export function resolveDreRegime(input: ResolveDreRegimeInput): DreRegimeResult 
 
   // APURAÇÃO — cmv_cheio + soma das 3 guias reais. Never reads
   // cmvMedio/totalTaxEstimado in this branch.
+  // Só linhas 'paid' somam: 'cancelled' é crédito sem guia (dono cancelou a
+  // conta no Tiny — não é pagamento) e 'pending' nunca chega aqui com o gate
+  // fechado. Mês 100% crédito (todas canceladas) → imposto real = 0, não null.
   const cmvMes = (hasCmvCheio ? cmvCheio : null) ?? null;
   const apuracaoImpostoReal =
     guiaReal && guiaReal.length > 0
-      ? round2(guiaReal.reduce((sum, g) => sum + g.total, 0))
+      ? round2(
+          guiaReal
+            .filter((g) => g.status === "paid")
+            .reduce((sum, g) => sum + g.total, 0),
+        )
       : null;
 
   return {

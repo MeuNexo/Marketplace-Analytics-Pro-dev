@@ -102,6 +102,46 @@ describe("canApurarImposto — o sinal é status, NUNCA o valor", () => {
     ]);
     expect(result).toEqual({ ok: true, missing: [], pending: [] });
   });
+
+  // ── Contas canceladas (Wesley 2026-07-16): crédito sem guia ────────────────
+
+  it("Test 6a (junho/2026 real): ICMS pago + PIS/COFINS cancelados (crédito, dono cancelou no Tiny) → ok:true", () => {
+    const result = canApurarImposto([
+      guia("Imposto Venda - ICMS", 5151.56, "paid"),
+      guia("Imposto Venda - PIS", 716.19, "cancelled"),
+      guia("Imposto Venda - COFINS", 3298.87, "cancelled"),
+    ]);
+    expect(result).toEqual({ ok: true, missing: [], pending: [] });
+  });
+
+  it("Test 6b: cancelada NÃO mascara pendente — categoria com linha cancelled + linha pending continua bloqueando", () => {
+    const result = canApurarImposto([
+      guia("Imposto Venda - ICMS", 5151.56, "paid"),
+      guia("Imposto Venda - PIS", 716.19, "cancelled"),
+      guia("Imposto Venda - PIS", 500, "pending"),
+      guia("Imposto Venda - COFINS", 3298.87, "cancelled"),
+    ]);
+    expect(result.ok).toBe(false);
+    expect(result.pending).toEqual(["Imposto Venda - PIS"]);
+  });
+
+  it("Test 6c: categoria SÓ com cancelada não vira missing — apuração aconteceu, deu crédito", () => {
+    const result = canApurarImposto([
+      guia("Imposto Venda - ICMS", 5151.56, "paid"),
+      guia("Imposto Venda - PIS", 716.19, "cancelled"),
+      guia("Imposto Venda - COFINS", 3298.87, "cancelled"),
+    ]);
+    expect(result.missing).toEqual([]);
+  });
+
+  it("Test 6d: categoria ausente continua bloqueando mesmo com as outras canceladas", () => {
+    const result = canApurarImposto([
+      guia("Imposto Venda - PIS", 716.19, "cancelled"),
+      guia("Imposto Venda - COFINS", 3298.87, "cancelled"),
+    ]);
+    expect(result.ok).toBe(false);
+    expect(result.missing).toEqual(["Imposto Venda - ICMS"]);
+  });
 });
 
 describe("resolveCloseGate — combina o gate de imposto com o de CMV cheio", () => {

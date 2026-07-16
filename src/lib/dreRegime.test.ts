@@ -123,6 +123,36 @@ describe("resolveDreRegime — Test B: apuração base", () => {
     const input2 = baseInput({ isClosed: true, guiaReal: [] });
     expect(resolveDreRegime(input2).impostosMes).toBeNull();
   });
+
+  it("cancelled não soma — só linhas paid entram no imposto real (crédito sem guia, Wesley 2026-07-16)", () => {
+    const input = baseInput({
+      isClosed: true,
+      guiaReal: [
+        { category: "Imposto Venda - ICMS", total: 5151.56, status: "paid" },
+        { category: "Imposto Venda - PIS", total: 716.19, status: "cancelled" },
+        { category: "Imposto Venda - COFINS", total: 3298.87, status: "cancelled" },
+      ],
+    });
+    const result = resolveDreRegime(input);
+
+    expect(result.impostosMes).toBeCloseTo(5151.56, 2);
+    expect(result.apuracaoImpostoReal).toBeCloseTo(5151.56, 2);
+  });
+
+  it("mês 100% crédito (todas canceladas) → imposto real 0, não null", () => {
+    const input = baseInput({
+      isClosed: true,
+      guiaReal: [
+        { category: "Imposto Venda - ICMS", total: 100, status: "cancelled" },
+        { category: "Imposto Venda - PIS", total: 200, status: "cancelled" },
+        { category: "Imposto Venda - COFINS", total: 300, status: "cancelled" },
+      ],
+    });
+    const result = resolveDreRegime(input);
+
+    expect(result.impostosMes).toBe(0);
+    expect(result.apuracaoImpostoReal).toBe(0);
+  });
 });
 
 // ── Test C: never mix ───────────────────────────────────────────────────────
@@ -200,24 +230,26 @@ describe("resolveDreRegime — Test C: never mix médio+guia-real / cheio+estima
 // ── Test D: junho/2026 reconciliation ───────────────────────────────────────
 
 describe("resolveDreRegime — Test D: junho/2026 apuração reconciliation", () => {
-  it("cmv_cheio=133264.87 + guia ICMS/PIS/COFINS → cmvMes/impostosMes toBeCloseTo", () => {
+  it("cenário REAL de junho: ICMS pago 5151.56 + PIS/COFINS cancelados (crédito) → imposto = só o ICMS", () => {
+    // Apuração de junho (Wesley, 2026-07-16): "apenas deu guia de ICMS
+    // 5.151,56 e INSS 3.852,19" — PIS/COFINS geraram crédito e as contas
+    // recorrentes foram CANCELADAS no Tiny (não são pagamento; não somam).
     const input = baseInput({
       isClosed: true,
       cmvCheio: 133264.87,
       hasCmvCheio: true,
       guiaReal: [
         { category: "Imposto Venda - ICMS", total: 5151.56, status: "paid" },
-        { category: "Imposto Venda - PIS", total: 716.19, status: "paid" },
-        { category: "Imposto Venda - COFINS", total: 3298.87, status: "pending" },
+        { category: "Imposto Venda - PIS", total: 716.19, status: "cancelled" },
+        { category: "Imposto Venda - COFINS", total: 3298.87, status: "cancelled" },
       ],
     });
     const result = resolveDreRegime(input);
-    const expectedSum = 5151.56 + 716.19 + 3298.87;
 
     expect(result.regime).toBe("apuracao");
     expect(result.cmvMes).toBeCloseTo(133264.87, 2);
-    expect(result.impostosMes).toBeCloseTo(expectedSum, 2);
-    expect(result.apuracaoImpostoReal).toBeCloseTo(expectedSum, 2);
+    expect(result.impostosMes).toBeCloseTo(5151.56, 2);
+    expect(result.apuracaoImpostoReal).toBeCloseTo(5151.56, 2);
   });
 });
 

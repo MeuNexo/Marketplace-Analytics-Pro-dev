@@ -58,8 +58,14 @@ export interface ImpostoGateResult {
 
 /**
  * [C7] Gate de imposto — aprova só quando as 3 guias (ICMS/PIS/COFINS) da
- * competência M+1 estão TODAS com status 'paid'. Nunca lê o campo `total`
+ * competência M+1 estão TODAS resolvidas: status 'paid' (guia quitada) ou
+ * 'cancelled' (apuração deu CRÉDITO e o dono cancelou a conta no Tiny —
+ * decisão Wesley 2026-07-16 para PIS/COFINS de junho; nenhuma guia foi
+ * emitida, então não existe pagamento a esperar). Nunca lê o campo `total`
  * de nenhuma linha — o valor não é sinal de nada (ver cabeçalho do arquivo).
+ *
+ * Categoria com TODAS as linhas canceladas = apuração feita, sem guia → ok.
+ * Categoria ausente continua bloqueando (apuração ainda não aconteceu).
  */
 export function canApurarImposto(
   guia: GuiaRealCategoryTotal[] | null,
@@ -67,8 +73,8 @@ export function canApurarImposto(
   const rows = guia ?? [];
 
   // Agrupa por categoria: uma categoria só é "paid" se TODAS as suas linhas
-  // estiverem pagas (a RPC agrupa por categoria×status, então uma linha
-  // pendente contamina a categoria inteira).
+  // NÃO-canceladas estiverem pagas (a RPC agrupa por categoria×status, então
+  // uma linha pendente contamina a categoria inteira).
   const rowsByCategory = new Map<string, GuiaRealCategoryTotal[]>();
   for (const r of rows) {
     const list = rowsByCategory.get(r.category) ?? [];
@@ -85,7 +91,13 @@ export function canApurarImposto(
       missing.push(category);
       continue;
     }
-    const allPaid = categoryRows.every((r) => r.status === "paid");
+    // Linhas canceladas não contam nem contra nem a favor — são a marca de
+    // "crédito, sem guia". Se sobrar alguma linha ativa, ela decide.
+    const activeRows = categoryRows.filter((r) => r.status !== "cancelled");
+    if (activeRows.length === 0) {
+      continue; // todas canceladas = crédito apurado → não bloqueia
+    }
+    const allPaid = activeRows.every((r) => r.status === "paid");
     if (!allPaid) {
       pending.push(category);
     }

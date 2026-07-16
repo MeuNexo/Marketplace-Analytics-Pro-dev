@@ -8,7 +8,8 @@
 //   2. Para cada loja: getTinyToken(ml_user_id) → refresh automático se expirado
 //   3. GET /contas-pagar com janela [hoje-90d, hoje+90d] — paginando até esgotar
 //      CRÍTICO: NÃO enviar parâmetro "situacao" — Tiny v3 rejeita o enum (A5)
-//   4. Normalizar situacao client-side: pago/quitado/2 → 'paid'; resto → 'pending'
+//   4. Normalizar situacao client-side: pago/quitado/2 → 'paid';
+//      cancelado/cancelada → 'cancelled' (v8, Phase 97); resto → 'pending'
 //   5. outflow_date = dataPagamento (se disponível e status='paid') ou dataVencimento[:10]
 //   6. UPSERT em cash_outflows onConflict (organization_id, tiny_payable_id)
 //      ignoreDuplicates: false — status pode mudar de 'pending' para 'paid' entre syncs
@@ -168,9 +169,14 @@ async function tinyGetRetry(
 
 // ── Normalização de situação (client-side — A5: NÃO enviar param à API) ──────
 
-function normalizeSituacao(raw: unknown): "pending" | "paid" {
+function normalizeSituacao(raw: unknown): "pending" | "paid" | "cancelled" {
   const s = String(raw ?? "").toLowerCase().trim();
   if (["pago", "quitado", "2"].includes(s)) return "paid";
+  // Conta cancelada no Tiny = obrigação que não existe (ex.: PIS/COFINS que
+  // geraram CRÉDITO na apuração — decisão Wesley 2026-07-16). Passa o status
+  // verdadeiro adiante; achatar para 'pending' congelava o gate da DRE e
+  // inflava a projeção de caixa com contas fantasma.
+  if (["cancelado", "cancelada", "cancelled"].includes(s)) return "cancelled";
   return "pending";
 }
 
