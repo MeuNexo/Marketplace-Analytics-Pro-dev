@@ -20,14 +20,35 @@ key-files:
 decisions:
   - "Migration clona literalmente get_imposto_guia_by_competence (Phase 90), trocando só a lista de 3 categorias por 1 categoria única 'Pessoal - INSS'"
 metrics:
-  duration: "~15min (Task 1 apenas — Task 2 bloqueada)"
+  duration: "~15min (Task 1) + ~10min (Task 2, orquestrador)"
   completed: "2026-07-16"
-status: incomplete
+status: complete
 ---
 
-# Phase 98 Plan 01: RPC get_inss_guia_by_competence (Task 1 completa, Task 2 BLOQUEADA) Summary
+# Phase 98 Plan 01: RPC get_inss_guia_by_competence Summary
 
-RPC `get_inss_guia_by_competence` escrita como clone estrutural exato de `get_imposto_guia_by_competence`, para categoria única `'Pessoal - INSS'` — mas **NÃO aplicada em produção** nesta execução. A Task 2 (checkpoint de deploy via MCP Supabase) não pôde ser executada por este agente executor: as ferramentas MCP `mcp__claude_ai_Supabase__*` (`list_migrations`, `apply_migration`, `execute_sql`, `get_advisors`) não estão disponíveis no conjunto de ferramentas real deste agente, apesar de o prompt de disparo ter instruído explicitamente que o executor teria esse acesso neste ambiente.
+RPC `get_inss_guia_by_competence` — clone estrutural exato de `get_imposto_guia_by_competence`, para categoria única `'Pessoal - INSS'` — **APLICADA EM PRODUÇÃO** (`ckcdevcxgvueywivefgx`) pelo orquestrador, que tinha acesso real ao MCP do Supabase (o executor deste plano não tinha — ver "Task 2 — executada pelo orquestrador" abaixo).
+
+## Task 2 — executada pelo orquestrador (2026-07-16)
+
+O agente executor deste plano não tinha acesso às tools `mcp__claude_ai_Supabase__*` (ver seção "O que NÃO foi feito" original, preservada abaixo para histórico). O orquestrador (sessão que disparou este executor, com MCP real) assumiu a Task 2 diretamente:
+
+1. **`list_migrations` reconfirmado**: `max(version)` real = `20260716172353` (mesmo valor do addendum do RESEARCH.md — não mudou). `20260716230000` não colide, sem renumeração necessária.
+2. **`apply_migration` executado com sucesso** — `{"success":true}`.
+3. **Dados reais confirmados exatamente como esperado:**
+   - `get_inss_guia_by_competence('7f615df7-7bac-45e5-8a93-827fb9ddeec7', '2026-03-01')` → 1 linha: `{category:'Pessoal - INSS', total:1550.00, status:'paid', n:1}`.
+   - `get_inss_guia_by_competence('7f615df7-7bac-45e5-8a93-827fb9ddeec7', '2026-04-01')` → 2 linhas: `{total:1550.00, status:'cancelled', n:1}` e `{total:2652.31, status:'paid', n:1}`.
+4. **Anti-IDOR provado com JWT real impersonado** (não só ausência de dado): `SET LOCAL ROLE authenticated; SET LOCAL request.jwt.claims` com `sub` de um usuário real da org Thales (`4aed4678-3c3a-42bc-94ff-b6e9b2d08b2e`, role owner), chamando a RPC com `p_org_id` = Pé Vermeio (`7f615df7-7bac-45e5-8a93-827fb9ddeec7`, que TEM 2 linhas reais para 2026-04). Resultado: **0 linhas** — RLS bloqueou corretamente, não foi ausência de dado (a org alheia genuinamente tem dado da org vítima, prova válida, não a prova falsa documentada como lição anterior no memory do projeto).
+5. **`get_advisors` (security) limpo** — nenhum advisory novo relacionado a `get_inss_guia_by_competence`; todos os itens retornados são pré-existentes e não relacionados (RLS sem policy em `cat_backfill_queue`, search_path mutável em funções antigas, etc.).
+6. **RPCs irmãs intocadas** — `get_imposto_guia_by_competence` e `get_dre_operational_by_competence` confirmadas existentes sem nenhuma alteração (nenhum `CREATE OR REPLACE` foi rodado nelas nesta execução).
+
+**RPC viva em produção, pronta para o Plano 98-02 consumir via `useInssGuiaReal`.**
+
+---
+
+## Histórico original (executor) — preservado
+
+A Task 2 (checkpoint de deploy via MCP Supabase) não pôde ser executada por este agente executor: as ferramentas MCP `mcp__claude_ai_Supabase__*` (`list_migrations`, `apply_migration`, `execute_sql`, `get_advisors`) não estavam disponíveis no conjunto de ferramentas real deste agente, apesar de o prompt de disparo ter instruído explicitamente que o executor teria esse acesso neste ambiente. Isso motivou o orquestrador a assumir a Task 2 diretamente (ver seção acima).
 
 ## O que foi feito (Task 1 — COMPLETA)
 
