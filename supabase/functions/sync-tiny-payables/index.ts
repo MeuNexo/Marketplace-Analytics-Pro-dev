@@ -132,6 +132,40 @@ async function tinyGet(token: string, path: string, params: Record<string, strin
   return res.data ?? res;
 }
 
+// ── Retry com backoff para 429 (Phase 97) ─────────────────────────────────────
+// Causa-raiz 2026-07-16: o cron treasury_cat_tick (enrich_payable_step a cada
+// 15s→30s) consome o rate limit do Tiny (~100 req/min) continuamente; a
+// paginação deste sync colidia e a EF perdia TUDO no primeiro 429 — e o cron
+// recebia 202 "ok" (falha silenciosa; synced_at congelava sem alerta).
+// Fix: retry por página com backoff (o rate limit do Tiny renova por minuto),
+// com orçamento GLOBAL de retries para caber no wall-clock da EF.
+const RETRY_WAIT_MS = 61_000; // janela de rate limit do Tiny é por minuto
+const MAX_RETRIES_GLOBAL = 3; // orçamento total por execução (~183s extra máx.)
+
+// deno-lint-ignore no-explicit-any
+async function tinyGetRetry(
+  token: string,
+  path: string,
+  params: Record<string, string>,
+  mlUserId: string,
+  budget: { retriesLeft: number },
+  // deno-lint-ignore no-explicit-any
+): Promise<any> {
+  while (true) {
+    try {
+      return await tinyGet(token, path, params);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.includes("429") || budget.retriesLeft <= 0) throw e;
+      budget.retriesLeft--;
+      console.log(
+        `[sync-tiny-payables] ml_user_id=${mlUserId} 429 em ${path} offset=${params.offset ?? "?"} — aguardando ${RETRY_WAIT_MS / 1000}s (retries restantes: ${budget.retriesLeft})`,
+      );
+      await sleep(RETRY_WAIT_MS);
+    }
+  }
+}
+
 // ── Normalização de situação (client-side — A5: NÃO enviar param à API) ──────
 
 function normalizeSituacao(raw: unknown): "pending" | "paid" {
@@ -177,18 +211,19 @@ async function fetchPayables(
 ): Promise<TinyPayable[]> {
   let offset = 0;
   const allItems: TinyPayable[] = [];
+  const retryBudget = { retriesLeft: MAX_RETRIES_GLOBAL }; // Phase 97: sobrevive a 429
 
   while (true) {
     // Tiny v3 /contas-pagar pagina por OFFSET — o param `pagina` é IGNORADO
     // (validado em prod: pagina=2 retornava os mesmos 100 itens → loop).
     // CRÍTICO: NÃO enviar "situacao" (A5 do RESEARCH) — filtrar client-side.
     // CASHFIX-02 Suspect 1: passar dateFrom/dateTo à API Tiny (antes eram ignorados).
-    const data = await tinyGet(token, "/contas-pagar", {
+    const data = await tinyGetRetry(token, "/contas-pagar", {
       offset:        String(offset),
       limit:         "100",
       dataVencimentoInicial: dateFrom,
       dataVencimentoFinal:   dateTo,
-    });
+    }, mlUserId, retryBudget);
 
     // A API Tiny v3 retorna: { itens: [...], paginacao: { total } }
     // Observabilidade: logar raw keys da resposta (detecta Suspect 3 — formato mudou)
