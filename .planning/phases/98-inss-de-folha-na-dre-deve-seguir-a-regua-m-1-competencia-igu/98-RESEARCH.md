@@ -301,6 +301,16 @@ Nenhum outro arquivo no repo (`grep -rln "Pessoal - INSS\|useDreOperational\|'pe
    - **O que está incerto:** `dreRegime.ts` é hoje especificamente sobre o par (CMV, imposto de venda) e o regime previsão/apuração — misturar um resolver de categoria completamente diferente (folha) no mesmo arquivo pode confundir o próximo leitor sobre o escopo do módulo.
    - **Recomendação:** módulo novo (`dreInss.ts` ou nome equivalente) é mais limpo — decisão de baixo risco, fica a critério do planner/CLAUDE.
 
+## Addendum (confirmado ao vivo via MCP Supabase logo após esta pesquisa, mesma sessão do orquestrador)
+
+Os 2 itens marcados LOW/Tertiary abaixo foram confirmados diretamente no projeto `ckcdevcxgvueywivefgx`:
+
+1. **`max(version)` real de migrations em prod = `20260716172353`** (nome `cancelled_payables_dre`, aplicada mais tarde no mesmo dia que a `20260716210000` local — os dois nomes de arquivo coexistem, o repo local usa um esquema de numeração próprio que diverge do timestamp de aplicação real). **A migration nova desta phase deve ser numerada ACIMA de `20260716172353`** (ex.: `20260716230000` ou qualquer valor maior, seguindo o padrão local de "YYYYMMDDHHMMSS").
+
+2. **Padrão real de `Pessoal - INSS` em `cash_outflows` (org Pé Vermeio `7f615df7-7bac-45e5-8a93-827fb9ddeec7`, todos os meses 2024-12 a 2027-05):** confirma o caso extremo já antecipado no Pitfall/Code Example — **`competence_date = 2026-04-01` tem DUAS linhas**: `{amount: 1550, status: 'cancelled'}` e `{amount: 2652.31, status: 'paid'}`. Todos os outros meses têm exatamente 1 linha por competência. Isso VALIDA o design do Pattern 1/3 tal como proposto (`GROUP BY category, status` na RPC + `resolveInssReal` somando só `status !== 'cancelled'`) — o caso de abril resolve sozinho para `2652.31` sem nenhum código especial, exatamente como a soma de ICMS/PIS/COFINS já lida com múltiplas linhas por status. **Nenhuma mudança de design necessária**, só confirma que o plano deve incluir um teste explícito cobrindo "múltiplas linhas na mesma competência, uma cancelada e uma paga" (não é hipotético, já aconteceu em prod).
+
+Meses futuros (2026-07 em diante) já têm INSS `pending` recorrente (R$3.852,19, idêntico todo mês) — mesmo padrão de placeholder recorrente do Tiny já documentado para ICMS/PIS/COFINS; não é dado real ainda, só confirma que o mesmo cuidado de UI ("empurrãozinho"/nudge) poderia se aplicar ao INSS no futuro, mas está FORA do escopo desta phase (só a régua de valor + pergunta em aberto do gate).
+
 ## Environment Availability
 
 | Dependency | Required By | Available | Version | Fallback |
