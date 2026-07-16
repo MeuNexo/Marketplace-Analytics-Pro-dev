@@ -124,7 +124,9 @@ function SaidaBlocoRow({
   items: DreCashItem[];
   itemsLoading: boolean;
 }) {
-  const clickable = bloco.total > 0;
+  // [FIX 2 2026-07-16] "Estornos" (drillable: false) não tem lançamentos em
+  // cash_outflows — origem é cash_inflows (MP), sem drill-down disponível.
+  const clickable = bloco.total > 0 && bloco.drillable;
 
   return (
     <Collapsible open={expanded && clickable}>
@@ -393,17 +395,16 @@ export default function MLDreCaixa() {
               <span className="text-muted-foreground">(−) Descontos na fonte</span>
               <span className="tabular-nums text-muted-foreground">{fmtBR(cascade.entradas.descontosFonte)}</span>
             </div>
-            <div className="flex items-center justify-between text-[11px] py-0.5 pl-3">
-              <span className="text-muted-foreground/70">dos quais devoluções</span>
-              <span className="tabular-nums text-muted-foreground/70">{fmtBR(cascade.entradas.refunds)}</span>
-            </div>
+            {/* [FIX 2 2026-07-16] Estornos SAIU daqui — agora é linha de saída
+                própria ("Estornos (devoluções MP)"), logo após Fornecedores,
+                para não duplicar a informação. */}
             <div className="flex items-center justify-between text-[11px] py-0.5 pl-3">
               <span className="text-muted-foreground/70">ainda a liberar no mês</span>
               <span className="tabular-nums text-muted-foreground/70">{fmtBR(cascade.entradas.aLiberar)}</span>
             </div>
           </div>
 
-          {/* Recebimento líquido — linha forte */}
+          {/* Recebimento líquido — linha forte (base cheia, sem estornos: FIX 2) */}
           <div className="flex items-center justify-between text-sm py-2 mt-1 border-y-2 border-border font-bold">
             <span>= RECEBIMENTO LÍQUIDO MP</span>
             <span className="tabular-nums">{fmtBR(cascade.entradas.liquido)}</span>

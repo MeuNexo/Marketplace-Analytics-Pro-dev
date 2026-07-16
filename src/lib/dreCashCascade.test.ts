@@ -56,6 +56,8 @@ describe("buildDreCashCascade — Test 1: guardrail entrada/previsao (excluido/f
 
     const totalSaidasSem = cSemFornecedores.saidas.reduce((s, b) => s + b.total, 0);
     const totalSaidasCom = cComFornecedores.saidas.reduce((s, b) => s + b.total, 0);
+    // Sem linhas de refunds nos rows, a linha "estornos" fica com total 0 —
+    // não altera a soma.
     expect(totalSaidasSem).toBe(7000);
     // [AJUSTE Wesley 2026-07-16] Fornecedores (bloco `excluido`) É saída —
     // soma 50000 a mais no total de saídas, nunca contaminado por
@@ -76,7 +78,7 @@ describe("buildDreCashCascade — Test 1: guardrail entrada/previsao (excluido/f
 });
 
 describe("buildDreCashCascade — Test 2: matemática da cascata", () => {
-  it("resultadoOperacional = liquido − Σ(7 blocos, incl. fornecedores); resultadoCaixa = resultadoOperacional − financeiro", () => {
+  it("resultadoOperacional = liquido − Σ(8 linhas, incl. fornecedores + estornos); resultadoCaixa = resultadoOperacional − financeiro", () => {
     const rows: DreCashRow[] = [
       entradaRow("bruto", 120000),
       entradaRow("descontos_fonte", 5000),
@@ -96,32 +98,46 @@ describe("buildDreCashCascade — Test 2: matemática da cascata", () => {
 
     expect(c.entradas.bruto).toBe(120000);
     expect(c.entradas.descontosFonte).toBe(5000);
-    expect(c.entradas.refunds).toBe(-2000);
+    // [FIX 2] `refunds` não existe mais em `entradas` — virou linha de saída.
+    expect((c.entradas as Record<string, unknown>).refunds).toBeUndefined();
     expect(c.entradas.liquido).toBe(113000);
     expect(c.entradas.aLiberar).toBe(8000);
 
-    const totalSeteBlocos = 30000 + 4000 + 27852 + 3000 + 2103 + 15715 + 7360; // 90030
-    expect(c.resultadoOperacional).toBe(113000 - totalSeteBlocos); // 22970
+    // 7 blocos padrão + estornos (ABS de -2000 = 2000)
+    const totalOitoLinhas = 30000 + 2000 + 4000 + 27852 + 3000 + 2103 + 15715 + 7360; // 92030
+    expect(c.resultadoOperacional).toBe(113000 - totalOitoLinhas); // 20970
     expect(c.financeiro).toBe(20027);
-    expect(c.resultadoCaixa).toBe(22970 - 20027); // 2943
+    expect(c.resultadoCaixa).toBe(20970 - 20027); // 943
 
-    // As 7 linhas de saída SEMPRE aparecem, mesmo blocos sem dados (total 0).
-    // "excluido" (Fornecedores) é a PRIMEIRA linha da cascata.
-    expect(c.saidas.map((b) => b.bloco)).toEqual([...SAIDA_BLOCOS]);
+    // As 8 linhas de saída SEMPRE aparecem, mesmo blocos sem dados (total 0).
+    // "excluido" (Fornecedores) é a 1ª linha; "estornos" a 2ª, logo em seguida.
+    expect(c.saidas.map((b) => b.bloco)).toEqual([
+      "excluido",
+      "estornos",
+      ...SAIDA_BLOCOS.filter((b) => b !== "excluido"),
+    ]);
     expect(c.saidas[0].bloco).toBe("excluido");
+    expect(c.saidas[1].bloco).toBe("estornos");
+    expect(c.saidas[1].total).toBe(2000);
+    expect(c.saidas[1].label).toBe("Estornos (devoluções MP)");
+    expect(c.saidas[1].drillable).toBe(false);
     expect(c.saidas.every((b) => typeof b.total === "number")).toBe(true);
   });
 
-  it("blocos sem linhas aparecem com total 0 — a cascata sempre mostra as 7 linhas", () => {
+  it("blocos sem linhas aparecem com total 0 — a cascata sempre mostra as 8 linhas", () => {
     const rows: DreCashRow[] = [
       entradaRow("liquido", 1000),
       saidaRow("pessoal", "Salários", 500),
     ];
     const c = buildDreCashCascade(rows);
-    expect(c.saidas).toHaveLength(7);
+    expect(c.saidas).toHaveLength(8);
     const fornecedores = c.saidas.find((b) => b.bloco === "excluido");
     expect(fornecedores?.total).toBe(0);
     expect(fornecedores?.categorias).toEqual([]);
+    const estornos = c.saidas.find((b) => b.bloco === "estornos");
+    expect(estornos?.total).toBe(0);
+    expect(estornos?.categorias).toEqual([]);
+    expect(estornos?.drillable).toBe(false);
     const naoClass = c.saidas.find((b) => b.bloco === "nao_classificado");
     expect(naoClass?.total).toBe(0);
     expect(naoClass?.categorias).toEqual([]);
@@ -243,5 +259,61 @@ describe("buildDreCashCascade — Test 9: fornecedores (bloco excluido) no badge
     const fornecedores = c.saidas.find((b) => b.bloco === "excluido");
     expect(fornecedores?.label).toBe("Fornecedores (compras)");
     expect(fornecedores?.label.toLowerCase()).not.toContain("exclu");
+  });
+});
+
+describe("buildDreCashCascade — Test 10: FIX 2 (2026-07-16) — entrada cheia + estorno como saída", () => {
+  it("`refunds` (negativo, seção entrada) vira linha de SAÍDA 'Estornos (devoluções MP)' com valor ABS, logo após Fornecedores", () => {
+    const rows: DreCashRow[] = [
+      entradaRow("liquido", 100000),
+      entradaRow("refunds", -5000),
+      saidaRow("excluido", "Fornecedores", 30000),
+      saidaRow("pessoal", "Salários", 20000),
+    ];
+    const c = buildDreCashCascade(rows);
+
+    const estornos = c.saidas.find((b) => b.bloco === "estornos");
+    expect(estornos).toBeDefined();
+    expect(estornos?.label).toBe("Estornos (devoluções MP)");
+    expect(estornos?.total).toBe(5000);
+    expect(estornos?.drillable).toBe(false);
+    expect(estornos?.categorias).toEqual([]);
+
+    // Posição: logo após "excluido" (Fornecedores).
+    expect(c.saidas.findIndex((b) => b.bloco === "excluido")).toBe(0);
+    expect(c.saidas.findIndex((b) => b.bloco === "estornos")).toBe(1);
+
+    // `entradas` não expõe mais `refunds` — a base já chega cheia da RPC.
+    expect((c.entradas as Record<string, unknown>).refunds).toBeUndefined();
+    expect(c.entradas.liquido).toBe(100000);
+
+    // Estornos somam no resultado operacional junto com os demais blocos.
+    expect(c.resultadoOperacional).toBe(100000 - 30000 - 5000 - 20000);
+  });
+
+  it("cenário real de junho: entrada 193.476,52, estornos 33.837,64, outras saídas 204.305,54 → resultado −44.666,66", () => {
+    const rows: DreCashRow[] = [
+      entradaRow("liquido", 193476.52),
+      entradaRow("refunds", -33837.64),
+      saidaRow("excluido", "Fornecedores", 100000),
+      saidaRow("impostos_venda", "Imposto Venda - ICMS", 30000),
+      saidaRow("pessoal", "Salários", 40000),
+      saidaRow("estrutura", "Aluguéis", 15000),
+      saidaRow("servicos", "Contabilidade", 10000),
+      saidaRow("operacional", "Insumos", 9305.54),
+      // 100000 + 30000 + 40000 + 15000 + 10000 + 9305,54 = 204.305,54
+    ];
+    const c = buildDreCashCascade(rows);
+
+    const estornos = c.saidas.find((b) => b.bloco === "estornos");
+    expect(estornos?.total).toBe(33837.64);
+
+    const outrasSaidas = c.saidas.reduce((s, b) => s + b.total, 0) - (estornos?.total ?? 0);
+    expect(outrasSaidas).toBeCloseTo(204305.54, 2);
+
+    expect(c.resultadoOperacional).toBeCloseTo(-44666.66, 2);
+    expect(c.resultadoCaixa).toBeCloseTo(-44666.66, 2);
+    expect(c.badge.tone).toBe("negative");
+    expect(c.badge.texto).toContain("Faltou");
   });
 });

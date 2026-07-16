@@ -22,6 +22,20 @@
 // SOMA como a PRIMEIRA linha de saída da cascata, rotulada
 // "Fornecedores (compras)", antes de impostos.
 //
+// [FIX 2 Wesley 2026-07-16, decisão do checkpoint]: "Entrada cheia + estorno
+// como saída". `entradas.liquido` agora É a base cheia — os créditos que
+// caíram na conta, sem estornos netados dentro (a RPC get_dre_cash já
+// recalcula `liquido`/`bruto` só com net_amount > 0, migration
+// 20260717020000). A linha `refunds` da seção `entrada` da RPC (negativa)
+// vira aqui a linha de SAÍDA "Estornos (devoluções MP)", com valor ABS,
+// posicionada logo após "Fornecedores (compras)" — soma no resultado
+// operacional/final/KPIs/badge como qualquer outro bloco de saída. Sem
+// drill-down (`drillable: false`): os lançamentos originam de cash_inflows
+// (Mercado Pago), não de cash_outflows (Tiny) — get_dre_cash_items não
+// teria nada a mostrar para esse bloco. O resultado do mês não muda; só a
+// leitura (a base de entrada estava líquida por dentro, agora fica cheia
+// por fora, com o estorno explícito como saída).
+//
 // Regime: caixa puro, sem shift de competência (Pitfall 1 do 99-RESEARCH) —
 // a previsão de imposto compara guia paga NO MESMO MÊS exibido, nunca M+1.
 //
@@ -86,6 +100,13 @@ const SAIDA_LABELS: Record<SaidaBloco, string> = {
   nao_classificado: "Não classificado",
 };
 
+/**
+ * Rótulo da linha sintética "Estornos" (FIX 2) — não faz parte de
+ * SAIDA_BLOCOS porque não vem de cash_outflows/dre_bloco_for_category; vem
+ * da categoria `refunds` da seção `entrada` da RPC, invertida em SAÍDA.
+ */
+const ESTORNOS_LABEL = "Estornos (devoluções MP)";
+
 /** Categoria dentro de um bloco de saída, com total agregado. */
 export interface DreCashCategoriaLine {
   categoria: string;
@@ -93,20 +114,29 @@ export interface DreCashCategoriaLine {
   n: number;
 }
 
-/** Linha agregada de um bloco de saída (sempre presente, mesmo com total 0). */
+/**
+ * Linha agregada de um bloco de saída (sempre presente, mesmo com total 0).
+ * `bloco: "estornos"` é a única linha sintética que não vem de
+ * `SAIDA_BLOCOS`/cash_outflows — ver `ESTORNOS_LABEL` (FIX 2).
+ */
 export interface DreCashSaidaLine {
-  bloco: SaidaBloco;
+  bloco: SaidaBloco | "estornos";
   label: string;
   total: number;
   n: number;
   categorias: DreCashCategoriaLine[];
+  /** false só para "estornos" — sem lançamentos em cash_outflows para drill-down. */
+  drillable: boolean;
 }
 
-/** Linhas informativas da seção "entrada" (base = liquido). */
+/**
+ * Linhas informativas da seção "entrada" — `liquido` é a base CHEIA (créditos
+ * que caíram na conta, sem estornos netados dentro; FIX 2 2026-07-16). Não há
+ * mais campo `refunds` aqui — os estornos viram linha de SAÍDA na cascata.
+ */
 export interface DreCashEntradas {
   bruto: number;
   descontosFonte: number;
-  refunds: number;
   liquido: number;
   aLiberar: number;
 }
@@ -114,9 +144,13 @@ export interface DreCashEntradas {
 /** Resultado completo da cascata de caixa a partir das linhas da RPC. */
 export interface DreCashCascade {
   entradas: DreCashEntradas;
-  /** As 7 linhas de saída, sempre nesta ordem, mesmo blocos sem dados (total 0). */
+  /**
+   * As 8 linhas de saída, sempre nesta ordem, mesmo blocos sem dados
+   * (total 0): 7 blocos padrão (SAIDA_BLOCOS) + "estornos", inserida logo
+   * após "excluido"/Fornecedores (FIX 2).
+   */
   saidas: DreCashSaidaLine[];
-  /** Recebimento líquido − Σ(7 blocos de saída, incl. Fornecedores/excluido). */
+  /** Recebimento líquido − Σ(8 linhas de saída, incl. Fornecedores/excluido e Estornos). */
   resultadoOperacional: number;
   /** Bloco financeiro (empréstimos etc.), fora do operacional. */
   financeiro: number;
@@ -182,14 +216,13 @@ export function buildDreCashCascade(rows: DreCashRow[]): DreCashCascade {
   const saidaRows = safeRows.filter((r) => r.secao === "saida");
   const previsaoRows = safeRows.filter((r) => r.secao === "previsao");
 
-  // ---- Entradas (informativas — base real é `liquido`) ----
+  // ---- Entradas (informativas — base real é `liquido`, agora CHEIA: FIX 2) ----
   const entradaCategoriaTotal = (categoria: string) =>
     sumTotal(entradaRows.filter((r) => r.categoria === categoria));
 
   const entradas: DreCashEntradas = {
     bruto: entradaCategoriaTotal("bruto"),
     descontosFonte: entradaCategoriaTotal("descontos_fonte"),
-    refunds: entradaCategoriaTotal("refunds"),
     liquido: entradaCategoriaTotal("liquido"),
     aLiberar: entradaCategoriaTotal("a_liberar"),
   };
@@ -198,7 +231,7 @@ export function buildDreCashCascade(rows: DreCashRow[]): DreCashCascade {
   const saidaOperacional = saidaRows.filter((r) => r.bloco !== "financeiro");
   const saidaFinanceiro = saidaRows.filter((r) => r.bloco === "financeiro");
 
-  const saidas: DreCashSaidaLine[] = SAIDA_BLOCOS.map((bloco) => {
+  const saidaBlocosPadrao: DreCashSaidaLine[] = SAIDA_BLOCOS.map((bloco) => {
     const blocoRows = saidaOperacional.filter((r) => r.bloco === bloco);
     const categorias: DreCashCategoriaLine[] = blocoRows.map((r) => ({
       categoria: r.categoria,
@@ -211,8 +244,30 @@ export function buildDreCashCascade(rows: DreCashRow[]): DreCashCascade {
       total: sumTotal(blocoRows),
       n: blocoRows.reduce((s, r) => s + r.n, 0),
       categorias,
+      drillable: true,
     };
   });
+
+  // ---- Estornos (FIX 2): categoria `refunds` da seção entrada, negativa na
+  // RPC, vira linha de SAÍDA com ABS, logo após "Fornecedores" (excluido).
+  // Sem drill-down — origem é cash_inflows (MP), não cash_outflows (Tiny).
+  const estornosRows = entradaRows.filter((r) => r.categoria === "refunds");
+  const estornosLine: DreCashSaidaLine = {
+    bloco: "estornos",
+    label: ESTORNOS_LABEL,
+    total: round2(Math.abs(sumTotal(estornosRows))),
+    n: estornosRows.reduce((s, r) => s + r.n, 0),
+    categorias: [],
+    drillable: false,
+  };
+
+  const excluidoIndex = saidaBlocosPadrao.findIndex((b) => b.bloco === "excluido");
+  const insertAt = excluidoIndex === -1 ? 0 : excluidoIndex + 1;
+  const saidas: DreCashSaidaLine[] = [
+    ...saidaBlocosPadrao.slice(0, insertAt),
+    estornosLine,
+    ...saidaBlocosPadrao.slice(insertAt),
+  ];
 
   const totalSaidasOperacionais = round2(saidas.reduce((s, b) => s + b.total, 0));
   const resultadoOperacional = round2(entradas.liquido - totalSaidasOperacionais);
