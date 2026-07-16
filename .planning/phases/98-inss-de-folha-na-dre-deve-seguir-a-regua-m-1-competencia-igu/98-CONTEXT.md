@@ -95,5 +95,15 @@ Nenhuma migration nova deve ser numerada sem antes conferir `max(version)` vivo 
 
 ---
 
+## Decisão pós-revisão do plano (2026-07-16)
+
+Wesley revisou os 3 planos (98-01/02/03) e respondeu à pergunta em aberto (checkpoint `Task 1` do 98-03):
+
+**Opção A confirmada — o gate de fechamento (`resolveCloseGate`/`canApurarImposto`) TAMBÉM deve bloquear "marcar mês como apurado" quando a guia de INSS (competência M+1) estiver ausente**, mesmo padrão do C6 (CMV cheio)/C7 (imposto de venda). Guia cancelada não bloqueia (crédito); guia ausente bloqueia.
+
+**Importante:** os 3 planos atuais (98-01/02/03) só CAPTURAM essa decisão — não implementam a extensão do gate (por desenho, ver `98-03-PLAN.md` Task 1). A implementação de `canApurarInss` em `dreCloseGate.ts` (mirror de `canApurarImposto`) fica pendente para uma **phase futura dedicada** (candidata a Phase 99), a ser aberta após a Phase 98 fechar. Registrar como pendência explícita no STATE.md/ROADMAP.md quando a Phase 98 for encerrada.
+
+---
+
 *Phase: 98-inss-de-folha-na-dre-deve-seguir-a-regua-m-1-competencia-igu*
 *Context gathered: 2026-07-16 via conversa direta com o dono (sem discuss-phase formal — decisão já estava fechada)*
