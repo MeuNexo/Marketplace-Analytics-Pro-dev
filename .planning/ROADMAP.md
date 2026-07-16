@@ -933,6 +933,34 @@ Plans:
 - [ ] 96-07-PLAN.md — [C6-backfill] port OBRIGATÓRIO das EFs `sync-tiny-costs`/`recalc-order-costs` (jul só 32,9% de cobertura) + backfill idempotente (34 dos 39 SKUs) (wave 4, autonomous:false)
 - [ ] 96-08-PLAN.md — provas SC1..SC6 contra prod (swing R$52.496,21) + distinção SC2×SC5 + checkpoint visual Wesley (wave 5, autonomous:false)
 
+### Phase 98: INSS de folha na DRE deve seguir a régua M+1 (competência) igual ICMS/PIS/COFINS já seguem
+
+**Goal:** O bloco "Pessoal" da DRE do card `/vendas` passa a tratar o INSS de folha com a MESMA régua de competência M+1 que ICMS/PIS/COFINS já usam: em mês **apurado** (fechado), o INSS exibido é o da guia real com `competence_date = M+1` (crédito/cancelada não soma); em mês **aberto** (previsão), nada muda — o bloco Pessoal permanece byte-a-byte idêntico ao comportamento anterior a esta phase.
+
+**Contexto:** Wesley confirmou ao vivo (2026-07-16), durante a validação mês-a-mês pós-Phase 96/97, que o INSS de folha "apura no mês atual, mas é referente ao mês anterior" — mesmo padrão dos 3 impostos de venda. Hoje `Pessoal - INSS` soma junto com Salários/Pró-labore no mês corrente (sem deslocamento), dentro de `get_dre_operational_by_competence` (RPC 87, intocada). Contexto completo + dado real (org Pé Vermeio, `Pessoal - INSS` com 2 linhas na competência de abril: 1.550,00 cancelada + 2.652,31 paga): `98-CONTEXT.md` / `98-RESEARCH.md`.
+
+**Requirements:** INSS-01 (RPC nova `get_inss_guia_by_competence`, categoria única, SECURITY INVOKER), INSS-02 (resolver puro M+1 — cancelled não soma, paid/pending somam, cobre múltiplas linhas na mesma competência), INSS-03 (bloco Pessoal na tela usa o INSS real M+1 só em apuração; previsão inalterada), INSS-04 (checkpoint: decisão do dono capturada sobre estender ou não o gate de fechamento ao INSS — implementação, se aprovada, fica para phase futura). *(feature nova — IDs locais, mesmo padrão da Phase 93)*
+
+**Depends on:** Phase 97 (pipeline de sync confiável) + Phase 94/96 (regime previsão/apuração + gate de fechamento + `dreRegime.ts`/`dreCloseGate.ts` — clonados, nunca modificados)
+
+**Fora de escopo:** Salários/Pró-labore continuam sem deslocamento (só o INSS muda). `get_dre_operational_by_competence` e `get_imposto_guia_by_competence` NUNCA são modificadas. Extensão do gate de fechamento (`resolveCloseGate`) para bloquear com INSS ausente — decisão capturada via checkpoint; implementação (se aprovada) fica para phase futura.
+
+**Success Criteria** (o que precisa ser VERDADE):
+
+1. RPC `get_inss_guia_by_competence(p_org_id, p_competence)` em prod (SECURITY INVOKER, clone de `get_imposto_guia_by_competence` com categoria única `'Pessoal - INSS'`), devolvendo category×status×total×n; anti-IDOR provado (org alheia = 0 linhas).
+2. Mês fechado (apuração): o bloco Pessoal soma Salários/Pró-labore (mês corrente) + INSS da guia real M+1 (cancelada não soma; paga/pendente soma) — inclusive no caso real de abril (2 linhas na mesma competência, uma cancelada).
+3. Mês aberto (previsão): o bloco Pessoal permanece byte-a-byte idêntico ao comportamento pré-Phase-98 (zero regressão) — nenhuma linha crua é filtrada, nenhum valor M+1 é somado.
+4. `get_dre_operational_by_competence`, `get_imposto_guia_by_competence`, `dreRegime.ts` e `dreCascade.ts` permanecem intocados (diffs vazios) — a mudança vive num módulo novo (`dreInss.ts`) + na orquestração de `MercadoLivre.tsx`.
+5. Decisão do dono sobre estender o gate de fechamento ao INSS capturada via checkpoint e registrada (não implementada às pressas nesta phase).
+
+**Plans:** 3 plans (2 waves)
+
+Plans:
+
+- [ ] 98-01-PLAN.md — Backend: migration `get_inss_guia_by_competence` (SECURITY INVOKER, clone de `get_imposto_guia_by_competence`) + checkpoint MCP apply/anti-IDOR/prova com dado real de março-abril (wave 1, autonomous:false, INSS-01)
+- [ ] 98-02-PLAN.md — Frontend puro (TDD): `dreInss.ts` (resolveInssReal/filterRawInssRow/applyInssReal/resolveInssForCascade) + `useInssGuiaReal` (mirror de `useImpostoGuiaReal`) (wave 1, INSS-02)
+- [ ] 98-03-PLAN.md — Integração: checkpoint de decisão sobre o gate + wiring em `MercadoLivre.tsx` (regime-gated) + reescrita do describe C11 em `dreCascade.test.ts` (wave 2, autonomous:false, INSS-03/INSS-04)
+
 ---
 
 ### Phase 93: Enviar anexo na resposta da reclamação (upload)
