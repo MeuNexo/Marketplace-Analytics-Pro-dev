@@ -953,13 +953,13 @@ Plans:
 4. `get_dre_operational_by_competence`, `get_imposto_guia_by_competence`, `dreRegime.ts` e `dreCascade.ts` permanecem intocados (diffs vazios) — a mudança vive num módulo novo (`dreInss.ts`) + na orquestração de `MercadoLivre.tsx`.
 5. Decisão do dono sobre estender o gate de fechamento ao INSS capturada via checkpoint e registrada (não implementada às pressas nesta phase).
 
-**Plans:** 3 plans (2 waves)
+**Plans:** 3/3 plans complete
 
 Plans:
 
-- [ ] 98-01-PLAN.md — Backend: migration `get_inss_guia_by_competence` (SECURITY INVOKER, clone de `get_imposto_guia_by_competence`) + checkpoint MCP apply/anti-IDOR/prova com dado real de março-abril (wave 1, autonomous:false, INSS-01)
-- [ ] 98-02-PLAN.md — Frontend puro (TDD): `dreInss.ts` (resolveInssReal/filterRawInssRow/applyInssReal/resolveInssForCascade) + `useInssGuiaReal` (mirror de `useImpostoGuiaReal`) (wave 1, INSS-02)
-- [ ] 98-03-PLAN.md — Integração: checkpoint de decisão sobre o gate + wiring em `MercadoLivre.tsx` (regime-gated) + reescrita do describe C11 em `dreCascade.test.ts` (wave 2, autonomous:false, INSS-03/INSS-04)
+- [x] 98-01-PLAN.md — Backend: migration `get_inss_guia_by_competence` (SECURITY INVOKER, clone de `get_imposto_guia_by_competence`) + checkpoint MCP apply/anti-IDOR/prova com dado real de março-abril (wave 1, autonomous:false, INSS-01)
+- [x] 98-02-PLAN.md — Frontend puro (TDD): `dreInss.ts` (resolveInssReal/filterRawInssRow/applyInssReal/resolveInssForCascade) + `useInssGuiaReal` (mirror de `useImpostoGuiaReal`) (wave 1, INSS-02)
+- [x] 98-03-PLAN.md — Integração: checkpoint de decisão sobre o gate + wiring em `MercadoLivre.tsx` (regime-gated) + reescrita do describe C11 em `dreCascade.test.ts` (wave 2, autonomous:false, INSS-03/INSS-04)
 
 ---
 

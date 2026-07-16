@@ -2,24 +2,24 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 94
-current_phase_name: dre-regime-previsao-apuracao-imposto-real-cmv-cheio-no-fecha
+current_phase: 98
+current_phase_name: inss-de-folha-na-dre-deve-seguir-a-regua-m-1-competencia-igu
 status: verifying
 stopped_at: Completed 96-05-PLAN.md
-last_updated: "2026-07-15T22:45:00.293Z"
-last_activity: 2026-07-11
-last_activity_desc: Phase 94 execution started
+last_updated: "2026-07-16T21:04:04.014Z"
+last_activity: 2026-07-16
+last_activity_desc: Phase 98 execution started
 progress:
-  total_phases: 41
-  completed_phases: 22
-  total_plans: 90
-  completed_plans: 80
-  percent: 54
+  total_phases: 42
+  completed_phases: 23
+  total_plans: 93
+  completed_plans: 83
+  percent: 55
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
 
-- **Status:** Phase complete — ready for verification
+- **Status:** verifying
 - **Backend:** tabela `purchase_orders` (migration `20260665000000`, RLS org-first); EF `sync-tiny-purchase-orders` v1 (endpoint Tiny correto = `/ordem-compra` singular; waitUntil 202; `organization_id` no insert); RPC `get_replenishment_by_sku` (migration `20260665000100`, +CTE `incoming_by_sku`, +colunas `qtd_a_caminho`/`data_proxima_chegada`, desconta TODA a qtd a caminho — decisão Wesley); cron `sync-tiny-purchase-orders-daily` (jobid 34, 03:15 UTC).
 - **Prova:** sync 22 OCs/135 SKUs/1.885 un; RPC 93 SKUs a caminho, 80 zeraram sugestão, cobertura parcial preserva gatilho (ex `11011273-CAFE3374G` → ainda sugere 10). tsc 0 + 208 testes + build ok.
 - **Decisão tunável:** "a caminho" = situação `3` (aguardando recebimento); ampliar p/ `2` (aprovada) = 1 linha em `SITUACOES_A_CAMINHO` na EF.
@@ -131,14 +131,14 @@ See: .planning/PROJECT.md
 
 **Milestone:** v8.0 — Consultor v2 (Inteligência)
 **Core value:** Consultor que explica, prioriza e ajuda a agir — LLM sob demanda + ações com aprovação, sobre o motor determinístico do v1.
-**Current focus:** Phase 94 — dre-regime-previsao-apuracao-imposto-real-cmv-cheio-no-fecha
+**Current focus:** Phase 98 — inss-de-folha-na-dre-deve-seguir-a-regua-m-1-competencia-igu
 
 ## Current Position
 
-Phase: 94 (dre-regime-previsao-apuracao-imposto-real-cmv-cheio-no-fecha) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
-Last activity: 2026-07-11 — Phase 94 execution started
+Phase: 98 (inss-de-folha-na-dre-deve-seguir-a-regua-m-1-competencia-igu) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 98
+Last activity: 2026-07-16 — Phase 98 execution started
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
 
 ### Phase 54 — Wave 1 EXECUTADA (2026-06-24), Wave 2 PENDENTE
@@ -422,6 +422,8 @@ Dashboard atual mostra:
 - Phase 94 added: DRE Regime Previsão↔Apuração (imposto real + CMV cheio no fechamento manual do mês)
 - Phase 94 planned: 3 planos/3 waves, plan-checker PASS; M+1 no frontend, dre_month_close nova
 - Phase 96 added: DRE — correções da revisão linha a linha (C1–C9, C11); C10 rejeitado pelo dono; ramificada do main (Phase 95 em voo)
+- Phase 98 added: INSS de folha deve seguir regua M+1 igual ICMS/PIS/COFINS (descoberto na validacao mes-a-mes pos Phase 96/97; decisao Wesley 2026-07-16: Opcao A confirmada)
+- Phase 98 completed: Phase 98 (INSS M+1) EXECUTADA e commitada — RPC get_inss_guia_by_competence em prod, dreInss.ts + hook + wiring em MercadoLivre.tsx, 606/606 testes verdes. Pendencia registrada: extensao do gate de fechamento (canApurarInss) para bloquear com INSS ausente — decisao Opcao A do Wesley, NAO implementada nesta phase, candidata Phase 99.
 
 ## Deferred Items
 
@@ -439,12 +441,12 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-**Last session:** 2026-07-15T22:44:15.934Z
+**Last session:** 2026-07-16 (resume DRE)
 
 **Resume file:** 
 
 None
-Stopped at: Completed 96-05-PLAN.md
+Stopped at: Preview p/ ok visual Wesley (Phase 96 completa + backend 97) — branch `gsd/phase-97-dre-pipeline-confiavel` @ 8e351d06, share link Vercel gerado (expira 17/07 ~15:52). Após ok: SUMMARYs 96-07/96-08 → fechar 96 → PR/merge → frontend 97 (banner staleness em MercadoLivre.tsx)
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
