@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 98
-current_phase_name: inss-de-folha-na-dre-deve-seguir-a-regua-m-1-competencia-igu
+current_phase: 99
+current_phase_name: DRE Caixa — apuração por recebimento Mercado Pago
 status: executing
 stopped_at: Completed 96-05-PLAN.md
-last_updated: "2026-07-16T22:45:03.835Z"
+last_updated: "2026-07-16T22:54:54.173Z"
 last_activity: 2026-07-16
-last_activity_desc: Phase 98 execution started
+last_activity_desc: Phase 99 execution started
 progress:
   total_phases: 43
   completed_phases: 23
-  total_plans: 93
-  completed_plans: 83
+  total_plans: 96
+  completed_plans: 84
   percent: 53
 ---
 
@@ -131,14 +131,14 @@ See: .planning/PROJECT.md
 
 **Milestone:** v8.0 — Consultor v2 (Inteligência)
 **Core value:** Consultor que explica, prioriza e ajuda a agir — LLM sob demanda + ações com aprovação, sobre o motor determinístico do v1.
-**Current focus:** Phase 98 — inss-de-folha-na-dre-deve-seguir-a-regua-m-1-competencia-igu
+**Current focus:** Phase 99 — DRE Caixa — apuração por recebimento Mercado Pago
 
 ## Current Position
 
-Phase: 98 (inss-de-folha-na-dre-deve-seguir-a-regua-m-1-competencia-igu) — EXECUTING
-Plan: 1 of 3
+Phase: 99 (DRE Caixa — apuração por recebimento Mercado Pago) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-07-16 — Phase 98 execution started
+Last activity: 2026-07-16 — Phase 99 execution started
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
 
 ### Phase 54 — Wave 1 EXECUTADA (2026-06-24), Wave 2 PENDENTE
@@ -286,6 +286,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | Phase 96 P04 | 35min | 3 tasks | 3 files |
 | Phase 96 P05 | 8min | 3 tasks | 4 files |
 | Phase 96 P06 | 25min | 2 tasks | 2 files |
+| Phase 99 P02 | 8min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -377,6 +378,8 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 - [Phase 96]: 96-04: hooks nunca devolvem null — mes sem cancelamento (0) e competencia sem nao-classificado ([]) sao estados validos, nao ausencia de dado
 - [Phase 96]: 96-05: computeMargemContribuicao extraído como fonte única e pura, eliminando a duplicação tripla da fórmula da margem (MercadoLivre.tsx + MLCostCard.tsx + re-soma de totalTarifasEfetivo); receita bruta composta no card (paid_revenue + cancelledRevenue), nunca na RPC get_cost_waterfall
 - [Phase 96]: 96-06: shouldNudgeClose não foi alinhado ao gate — contradição visual (nudge 🟢 x botão bloqueado) resolvida no tooltip do botão, não suprimindo o nudge
+- [Phase ?]: Phase 99-02: DESVIO_ALERT_PCT = 20 (limiar de alerta previsão x guia paga de imposto na DRE Caixa) — Claude's Discretion
+- [Phase ?]: Phase 99-02: badge com resultadoCaixa === 0 (movimento houve, resultado fechou em zero) tratado como neutral 'Sem movimentação no mês', por analogia ao mês vazio
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -442,7 +445,7 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-**Last session:** 2026-07-16 (resume DRE)
+**Last session:** 2026-07-16T22:54:18.448Z
 
 **Resume file:** 
 
