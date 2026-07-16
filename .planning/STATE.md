@@ -6,14 +6,14 @@ current_phase: 99
 current_phase_name: DRE Caixa — apuração por recebimento Mercado Pago
 status: executing
 stopped_at: Completed 96-05-PLAN.md
-last_updated: "2026-07-16T22:54:54.173Z"
+last_updated: "2026-07-16T23:06:07.675Z"
 last_activity: 2026-07-16
 last_activity_desc: Phase 99 execution started
 progress:
   total_phases: 43
   completed_phases: 23
   total_plans: 96
-  completed_plans: 84
+  completed_plans: 85
   percent: 53
 ---
 
@@ -136,7 +136,7 @@ See: .planning/PROJECT.md
 ## Current Position
 
 Phase: 99 (DRE Caixa — apuração por recebimento Mercado Pago) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-07-16 — Phase 99 execution started
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
@@ -287,6 +287,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | Phase 96 P05 | 8min | 3 tasks | 4 files |
 | Phase 96 P06 | 25min | 2 tasks | 2 files |
 | Phase 99 P02 | 8min | 2 tasks | 6 files |
+| Phase 99 P01 | 15min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -380,6 +381,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 - [Phase 96]: 96-06: shouldNudgeClose não foi alinhado ao gate — contradição visual (nudge 🟢 x botão bloqueado) resolvida no tooltip do botão, não suprimindo o nudge
 - [Phase ?]: Phase 99-02: DESVIO_ALERT_PCT = 20 (limiar de alerta previsão x guia paga de imposto na DRE Caixa) — Claude's Discretion
 - [Phase ?]: Phase 99-02: badge com resultadoCaixa === 0 (movimento houve, resultado fechou em zero) tratado como neutral 'Sem movimentação no mês', por analogia ao mês vazio
+- [Phase 99-01]: RPCs get_dre_cash/get_dre_cash_items/get_dre_cash_history aplicadas em prod via MCP (regime de caixa puro, sem shift M+1); reuso de dre_bloco_for_category sem redefinicao
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -445,7 +447,7 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-**Last session:** 2026-07-16T22:54:18.448Z
+**Last session:** 2026-07-16T23:05:18.492Z
 
 **Resume file:** 
 
