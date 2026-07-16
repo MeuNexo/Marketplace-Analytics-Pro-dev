@@ -18,7 +18,7 @@ A DRE por faturamento **não é alterada nem removida** — fica na página Vend
 |---|---|
 | Base de entradas | Recebimento **líquido** MP (`cash_inflows.net_amount`) por **`release_date`** (data de liberação) |
 | Tarifas ML | NÃO abatidas de novo — já vêm retidas na fonte dentro do net. Diferença bruto−líquido exibida como informativo |
-| Régua de saídas | **Caixa puro**: `cash_outflows` com `status='paid'`, pela data de pagamento (`outflow_date`), no mês |
+| Régua de saídas | **Caixa puro**: `cash_outflows` com `status='paid'`, pela data de pagamento (`outflow_date`), no mês. **Fornecedores (bloco `excluido` da DRE por competência) ENTRAM como saída** — decisão do Wesley 2026-07-16: nesta DRE o pagamento de fornecedor é dinheiro que saiu, sem exceção |
 | Imposto | Guia **paga no mês** entra como saída real. Além disso, linha **informativa** de previsão: % médio (guias pagas ÷ faturamento) dos últimos 3 meses fechados × faturamento do mês corrente, com alerta de desvio |
 | Escopo de entradas | **Só Mercado Pago** (vendas ML). Aportes/cofrinho continuam excluídos pelo sync. Sem entradas manuais nesta fase |
 | Blocos de categoria | Reaproveitar o mapa categoria→bloco existente (`dre_bloco_for_category`): impostos_venda, pessoal, estrutura, servicos, operacional, financeiro, nao_classificado, excluido |
@@ -41,6 +41,7 @@ Recebimento bruto MP .................... informativo (Σ gross_amount)
     dos quais devoluções/refunds ........ informativo (Σ net_amount onde status_mp='refunded')
 = RECEBIMENTO LÍQUIDO MP ................ Σ net_amount, release_date no mês, release_date ≤ hoje
 
+(−) Fornecedores (compras)            ← bloco `excluido` da DRE atual; AQUI conta como saída (decisão 2026-07-16)
 (−) Impostos (guias pagas no mês)
 (−) Pessoal
 (−) Estrutura

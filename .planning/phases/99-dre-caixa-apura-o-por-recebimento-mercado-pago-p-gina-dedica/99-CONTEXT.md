@@ -27,6 +27,7 @@ Página nova dedicada `/dre-caixa` que responde, em destaque, a pergunta do dono
 
 ### Régua de saídas (LOCKED)
 - Caixa puro: `cash_outflows` com `status='paid'`, pela data de pagamento (`outflow_date`), dentro do mês. `cancelled` sempre excluídas. `competence_date` NÃO é usada aqui.
+- **[AJUSTE Wesley 2026-07-16, durante checkpoint]: Fornecedores (bloco `excluido`) ENTRAM como saída na DRE Caixa** — linha "Fornecedores (compras)" na cascata, soma no resultado e no histórico. O conceito de "excluído" era da DRE por competência; aqui todo pagamento é saída.
 - Blocos de categoria = reaproveitar o helper existente `dre_bloco_for_category(text)` (impostos_venda, pessoal, estrutura, servicos, operacional, financeiro, nao_classificado, excluido).
 - `nao_classificado` > 0 → gate visual (mesmo aviso da DRE atual).
 
