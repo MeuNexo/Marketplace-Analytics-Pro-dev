@@ -961,6 +961,31 @@ Plans:
 - [x] 98-02-PLAN.md — Frontend puro (TDD): `dreInss.ts` (resolveInssReal/filterRawInssRow/applyInssReal/resolveInssForCascade) + `useInssGuiaReal` (mirror de `useImpostoGuiaReal`) (wave 1, INSS-02)
 - [x] 98-03-PLAN.md — Integração: checkpoint de decisão sobre o gate + wiring em `MercadoLivre.tsx` (regime-gated) + reescrita do describe C11 em `dreCascade.test.ts` (wave 2, autonomous:false, INSS-03/INSS-04)
 
+### Phase 99: DRE Caixa — apuração por recebimento Mercado Pago (página dedicada /dre-caixa, spec docs/superpowers/specs/2026-07-16-dre-caixa-design.md)
+
+**Goal:** Página nova dedicada `/dre-caixa` que responde, em destaque, a pergunta do dono: **"o que entrou no mês pagou as contas do mês, ou tirei dinheiro de outro lugar?"** — apuração em regime de caixa puro: entradas = recebimento líquido MP (`cash_inflows.net_amount` por `release_date`), saídas = `cash_outflows` com `status='paid'` pagas no mês, agrupadas nos blocos existentes (`dre_bloco_for_category`). Página completa e detalhada, embrião de dashboard futuro: badge-resposta, KPIs, cascata com drill-down até o lançamento, evolução + histórico 12 meses, linha informativa de previsão de imposto (% médio 3 meses × faturamento) ao lado da guia real. **Spec completa e decisões travadas: `docs/superpowers/specs/2026-07-16-dre-caixa-design.md` (ler ANTES de planejar).**
+
+**Requirements**: DREC-01 (RPC `get_dre_cash` — cascata do mês, SECURITY INVOKER, sem subquery correlacionada), DREC-02 (RPC `get_dre_cash_items` — drill-down sob demanda), DREC-03 (RPC `get_dre_cash_history` — série 12 meses), DREC-04 (página `/dre-caixa` + hooks + lib pura `dreCashCascade.ts` testada), DREC-05 (previsão de imposto informativa + alerta de desvio), DREC-06 (banner dado-velho via `max(synced_at)` de inflows/outflows)
+
+**Constraints:** DRE por faturamento (página Vendas) INTOCADA. NÃO ler nem confrontar saldo/`initial_balance`/projeções do Fluxo de Caixa — só as tabelas-fonte `cash_inflows`/`cash_outflows`. Zero tabela/EF/cron novos. Tarifas ML não abatidas de novo (já retidas na fonte no net do MP).
+
+**Depends on:** Phase 98
+
+**Success Criteria**:
+
+1. Badge-resposta correta no topo: verde "sobrou R$ X" / vermelho "faltou R$ X", com "mês em andamento" no mês corrente.
+2. Entradas do mês fechado reconciliam com o painel/extrato MP (conferido pelo Wesley); refunds já descontados na base.
+3. Saídas = somente `status='paid'` pagas no mês, blocos idênticos à DRE atual; `cancelled` excluídas; `nao_classificado` com gate visual.
+4. Drill-down bloco → categoria → lançamento individual funcionando sob demanda.
+5. Previsão de imposto (média 3 meses fechados) exibida ao lado da guia paga, com alerta de desvio; null → "—".
+6. Anti-IDOR provado nas 3 RPCs (org alheia REAL = 0 linhas) e provas SQL como role `authenticated` < 8s.
+
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 99 to break down)
+
 ---
 
 ### Phase 93: Enviar anexo na resposta da reclamação (upload)

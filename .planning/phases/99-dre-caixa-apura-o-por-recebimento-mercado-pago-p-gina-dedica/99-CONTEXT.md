@@ -86,7 +86,7 @@ Recebimento bruto MP (informativo)
 - `supabase/functions/sync-mp-releases/index.ts` — como o MP é sincronizado (money_release_date, filtro order.type='mercadolibre', refunds negativados, janela futura 45d)
 
 ### Padrões de RPC DRE a seguir
-- `supabase/migrations/20260716210000_cancelled_payables_dre.sql` — versão viva de `get_dre_operational_by_compet ence` + `get_dre_nao_classificado_items` (padrão SECURITY INVOKER + mapa de blocos)
+- `supabase/migrations/20260716210000_cancelled_payables_dre.sql` — versão viva de `get_dre_operational_by_competence` + `get_dre_nao_classificado_items` (padrão SECURITY INVOKER + mapa de blocos)
 - `supabase/migrations/20260715221559_dre_cancelled_revenue_and_nao_classificado.sql` — helper `dre_bloco_for_category` (linha ~95)
 
 ### Padrões de frontend a espelhar

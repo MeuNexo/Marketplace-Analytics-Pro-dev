@@ -6,15 +6,15 @@ current_phase: 98
 current_phase_name: inss-de-folha-na-dre-deve-seguir-a-regua-m-1-competencia-igu
 status: verifying
 stopped_at: Completed 96-05-PLAN.md
-last_updated: "2026-07-16T21:04:04.014Z"
+last_updated: "2026-07-16T22:20:16.785Z"
 last_activity: 2026-07-16
 last_activity_desc: Phase 98 execution started
 progress:
-  total_phases: 42
+  total_phases: 43
   completed_phases: 23
   total_plans: 93
   completed_plans: 83
-  percent: 55
+  percent: 53
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
@@ -424,6 +424,7 @@ Dashboard atual mostra:
 - Phase 96 added: DRE — correções da revisão linha a linha (C1–C9, C11); C10 rejeitado pelo dono; ramificada do main (Phase 95 em voo)
 - Phase 98 added: INSS de folha deve seguir regua M+1 igual ICMS/PIS/COFINS (descoberto na validacao mes-a-mes pos Phase 96/97; decisao Wesley 2026-07-16: Opcao A confirmada)
 - Phase 98 completed: Phase 98 (INSS M+1) EXECUTADA e commitada — RPC get_inss_guia_by_competence em prod, dreInss.ts + hook + wiring em MercadoLivre.tsx, 606/606 testes verdes. Pendencia registrada: extensao do gate de fechamento (canApurarInss) para bloquear com INSS ausente — decisao Opcao A do Wesley, NAO implementada nesta phase, candidata Phase 99.
+- Phase 99 added: DRE Caixa — apuração por recebimento Mercado Pago, página dedicada /dre-caixa (spec docs/superpowers/specs/2026-07-16-dre-caixa-design.md). Pendência antiga do gate INSS (ex-candidata a 99) passa a ser candidata a Phase 100.
 
 ## Deferred Items
 
