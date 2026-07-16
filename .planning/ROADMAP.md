@@ -980,11 +980,13 @@ Plans:
 5. Previsão de imposto (média 3 meses fechados) exibida ao lado da guia paga, com alerta de desvio; null → "—".
 6. Anti-IDOR provado nas 3 RPCs (org alheia REAL = 0 linhas) e provas SQL como role `authenticated` < 8s.
 
-**Plans:** 0 plans
+**Plans:** 3 plans
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 99 to break down)
+- [ ] 99-01-PLAN.md — Backend: migration com as 3 RPCs (get_dre_cash/items/history, SECURITY INVOKER, caixa puro) + checkpoint apply MCP com provas authenticated <8s e anti-IDOR (wave 1, DREC-01/02/03/05)
+- [ ] 99-02-PLAN.md — Lib pura dreCashCascade.ts (TDD vitest, cascata+badge+previsão) + hooks useDreCash/Items/History/CashFreshness (wave 1, DREC-04/05/06)
+- [ ] 99-03-PLAN.md — Página /dre-caixa completa + wiring rota/role/meta/menu desktop+mobile + checkpoint reconciliação MP × mês fechado e ok visual Wesley (wave 2, DREC-04/05/06)
 
 ---
 
