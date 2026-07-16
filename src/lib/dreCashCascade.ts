@@ -8,12 +8,19 @@
 //
 // Guardrail crítico (99-CONTEXT "Cascata (LOCKED)"): a seção `entrada` e a
 // seção `previsao` são informativas — NUNCA entram na soma de saídas. Dentro
-// da seção `saida`, o bloco `excluido` nunca é somado (categorias tipo
-// Fornecedores/Vendas/Aporte, filtradas na origem SQL mas re-filtradas aqui
-// como defesa em profundidade) e o bloco `financeiro` só desce DEPOIS do
-// Resultado Operacional de Caixa (empréstimos etc. não são despesa
-// operacional). O particionamento por `secao`/`bloco` acontece na entrada da
-// função, antes de qualquer soma — mesmo padrão de dreCascade.ts.
+// da seção `saida`, o bloco `financeiro` só desce DEPOIS do Resultado
+// Operacional de Caixa (empréstimos etc. não são despesa operacional). O
+// particionamento por `secao`/`bloco` acontece na entrada da função, antes
+// de qualquer soma — mesmo padrão de dreCascade.ts.
+//
+// [AJUSTE Wesley 2026-07-16, checkpoint de verificação visual da Phase 99]:
+// "Nessa DRE não é para excluir fornecedores — fornecedor também é saída."
+// O bloco `excluido` (categoria Tiny "Fornecedores", via
+// dre_bloco_for_category) era herdado do filtro da DRE por competência
+// (dreCascade.ts, onde `excluido` evita dupla-contagem). Aqui, na DRE Caixa,
+// esse conceito não se aplica — todo pagamento é saída. `excluido` agora
+// SOMA como a PRIMEIRA linha de saída da cascata, rotulada
+// "Fornecedores (compras)", antes de impostos.
 //
 // Regime: caixa puro, sem shift de competência (Pitfall 1 do 99-RESEARCH) —
 // a previsão de imposto compara guia paga NO MESMO MÊS exibido, nunca M+1.
@@ -51,8 +58,13 @@ export interface DreCashPrevisao {
   alert: boolean;
 }
 
-/** Blocos de saída que sempre aparecem na cascata, na ordem fixa de exibição. */
+/**
+ * Blocos de saída que sempre aparecem na cascata, na ordem fixa de exibição.
+ * `excluido` (Fornecedores/compras) é a PRIMEIRA linha — decisão do dono
+ * 2026-07-16: fornecedor também é saída na DRE Caixa.
+ */
 export const SAIDA_BLOCOS = [
+  "excluido",
   "impostos_venda",
   "pessoal",
   "estrutura",
@@ -65,6 +77,7 @@ export type SaidaBloco = (typeof SAIDA_BLOCOS)[number];
 
 /** Rótulos pt-BR por bloco de saída. */
 const SAIDA_LABELS: Record<SaidaBloco, string> = {
+  excluido: "Fornecedores (compras)",
   impostos_venda: "Impostos (guias pagas)",
   pessoal: "Pessoal",
   estrutura: "Estrutura",
@@ -101,9 +114,9 @@ export interface DreCashEntradas {
 /** Resultado completo da cascata de caixa a partir das linhas da RPC. */
 export interface DreCashCascade {
   entradas: DreCashEntradas;
-  /** As 6 linhas de saída, sempre nesta ordem, mesmo blocos sem dados (total 0). */
+  /** As 7 linhas de saída, sempre nesta ordem, mesmo blocos sem dados (total 0). */
   saidas: DreCashSaidaLine[];
-  /** Recebimento líquido − Σ(6 blocos de saída). */
+  /** Recebimento líquido − Σ(7 blocos de saída, incl. Fornecedores/excluido). */
   resultadoOperacional: number;
   /** Bloco financeiro (empréstimos etc.), fora do operacional. */
   financeiro: number;
@@ -157,10 +170,10 @@ function sumTotal(rows: DreCashRow[]): number {
  *
  * Guardrail (aplicado ANTES de qualquer soma): particiona `rows` por `secao`
  * (entrada / saida / previsao) — entrada e previsao nunca entram na soma de
- * saídas. Dentro de `saida`, o bloco `excluido` nunca é somado (já filtrado
- * na SQL, re-filtrado aqui como defesa em profundidade) e o bloco
- * `financeiro` é somado separadamente, só descontado APÓS o resultado
- * operacional.
+ * saídas. Dentro de `saida`, o bloco `financeiro` é somado separadamente, só
+ * descontado APÓS o resultado operacional. O bloco `excluido`
+ * (Fornecedores/compras) soma normalmente dentro do operacional — decisão
+ * do dono 2026-07-16 (99-CONTEXT "Régua de saídas").
  */
 export function buildDreCashCascade(rows: DreCashRow[]): DreCashCascade {
   const safeRows = rows ?? [];
@@ -181,10 +194,9 @@ export function buildDreCashCascade(rows: DreCashRow[]): DreCashCascade {
     aLiberar: entradaCategoriaTotal("a_liberar"),
   };
 
-  // ---- Saídas: excluido nunca somado; financeiro somado à parte ----
-  const saidaSemExcluido = saidaRows.filter((r) => r.bloco !== "excluido");
-  const saidaOperacional = saidaSemExcluido.filter((r) => r.bloco !== "financeiro");
-  const saidaFinanceiro = saidaSemExcluido.filter((r) => r.bloco === "financeiro");
+  // ---- Saídas: excluido (Fornecedores) soma no operacional; financeiro à parte ----
+  const saidaOperacional = saidaRows.filter((r) => r.bloco !== "financeiro");
+  const saidaFinanceiro = saidaRows.filter((r) => r.bloco === "financeiro");
 
   const saidas: DreCashSaidaLine[] = SAIDA_BLOCOS.map((bloco) => {
     const blocoRows = saidaOperacional.filter((r) => r.bloco === bloco);
