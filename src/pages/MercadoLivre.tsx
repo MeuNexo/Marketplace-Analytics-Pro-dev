@@ -57,6 +57,8 @@ import { computeMargemContribuicao } from "@/lib/dreMargem";
 import { resolveDreRegime, shouldNudgeClose, monthPlusOne } from "@/lib/dreRegime";
 import { useDreMonthClose } from "@/hooks/useDreMonthClose";
 import { useImpostoGuiaReal, useImpostoGuiaNudge } from "@/hooks/useImpostoGuiaReal";
+import { useInssGuiaReal } from "@/hooks/useInssGuiaReal";
+import { resolveInssForCascade, applyInssReal } from "@/lib/dreInss";
 import { useCmvCheioGate } from "@/hooks/useCmvCheioGate";
 import { useNaoClassificadoItems } from "@/hooks/useNaoClassificadoItems";
 import { resolveCloseGate } from "@/lib/dreCloseGate";
@@ -290,6 +292,10 @@ export default function MercadoLivre() {
   const monthClose = useDreMonthClose(dreSaleMonth);
   const guiaReal = useImpostoGuiaReal(dreSaleMonth);
   const guiaNudge = useImpostoGuiaNudge(dreSaleMonth);
+  // [Phase 98] MESMO eixo dreSaleMonth de guiaReal/guiaNudge/monthClose —
+  // nunca um eixo de mês diferente, ou apuração e previsão passam a olhar
+  // meses diferentes e o deslocamento M+1 do INSS desalinha.
+  const inssGuiaReal = useInssGuiaReal(dreSaleMonth);
 
   // [C6] Gate de CMV cheio — MESMO eixo de mês do dreWaterfall (billingMonthIsCurrentMonth
   // decide monthlyFrom/To vs billingMonthFrom/To). Eixo diferente = o gate olha
@@ -331,6 +337,21 @@ export default function MercadoLivre() {
   });
   const cmvMes = regimeResult.cmvMes;
   const impostosMes = regimeResult.impostosMes;
+
+  // [Phase 98] Régua M+1 do INSS de folha no bloco Pessoal. Em previsão,
+  // resolveInssForCascade devolve as rows sem alteração e inssReal: null —
+  // applyInssReal (abaixo) vira no-op e a cascata fica byte-idêntica à
+  // legada. Em apuração, a linha crua de INSS é removida daqui e o valor
+  // real M+1 é somado no lugar dela (nunca os dois somados).
+  const { rows: dreOperationalRowsParaCascata, inssReal: inssRealApuracao } = useMemo(
+    () =>
+      resolveInssForCascade({
+        regime: regimeResult.regime,
+        rows: dreOperationalRows ?? [],
+        guia: inssGuiaReal.data ?? null,
+      }),
+    [regimeResult.regime, dreOperationalRows, inssGuiaReal.data],
+  );
 
   // Empurrãozinho (dica visual, NUNCA gatilho) + gate owner-only do botão
   // marcar/reabrir (RLS de dre_month_close é a autoridade real — este gate é
@@ -430,8 +451,8 @@ export default function MercadoLivre() {
     [receitaBrutaMes, cancelamentosVendas, totalTarifasEfetivo, cmvMes, impostosMes],
   );
   const dreCascade = useMemo(
-    () => buildDreCascade(dreOperationalRows ?? [], margemContribuicao),
-    [dreOperationalRows, margemContribuicao],
+    () => applyInssReal(buildDreCascade(dreOperationalRowsParaCascata, margemContribuicao), inssRealApuracao),
+    [dreOperationalRowsParaCascata, margemContribuicao, inssRealApuracao],
   );
 
   const currentGrossProfit = useMemo(() => {
