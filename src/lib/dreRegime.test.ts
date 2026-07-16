@@ -124,11 +124,26 @@ describe("resolveDreRegime — Test B: apuração base", () => {
     expect(resolveDreRegime(input2).impostosMes).toBeNull();
   });
 
-  it("cancelled não soma — só linhas paid entram no imposto real (crédito sem guia, Wesley 2026-07-16)", () => {
+  it("cancelled não soma — crédito sem guia fica fora do imposto real (Wesley 2026-07-16)", () => {
     const input = baseInput({
       isClosed: true,
       guiaReal: [
         { category: "Imposto Venda - ICMS", total: 5151.56, status: "paid" },
+        { category: "Imposto Venda - PIS", total: 716.19, status: "cancelled" },
+        { category: "Imposto Venda - COFINS", total: 3298.87, status: "cancelled" },
+      ],
+    });
+    const result = resolveDreRegime(input);
+
+    expect(result.impostosMes).toBeCloseTo(5151.56, 2);
+    expect(result.apuracaoImpostoReal).toBeCloseTo(5151.56, 2);
+  });
+
+  it("guia emitida-mas-não-paga SOMA em mês fechado — régua é competência, não caixa (junho fechado antes do vencimento de 20/07)", () => {
+    const input = baseInput({
+      isClosed: true,
+      guiaReal: [
+        { category: "Imposto Venda - ICMS", total: 5151.56, status: "pending" },
         { category: "Imposto Venda - PIS", total: 716.19, status: "cancelled" },
         { category: "Imposto Venda - COFINS", total: 3298.87, status: "cancelled" },
       ],

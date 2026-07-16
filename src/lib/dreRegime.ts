@@ -118,15 +118,20 @@ export function resolveDreRegime(input: ResolveDreRegimeInput): DreRegimeResult 
 
   // APURAÇÃO — cmv_cheio + soma das 3 guias reais. Never reads
   // cmvMedio/totalTaxEstimado in this branch.
-  // Só linhas 'paid' somam: 'cancelled' é crédito sem guia (dono cancelou a
-  // conta no Tiny — não é pagamento) e 'pending' nunca chega aqui com o gate
-  // fechado. Mês 100% crédito (todas canceladas) → imposto real = 0, não null.
+  // 'cancelled' NUNCA soma: é crédito sem guia (dono cancelou a conta no Tiny
+  // — não existe imposto a reconhecer). 'paid' e 'pending' somam: a régua é
+  // COMPETÊNCIA — guia emitida com o valor da apuração é imposto do mês,
+  // paga ou a pagar (Wesley 2026-07-16: junho apurado com ICMS emitido
+  // vencendo 20/07). O placeholder recorrente do Tiny continua barrado pelo
+  // GATE (dreCloseGate bloqueia fechar com pending) — uma linha pending só
+  // aparece em mês fechado quando o dono fechou por decisão expressa, com o
+  // valor real já lançado. Mês 100% crédito (todas canceladas) → 0, não null.
   const cmvMes = (hasCmvCheio ? cmvCheio : null) ?? null;
   const apuracaoImpostoReal =
     guiaReal && guiaReal.length > 0
       ? round2(
           guiaReal
-            .filter((g) => g.status === "paid")
+            .filter((g) => g.status !== "cancelled")
             .reduce((sum, g) => sum + g.total, 0),
         )
       : null;
