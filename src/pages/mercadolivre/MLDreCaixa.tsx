@@ -214,10 +214,23 @@ function SaidaBlocoRow({
 
 // ─── Página ────────────────────────────────────────────────────────────────────
 
+/** Identifica de forma única uma linha da cascata clicável — várias linhas
+ * podem compartilhar o mesmo `bloco` (FIX 4: "excluido" vira 1 linha por
+ * categoria), então bloco sozinho não basta para saber qual está expandida. */
+interface ExpandedLine {
+  bloco: string;
+  /** undefined para linhas fora do bloco `excluido` (sem split por categoria). */
+  categoria?: string;
+}
+
+function sameLine(a: ExpandedLine | null, b: DreCashSaidaLine): boolean {
+  return !!a && a.bloco === b.bloco && (a.categoria ?? null) === (b.categoria ?? null);
+}
+
 export default function MLDreCaixa() {
   // Mês selecionado — sempre o primeiro dia do mês (regra dos hooks: "YYYY-MM-01")
   const [selectedMonth, setSelectedMonth] = useState<Date>(() => startOfMonth(new Date()));
-  const [expandedBloco, setExpandedBloco] = useState<string | null>(null);
+  const [expandedLine, setExpandedLine] = useState<ExpandedLine | null>(null);
 
   const pMonth = useMemo(() => format(selectedMonth, "yyyy-MM-dd"), [selectedMonth]);
   const currentMonthStart = useMemo(() => startOfMonth(new Date()), []);
@@ -225,19 +238,30 @@ export default function MLDreCaixa() {
   const canGoNext = !isCurrentMonth;
 
   const handlePrevMonth = () => {
-    setExpandedBloco(null);
+    setExpandedLine(null);
     setSelectedMonth((prev) => startOfMonth(subMonths(prev, 1)));
   };
   const handleNextMonth = () => {
     if (!canGoNext) return;
-    setExpandedBloco(null);
+    setExpandedLine(null);
     setSelectedMonth((prev) => startOfMonth(addMonths(prev, 1)));
   };
 
   const { data: rows, isLoading: rowsLoading, isError: rowsError, refetch: refetchRows } = useDreCash(pMonth);
   const cascade = useMemo(() => buildDreCashCascade(rows ?? []), [rows]);
 
-  const { data: dreItems, isLoading: itemsLoading } = useDreCashItems(pMonth, expandedBloco);
+  // get_dre_cash_items só filtra por bloco (RPC) — quando a linha expandida
+  // é uma categoria do bloco `excluido` (FIX 4), o filtro por categoria é
+  // aplicado aqui, client-side, sobre o retorno já buscado.
+  const { data: dreItems, isLoading: itemsLoading } = useDreCashItems(pMonth, expandedLine?.bloco ?? null);
+  const filteredItems = useMemo(() => {
+    if (!expandedLine) return [];
+    const raw = dreItems ?? [];
+    return expandedLine.categoria
+      ? raw.filter((item) => item.category === expandedLine.categoria)
+      : raw;
+  }, [dreItems, expandedLine]);
+
   const { data: history, isLoading: historyLoading } = useDreCashHistory(12);
   const { data: freshness } = useCashFreshness();
 
@@ -247,8 +271,10 @@ export default function MLDreCaixa() {
 
   const totalSaidasN = cascade.saidas.reduce((s, b) => s + b.n, 0);
 
-  const handleToggleBloco = (bloco: string) => {
-    setExpandedBloco((prev) => (prev === bloco ? null : bloco));
+  const handleToggleLine = (line: DreCashSaidaLine) => {
+    setExpandedLine((prev) =>
+      sameLine(prev, line) ? null : { bloco: line.bloco, categoria: line.categoria },
+    );
   };
 
   // ── Loading inicial (sem organização ainda resolvida) ──
@@ -412,16 +438,19 @@ export default function MLDreCaixa() {
 
           {/* Blocos de saída — drill-down */}
           <div className="mt-1">
-            {cascade.saidas.map((bloco) => (
-              <SaidaBlocoRow
-                key={bloco.bloco}
-                bloco={bloco}
-                expanded={expandedBloco === bloco.bloco}
-                onToggle={() => handleToggleBloco(bloco.bloco)}
-                items={expandedBloco === bloco.bloco ? dreItems ?? [] : []}
-                itemsLoading={expandedBloco === bloco.bloco && itemsLoading}
-              />
-            ))}
+            {cascade.saidas.map((bloco) => {
+              const expanded = sameLine(expandedLine, bloco);
+              return (
+                <SaidaBlocoRow
+                  key={bloco.categoria ? `${bloco.bloco}:${bloco.categoria}` : bloco.bloco}
+                  bloco={bloco}
+                  expanded={expanded}
+                  onToggle={() => handleToggleLine(bloco)}
+                  items={expanded ? filteredItems : []}
+                  itemsLoading={expanded && itemsLoading}
+                />
+              );
+            })}
           </div>
 
           {/* Gate visual — nao_classificado > 0 */}
