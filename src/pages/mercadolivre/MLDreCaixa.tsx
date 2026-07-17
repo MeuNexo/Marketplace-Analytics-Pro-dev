@@ -53,6 +53,7 @@ import { useDreCash } from "@/hooks/useDreCash";
 import { useDreCashItems, type DreCashItem } from "@/hooks/useDreCashItems";
 import { useDreCashHistory } from "@/hooks/useDreCashHistory";
 import { useCashFreshness } from "@/hooks/useCashFreshness";
+import { DreCashForecastCard } from "@/components/mercadolivre/DreCashForecastCard";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -362,6 +363,9 @@ export default function MLDreCaixa() {
           </p>
         )}
       </div>
+
+      {/* ── Painel "Fechar o mês" (Phase 100) — previsão, só no mês corrente ── */}
+      {isCurrentMonth && <DreCashForecastCard pMonth={pMonth} />}
 
       {/* ── KPI row (4x) ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
