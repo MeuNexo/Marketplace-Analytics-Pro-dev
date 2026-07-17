@@ -202,6 +202,81 @@ describe("buildDreCashCascade — Test 6: previsão null", () => {
   });
 });
 
+describe("buildDreCashCascade — Test 11: FIX 4 (2026-07-17) — bloco excluido por categoria", () => {
+  it("2 categorias no bloco excluido (Fornecedores + ADS Mercado Livre) viram 2 linhas com rótulos certos, soma inalterada", () => {
+    const rows: DreCashRow[] = [
+      entradaRow("liquido", 200000),
+      saidaRow("excluido", "Fornecedores", 60000),
+      saidaRow("excluido", "ADS Mercado Livre", 15000),
+      saidaRow("pessoal", "Salários", 20000),
+    ];
+    const c = buildDreCashCascade(rows);
+
+    const excluidoLinhas = c.saidas.filter((b) => b.bloco === "excluido");
+    expect(excluidoLinhas).toHaveLength(2);
+
+    // Ordenadas por total desc — Fornecedores (60000) antes de ADS (15000).
+    expect(excluidoLinhas[0].categoria).toBe("Fornecedores");
+    expect(excluidoLinhas[0].label).toBe("Fornecedores (compras)");
+    expect(excluidoLinhas[0].total).toBe(60000);
+    expect(excluidoLinhas[1].categoria).toBe("ADS Mercado Livre");
+    expect(excluidoLinhas[1].label).toBe("ADS Mercado Livre");
+    expect(excluidoLinhas[1].total).toBe(15000);
+    expect(excluidoLinhas.every((l) => l.drillable)).toBe(true);
+
+    // Soma inalterada — nenhuma diferença na matemática, só na exibição.
+    const totalSaidas = c.saidas.reduce((s, b) => s + b.total, 0);
+    expect(totalSaidas).toBe(60000 + 15000 + 20000);
+    expect(c.resultadoOperacional).toBe(200000 - 60000 - 15000 - 20000);
+  });
+
+  it("3ª categoria (Full) usa rótulo amigável 'Envios Full (armazenagem)'; categoria desconhecida usa o nome cru", () => {
+    const rows: DreCashRow[] = [
+      entradaRow("liquido", 100000),
+      saidaRow("excluido", "Prestação de serviço do Mercado Envios Full", 8000),
+      saidaRow("excluido", "Categoria Nova Sem Mapa", 500),
+    ];
+    const c = buildDreCashCascade(rows);
+    const excluidoLinhas = c.saidas.filter((b) => b.bloco === "excluido");
+    expect(excluidoLinhas).toHaveLength(2);
+
+    const full = excluidoLinhas.find((l) => l.categoria === "Prestação de serviço do Mercado Envios Full");
+    expect(full?.label).toBe("Envios Full (armazenagem)");
+
+    const desconhecida = excluidoLinhas.find((l) => l.categoria === "Categoria Nova Sem Mapa");
+    expect(desconhecida?.label).toBe("Categoria Nova Sem Mapa");
+  });
+
+  it("só Fornecedores no bloco excluido → continua 1 linha só (regressão do comportamento anterior)", () => {
+    const rows: DreCashRow[] = [
+      entradaRow("liquido", 50000),
+      saidaRow("excluido", "Fornecedores", 30000),
+    ];
+    const c = buildDreCashCascade(rows);
+    const excluidoLinhas = c.saidas.filter((b) => b.bloco === "excluido");
+    expect(excluidoLinhas).toHaveLength(1);
+    expect(excluidoLinhas[0].label).toBe("Fornecedores (compras)");
+    expect(excluidoLinhas[0].total).toBe(30000);
+  });
+
+  it("posição: linhas de excluido vêm primeiro, 'estornos' logo depois da última linha excluido", () => {
+    const rows: DreCashRow[] = [
+      entradaRow("liquido", 200000),
+      entradaRow("refunds", -1000),
+      saidaRow("excluido", "Fornecedores", 60000),
+      saidaRow("excluido", "ADS Mercado Livre", 15000),
+      saidaRow("pessoal", "Salários", 20000),
+    ];
+    const c = buildDreCashCascade(rows);
+    expect(c.saidas[0].bloco).toBe("excluido");
+    expect(c.saidas[1].bloco).toBe("excluido");
+    expect(c.saidas[2].bloco).toBe("estornos");
+    expect(c.saidas.slice(3).map((b) => b.bloco)).toEqual(
+      SAIDA_BLOCOS.filter((b) => b !== "excluido"),
+    );
+  });
+});
+
 describe("computePrevisaoDesvio — Test 7: desvio de previsão", () => {
   it("previsto=1000, guiaPaga=1300 → desvioPct 30 e alert true (limiar 20%)", () => {
     expect(computePrevisaoDesvio(1000, 1300)).toEqual({ desvioPct: 30, alert: true });

@@ -36,6 +36,16 @@
 // leitura (a base de entrada estava líquida por dentro, agora fica cheia
 // por fora, com o estorno explícito como saída).
 //
+// [FIX 4 Wesley 2026-07-17, checkpoint de verificação visual da Phase 99]:
+// o dono lança no Tiny, na MESMA categoria "excluída" de dre_bloco_for_
+// category, tanto Fornecedores quanto ADS Mercado Livre e Full — todas
+// mapeadas para o bloco `excluido`. Uma linha única "Fornecedores (compras)"
+// escondia ads/Full dentro do rótulo errado. O bloco `excluido` agora é
+// exibido POR CATEGORIA — uma linha de saída por categoria dentro do bloco,
+// ordenadas por total desc, todas somando no resultado exatamente como
+// antes (só muda a granularidade de exibição, não a matemática). Ver
+// `buildExcluidoLines`/`EXCLUIDO_CATEGORIA_LABELS`.
+//
 // Regime: caixa puro, sem shift de competência (Pitfall 1 do 99-RESEARCH) —
 // a previsão de imposto compara guia paga NO MESMO MÊS exibido, nunca M+1.
 //
@@ -107,6 +117,22 @@ const SAIDA_LABELS: Record<SaidaBloco, string> = {
  */
 const ESTORNOS_LABEL = "Estornos (devoluções MP)";
 
+/**
+ * Rótulos amigáveis por categoria dentro do bloco `excluido` (FIX 4). O
+ * dono lança fornecedores, ads e Full na mesma "gaveta" do Tiny mapeada por
+ * `dre_bloco_for_category` — cada categoria ganha seu próprio rótulo aqui;
+ * categoria sem entrada no mapa usa o nome cru como veio do Tiny (default).
+ */
+const EXCLUIDO_CATEGORIA_LABELS: Record<string, string> = {
+  Fornecedores: "Fornecedores (compras)",
+  "ADS Mercado Livre": "ADS Mercado Livre",
+  "Prestação de serviço do Mercado Envios Full": "Envios Full (armazenagem)",
+};
+
+function excluidoCategoriaLabel(categoria: string): string {
+  return EXCLUIDO_CATEGORIA_LABELS[categoria] ?? categoria;
+}
+
 /** Categoria dentro de um bloco de saída, com total agregado. */
 export interface DreCashCategoriaLine {
   categoria: string;
@@ -121,6 +147,14 @@ export interface DreCashCategoriaLine {
  */
 export interface DreCashSaidaLine {
   bloco: SaidaBloco | "estornos";
+  /**
+   * Categoria Tiny original desta linha — só presente nas linhas do bloco
+   * `excluido` (FIX 4), que agora vira uma linha por categoria em vez de
+   * uma linha agregada. A página usa este campo para filtrar o drill-down
+   * (`get_dre_cash_items` só filtra por bloco; o filtro por categoria é
+   * client-side). `undefined` nas demais linhas — não há filtro extra.
+   */
+  categoria?: string;
   label: string;
   total: number;
   n: number;
@@ -145,9 +179,12 @@ export interface DreCashEntradas {
 export interface DreCashCascade {
   entradas: DreCashEntradas;
   /**
-   * As 8 linhas de saída, sempre nesta ordem, mesmo blocos sem dados
-   * (total 0): 7 blocos padrão (SAIDA_BLOCOS) + "estornos", inserida logo
-   * após "excluido"/Fornecedores (FIX 2).
+   * As linhas de saída, sempre nesta ordem, mesmo blocos sem dados (total
+   * 0): 1+ linha(s) do bloco `excluido` — uma por categoria Tiny (FIX 4;
+   * ao menos 1 linha placeholder quando o bloco está vazio no mês) —
+   * seguidas de "estornos" (FIX 2) e dos 6 blocos padrão restantes
+   * (SAIDA_BLOCOS sem `excluido`). Total de linhas = (nº categorias do
+   * bloco excluido no mês, mínimo 1) + 7.
    */
   saidas: DreCashSaidaLine[];
   /** Recebimento líquido − Σ(8 linhas de saída, incl. Fornecedores/excluido e Estornos). */
@@ -200,6 +237,55 @@ function sumTotal(rows: DreCashRow[]): number {
 }
 
 /**
+ * Divide o bloco de saída `excluido` em uma linha por categoria (FIX 4,
+ * 2026-07-17) — rótulos amigáveis em `EXCLUIDO_CATEGORIA_LABELS`, ordenado
+ * por total desc. Sem linhas no mês → devolve 1 linha placeholder (rótulo
+ * padrão "Fornecedores (compras)", total 0) para manter o contrato de a
+ * cascata sempre mostrar o bloco, mesmo vazio.
+ *
+ * `categorias: []` em cada linha (diferente dos outros blocos padrão) —
+ * como cada linha JÁ É uma única categoria, não há sub-detalhamento extra a
+ * mostrar dentro do drill-down além dos lançamentos individuais.
+ */
+function buildExcluidoLines(excluidoRows: DreCashRow[]): DreCashSaidaLine[] {
+  if (excluidoRows.length === 0) {
+    return [
+      {
+        bloco: "excluido",
+        label: SAIDA_LABELS.excluido,
+        total: 0,
+        n: 0,
+        categorias: [],
+        drillable: true,
+      },
+    ];
+  }
+
+  const byCategoria = new Map<string, { total: number; n: number }>();
+  for (const r of excluidoRows) {
+    const cur = byCategoria.get(r.categoria) ?? { total: 0, n: 0 };
+    cur.total += r.total ?? 0;
+    cur.n += r.n;
+    byCategoria.set(r.categoria, cur);
+  }
+
+  const lines: DreCashSaidaLine[] = Array.from(byCategoria.entries()).map(
+    ([categoria, agg]) => ({
+      bloco: "excluido" as const,
+      categoria,
+      label: excluidoCategoriaLabel(categoria),
+      total: round2(agg.total),
+      n: agg.n,
+      categorias: [],
+      drillable: true,
+    }),
+  );
+
+  lines.sort((a, b) => b.total - a.total);
+  return lines;
+}
+
+/**
  * Monta a cascata do DRE Caixa a partir das linhas cruas da RPC get_dre_cash.
  *
  * Guardrail (aplicado ANTES de qualquer soma): particiona `rows` por `secao`
@@ -227,11 +313,18 @@ export function buildDreCashCascade(rows: DreCashRow[]): DreCashCascade {
     aLiberar: entradaCategoriaTotal("a_liberar"),
   };
 
-  // ---- Saídas: excluido (Fornecedores) soma no operacional; financeiro à parte ----
+  // ---- Saídas: excluido (Fornecedores/ads/Full) soma no operacional;
+  // financeiro à parte ----
   const saidaOperacional = saidaRows.filter((r) => r.bloco !== "financeiro");
   const saidaFinanceiro = saidaRows.filter((r) => r.bloco === "financeiro");
 
-  const saidaBlocosPadrao: DreCashSaidaLine[] = SAIDA_BLOCOS.map((bloco) => {
+  // Blocos padrão SEM "excluido" — esse é tratado à parte por
+  // `buildExcluidoLines` (FIX 4: uma linha por categoria).
+  const OUTROS_SAIDA_BLOCOS = SAIDA_BLOCOS.filter(
+    (b): b is Exclude<SaidaBloco, "excluido"> => b !== "excluido",
+  );
+
+  const saidaBlocosPadrao: DreCashSaidaLine[] = OUTROS_SAIDA_BLOCOS.map((bloco) => {
     const blocoRows = saidaOperacional.filter((r) => r.bloco === bloco);
     const categorias: DreCashCategoriaLine[] = blocoRows.map((r) => ({
       categoria: r.categoria,
@@ -248,8 +341,13 @@ export function buildDreCashCascade(rows: DreCashRow[]): DreCashCascade {
     };
   });
 
+  // ---- Excluido (FIX 4): uma linha de saída POR CATEGORIA do bloco, na
+  // posição onde antes ficava a linha única "Fornecedores (compras)".
+  const excluidoRows = saidaOperacional.filter((r) => r.bloco === "excluido");
+  const excluidoLines = buildExcluidoLines(excluidoRows);
+
   // ---- Estornos (FIX 2): categoria `refunds` da seção entrada, negativa na
-  // RPC, vira linha de SAÍDA com ABS, logo após "Fornecedores" (excluido).
+  // RPC, vira linha de SAÍDA com ABS, logo após as linhas de "excluido".
   // Sem drill-down — origem é cash_inflows (MP), não cash_outflows (Tiny).
   const estornosRows = entradaRows.filter((r) => r.categoria === "refunds");
   const estornosLine: DreCashSaidaLine = {
@@ -261,12 +359,10 @@ export function buildDreCashCascade(rows: DreCashRow[]): DreCashCascade {
     drillable: false,
   };
 
-  const excluidoIndex = saidaBlocosPadrao.findIndex((b) => b.bloco === "excluido");
-  const insertAt = excluidoIndex === -1 ? 0 : excluidoIndex + 1;
   const saidas: DreCashSaidaLine[] = [
-    ...saidaBlocosPadrao.slice(0, insertAt),
+    ...excluidoLines,
     estornosLine,
-    ...saidaBlocosPadrao.slice(insertAt),
+    ...saidaBlocosPadrao,
   ];
 
   const totalSaidasOperacionais = round2(saidas.reduce((s, b) => s + b.total, 0));
