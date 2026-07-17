@@ -216,6 +216,21 @@ async function processWindow(
       let net = Number(p?.transaction_details?.net_received_amount ?? 0);
       if (status === "refunded") net = -Math.abs(net);
 
+      // FIX 3 (99, 2026-07-17, decisão do dono): estorno pesa no mês em que
+      // o dinheiro SAIU, não no mês da venda original. Para isso a RPC
+      // precisa de uma data própria para o estorno — `date_last_updated` do
+      // payment é a melhor aproximação disponível no /v1/payments/search
+      // para "quando o estorno aconteceu" (o endpoint não devolve um campo
+      // dedicado tipo refund_date; buscar /v1/payments/{id}/refunds exigiria
+      // 1 chamada extra por pagamento, reintroduzindo o problema de perf que
+      // o /search em lote resolveu — ver cabeçalho do arquivo). Limitação
+      // pré-existente e já documentada: estornos PARCIAIS (status continua
+      // approved, só net_received_amount cai) ficam fora do modelo — mesma
+      // lacuna que já existia antes desta mudança.
+      const refundDate = status === "refunded"
+        ? (String(p?.date_last_updated ?? "").substring(0, 10) || null)
+        : null;
+
       rows.push({
         organization_id: orgId,
         ml_user_id:      Number(mlUserId),
@@ -227,6 +242,7 @@ async function processWindow(
         payment_method:  p?.payment_method_id ?? null,
         description:     p?.description ?? null,
         synced_at:       syncedAt,
+        refund_date:     refundDate,
       });
     }
 
