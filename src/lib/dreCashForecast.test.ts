@@ -55,6 +55,14 @@ describe("buildDreCashForecast — Test 1: composição do gap (D-02)", () => {
     // Ritmo real (vendas_7d_media_diaria) NUNCA soma no gap — só entra em ritmoReal7d.
     expect(f.gap).toBe(63000 - 50000);
     expect(f.gap).toBe(13000);
+
+    // Cascata narrativa (Phase 100 fix): mesma matemática, intermediários novos.
+    expect(f.placarHoje).toBe(round2(40000 - (30000 + 4000)));
+    expect(f.placarHoje).toBe(6000);
+    expect(f.aindaVaiSair).toBe(round2(25000 + 1500 + 2500));
+    expect(f.aindaVaiSair).toBe(29000);
+    // gap = -placarHoje + aindaVaiSair - agendadas (identidade da cascata).
+    expect(f.gap).toBe(round2(-f.placarHoje + f.aindaVaiSair - f.entradasGarantidas.agendadas));
   });
 });
 
@@ -306,6 +314,16 @@ describe("buildDreCashForecast — cenário real (jul/2026, RPC em produção �
     expect(f.hasData).toBe(true);
     expect(f.alertasRecorrencia).toHaveLength(2);
     expect(f.ritmoReal7d).toBe(8122.78);
+
+    // Cascata narrativa (Phase 100 fix 2026-07-17) — cenário real de julho
+    // reportado pelo dono no checkpoint visual: placar já realizado, ainda
+    // vai sair, e a identidade com o gap existente (mesma matemática).
+    expect(f.placarHoje).toBe(round2(131679.54 - (129647.65 + 17123.43)));
+    expect(f.placarHoje).toBe(-15091.54);
+    expect(f.aindaVaiSair).toBe(round2(118714.13 + 6645.22 + 7891.52));
+    expect(f.aindaVaiSair).toBe(133250.87);
+    expect(f.gap).toBe(round2(-f.placarHoje + f.aindaVaiSair - f.entradasGarantidas.agendadas));
+    expect(f.gap).toBe(96461.71);
 
     for (const [key, value] of Object.entries(f)) {
       if (typeof value === "number") {

@@ -60,6 +60,19 @@ export type DreCashForecastSemaforo = "verde" | "vermelho" | "neutro";
 export interface DreCashForecast {
   saidasPrevistas: DreCashForecastSaidasPrevistas;
   entradasGarantidas: DreCashForecastEntradasGarantidas;
+  /**
+   * "Placar de hoje" (cascata narrativa, Phase 100 fix 2026-07-17): resultado
+   * JÁ REALIZADO do mês — entradas liberadas menos o que já saiu (pagas +
+   * estornos ocorridos). liberadas − (pagas + estornosOcorridos). Negativo
+   * quando já saiu mais do que entrou até agora.
+   */
+  placarHoje: number;
+  /**
+   * "Ainda vai sair até o fim do mês" (cascata narrativa): magnitude positiva
+   * do que falta sair — pendentes + estornosPrevistos + impostoPrevistoRestante.
+   * O card exibe como saída (sinal negativo) na cascata.
+   */
+  aindaVaiSair: number;
   /** saidasPrevistas.total − entradasGarantidas.total. NUNCA inclui ritmo/projeção de vendas novas. */
   gap: number;
   /** gap + meta (meta client-side, >= 0, default 0 = zero a zero). */
@@ -186,6 +199,12 @@ export function buildDreCashForecast(
   const gap = round2(saidasTotal - entradasTotal);
   const gapComMeta = round2(gap + meta);
 
+  // ---- Cascata narrativa (Phase 100 fix 2026-07-17) — intermediários novos,
+  // mesma matemática do gap, só reorganizada para contar a história do mês
+  // passo a passo (D-02, sem projeção de vendas novas). ----
+  const placarHoje = round2(liberadas - (pagas + estornosOcorridos));
+  const aindaVaiSair = round2(pendentes + estornosPrevistos + impostoPrevistoRestante);
+
   // ---- Taxa e dia-limite (D-03) ----
   const taxaVendaParaCaixa = rawValor("taxa", "taxa_venda_para_caixa");
   const lagRaw = rawValor("taxa", "lag_liberacao_dias");
@@ -236,6 +255,8 @@ export function buildDreCashForecast(
   return {
     saidasPrevistas,
     entradasGarantidas,
+    placarHoje,
+    aindaVaiSair,
     gap,
     gapComMeta,
     taxaVendaParaCaixa,
