@@ -980,7 +980,7 @@ Plans:
 5. Previsão de imposto (média 3 meses fechados) exibida ao lado da guia paga, com alerta de desvio; null → "—".
 6. Anti-IDOR provado nas 3 RPCs (org alheia REAL = 0 linhas) e provas SQL como role `authenticated` < 8s.
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 **Wave 1**
@@ -990,7 +990,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 99-03-PLAN.md — Página /dre-caixa completa + wiring rota/role/meta/menu desktop+mobile + checkpoint reconciliação MP × mês fechado e ok visual Wesley (wave 2, DREC-04/05/06)
+- [x] 99-03-PLAN.md — Página /dre-caixa completa + wiring rota/role/meta/menu desktop+mobile + checkpoint reconciliação MP × mês fechado e ok visual Wesley (wave 2, DREC-04/05/06)
 
 ---
 

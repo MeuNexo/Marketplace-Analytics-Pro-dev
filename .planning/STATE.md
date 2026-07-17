@@ -4,22 +4,22 @@ milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
 current_phase: 99
 current_phase_name: DRE Caixa — apuração por recebimento Mercado Pago
-status: executing
+status: verifying
 stopped_at: Completed 96-05-PLAN.md
-last_updated: "2026-07-16T23:06:07.675Z"
+last_updated: "2026-07-17T02:32:05.332Z"
 last_activity: 2026-07-16
 last_activity_desc: Phase 99 execution started
 progress:
   total_phases: 43
-  completed_phases: 23
+  completed_phases: 24
   total_plans: 96
-  completed_plans: 85
-  percent: 53
+  completed_plans: 86
+  percent: 56
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
 
-- **Status:** Ready to execute
+- **Status:** Phase complete — ready for verification
 - **Backend:** tabela `purchase_orders` (migration `20260665000000`, RLS org-first); EF `sync-tiny-purchase-orders` v1 (endpoint Tiny correto = `/ordem-compra` singular; waitUntil 202; `organization_id` no insert); RPC `get_replenishment_by_sku` (migration `20260665000100`, +CTE `incoming_by_sku`, +colunas `qtd_a_caminho`/`data_proxima_chegada`, desconta TODA a qtd a caminho — decisão Wesley); cron `sync-tiny-purchase-orders-daily` (jobid 34, 03:15 UTC).
 - **Prova:** sync 22 OCs/135 SKUs/1.885 un; RPC 93 SKUs a caminho, 80 zeraram sugestão, cobertura parcial preserva gatilho (ex `11011273-CAFE3374G` → ainda sugere 10). tsc 0 + 208 testes + build ok.
 - **Decisão tunável:** "a caminho" = situação `3` (aguardando recebimento); ampliar p/ `2` (aprovada) = 1 linha em `SITUACOES_A_CAMINHO` na EF.
@@ -137,7 +137,7 @@ See: .planning/PROJECT.md
 
 Phase: 99 (DRE Caixa — apuração por recebimento Mercado Pago) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-16 — Phase 99 execution started
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
 
@@ -288,6 +288,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | Phase 96 P06 | 25min | 2 tasks | 2 files |
 | Phase 99 P02 | 8min | 2 tasks | 6 files |
 | Phase 99 P01 | 15min | 2 tasks | 1 files |
+| Phase 99 P03 | ~3h | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -382,6 +383,9 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 - [Phase ?]: Phase 99-02: DESVIO_ALERT_PCT = 20 (limiar de alerta previsão x guia paga de imposto na DRE Caixa) — Claude's Discretion
 - [Phase ?]: Phase 99-02: badge com resultadoCaixa === 0 (movimento houve, resultado fechou em zero) tratado como neutral 'Sem movimentação no mês', por analogia ao mês vazio
 - [Phase 99-01]: RPCs get_dre_cash/get_dre_cash_items/get_dre_cash_history aplicadas em prod via MCP (regime de caixa puro, sem shift M+1); reuso de dre_bloco_for_category sem redefinicao
+- [Phase ?]: Fornecedores (bloco excluido) somam como saida no total de caixa do mes — decisao do checkpoint 99-03
+- [Phase ?]: Estorno de Mercado Pago pesa no mes em que o dinheiro efetivamente saiu (cash_inflows.refund_date), nao no mes da venda original — backfill days_back=170 remapeou 90 estornos
+- [Phase ?]: Bloco excluido da cascata DRE Caixa exibido por categoria (Fornecedores/ADS ML/Envios Full) com drill-down, nunca como linha unica opaca
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -447,7 +451,7 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-**Last session:** 2026-07-16T23:05:18.492Z
+**Last session:** 2026-07-17T02:31:09.323Z
 
 **Resume file:** 
 
