@@ -5,15 +5,15 @@ milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem
 current_phase: 99
 status: completed
 stopped_at: "Preview p/ ok visual Wesley (Phase 96 completa + backend 97) — branch `gsd/phase-97-dre-pipeline-confiavel` @ 8e351d06, share link Vercel gerado (expira 17/07 ~15:52). Após ok: SUMMARYs 96-07/96-08 → fechar 96 → PR/merge → frontend 97 (banner staleness em MercadoLivre.tsx)"
-last_updated: "2026-07-17T02:37:31.409Z"
+last_updated: "2026-07-17T02:38:44.179Z"
 last_activity: 2026-07-17
 last_activity_desc: Phase 99 complete
 progress:
-  total_phases: 43
+  total_phases: 44
   completed_phases: 24
   total_plans: 96
   completed_plans: 86
-  percent: 56
+  percent: 55
 current_phase_name: DRE Caixa — apuração por recebimento Mercado Pago
 ---
 
@@ -435,6 +435,7 @@ Dashboard atual mostra:
 - Phase 98 added: INSS de folha deve seguir regua M+1 igual ICMS/PIS/COFINS (descoberto na validacao mes-a-mes pos Phase 96/97; decisao Wesley 2026-07-16: Opcao A confirmada)
 - Phase 98 completed: Phase 98 (INSS M+1) EXECUTADA e commitada — RPC get_inss_guia_by_competence em prod, dreInss.ts + hook + wiring em MercadoLivre.tsx, 606/606 testes verdes. Pendencia registrada: extensao do gate de fechamento (canApurarInss) para bloquear com INSS ausente — decisao Opcao A do Wesley, NAO implementada nesta phase, candidata Phase 99.
 - Phase 99 added: DRE Caixa — apuração por recebimento Mercado Pago, página dedicada /dre-caixa (spec docs/superpowers/specs/2026-07-16-dre-caixa-design.md). Pendência antiga do gate INSS (ex-candidata a 99) passa a ser candidata a Phase 100.
+- Phase 100 added: Break-even de caixa do mês (painel de previsão na /dre-caixa) — pedido do Wesley ao aprovar a Phase 99
 
 ## Deferred Items
 

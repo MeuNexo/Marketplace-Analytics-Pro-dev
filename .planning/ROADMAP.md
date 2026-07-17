@@ -992,6 +992,21 @@ Plans:
 
 - [x] 99-03-PLAN.md — Página /dre-caixa completa + wiring rota/role/meta/menu desktop+mobile + checkpoint reconciliação MP × mês fechado e ok visual Wesley (wave 2, DREC-04/05/06)
 
+### Phase 100: Break-even de caixa do mês — quanto falta vender para fechar no zero (painel de previsão na /dre-caixa)
+
+**Goal:** Painel de previsão no topo da `/dre-caixa` (mês corrente) que responde: **"quanto falta entrar para o mês fechar no zero (ou na meta), e quanto preciso VENDER até que dia para isso acontecer?"** Saídas previstas = pagas + pendentes com vencimento no mês (Tiny) + previsão de estornos (% histórico) + previsão de imposto (linha já existente). Entradas garantidas = liberadas + **agendadas a liberar até o fim do mês** (`cash_inflows.release_date > hoje` — dado real do MP, o sync já traz 45 dias). Gap → traduzido em venda bruta necessária usando a taxa venda→caixa medida dos dados (líquido/bruto ~78% − % estornos) e o prazo médio de liberação (aviso "a partir do dia D, venda nova não fecha mais este mês"). Meta ajustável (default zero a zero; ex. "sobrar R$ 20k"), ritmo diário necessário × ritmo real 7d, semáforo. Decisão do dono (2026-07-17, ao aprovar a Phase 99): a DRE Caixa é a régua oficial de caixa; esta phase é a camada de previsão dela.
+
+**Requirements**: BEC-01 (RPC `get_dre_cash_forecast(p_org_id, p_month, p_meta)` — saídas previstas, entradas garantidas, gap, taxa venda→caixa e lag de liberação medidos dos dados; SECURITY INVOKER, sem subquery correlacionada), BEC-02 (painel/card na `/dre-caixa`: gap em destaque + venda necessária + dia-limite + ritmo 7d, meta editável client-side), BEC-03 (lib pura `dreCashForecast.ts` testada — matemática do gap/conversão/dia-limite), BEC-04 (guarda contra pendentes-fantasma: alertar quando pendentes recorrentes idênticos inflarem a previsão — lição da recorrência acidental de ads/full de 2026-07-17)
+
+**Constraints:** mesma separação da Phase 99 (não ler saldo/projeções do Fluxo de Caixa; zero tabela/EF/cron novos; DRE por faturamento intocada). Previsão é INFORMATIVA — nunca altera os números apurados da cascata.
+
+**Depends on:** Phase 99
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 100 to break down)
+
 ---
 
 ### Phase 93: Enviar anexo na resposta da reclamação (upload)
