@@ -17,7 +17,7 @@
 // ============================================================================
 
 import { useMemo, useState } from "react";
-import { addDays, format } from "date-fns";
+import { addDays, format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { AlertTriangle, ChevronDown, Minus, TrendingDown, TrendingUp } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -131,6 +131,23 @@ export function DreCashForecastCard({ pMonth }: DreCashForecastCardProps) {
   const buracoDoMes = -forecast.gapComMeta;
   const taxaReaisPor100 = forecast.taxaVendaParaCaixa === null ? null : forecast.taxaVendaParaCaixa * 100;
 
+  // Manchete "se continuar no ritmo atual, o mês fecha em ~R$ X" (Phase 100
+  // fix 2026-07-17 — pedido do dono no checkpoint): lógica dele é "hoje
+  // estamos assim → se continuar, resultado será X (bom/ruim) → correr atrás
+  // pra manter ou melhorar". Vem ANTES da meta/venda necessária. Independe
+  // da meta (a lib usa gap, não gapComMeta) — comparamos aqui contra a meta
+  // só pra colorir o veredito (mês cobre a meta que o dono digitou ou não).
+  const mesLabel = format(parseISO(pMonth), "MMMM", { locale: ptBR });
+  const projetadoOk = forecast.resultadoProjetado !== null && forecast.resultadoProjetado >= meta;
+  const projetadoLabel =
+    forecast.resultadoProjetado === null
+      ? ""
+      : projetadoOk
+        ? forecast.resultadoProjetado > meta
+          ? "sobra"
+          : "mês se paga"
+        : "faltando — sai de outro lugar";
+
   return (
     <Card className="border-primary/20">
       <CardContent className="p-4 space-y-4">
@@ -211,6 +228,32 @@ export function DreCashForecastCard({ pMonth }: DreCashForecastCardProps) {
           </div>
         </div>
 
+        {/* Manchete — projeção "se continuar no ritmo atual" (Phase 100 fix
+            2026-07-17, pedido do dono no checkpoint). Vem ANTES da
+            meta/venda necessária, que agora é o "plano de reação". */}
+        {forecast.resultadoProjetado !== null && (
+          <div
+            className={`rounded-md border p-3 ${
+              projetadoOk
+                ? "bg-kpi-positive/10 border-kpi-positive/30"
+                : "bg-kpi-negative/10 border-kpi-negative/30"
+            }`}
+          >
+            <p className="text-sm sm:text-base">
+              No ritmo atual (~{fmtBR(forecast.ritmoReal7d)}/dia), <span className="font-medium">{mesLabel}</span>{" "}
+              fecha em{" "}
+              <span className={`font-bold ${projetadoOk ? "text-kpi-positive" : "text-kpi-negative"}`}>
+                ~{fmtBR(forecast.resultadoProjetado)}
+              </span>
+            </p>
+            <p
+              className={`text-xs font-medium mt-0.5 ${projetadoOk ? "text-kpi-positive" : "text-kpi-negative"}`}
+            >
+              {projetadoLabel}
+            </p>
+          </div>
+        )}
+
         {/* Tradução em venda — destaque final (D-02/D-03/D-05) */}
         <div className="rounded-md bg-muted/40 p-3 space-y-1.5">
           <p className="text-sm">
@@ -231,7 +274,8 @@ export function DreCashForecastCard({ pMonth }: DreCashForecastCardProps) {
             </p>
           ) : (
             <p className="text-base sm:text-lg font-bold">
-              Você precisa vender ~{fmtBR(forecast.vendaNecessaria)} em faturamento até dia {diaLimiteLabel}
+              Para fechar {meta > 0 ? `com sobra de ${fmtBR(meta)}` : "no zero"}: vender ~
+              {fmtBR(forecast.vendaNecessaria)} em faturamento até dia {diaLimiteLabel}
               {forecast.ritmoNecessario !== null && (
                 <span className="text-sm font-medium text-muted-foreground">
                   {" "}
