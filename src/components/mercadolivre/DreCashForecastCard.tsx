@@ -231,7 +231,7 @@ export function DreCashForecastCard({ pMonth }: DreCashForecastCardProps) {
             </p>
           ) : (
             <p className="text-base sm:text-lg font-bold">
-              Você precisa vender ~{fmtBR(forecast.vendaNecessaria)} até dia {diaLimiteLabel}
+              Você precisa vender ~{fmtBR(forecast.vendaNecessaria)} em faturamento até dia {diaLimiteLabel}
               {forecast.ritmoNecessario !== null && (
                 <span className="text-sm font-medium text-muted-foreground">
                   {" "}
@@ -254,7 +254,7 @@ export function DreCashForecastCard({ pMonth }: DreCashForecastCardProps) {
 
           <div className="flex items-center justify-between flex-wrap gap-2 text-sm pt-1">
             <span>
-              Ritmo real (7d): <span className="font-semibold tabular-nums">{fmtBR(forecast.ritmoReal7d)}/dia</span>
+              Ritmo real de vendas (7d): <span className="font-semibold tabular-nums">{fmtBR(forecast.ritmoReal7d)}/dia</span>
             </span>
             <span
               className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border ${semaforo.pill}`}
