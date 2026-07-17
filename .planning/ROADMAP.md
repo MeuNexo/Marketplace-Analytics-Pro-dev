@@ -1004,8 +1004,12 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
+**Wave 1**
 
 - [ ] 100-01-PLAN.md — RPC `get_dre_cash_forecast` (migration, clone das réguas da Phase 99) + checkpoint apply via MCP com provas (<8s, anti-IDOR Thales real, reconciliação ao centavo, guarda anti-fantasma ao vivo)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 100-02-PLAN.md — Lib pura `dreCashForecast.ts` (TDD) + hook `useDreCashForecast` + card "Fechar o mês" no topo da /dre-caixa (meta editável client-side, semáforo, alerta recorrência) + ok visual Wesley
 
 ---
