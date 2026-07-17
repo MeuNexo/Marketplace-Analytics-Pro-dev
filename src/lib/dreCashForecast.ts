@@ -103,6 +103,15 @@ export interface DreCashForecast {
   semaforo: DreCashForecastSemaforo;
   /** 0..N alertas de recorrência suspeita, ordenados por valor desc. */
   alertasRecorrencia: ForecastAlertaRecorrencia[];
+  /**
+   * Manchete "se continuar no ritmo atual, o mês fecha em ~R$ X" (Phase 100
+   * fix 2026-07-17, pedido do dono no checkpoint): −gapComMeta + (ritmoReal7d
+   * × diasRestantes × taxaVendaParaCaixa) — projeta o que o ritmo real dos
+   * últimos 7 dias ainda traz de caixa até o dia-limite, e soma ao buraco/
+   * sobra atual. taxaVendaParaCaixa ou ritmoReal7d indisponíveis → null (sem
+   * prova matemática, não estima por omissão — mesmo espírito de D-05).
+   */
+  resultadoProjetado: number | null;
   /** false quando a RPC não devolveu nenhuma linha para o mês. */
   hasData: boolean;
 }
@@ -232,6 +241,16 @@ export function buildDreCashForecast(
       : null;
 
   const ritmoReal7d = round2(valorOuZero("ritmo", "vendas_7d_media_diaria"));
+  const ritmoRealRaw = rawValor("ritmo", "vendas_7d_media_diaria");
+
+  // ---- Manchete "se continuar no ritmo atual, o mês fecha em ~R$ X"
+  // (Phase 100 fix 2026-07-17, pedido do dono no checkpoint) — usa `gap`
+  // (meta 0), NUNCA gapComMeta: a manchete descreve o resultado real do mês,
+  // independente da meta client-side que o usuário digitou (D-04).
+  const resultadoProjetado =
+    taxaVendaParaCaixa === null || ritmoRealRaw === null
+      ? null
+      : round2(-gap + ritmoReal7d * diasRestantes * taxaVendaParaCaixa);
 
   let semaforo: DreCashForecastSemaforo;
   if (gapComMeta <= 0) {
@@ -269,6 +288,7 @@ export function buildDreCashForecast(
     ritmoReal7d,
     semaforo,
     alertasRecorrencia,
+    resultadoProjetado,
     hasData: safeRows.length > 0,
   };
 }
