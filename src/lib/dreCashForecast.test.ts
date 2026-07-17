@@ -332,3 +332,70 @@ describe("buildDreCashForecast — cenário real (jul/2026, RPC em produção �
     }
   });
 });
+
+describe("buildDreCashForecast — Test 10: resultadoProjetado (manchete Phase 100 fix 2026-07-17)", () => {
+  it("cenário real: gap 55123.02, ritmo 9186.33, taxa 0.6576, 7 dias → resultadoProjetado = -gap + ritmo×dias×taxa (independe da meta client-side)", () => {
+    const rows: DreCashForecastRow[] = [
+      row("saida_prevista", "saidas_pagas", 55123.02),
+      row("entrada", "entradas_liberadas", 0),
+      row("taxa", "taxa_venda_para_caixa", 0.6576),
+      row("taxa", "lag_liberacao_dias", 7),
+      row("ritmo", "vendas_7d_media_diaria", 9186.33),
+    ];
+    const f = buildDreCashForecast(rows, { meta: 0, hoje: new Date(2026, 6, 17) });
+
+    expect(f.gap).toBe(55123.02);
+    expect(f.diasRestantes).toBe(7);
+    const esperado = round2(-f.gap + f.ritmoReal7d * f.diasRestantes * (f.taxaVendaParaCaixa as number));
+    expect(f.resultadoProjetado).toBe(esperado);
+    expect(f.resultadoProjetado).toBeCloseTo(-12836.51, 1);
+
+    // Independe da meta: mudar meta não deve alterar resultadoProjetado (usa gap, não gapComMeta).
+    const comMeta = buildDreCashForecast(rows, { meta: 20000, hoje: new Date(2026, 6, 17) });
+    expect(comMeta.resultadoProjetado).toBe(f.resultadoProjetado);
+  });
+
+  it("mês já fecha bem (gap negativo/sobra) → resultadoProjetado positivo, reforçando o ritmo bom", () => {
+    const rows: DreCashForecastRow[] = [
+      row("saida_prevista", "saidas_pagas", 10000),
+      row("entrada", "entradas_liberadas", 20000),
+      row("taxa", "taxa_venda_para_caixa", 0.6576),
+      row("taxa", "lag_liberacao_dias", 7),
+      row("ritmo", "vendas_7d_media_diaria", 5000),
+    ];
+    const f = buildDreCashForecast(rows, { meta: 0, hoje: new Date(2026, 6, 17) });
+
+    expect(f.gap).toBe(-10000);
+    expect(f.resultadoProjetado).not.toBeNull();
+    expect(f.resultadoProjetado as number).toBeGreaterThan(0);
+  });
+
+  it("taxaVendaParaCaixa ausente → resultadoProjetado null (sem prova matemática, D-05)", () => {
+    const rows: DreCashForecastRow[] = [
+      row("saida_prevista", "saidas_pagas", 10000),
+      row("entrada", "entradas_liberadas", 1000),
+      row("taxa", "lag_liberacao_dias", 7),
+      row("ritmo", "vendas_7d_media_diaria", 5000),
+    ];
+    const f = buildDreCashForecast(rows, { meta: 0, hoje: new Date(2026, 6, 17) });
+    expect(f.taxaVendaParaCaixa).toBeNull();
+    expect(f.resultadoProjetado).toBeNull();
+  });
+
+  it("linha de ritmo (vendas_7d_media_diaria) ausente da RPC → resultadoProjetado null (não estima com ritmo desconhecido)", () => {
+    const rows: DreCashForecastRow[] = [
+      row("saida_prevista", "saidas_pagas", 10000),
+      row("entrada", "entradas_liberadas", 1000),
+      row("taxa", "taxa_venda_para_caixa", 0.6576),
+      row("taxa", "lag_liberacao_dias", 7),
+    ];
+    const f = buildDreCashForecast(rows, { meta: 0, hoje: new Date(2026, 6, 17) });
+    expect(f.ritmoReal7d).toBe(0);
+    expect(f.resultadoProjetado).toBeNull();
+  });
+
+  it("rows vazio → resultadoProjetado null", () => {
+    const f = buildDreCashForecast([], { meta: 0, hoje: new Date(2026, 6, 17) });
+    expect(f.resultadoProjetado).toBeNull();
+  });
+});
