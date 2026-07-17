@@ -1001,12 +1001,12 @@ Plans:
 **Constraints:** mesma separação da Phase 99 (não ler saldo/projeções do Fluxo de Caixa; zero tabela/EF/cron novos; DRE por faturamento intocada). Previsão é INFORMATIVA — nunca altera os números apurados da cascata.
 
 **Depends on:** Phase 99
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 100-01-PLAN.md — RPC `get_dre_cash_forecast` (migration, clone das réguas da Phase 99) + checkpoint apply via MCP com provas (<8s, anti-IDOR Thales real, reconciliação ao centavo, guarda anti-fantasma ao vivo)
+- [x] 100-01-PLAN.md — RPC `get_dre_cash_forecast` (migration, clone das réguas da Phase 99) + checkpoint apply via MCP com provas (<8s, anti-IDOR Thales real, reconciliação ao centavo, guarda anti-fantasma ao vivo)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 

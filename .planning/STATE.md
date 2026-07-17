@@ -5,21 +5,21 @@ milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem
 current_phase: 100
 current_phase_name: Break-even de caixa do mês
 status: executing
-stopped_at: "Preview p/ ok visual Wesley (Phase 96 completa + backend 97) — branch `gsd/phase-97-dre-pipeline-confiavel` @ 8e351d06, share link Vercel gerado (expira 17/07 ~15:52). Após ok: SUMMARYs 96-07/96-08 → fechar 96 → PR/merge → frontend 97 (banner staleness em MercadoLivre.tsx)"
-last_updated: "2026-07-17T02:53:45.067Z"
+stopped_at: "Completado 100-01-PLAN.md (RPC get_dre_cash_forecast em prod, 8 provas aprovadas). Proximo: 100-02 (Wave 2) — lib pura dreCashForecast.ts + hook + card Fechar o mes na /dre-caixa"
+last_updated: "2026-07-17T03:04:54.949Z"
 last_activity: 2026-07-17
 last_activity_desc: Phase 100 execution started
 progress:
   total_phases: 44
   completed_phases: 24
   total_plans: 98
-  completed_plans: 86
+  completed_plans: 87
   percent: 55
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
 
-- **Status:** Executing Phase 100
+- **Status:** Ready to execute
 - **Backend:** tabela `purchase_orders` (migration `20260665000000`, RLS org-first); EF `sync-tiny-purchase-orders` v1 (endpoint Tiny correto = `/ordem-compra` singular; waitUntil 202; `organization_id` no insert); RPC `get_replenishment_by_sku` (migration `20260665000100`, +CTE `incoming_by_sku`, +colunas `qtd_a_caminho`/`data_proxima_chegada`, desconta TODA a qtd a caminho — decisão Wesley); cron `sync-tiny-purchase-orders-daily` (jobid 34, 03:15 UTC).
 - **Prova:** sync 22 OCs/135 SKUs/1.885 un; RPC 93 SKUs a caminho, 80 zeraram sugestão, cobertura parcial preserva gatilho (ex `11011273-CAFE3374G` → ainda sugere 10). tsc 0 + 208 testes + build ok.
 - **Decisão tunável:** "a caminho" = situação `3` (aguardando recebimento); ampliar p/ `2` (aprovada) = 1 linha em `SITUACOES_A_CAMINHO` na EF.
@@ -136,8 +136,8 @@ See: .planning/PROJECT.md
 ## Current Position
 
 Phase: 100 (Break-even de caixa do mês) — EXECUTING
-Plan: 1 of 2
-Status: Executing Phase 100
+Plan: 2 of 2
+Status: Ready to execute
 Last activity: 2026-07-17 — Phase 100 execution started
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
 
@@ -290,6 +290,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | Phase 99 P01 | 15min | 2 tasks | 1 files |
 | Phase 99 P03 | ~3h | 3 tasks | 15 files |
 | 99 | 3 | - | - |
+| Phase 100-break-even-de-caixa-do-m-s-quanto-falta-vender-para-fechar-n P01 | ~10min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -387,6 +388,9 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 - [Phase ?]: Fornecedores (bloco excluido) somam como saida no total de caixa do mes — decisao do checkpoint 99-03
 - [Phase ?]: Estorno de Mercado Pago pesa no mes em que o dinheiro efetivamente saiu (cash_inflows.refund_date), nao no mes da venda original — backfill days_back=170 remapeou 90 estornos
 - [Phase ?]: Bloco excluido da cascata DRE Caixa exibido por categoria (Fornecedores/ADS ML/Envios Full) com drill-down, nunca como linha unica opaca
+- [Phase ?]: Phase 100-01: get_dre_cash_forecast(p_org_id, p_month) sem parametro de meta — meta aplicada client-side no 100-02 sobre o gap (D-04), superando o 3o parametro citado no ROADMAP
+- [Phase ?]: Phase 100-01: estornos_ocorridos clona literalmente refunds_agg da get_dre_cash (regua COALESCE(refund_date, release_date)) para reconciliar ao centavo com a DRE Caixa apurada
+- [Phase ?]: Phase 100-01: saidas_pendentes nunca inclui mes futuro (guarda anti-fantasma parte a) — pendente so entra se outflow_date >= hoje E < fim do mes corrente
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -453,12 +457,12 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-**Last session:** 2026-07-17T02:31:09.323Z
+**Last session:** 2026-07-17T03:04:54.930Z
 
 **Resume file:** 
 
 None
-Stopped at: Preview p/ ok visual Wesley (Phase 96 completa + backend 97) — branch `gsd/phase-97-dre-pipeline-confiavel` @ 8e351d06, share link Vercel gerado (expira 17/07 ~15:52). Após ok: SUMMARYs 96-07/96-08 → fechar 96 → PR/merge → frontend 97 (banner staleness em MercadoLivre.tsx)
+Stopped at: Completado 100-01-PLAN.md (RPC get_dre_cash_forecast em prod, 8 provas aprovadas). Proximo: 100-02 (Wave 2) — lib pura dreCashForecast.ts + hook + card Fechar o mes na /dre-caixa
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
