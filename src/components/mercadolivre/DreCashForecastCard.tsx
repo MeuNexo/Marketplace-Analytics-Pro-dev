@@ -124,46 +124,123 @@ export function DreCashForecastCard({ pMonth }: DreCashForecastCardProps) {
   const diaAposLimiteLabel = format(addDays(forecast.diaLimite, 1), "dd/MM", { locale: ptBR });
   const semaforo = SEMAFORO_STYLES[forecast.semaforo];
 
+  // Cascata narrativa (Phase 100 fix 2026-07-17 — feedback do dono no
+  // checkpoint visual): "buraco do mês" negativo = falta entrar; positivo =
+  // sobra. Mesma matemática de forecast.gapComMeta, só invertida para contar
+  // a história em ordem de leitura (dinheiro que falta, não dinheiro que sai).
+  const buracoDoMes = -forecast.gapComMeta;
+  const taxaReaisPor100 = forecast.taxaVendaParaCaixa === null ? null : forecast.taxaVendaParaCaixa * 100;
+
   return (
     <Card className="border-primary/20">
       <CardContent className="p-4 space-y-4">
         <p className="text-sm font-semibold">Fechar o mês</p>
 
-        {/* 1. Headline do gap (D-01/D-08) */}
-        <div>
-          {forecast.gapComMeta > 0 ? (
-            <p className="text-lg sm:text-xl font-bold text-kpi-negative">
-              Faltam {fmtBR(forecast.gapComMeta)} para fechar {meta > 0 ? "na meta" : "no zero"}
+        {/* Cascata narrativa (D-01/D-02/D-08) — conta a história do mês passo
+            a passo. O gap final NUNCA aparece sem as 3 linhas acima dele. */}
+        <div className="space-y-2.5 border-l-2 border-border pl-3">
+          <div>
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-sm font-medium">Placar de hoje</span>
+              <span
+                className={`text-sm font-semibold tabular-nums ${
+                  forecast.placarHoje >= 0 ? "text-kpi-positive" : "text-kpi-negative"
+                }`}
+              >
+                {forecast.placarHoje >= 0 ? "+" : ""}
+                {fmtBR(forecast.placarHoje)}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">O que já entrou menos o que já saiu</p>
+          </div>
+
+          <div>
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-sm font-medium">Ainda vai sair até o fim do mês</span>
+              <span className="text-sm font-semibold tabular-nums text-kpi-negative">
+                -{fmtBR(forecast.aindaVaiSair)}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Contas a vencer no Tiny + estornos e imposto previstos
             </p>
-          ) : (
-            <p className="text-lg sm:text-xl font-bold text-kpi-positive">
-              O mês já fecha {meta > 0 ? "na meta" : "no zero"} — sobra prevista de{" "}
-              {fmtBR(Math.abs(forecast.gapComMeta))}
+          </div>
+
+          <div>
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-sm font-medium">Já garantido a entrar</span>
+              <span className="text-sm font-semibold tabular-nums text-kpi-positive">
+                +{fmtBR(forecast.entradasGarantidas.agendadas)}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Vendas já feitas com liberação agendada no Mercado Pago
             </p>
-          )}
+          </div>
+
+          <div className="pt-2 border-t border-border">
+            <div className="flex items-baseline justify-between gap-2 flex-wrap">
+              <span className="text-sm font-semibold">
+                {buracoDoMes < 0 ? "= Buraco do mês" : "= Sobra do mês"}
+              </span>
+              <span
+                className={`text-lg sm:text-xl font-bold tabular-nums ${
+                  buracoDoMes < 0 ? "text-kpi-negative" : "text-kpi-positive"
+                }`}
+              >
+                {fmtBR(Math.abs(buracoDoMes))}
+              </span>
+            </div>
+
+            {/* Meta editável (D-04) — 100% client-side, zero rede, zero banco */}
+            <div className="flex items-center gap-2 mt-1.5">
+              <Label htmlFor="dre-cash-forecast-meta" className="text-xs text-muted-foreground whitespace-nowrap">
+                {buracoDoMes < 0 ? "Pra fechar no zero, ou quero sobrar (R$)" : "Quero que sobre (R$)"}
+              </Label>
+              <Input
+                id="dre-cash-forecast-meta"
+                type="number"
+                min={0}
+                step={100}
+                inputMode="decimal"
+                value={metaInput}
+                onChange={(e) => handleMetaChange(e.target.value)}
+                className="h-8 max-w-[140px] text-sm"
+              />
+            </div>
+          </div>
         </div>
 
-        {/* 2. Venda necessária + dia-limite (D-02/D-03) */}
-        <div className="text-sm space-y-1">
+        {/* Tradução em venda — destaque final (D-02/D-03/D-05) */}
+        <div className="rounded-md bg-muted/40 p-3 space-y-1.5">
+          <p className="text-sm">
+            De cada R$ 100 vendidos, ~{taxaReaisPor100 === null ? "—" : fmtBR(taxaReaisPor100)} viram caixa e levam
+            ~{forecast.lagLiberacaoDias} dias pra cair.
+          </p>
+
           {forecast.vendaNecessaria === null ? (
-            <p>
+            <p className="text-sm">
               Venda necessária: <span className="font-semibold">—</span>{" "}
               <span className="text-xs text-muted-foreground">
                 (sem dados suficientes para medir a conversão venda→caixa)
               </span>
             </p>
           ) : forecast.vendaNecessaria === 0 ? (
-            <p className="text-muted-foreground text-xs">
-              Nenhuma venda extra é necessária para fechar {meta > 0 ? "na meta" : "no zero"}.
+            <p className="text-sm text-muted-foreground">
+              Nenhuma venda extra é necessária — o mês já fecha {meta > 0 ? "na meta" : "no zero"}.
             </p>
           ) : (
-            <p>
-              Você precisa vender <span className="font-semibold">~{fmtBR(forecast.vendaNecessaria)}</span> até dia{" "}
-              <span className="font-semibold">{diaLimiteLabel}</span>
+            <p className="text-base sm:text-lg font-bold">
+              Você precisa vender ~{fmtBR(forecast.vendaNecessaria)} até dia {diaLimiteLabel}
+              {forecast.ritmoNecessario !== null && (
+                <span className="text-sm font-medium text-muted-foreground">
+                  {" "}
+                  (~{fmtBR(forecast.ritmoNecessario)}/dia)
+                </span>
+              )}
             </p>
           )}
 
-          {/* Aviso permanente do dia-limite — sempre visível nesta seção */}
           <p className="text-xs text-muted-foreground">
             Vendas a partir de {diaAposLimiteLabel} só viram caixa no mês seguinte.
           </p>
@@ -174,44 +251,21 @@ export function DreCashForecastCard({ pMonth }: DreCashForecastCardProps) {
               <span>Vendas novas não viram mais caixa este mês — o gap só fecha com as liberações já agendadas.</span>
             </div>
           )}
-        </div>
 
-        {/* 3. Ritmos + semáforo (D-05) */}
-        <div className="flex items-center justify-between flex-wrap gap-2 text-sm">
-          <span>
-            Ritmo atual: <span className="font-semibold tabular-nums">{fmtBR(forecast.ritmoReal7d)}/dia</span>
-            {" · "}
-            Necessário:{" "}
-            <span className="font-semibold tabular-nums">
-              {forecast.ritmoNecessario === null ? "—" : `${fmtBR(forecast.ritmoNecessario)}/dia`}
+          <div className="flex items-center justify-between flex-wrap gap-2 text-sm pt-1">
+            <span>
+              Ritmo real (7d): <span className="font-semibold tabular-nums">{fmtBR(forecast.ritmoReal7d)}/dia</span>
             </span>
-          </span>
-          <span
-            className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border ${semaforo.pill}`}
-          >
-            <semaforo.Icon className="w-3 h-3" />
-            {semaforo.label}
-          </span>
+            <span
+              className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border ${semaforo.pill}`}
+            >
+              <semaforo.Icon className="w-3 h-3" />
+              {semaforo.label}
+            </span>
+          </div>
         </div>
 
-        {/* 4. Meta editável (D-04) — 100% client-side, zero rede, zero banco */}
-        <div className="flex items-center gap-2">
-          <Label htmlFor="dre-cash-forecast-meta" className="text-xs text-muted-foreground whitespace-nowrap">
-            Quero que sobre (R$)
-          </Label>
-          <Input
-            id="dre-cash-forecast-meta"
-            type="number"
-            min={0}
-            step={100}
-            inputMode="decimal"
-            value={metaInput}
-            onChange={(e) => handleMetaChange(e.target.value)}
-            className="h-8 max-w-[140px] text-sm"
-          />
-        </div>
-
-        {/* 5. Explicabilidade — cada número do painel é explicável (Specifics do CONTEXT) */}
+        {/* Explicabilidade — cada número do painel é explicável (Specifics do CONTEXT) */}
         <Collapsible open={explicabilidadeOpen} onOpenChange={setExplicabilidadeOpen}>
           <CollapsibleTrigger asChild>
             <button
