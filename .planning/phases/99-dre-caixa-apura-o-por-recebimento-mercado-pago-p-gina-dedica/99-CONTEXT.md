@@ -121,5 +121,17 @@ Recebimento bruto MP (informativo)
 
 ---
 
+## Reconciliação com a DRE manual do Wesley (2026-07-16/17, durante checkpoint)
+
+Planilha manual (aba caixa, jun): −10.527,09 × página: −44.666,66. **Fecha a ~R$1** com 5 ajustes: (1) estornos explícitos −33.837,64 (planilha não tem linha; e nosso estorno é retroativo ao mês da venda); (2) base = liberações 193.476,52 vs transferências Bradesco 204.236,91 (inclui sobra de maio); (3) ads+full +9.405,30 — **pagos via CARTÃO DE CRÉDITO** (não saem do saldo MP; modelo da página está correto, entrada íntegra); (4) ICMS competência 5.151,56 vs pago no mês 4.793,23 (caixa puro, by design); (5) cadastro Tiny ±995,90.
+
+**Decisões/encaminhamentos:**
+- Ads/full: saída de caixa = pagamento da fatura do cartão, LANÇADA NO TINY (não puxar do billing). Wesley vai lançar a fatura categorizada (ex. "Publicidade ML", "Tarifa Full ML") — categoria nova cai em nao_classificado (gate acusa) até mapear em `dre_bloco_for_category`.
+- Alerta dado ao Wesley: planilha manual pode dupla-contar (deduz ads/full E cartão).
+- Backfill MP executado via EF `sync-mp-releases` (body `days_back`): maio completo (entrada real 172.410,76, resultado −31.081,97); backfill fev→abr disparado (days_back=170).
+- Melhoria futura registrada: estorno pesar no mês em que o dinheiro saiu (exige data do estorno no sync).
+
+---
+
 *Phase: 99-dre-caixa-apura-o-por-recebimento-mercado-pago-p-gina-dedica*
 *Context gathered: 2026-07-16 via PRD Express Path*
