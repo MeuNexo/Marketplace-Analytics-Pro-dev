@@ -1001,11 +1001,12 @@ Plans:
 **Constraints:** mesma separação da Phase 99 (não ler saldo/projeções do Fluxo de Caixa; zero tabela/EF/cron novos; DRE por faturamento intocada). Previsão é INFORMATIVA — nunca altera os números apurados da cascata.
 
 **Depends on:** Phase 99
-**Plans:** 0 plans
+**Plans:** 2 plans
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 100 to break down)
+- [ ] 100-01-PLAN.md — RPC `get_dre_cash_forecast` (migration, clone das réguas da Phase 99) + checkpoint apply via MCP com provas (<8s, anti-IDOR Thales real, reconciliação ao centavo, guarda anti-fantasma ao vivo)
+- [ ] 100-02-PLAN.md — Lib pura `dreCashForecast.ts` (TDD) + hook `useDreCashForecast` + card "Fechar o mês" no topo da /dre-caixa (meta editável client-side, semáforo, alerta recorrência) + ok visual Wesley
 
 ---
 
