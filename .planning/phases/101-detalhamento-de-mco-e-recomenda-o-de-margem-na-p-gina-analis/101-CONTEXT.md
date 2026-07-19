@@ -36,8 +36,11 @@ A página `/analise-precos` (`MLAnalisePrecos.tsx` → `PrecoPraticadoReport.tsx
 - Layout exato do card (grid de linhas do waterfall, onde entram os dois números de recomendação dentro do card).
 - Texto/copy exato dos rótulos e tooltips auxiliares do card novo.
 - Detalhes visuais (cores, tokens) — seguir a paleta CVD-safe já validada (skill `dataviz`) e os tokens do projeto (`--success`, `--warning`, `--destructive`, `--kpi-*`).
-- Mecanismo exato de persistência da meta customizada por item_id (nome da tabela/coluna, RPC vs REST direto) — pesquisar antes de planejar.
 - Comportamento quando `custo_unit` está ausente para o item (seguir o padrão já estabelecido nas Phases 79-83: nunca inventar número, mostrar aviso "custo ausente").
+
+### Decisões pós-pesquisa (RESEARCH.md levantou 2 perguntas em aberto, travadas por Wesley)
+- **D-09 (grão da meta):** meta de MCO% customizada é **por anúncio inteiro (`item_id`)**, não por SKU/variação. Confirma o design mais simples já sugerido pelo pesquisador — tabela nova `ml_mco_targets` chaveada por `(organization_id, item_id)`.
+- **D-10 (piso mínimo de amostra):** a recomendação (preço mínimo + ACOS-alvo) **sempre calcula e aparece**, mesmo com poucas vendas no período (sem piso mínimo de unidades). Os avisos já existentes de custo/imposto ausente continuam cobrindo os casos de dado ruim — não criar um novo gate de "amostra pequena".
 
 </decisions>
 
