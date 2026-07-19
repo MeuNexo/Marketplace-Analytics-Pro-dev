@@ -208,6 +208,18 @@ serve(async (req) => {
         throw new Error(`sync-ads responded ${resp.status}: ${errText}`);
       }
 
+      // Checa o corpo: sync-ads pode responder 200 mesmo com falha por-usuário
+      // (fetch de items falhou para algum ml_user_id). Se não inspecionarmos
+      // results, o job é marcado 'completed' mesmo com cache zerado silenciosamente.
+      const adsBody = await resp.json().catch(() => ({} as any));
+      const failed = Array.isArray(adsBody?.results)
+        ? adsBody.results.filter((r: any) => r?.error)
+        : [];
+      if (failed.length > 0) {
+        const details = failed.map((r: any) => r.ml_user_id + ": " + r.error).join("; ");
+        throw new Error("sync-ads reportou erro em " + failed.length + " usuário(s): " + details);
+      }
+
       await sb
         .from("sync_jobs")
         .update({ status: "completed", finished_at: new Date().toISOString() })
