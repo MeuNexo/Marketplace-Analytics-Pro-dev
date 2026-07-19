@@ -5,8 +5,8 @@ milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem
 current_phase: 100
 current_phase_name: Break-even de caixa do mês
 status: executing
-stopped_at: Phase 101 context gathered
-last_updated: "2026-07-19T18:25:44.377Z"
+stopped_at: Phase 101 UI-SPEC approved
+last_updated: "2026-07-19T18:44:44.776Z"
 last_activity: 2026-07-19
 last_activity_desc: "Completed quick task 260719-o6q: migrar sync-ads para os novos endpoints Product Ads do ML (endpoint antigo descontinuado 26/02/2026); MCO real do MLB7159819994 corrigido 12,64%→2,81%"
 progress:
@@ -460,12 +460,12 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-**Last session:** 2026-07-19T18:25:44.345Z
+**Last session:** 2026-07-19T18:44:44.757Z
 
 **Resume file:** 
 
-.planning/phases/101-detalhamento-de-mco-e-recomenda-o-de-margem-na-p-gina-analis/101-CONTEXT.md
-Stopped at: Phase 101 context gathered
+.planning/phases/101-detalhamento-de-mco-e-recomenda-o-de-margem-na-p-gina-analis/101-UI-SPEC.md
+Stopped at: Phase 101 UI-SPEC approved
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
