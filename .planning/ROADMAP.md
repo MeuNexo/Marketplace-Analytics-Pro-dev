@@ -1012,6 +1012,19 @@ Plans:
 
 - [ ] 100-02-PLAN.md — Lib pura `dreCashForecast.ts` (TDD) + hook `useDreCashForecast` + card "Fechar o mês" no topo da /dre-caixa (meta editável client-side, semáforo, alerta recorrência) + ok visual Wesley
 
+### Phase 101: Detalhamento de MCO e recomendação de margem na página /analise-precos: expandir o breakdown de MCO por item (waterfall receita→CMV→comissão→frete→impostos→MC→ads→MCO) diretamente na UI, e adicionar recomendação de margem-alvo/faixa saudável de MCO por item (semáforo, similar ao mcoHealth.ts existente)
+
+**Goal:** A página `/analise-precos` ganha, abaixo do gráfico preço×break-even, um card fixo (sempre visível) com o waterfall de MCO por unidade (média do período) do anúncio/variação selecionado — receita→CMV→comissão→frete→impostos→MC→ads→MCO — com semáforo reusando `mcoHealth.ts` (🔴≤5% 🟡6-8% 🟢≥9%), um campo editável de **meta de MCO% customizada por `item_id`** (persistida na nova tabela `ml_mco_targets`, org-first RLS), e **duas alavancas de recomendação sempre visíveis**: preço mínimo de venda para atingir a meta (via `reversePrice` da Phase 50) e ACOS-alvo da campanha para atingir a meta mantendo o preço atual. 100% aditivo, single-item, tooltip da Phase 79 intocado, fórmula de MCO single-source (`computeMco`).
+**Requirements**: D-01..D-10 (decisões de `101-CONTEXT.md` — sem REQ-IDs formais; milestone v8.0 é Consultor v2, esta phase é extensão de UX de /analise-precos)
+**Depends on:** Phase 100 (linhagem /analise-precos Phases 77/79/81/82)
+**Plans:** 3 plans (2 waves)
+
+Plans:
+
+- [ ] 101-01-PLAN.md — [W1] Backend: migration `ml_mco_targets` (tabela + RLS org-first clonada de ml_product_costs) + apply via MCP + anti-IDOR smoke [BLOCKING] (D-06, D-09)
+- [ ] 101-02-PLAN.md — [W1] Utils puros (TDD): `computeWaterfallCard` (precoMcoSeries.ts) + `computeMcoRecommendation` (reversePrice + ACOS-alvo) + testes (D-02, D-04, D-07)
+- [ ] 101-03-PLAN.md — [W2] Frontend: hook `useMcoTargets` + card fixo no `PrecoPraticadoReport.tsx` (waterfall + meta editável + 2 alavancas + avisos) + ok visual (D-01, D-03, D-04, D-05, D-08, D-10)
+
 ---
 
 ### Phase 93: Enviar anexo na resposta da reclamação (upload)
