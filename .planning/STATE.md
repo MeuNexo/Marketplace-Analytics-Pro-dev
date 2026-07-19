@@ -4,22 +4,22 @@ milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
 current_phase: 101
 current_phase_name: detalhamento-de-mco-e-recomenda-o-de-margem-na-p-gina-analis
-status: executing
-stopped_at: Phase 101 UI-SPEC approved
-last_updated: "2026-07-19T19:52:09.642Z"
+status: verifying
+stopped_at: context exhaustion at 75% (2026-07-19)
+last_updated: "2026-07-19T22:29:21.069Z"
 last_activity: 2026-07-19
 last_activity_desc: Phase 101 execution started
 progress:
   total_phases: 45
-  completed_phases: 24
+  completed_phases: 25
   total_plans: 101
-  completed_plans: 89
-  percent: 53
+  completed_plans: 90
+  percent: 56
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
 
-- **Status:** Ready to execute
+- **Status:** Phase complete — ready for verification
 - **Backend:** tabela `purchase_orders` (migration `20260665000000`, RLS org-first); EF `sync-tiny-purchase-orders` v1 (endpoint Tiny correto = `/ordem-compra` singular; waitUntil 202; `organization_id` no insert); RPC `get_replenishment_by_sku` (migration `20260665000100`, +CTE `incoming_by_sku`, +colunas `qtd_a_caminho`/`data_proxima_chegada`, desconta TODA a qtd a caminho — decisão Wesley); cron `sync-tiny-purchase-orders-daily` (jobid 34, 03:15 UTC).
 - **Prova:** sync 22 OCs/135 SKUs/1.885 un; RPC 93 SKUs a caminho, 80 zeraram sugestão, cobertura parcial preserva gatilho (ex `11011273-CAFE3374G` → ainda sugere 10). tsc 0 + 208 testes + build ok.
 - **Decisão tunável:** "a caminho" = situação `3` (aguardando recebimento); ampliar p/ `2` (aprovada) = 1 linha em `SITUACOES_A_CAMINHO` na EF.
@@ -137,7 +137,7 @@ See: .planning/PROJECT.md
 
 Phase: 101 (detalhamento-de-mco-e-recomenda-o-de-margem-na-p-gina-analis) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-19 — Phase 101 execution started
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
 
@@ -295,6 +295,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | Phase 100-break-even-de-caixa-do-m-s-quanto-falta-vender-para-fechar-n P01 | ~10min | 2 tasks | 1 files |
 | Phase 101 P01 | 15min | 2 tasks | 1 files |
 | Phase 101 P02 | 10min | 2 tasks | 4 files |
+| Phase 101 P03 | ~25min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -399,6 +400,8 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 - [Phase 101-01]: sku column is NOT NULL DEFAULT '' (sentinel), never nullable, to keep UNIQUE(organization_id, item_id, sku) enforce dedup correctly
 - [Phase ?]: Phase 101-02: precoUnit<=0 in computeMcoRecommendation short-circuits both levers to null before calling reversePrice — avoids a misleading R$0 minimum price
 - [Phase ?]: Phase 101-02: acosInatingivel = acosMeta <= 0 (not strictly <) — zero ACOS headroom treated as unreachable
+- [Phase 101]: 101-03: No delete path for custom MCO targets (out of scope) - clearing back to semaforo default deferred
+- [Phase 101]: 101-03: ml_mco_targets left untyped in types.ts, consistent with Phase 90-04 precedent
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -466,12 +469,12 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-**Last session:** 2026-07-19T19:51:07.217Z
+**Last session:** 2026-07-19T22:28:44.799Z
 
 **Resume file:** 
 
 None
-Stopped at: Phase 101 UI-SPEC approved
+Stopped at: context exhaustion at 75% (2026-07-19)
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 

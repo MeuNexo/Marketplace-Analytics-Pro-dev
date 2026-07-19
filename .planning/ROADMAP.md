@@ -1017,7 +1017,7 @@ Plans:
 **Goal:** A página `/analise-precos` ganha, abaixo do gráfico preço×break-even, um card fixo (sempre visível) com o waterfall de MCO por unidade (média do período) do anúncio/variação selecionado — receita→CMV→comissão→frete→impostos→MC→ads→MCO — com semáforo reusando `mcoHealth.ts` (🔴≤5% 🟡6-8% 🟢≥9%), um campo editável de **meta de MCO% customizada por `item_id`** (persistida na nova tabela `ml_mco_targets`, org-first RLS), e **duas alavancas de recomendação sempre visíveis**: preço mínimo de venda para atingir a meta (via `reversePrice` da Phase 50) e ACOS-alvo da campanha para atingir a meta mantendo o preço atual. 100% aditivo, single-item, tooltip da Phase 79 intocado, fórmula de MCO single-source (`computeMco`).
 **Requirements**: D-01..D-10 (decisões de `101-CONTEXT.md` — sem REQ-IDs formais; milestone v8.0 é Consultor v2, esta phase é extensão de UX de /analise-precos)
 **Depends on:** Phase 100 (linhagem /analise-precos Phases 77/79/81/82)
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 **Wave 1**
@@ -1027,7 +1027,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 101-03-PLAN.md — [W2] Frontend: hook `useMcoTargets` + card fixo no `PrecoPraticadoReport.tsx` (waterfall + meta editável + 2 alavancas + avisos) + ok visual (D-01, D-03, D-04, D-05, D-08, D-10)
+- [x] 101-03-PLAN.md — [W2] Frontend: hook `useMcoTargets` + card fixo no `PrecoPraticadoReport.tsx` (waterfall + meta editável + 2 alavancas + avisos) + ok visual (D-01, D-03, D-04, D-05, D-08, D-10)
 
 ---
 
