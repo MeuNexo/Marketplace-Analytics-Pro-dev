@@ -166,10 +166,6 @@ async function syncUser(
 
   const syncedAt = new Date().toISOString();
 
-  // Limpa dados existentes do período para evitar stale spend de syncs anteriores
-  await sb.from("ml_ads_products_cache").delete().eq("ml_user_id", mlUserId).gte("date", dateFrom).lte("date", dateTo);
-  await sb.from("ml_ads_daily_cache").delete().eq("ml_user_id", mlUserId).gte("date", dateFrom).lte("date", dateTo);
-
   // dailyAgg: date → totals (derivado dos itens por produto)
   const dailyAgg = new Map<string, { impressions: number; clicks: number; spend: number; revenue: number; orders: number }>();
   // itemDayAgg: "date|item_id" → per-product totals para dateFrom (dia do job)
@@ -181,6 +177,7 @@ async function syncUser(
   const today = dateFrom;
   let offset = 0;
   let loggedFirstResult = false;
+  let fetchError: string | null = null;
   while (true) {
     let items: any[] = [], total = 0;
     try {
@@ -202,6 +199,7 @@ async function syncUser(
       items = data?.results ?? data?.ads ?? data?.items ?? [];
       total = data?.paging?.total ?? items.length;
     } catch (e) {
+      fetchError = String(e).slice(0, 200);
       console.warn("sync-ads ml_user_id=" + mlUserId, String(e).slice(0, 120));
       break;
     }
@@ -229,6 +227,16 @@ async function syncUser(
     offset += items.length;
     if (items.length === 0 || offset >= total) break;
   }
+
+  if (fetchError) {
+    throw new Error("sync-ads fetch items failed para ml_user_id=" + mlUserId + ": " + fetchError);
+  }
+
+  // Limpa dados existentes do período para evitar stale spend de syncs anteriores.
+  // Só roda depois do fetch bem-sucedido — se o fetch falhar, o throw acima
+  // propaga antes de chegar aqui, preservando o cache existente.
+  await sb.from("ml_ads_products_cache").delete().eq("ml_user_id", mlUserId).gte("date", dateFrom).lte("date", dateTo);
+  await sb.from("ml_ads_daily_cache").delete().eq("ml_user_id", mlUserId).gte("date", dateFrom).lte("date", dateTo);
 
   // Upsert daily totals
   const dailyRows = Array.from(dailyAgg.entries()).map(([date, d]) => ({
