@@ -138,7 +138,7 @@ See: .planning/PROJECT.md
 Phase: 100 (Break-even de caixa do mês) — EXECUTING
 Plan: 2 of 2
 Status: Ready to execute
-Last activity: 2026-07-17 — Phase 100 execution started
+Last activity: 2026-07-19 - Completed quick task 260719-nov: Corrigir bug critico no sync de Ads ML (masking silencioso de falhas)
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
 
 ### Phase 54 — Wave 1 EXECUTADA (2026-06-24), Wave 2 PENDENTE
@@ -201,6 +201,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | 260702-jq4 | Gráfico de /analise-precos dividido em principal+BarChart de unidades; 6 KPI cards com comparativo vs período anterior (%/p.p.) | 2026-07-02 | 5370606f | [260702-jq4](./quick/260702-jq4-grafico-dividido-kpi-comparativo/) |
 | 260702-kfo | Cores/legenda nítidas no gráfico de /analise-precos: tokens --chart-price/breakeven/mco (paleta validada CVD light+dark), legenda 5 itens, chips no tooltip, ticks do eixo MCO% violeta. AGUARDA validação visual Wesley EM PROD | 2026-07-02 | 86dd69d6 | [260702-kfo](./quick/260702-kfo-cores-legendas-grafico-precos/) |
 | 260627-1z0 | Reposição: alvo order-up-to = venda × (GREATEST(cobertura, lead+7) + safety) — corrige cobertura<lead que jogava compra no MOQ. Deployado prod via MCP; total compra 756→1053, 0 SKUs presos no piso. | 2026-06-27 | 5c0820ec | [260627-1z0](./quick/260627-1z0-fix-parametro-reposicao-alvo-order-up-to/) |
+| 260719-nov | sync-ads: preserva cache quando fetch de ML falha (não apaga+não repõe); process-sync-job: job de ads vai a "failed" (não "completed" falso) quando results tem erro. Deployado prod (v19/v17). Backfill revelou causa raiz real: endpoint `/advertising/advertisers/{id}/product_ads/items` e `/campaigns` retornam 404 no ML desde 15/07 (token válido, `/advertisers` funciona) — dado de ads de 15–19/07 seguem indisponíveis até resolver com o ML. | 2026-07-19 | fb1aa1d2 | [260719-nov](./quick/260719-nov-corrigir-bug-critico-no-sync-de-ads-ml-s/) |
 
 ### DRE mês-calendário (quick 260613-2p6, 2026-06-13)
 
