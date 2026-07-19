@@ -163,6 +163,8 @@ async function syncUser(
   const advData     = await mlGet(ML_API + "/advertising/advertisers?product_id=PADS", token);
   const advertiserId = advData?.advertisers?.[0]?.advertiser_id;
   if (!advertiserId) throw new Error("No advertiser_id for ml_user_id=" + mlUserId);
+  const siteId = advData?.advertisers?.[0]?.site_id;
+  if (!siteId) throw new Error("No site_id for ml_user_id=" + mlUserId);
 
   const syncedAt = new Date().toISOString();
 
@@ -189,7 +191,7 @@ async function syncUser(
         limit: "50", offset: String(offset),
       });
       const data = await mlGet(
-        ML_API + "/advertising/advertisers/" + advertiserId + "/product_ads/items?" + itemsQs,
+        ML_API + "/advertising/" + siteId + "/advertisers/" + advertiserId + "/product_ads/ads/search?" + itemsQs,
         token,
       );
       if (!loggedFirstResult) {
@@ -283,7 +285,7 @@ async function syncUser(
     let camps: any[] = [], total = 0;
     try {
       const data = await mlGet(
-        ML_API + "/advertising/advertisers/" + advertiserId + "/product_ads/campaigns?limit=50&offset=" + campOff,
+        ML_API + "/advertising/" + siteId + "/advertisers/" + advertiserId + "/product_ads/campaigns/search?limit=50&offset=" + campOff,
         token,
       );
       camps = data?.campaigns ?? data?.results ?? [];
@@ -299,7 +301,7 @@ async function syncUser(
       campaign_id:  String(c.id ?? c.campaign_id ?? ""),
       name:         c.name ?? "",
       status:       (c.status ?? "unknown").toLowerCase(),
-      daily_budget: Number(c.budget_amount ?? c.daily_budget ?? 0),
+      daily_budget: Number(c.budget ?? c.budget_amount ?? c.daily_budget ?? 0),
       impressions: 0, clicks: 0, spend: 0, attributed_revenue: 0, attributed_orders: 0,
       ctr: 0, cpc: 0, roas: 0,
       synced_at: syncedAt,
