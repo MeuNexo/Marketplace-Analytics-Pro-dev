@@ -8,7 +8,8 @@
 //   2. Para cada loja: getTinyToken(ml_user_id) → refresh automático se expirado
 //   3. GET /contas-pagar com janela [hoje-90d, hoje+90d] — paginando até esgotar
 //      CRÍTICO: NÃO enviar parâmetro "situacao" — Tiny v3 rejeita o enum (A5)
-//   4. Normalizar situacao client-side: pago/quitado/2 → 'paid'; resto → 'pending'
+//   4. Normalizar situacao client-side: pago/quitado/2 → 'paid';
+//      cancelado/cancelada → 'cancelled' (v8, Phase 97); resto → 'pending'
 //   5. outflow_date = dataPagamento (se disponível e status='paid') ou dataVencimento[:10]
 //   6. UPSERT em cash_outflows onConflict (organization_id, tiny_payable_id)
 //      ignoreDuplicates: false — status pode mudar de 'pending' para 'paid' entre syncs
@@ -132,11 +133,50 @@ async function tinyGet(token: string, path: string, params: Record<string, strin
   return res.data ?? res;
 }
 
+// ── Retry com backoff para 429 (Phase 97) ─────────────────────────────────────
+// Causa-raiz 2026-07-16: o cron treasury_cat_tick (enrich_payable_step a cada
+// 15s→30s) consome o rate limit do Tiny (~100 req/min) continuamente; a
+// paginação deste sync colidia e a EF perdia TUDO no primeiro 429 — e o cron
+// recebia 202 "ok" (falha silenciosa; synced_at congelava sem alerta).
+// Fix: retry por página com backoff (o rate limit do Tiny renova por minuto),
+// com orçamento GLOBAL de retries para caber no wall-clock da EF.
+const RETRY_WAIT_MS = 61_000; // janela de rate limit do Tiny é por minuto
+const MAX_RETRIES_GLOBAL = 3; // orçamento total por execução (~183s extra máx.)
+
+// deno-lint-ignore no-explicit-any
+async function tinyGetRetry(
+  token: string,
+  path: string,
+  params: Record<string, string>,
+  mlUserId: string,
+  budget: { retriesLeft: number },
+  // deno-lint-ignore no-explicit-any
+): Promise<any> {
+  while (true) {
+    try {
+      return await tinyGet(token, path, params);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.includes("429") || budget.retriesLeft <= 0) throw e;
+      budget.retriesLeft--;
+      console.log(
+        `[sync-tiny-payables] ml_user_id=${mlUserId} 429 em ${path} offset=${params.offset ?? "?"} — aguardando ${RETRY_WAIT_MS / 1000}s (retries restantes: ${budget.retriesLeft})`,
+      );
+      await sleep(RETRY_WAIT_MS);
+    }
+  }
+}
+
 // ── Normalização de situação (client-side — A5: NÃO enviar param à API) ──────
 
-function normalizeSituacao(raw: unknown): "pending" | "paid" {
+function normalizeSituacao(raw: unknown): "pending" | "paid" | "cancelled" {
   const s = String(raw ?? "").toLowerCase().trim();
   if (["pago", "quitado", "2"].includes(s)) return "paid";
+  // Conta cancelada no Tiny = obrigação que não existe (ex.: PIS/COFINS que
+  // geraram CRÉDITO na apuração — decisão Wesley 2026-07-16). Passa o status
+  // verdadeiro adiante; achatar para 'pending' congelava o gate da DRE e
+  // inflava a projeção de caixa com contas fantasma.
+  if (["cancelado", "cancelada", "cancelled"].includes(s)) return "cancelled";
   return "pending";
 }
 
@@ -177,18 +217,19 @@ async function fetchPayables(
 ): Promise<TinyPayable[]> {
   let offset = 0;
   const allItems: TinyPayable[] = [];
+  const retryBudget = { retriesLeft: MAX_RETRIES_GLOBAL }; // Phase 97: sobrevive a 429
 
   while (true) {
     // Tiny v3 /contas-pagar pagina por OFFSET — o param `pagina` é IGNORADO
     // (validado em prod: pagina=2 retornava os mesmos 100 itens → loop).
     // CRÍTICO: NÃO enviar "situacao" (A5 do RESEARCH) — filtrar client-side.
     // CASHFIX-02 Suspect 1: passar dateFrom/dateTo à API Tiny (antes eram ignorados).
-    const data = await tinyGet(token, "/contas-pagar", {
+    const data = await tinyGetRetry(token, "/contas-pagar", {
       offset:        String(offset),
       limit:         "100",
       dataVencimentoInicial: dateFrom,
       dataVencimentoFinal:   dateTo,
-    });
+    }, mlUserId, retryBudget);
 
     // A API Tiny v3 retorna: { itens: [...], paginacao: { total } }
     // Observabilidade: logar raw keys da resposta (detecta Suspect 3 — formato mudou)

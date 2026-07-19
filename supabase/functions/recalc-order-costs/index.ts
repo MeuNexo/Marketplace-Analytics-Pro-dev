@@ -94,26 +94,40 @@ serve(async (req) => {
     // Load product costs: indexa por seller_sku (formato Tiny) E por item_id (formato ML, legado)
     const { data: costs } = await supabase
       .from("ml_product_costs")
-      .select("item_id, seller_sku, cost")
+      .select("item_id, seller_sku, cost, cost_full")
       .or(`organization_id.eq.${organization_id},organization_id.is.null`);
     const costBySku = new Map<string, number>();  // seller_sku → cost
     const costByItem = new Map<string, number>(); // item_id ML → cost (legado)
+    const costFullBySku = new Map<string, number>(); // seller_sku → cost_full (preço de custo cheio)
     for (const c of costs ?? []) {
-      if (c.cost == null) continue;
-      if (c.seller_sku) costBySku.set(c.seller_sku, Number(c.cost));
-      // item_id com prefixo TINY_ → ignorar como item_id ML direto
-      if (c.item_id && !c.item_id.startsWith("TINY_")) costByItem.set(c.item_id, Number(c.cost));
+      if (c.cost != null) {
+        if (c.seller_sku) costBySku.set(c.seller_sku, Number(c.cost));
+        // item_id com prefixo TINY_ → ignorar como item_id ML direto
+        if (c.item_id && !c.item_id.startsWith("TINY_")) costByItem.set(c.item_id, Number(c.cost));
+      }
+      // Fase 96-07: custo_unit_cheio nunca é derivado de custo_unit (médio) —
+      // vem só de ml_product_costs.cost_full (precoCusto do Tiny, lido separado).
+      if (c.cost_full != null && c.seller_sku) costFullBySku.set(c.seller_sku, Number(c.cost_full));
     }
 
     // Pull orders in window
     let query = supabase
       .from("orders")
-      .select("id, ml_order_id, ml_user_id, item_id, sku, quantidade, preco_unit, estado, custo_unit, tax_rate, tax_amount, uf_origem")
+      .select("id, ml_order_id, ml_user_id, item_id, sku, quantidade, preco_unit, estado, custo_unit, custo_unit_cheio, tax_rate, tax_amount, uf_origem")
       .in("ml_user_id", ml_user_ids)
       .gte("data_pedido", date_from)
       .lte("data_pedido", date_to);
     if (only_missing) {
-      query = query.or("custo_unit.is.null,tax_amount.is.null");
+      // Fase 96-07 (Trava A): `custo_unit_cheio.is.null` faz parte do predicado.
+      // Sem ele, um pedido com custo_unit (médio) JÁ preenchido e
+      // custo_unit_cheio NULL nunca entrava no SELECT — a função sabia gravar o
+      // cheio (costFullBySku/patch abaixo), mas nunca enxergava as linhas que
+      // precisavam dele. Era este filtro, e não a falta do código de escrita,
+      // que congelava a cobertura do cheio: pedido novo nasce com médio+imposto
+      // via sync, então o predicado antigo já dava "nada faltando" e o cheio
+      // ficava NULL para sempre. É a causa raiz dos 32,9% de cobertura em julho
+      // (contra 94,9% do médio).
+      query = query.or("custo_unit.is.null,custo_unit_cheio.is.null,tax_amount.is.null");
     }
     const { data: ordersData, error: oerr } = await query;
     if (oerr) throw oerr;
@@ -131,6 +145,7 @@ serve(async (req) => {
         const cfg = taxByStore.get(o.ml_user_id);
         // Prioridade: seller_sku (Tiny) → item_id ML direto (legado)
         const cost = (o.sku ? costBySku.get(o.sku) : undefined) ?? costByItem.get(o.item_id) ?? null;
+        const costFull = o.sku ? costFullBySku.get(o.sku) ?? null : null;
         const taxRate = cfg ? computeOrderTaxRate(cfg, o.estado) : null;
         const preco = Number(o.preco_unit ?? 0);
         const qty = Number(o.quantidade ?? 0);
@@ -142,6 +157,7 @@ serve(async (req) => {
 
         const patch: Record<string, unknown> = {};
         if (cost != null) patch.custo_unit = cost;
+        if (costFull != null) patch.custo_unit_cheio = costFull;
         if (taxRate != null) patch.tax_rate = taxRate;
         if (taxAmount != null) patch.tax_amount = taxAmount;
         if (ufOrigem) patch.uf_origem = ufOrigem;

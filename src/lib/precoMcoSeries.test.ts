@@ -3,6 +3,7 @@ import {
   computePrecoMcoSeries,
   computePreviousWindow,
   computePriceKpis,
+  computeWaterfallCard,
   percentDelta,
   pointDelta,
   type AdsDailyRow,
@@ -251,6 +252,98 @@ describe("computePriceKpis", () => {
     expect(kpis.precoMedio).toBe(0);
     expect(kpis.breakevenMedio).toBe(0);
     expect(kpis.mcoPct).toBeNull();
+  });
+});
+
+describe("computeWaterfallCard", () => {
+  it("período normal com 2 buckets: cada campo por unidade é a soma dos totais dividida pela soma de qtd", () => {
+    // Row 1: qtd 10, total 1000, cmv 300, comissao 120, frete 80, impostos 60, ads 40
+    // Row 2: qtd 5,  total 600,  cmv 150, comissao 60,  frete 40, impostos 30, ads 20
+    // Σqtd=15, Σtotal=1600, Σcmv=450, Σcomissao=180, Σfrete=120, Σimpostos=90, Σads=60
+    const rows: PrecoSeriesRow[] = [
+      row({ bucket: "2026-06-01", qtd: 10, total: 1000, cmv: 300, comissao: 120, frete: 80, impostos: 60 }),
+      row({ bucket: "2026-06-02", qtd: 5, total: 600, cmv: 150, comissao: 60, frete: 40, impostos: 30 }),
+    ];
+    const adsDaily: AdsDailyRow[] = [
+      { date: "2026-06-01", spend: 40 },
+      { date: "2026-06-02", spend: 20 },
+    ];
+
+    const card = computeWaterfallCard(rows, { adsDaily, incluirAds: true, granularity: "day" });
+
+    expect(card.precoUnit).toBeCloseTo(1600 / 15, 5);
+    expect(card.cmvUnit).toBeCloseTo(450 / 15, 5);
+    expect(card.comissaoUnit).toBeCloseTo(180 / 15, 5);
+    expect(card.freteUnit).toBeCloseTo(120 / 15, 5);
+    expect(card.adsUnit).toBeCloseTo(60 / 15, 5);
+    expect(card.impostoUnit).toBeCloseTo(90 / 15, 5);
+    // mcUnit (margem antes de ads) = (1600-450-180-120-90)/15 = 760/15
+    expect(card.mcUnit).toBeCloseTo(760 / 15, 5);
+    // mco (via computeMco) = 1600-450-(180+120)-60-90 = 700 ; mcoUnit = 700/15
+    expect(card.mcoUnit).toBeCloseTo(700 / 15, 5);
+    expect(card.mcoPct).toBeCloseTo(43.75, 5);
+    // mcBeforeAdsPct = mcUnit/precoUnit*100 = 760/1600*100 = 47.5
+    expect(card.mcBeforeAdsPct).toBeCloseTo(47.5, 5);
+    expect(card.custoAusente).toBe(false);
+    expect(card.impostoAusente).toBe(false);
+  });
+
+  it("qtd=0 (sem vendas no período): todos os campos por unidade são 0, sem NaN/Infinity", () => {
+    const rows: PrecoSeriesRow[] = [
+      row({ qtd: 0, total: 0, cmv: 0, comissao: 0, frete: 0, impostos: 0 }),
+    ];
+    const card = computeWaterfallCard(rows, {
+      adsDaily: [{ date: "2026-06-01", spend: 40 }],
+      incluirAds: true,
+      granularity: "day",
+    });
+
+    expect(card.precoUnit).toBe(0);
+    expect(card.cmvUnit).toBe(0);
+    expect(card.comissaoUnit).toBe(0);
+    expect(card.freteUnit).toBe(0);
+    expect(card.adsUnit).toBe(0);
+    expect(card.impostoUnit).toBe(0);
+    expect(card.mcUnit).toBe(0);
+    expect(card.mcoUnit).toBe(0);
+    expect(card.mcoPct).toBeNull();
+    expect(card.mcBeforeAdsPct).toBeNull();
+    for (const v of [
+      card.precoUnit, card.cmvUnit, card.comissaoUnit, card.freteUnit,
+      card.adsUnit, card.impostoUnit, card.mcUnit, card.mcoUnit,
+    ]) {
+      expect(Number.isFinite(v)).toBe(true);
+    }
+  });
+
+  it("custoAusente = true quando qualquer row tem qtd_sem_custo > 0", () => {
+    const rows: PrecoSeriesRow[] = [
+      row({ bucket: "2026-06-01", qtd_sem_custo: 3 }),
+      row({ bucket: "2026-06-02", qtd_sem_custo: 0 }),
+    ];
+    const card = computeWaterfallCard(rows, { adsDaily: [], incluirAds: true, granularity: "day" });
+    expect(card.custoAusente).toBe(true);
+    expect(card.impostoAusente).toBe(false);
+  });
+
+  it("impostoAusente = true quando qualquer row tem qtd_sem_imposto > 0", () => {
+    const rows: PrecoSeriesRow[] = [
+      row({ bucket: "2026-06-01", qtd_sem_imposto: 0 }),
+      row({ bucket: "2026-06-02", qtd_sem_imposto: 5 }),
+    ];
+    const card = computeWaterfallCard(rows, { adsDaily: [], incluirAds: true, granularity: "day" });
+    expect(card.impostoAusente).toBe(true);
+    expect(card.custoAusente).toBe(false);
+  });
+
+  it("incluirAds=false: adsUnit=0 e mcoUnit == mcUnit (sem ads, MCO coincide com a margem antes de ads)", () => {
+    const rows: PrecoSeriesRow[] = [row({ bucket: "2026-06-01" })];
+    const adsDaily: AdsDailyRow[] = [{ date: "2026-06-01", spend: 40 }];
+
+    const card = computeWaterfallCard(rows, { adsDaily, incluirAds: false, granularity: "day" });
+
+    expect(card.adsUnit).toBe(0);
+    expect(card.mcoUnit).toBeCloseTo(card.mcUnit, 5);
   });
 });
 

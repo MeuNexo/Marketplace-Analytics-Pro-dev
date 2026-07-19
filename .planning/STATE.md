@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 84
-current_phase_name: DRE por Competência de Venda (método Tiny
+current_phase: 101
+current_phase_name: detalhamento-de-mco-e-recomenda-o-de-margem-na-p-gina-analis
 status: executing
-stopped_at: "Phase 93 (enviar anexo) EXECUTADA+VERIFICADA + FIX 93-03 (E2E Wesley): 3 bugs do upload real corrigidos (sanitize nome, ML file_name vs filename, multipart Blob) — EF upload v4 em prod. Upload E2E OK."
-last_updated: "2026-07-10T14:21:09.682Z"
-last_activity: 2026-07-03
-last_activity_desc: Phase 84 execution started
+stopped_at: Phase 101 UI-SPEC approved
+last_updated: "2026-07-19T19:52:09.642Z"
+last_activity: 2026-07-19
+last_activity_desc: Phase 101 execution started
 progress:
-  total_phases: 39
-  completed_phases: 21
-  total_plans: 78
-  completed_plans: 71
-  percent: 54
+  total_phases: 45
+  completed_phases: 24
+  total_plans: 101
+  completed_plans: 89
+  percent: 53
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
@@ -131,14 +131,14 @@ See: .planning/PROJECT.md
 
 **Milestone:** v8.0 — Consultor v2 (Inteligência)
 **Core value:** Consultor que explica, prioriza e ajuda a agir — LLM sob demanda + ações com aprovação, sobre o motor determinístico do v1.
-**Current focus:** Phase 84 — DRE por Competência de Venda (método Tiny)
+**Current focus:** Phase 101 — detalhamento-de-mco-e-recomenda-o-de-margem-na-p-gina-analis
 
 ## Current Position
 
-Phase: 84 (DRE por Competência de Venda (método Tiny)) — EXECUTING
-Plan: 2 of 6
+Phase: 101 (detalhamento-de-mco-e-recomenda-o-de-margem-na-p-gina-analis) — EXECUTING
+Plan: 3 of 3
 Status: Ready to execute
-Last activity: 2026-07-03 — Phase 84 execution started
+Last activity: 2026-07-19 — Phase 101 execution started
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
 
 ### Phase 54 — Wave 1 EXECUTADA (2026-06-24), Wave 2 PENDENTE
@@ -201,6 +201,8 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | 260702-jq4 | Gráfico de /analise-precos dividido em principal+BarChart de unidades; 6 KPI cards com comparativo vs período anterior (%/p.p.) | 2026-07-02 | 5370606f | [260702-jq4](./quick/260702-jq4-grafico-dividido-kpi-comparativo/) |
 | 260702-kfo | Cores/legenda nítidas no gráfico de /analise-precos: tokens --chart-price/breakeven/mco (paleta validada CVD light+dark), legenda 5 itens, chips no tooltip, ticks do eixo MCO% violeta. AGUARDA validação visual Wesley EM PROD | 2026-07-02 | 86dd69d6 | [260702-kfo](./quick/260702-kfo-cores-legendas-grafico-precos/) |
 | 260627-1z0 | Reposição: alvo order-up-to = venda × (GREATEST(cobertura, lead+7) + safety) — corrige cobertura<lead que jogava compra no MOQ. Deployado prod via MCP; total compra 756→1053, 0 SKUs presos no piso. | 2026-06-27 | 5c0820ec | [260627-1z0](./quick/260627-1z0-fix-parametro-reposicao-alvo-order-up-to/) |
+| 260719-nov | sync-ads: preserva cache quando fetch de ML falha (não apaga+não repõe); process-sync-job: job de ads vai a "failed" (não "completed" falso) quando results tem erro. Deployado prod (v19/v17). Backfill revelou causa raiz real: endpoint `/advertising/advertisers/{id}/product_ads/items` e `/campaigns` retornam 404 no ML desde 15/07 (token válido, `/advertisers` funciona) — dado de ads de 15–19/07 seguem indisponíveis até resolver com o ML. | 2026-07-19 | fb1aa1d2 | [260719-nov](./quick/260719-nov-corrigir-bug-critico-no-sync-de-ads-ml-s/) |
+| 260719-o6q | sync-ads: migrado para os endpoints novos de Product Ads do ML (`/advertising/{site_id}/advertisers/{id}/product_ads/ads/search` e `.../campaigns/search`) — o antigo `product_ads/items` foi descontinuado permanentemente pelo ML em 26/02/2026 (confirmado via MCP oficial `mcp.mercadolibre.com/mcp`). Deployado prod (v20). Backfill 15–19/07 rodou sem erro (~250-280 itens/dia). MLB7159819994: ads_spend real de R$1,44→R$235,60 no período; MCO com Ads real caiu de 12,64% (falso, sem dado) para **2,81%** (real) — confirma suspeita do Wesley. | 2026-07-19 | b6deb3fb | [260719-o6q](./quick/260719-o6q-migrar-sync-ads-para-os-novos-endpoints-/) |
 
 ### DRE mês-calendário (quick 260613-2p6, 2026-06-13)
 
@@ -223,7 +225,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 
 **Velocity:**
 
-- Total plans completed: 6
+- Total plans completed: 9
 - Average duration: —
 - Total execution time: —
 
@@ -278,6 +280,21 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | Phase 90 P03 | 5min | 3 tasks | 5 files |
 | Phase 90 P04 | 12min | 3 tasks | 6 files |
 | Phase 88 P01 | 8 min | 3 tasks | 6 files |
+| Phase 94 P01 | 15min | 1 tasks | 1 files |
+| Phase 94 P02 | 12min | 3 tasks | 5 files |
+| Phase 94 P03 | 15min | 2 tasks | 2 files |
+| Phase 96 P02 | 12min | 2 tasks | 5 files |
+| Phase 96 P01 | 20min | 2 tasks | 2 files |
+| Phase 96 P04 | 35min | 3 tasks | 3 files |
+| Phase 96 P05 | 8min | 3 tasks | 4 files |
+| Phase 96 P06 | 25min | 2 tasks | 2 files |
+| Phase 99 P02 | 8min | 2 tasks | 6 files |
+| Phase 99 P01 | 15min | 2 tasks | 1 files |
+| Phase 99 P03 | ~3h | 3 tasks | 15 files |
+| 99 | 3 | - | - |
+| Phase 100-break-even-de-caixa-do-m-s-quanto-falta-vender-para-fechar-n P01 | ~10min | 2 tasks | 1 files |
+| Phase 101 P01 | 15min | 2 tasks | 1 files |
+| Phase 101 P02 | 10min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -353,6 +370,35 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 - [Phase 90-04]: applyTemplate trata chave ausente (undefined) igual a desconhecida — token literal em ambos; caller resolve fallback (nome: buyer_first_name ?? 'cliente') antes de chamar
 - [Phase 90-04]: supabase.from('table_name') tipa OK mesmo sem a tabela em src/integrations/supabase/types.ts (confirmado com ml_claims desde a 90-01 e agora ml_claim_templates) — não precisa regenerar types.ts nem usar 'as any' no .from()
 - [Phase 90-04]: Phase 90 FECHADA — 4/4 plans (backend triagem+templates, frontend triagem, frontend mensagens rápidas), tudo frontend-only nesta 04 (nenhum EF/migration tocado)
+- [Phase ?]: Phase 94-01: dre_month_close (PK org-first) presenca=APURACAO/ausencia=PREVISAO; reabrir=DELETE sem UPDATE policy; RLS clonada do ml_tax_config; anti-IDOR provado Thales->Pe Vermeio SELECT 0 / INSERT 42501 / DELETE 0
+- [Phase 94-02]: TDD RED/GREEN split into two commits for dreRegime.ts (test-only failing commit, then implementation commit) per Task 1's tdd=true
+- [Phase 94-02]: useImpostoGuiaNudge does a direct RLS cash_outflows read (narrow, 3 categories x 2 months, never summed client-side) instead of a new RPC — justified against the repo's PROIBIDO broad-aggregation convention
+- [Phase 94-02]: reopen() on useDreMonthClose = DELETE the dre_month_close row (no UPDATE policy exists per 94-01)
+- [Phase 94-03]: closeBusy wired to monthClose.isMutating (94-02 hook's actual single busy flag) instead of the plan text's isClosing/isReopening, which do not exist on the hook
+- [Phase 94-03]: Added toast.error around close()/reopen() owner mutations (Rule 2), matching the ReplenishmentParamsDialog/ml_tax_config error-toast convention
+- [Phase 96]: Gate de fechamento (resolveCloseGate) fica em módulo irmão de dreRegime.ts, não dentro de resolveDreRegime — preserva SC5
+- [Phase 96]: canApurarImposto nunca lê o campo total — status='paid' é o único sinal confiável (R$0,01 pago = crédito de Lucro Real, não placeholder)
+- [Phase 96]: Grupo parcelamento vira excluded:true em vez de dropado — preserva linha auditável na tela (96-05 cuida da renderização)
+- [Phase 96]: coverageTo de useMLBillingDaily continua por charge_date (sync), competence_date só no filtro de range (C4)
+- [Phase 96]: 96-04: partially_refunded entra em get_cancelled_revenue junto com cancelled (decisao Wesley: reembolso = cancelamento). Receita bruta maio = 261.666,41; liquida inalterada em 247.216,12
+- [Phase 96]: 96-04: get_cost_waterfall.paid_revenue NAO alterada (6 consumidores) — receita cancelada vive em RPC nova isolada; composicao da bruta acontece no card (96-05)
+- [Phase 96]: 96-04: dre_bloco_for_category e copia literal do CASE da RPC 87 (que fica intocada); equivalencia provada em prod = 0 divergencias sobre todas as categorias vivas
+- [Phase 96]: 96-04: hooks nunca devolvem null — mes sem cancelamento (0) e competencia sem nao-classificado ([]) sao estados validos, nao ausencia de dado
+- [Phase 96]: 96-05: computeMargemContribuicao extraído como fonte única e pura, eliminando a duplicação tripla da fórmula da margem (MercadoLivre.tsx + MLCostCard.tsx + re-soma de totalTarifasEfetivo); receita bruta composta no card (paid_revenue + cancelledRevenue), nunca na RPC get_cost_waterfall
+- [Phase 96]: 96-06: shouldNudgeClose não foi alinhado ao gate — contradição visual (nudge 🟢 x botão bloqueado) resolvida no tooltip do botão, não suprimindo o nudge
+- [Phase ?]: Phase 99-02: DESVIO_ALERT_PCT = 20 (limiar de alerta previsão x guia paga de imposto na DRE Caixa) — Claude's Discretion
+- [Phase ?]: Phase 99-02: badge com resultadoCaixa === 0 (movimento houve, resultado fechou em zero) tratado como neutral 'Sem movimentação no mês', por analogia ao mês vazio
+- [Phase 99-01]: RPCs get_dre_cash/get_dre_cash_items/get_dre_cash_history aplicadas em prod via MCP (regime de caixa puro, sem shift M+1); reuso de dre_bloco_for_category sem redefinicao
+- [Phase ?]: Fornecedores (bloco excluido) somam como saida no total de caixa do mes — decisao do checkpoint 99-03
+- [Phase ?]: Estorno de Mercado Pago pesa no mes em que o dinheiro efetivamente saiu (cash_inflows.refund_date), nao no mes da venda original — backfill days_back=170 remapeou 90 estornos
+- [Phase ?]: Bloco excluido da cascata DRE Caixa exibido por categoria (Fornecedores/ADS ML/Envios Full) com drill-down, nunca como linha unica opaca
+- [Phase ?]: Phase 100-01: get_dre_cash_forecast(p_org_id, p_month) sem parametro de meta — meta aplicada client-side no 100-02 sobre o gap (D-04), superando o 3o parametro citado no ROADMAP
+- [Phase ?]: Phase 100-01: estornos_ocorridos clona literalmente refunds_agg da get_dre_cash (regua COALESCE(refund_date, release_date)) para reconciliar ao centavo com a DRE Caixa apurada
+- [Phase ?]: Phase 100-01: saidas_pendentes nunca inclui mes futuro (guarda anti-fantasma parte a) — pendente so entra se outflow_date >= hoje E < fim do mes corrente
+- [Phase 101-01]: No RPC for ml_mco_targets writes — direct supabase.from().upsert() per repo convention for simple config tables
+- [Phase 101-01]: sku column is NOT NULL DEFAULT '' (sentinel), never nullable, to keep UNIQUE(organization_id, item_id, sku) enforce dedup correctly
+- [Phase ?]: Phase 101-02: precoUnit<=0 in computeMcoRecommendation short-circuits both levers to null before calling reversePrice — avoids a misleading R$0 minimum price
+- [Phase ?]: Phase 101-02: acosInatingivel = acosMeta <= 0 (not strictly <) — zero ACOS headroom treated as unreachable
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -395,6 +441,14 @@ Dashboard atual mostra:
 - Phase 87 added: DRE — Agregação de Resultado por Competência
 - Phase 88 added: DRE — Frontend Resultado Completo
 - Phase 90 added: Atendimento de reclamações: triagem + mensagens rápidas (spec em docs/superpowers/specs/2026-07-07-atendimento-reclamacoes-design.md)
+- Phase 94 added: DRE Regime Previsão↔Apuração (imposto real + CMV cheio no fechamento manual do mês)
+- Phase 101 added: Detalhamento de MCO e recomendação de margem na página /analise-precos (waterfall receita→CMV→comissão→frete→impostos→MC→ads→MCO por item + semáforo de margem-alvo, pedido Wesley 2026-07-19)
+- Phase 94 planned: 3 planos/3 waves, plan-checker PASS; M+1 no frontend, dre_month_close nova
+- Phase 96 added: DRE — correções da revisão linha a linha (C1–C9, C11); C10 rejeitado pelo dono; ramificada do main (Phase 95 em voo)
+- Phase 98 added: INSS de folha deve seguir regua M+1 igual ICMS/PIS/COFINS (descoberto na validacao mes-a-mes pos Phase 96/97; decisao Wesley 2026-07-16: Opcao A confirmada)
+- Phase 98 completed: Phase 98 (INSS M+1) EXECUTADA e commitada — RPC get_inss_guia_by_competence em prod, dreInss.ts + hook + wiring em MercadoLivre.tsx, 606/606 testes verdes. Pendencia registrada: extensao do gate de fechamento (canApurarInss) para bloquear com INSS ausente — decisao Opcao A do Wesley, NAO implementada nesta phase, candidata Phase 99.
+- Phase 99 added: DRE Caixa — apuração por recebimento Mercado Pago, página dedicada /dre-caixa (spec docs/superpowers/specs/2026-07-16-dre-caixa-design.md). Pendência antiga do gate INSS (ex-candidata a 99) passa a ser candidata a Phase 100.
+- Phase 100 added: Break-even de caixa do mês (painel de previsão na /dre-caixa) — pedido do Wesley ao aprovar a Phase 99
 
 ## Deferred Items
 
@@ -412,10 +466,12 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-**Resume file:** None
+**Last session:** 2026-07-19T19:51:07.217Z
 
-Last session: 2026-07-10T14:21:00.181Z
-Stopped at: Completed 90-04 (mensagens rápidas: applyTemplate + useClaimTemplates + ClaimTemplatesDialog + seletor no ClaimDetailSheet) — Phase 90 COMPLETE (4/4 plans)
+**Resume file:** 
+
+None
+Stopped at: Phase 101 UI-SPEC approved
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 

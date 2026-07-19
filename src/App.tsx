@@ -37,6 +37,7 @@ const MLPrecificacao     = React.lazy(() => import("./pages/mercadolivre/MLPreci
 const MLFiscal           = React.lazy(() => import("./pages/mercadolivre/MLFiscal"));
 const MLConsultor        = React.lazy(() => import("./pages/mercadolivre/MLConsultor"));
 const MLFluxoCaixa       = React.lazy(() => import("./pages/mercadolivre/MLFluxoCaixa"));
+const MLDreCaixa         = React.lazy(() => import("./pages/mercadolivre/MLDreCaixa"));
 const MLCompras          = React.lazy(() => import("./pages/mercadolivre/MLCompras"));
 const MLProdutosVendidos = React.lazy(() => import("./pages/mercadolivre/MLProdutosVendidos"));
 const MLAnalisePrecos    = React.lazy(() => import("./pages/mercadolivre/MLAnalisePrecos"));
@@ -143,6 +144,7 @@ const App = () => (
                             <Route path="/fiscal" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na página Fiscal"><MLFiscal /></ErrorBoundary></RoleRoute>} />
                             <Route path="/consultor" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro no Consultor"><MLConsultor /></ErrorBoundary></RoleRoute>} />
                             <Route path="/fluxo-de-caixa" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro no Fluxo de Caixa"><MLFluxoCaixa /></ErrorBoundary></RoleRoute>} />
+                            <Route path="/dre-caixa" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na DRE Caixa"><MLDreCaixa /></ErrorBoundary></RoleRoute>} />
                             <Route path="/compras" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro em Compras"><MLCompras /></ErrorBoundary></RoleRoute>} />
                             <Route path="/produtos-vendidos" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro em Produtos Vendidos"><MLProdutosVendidos /></ErrorBoundary></RoleRoute>} />
                             <Route path="/analise-precos" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro em Análise de Preços"><MLAnalisePrecos /></ErrorBoundary></RoleRoute>} />

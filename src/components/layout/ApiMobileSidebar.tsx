@@ -4,6 +4,7 @@ import {
   Banknote,
   Calculator,
   ClipboardList,
+  FileBarChart,
   FileText,
   Layers,
   LayoutDashboard,
@@ -42,6 +43,7 @@ const sections = [
       { icon: ClipboardList, label: "Pedidos",      path: "/pedidos"       },
       { icon: Calculator,    label: "Precificação", path: "/precificacao"  },
       { icon: Banknote,      label: "Fluxo de Caixa", path: "/fluxo-de-caixa" },
+      { icon: FileBarChart,  label: "DRE Caixa", path: "/dre-caixa" },
     ],
   },
   {

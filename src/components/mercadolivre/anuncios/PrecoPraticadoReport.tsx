@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { toast } from "sonner";
 import {
   Check, ChevronsUpDown, RefreshCw, Package, BarChart2,
   DollarSign, Percent, AlertTriangle, Target,
@@ -32,6 +33,7 @@ import {
   computePrecoMcoSeries,
   computePreviousWindow,
   computePriceKpis,
+  computeWaterfallCard,
   percentDelta,
   pointDelta,
   type AdsDailyRow,
@@ -50,6 +52,9 @@ import {
   type FaixaPreco,
   type SaudePreco,
 } from "@/lib/precoFaixas";
+import { computeMcoRecommendation } from "@/lib/pricing/mcoRecommendation";
+import { classifyMcoHealth, mcoHealthRole, MCO_SAUDAVEL_PCT } from "@/lib/mcoHealth";
+import { useMcoTargets } from "@/hooks/useMcoTargets";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -108,32 +113,46 @@ const SAUDE_KPI_VARIANT: Record<SaudePreco, "success" | "warning" | "danger" | "
   saudavel: "success", apertada: "warning", prejuizo: "danger", "sem-dados": "neutral",
 };
 
+// Semáforo do card de Detalhamento de MCO (D-04) — mesmo role de mcoHealth.ts
+// (Phase 83), zero divergência entre páginas. Cor nunca é sinal único (o
+// Badge sempre mostra pctFmt ao lado).
+const MCO_ROLE_BADGE_CLASS: Record<"critical" | "warning" | "good" | "neutral", string> = {
+  critical: "border-transparent bg-destructive/15 text-destructive",
+  warning: "border-transparent bg-warning/15 text-warning",
+  good: "border-transparent bg-success/15 text-success",
+  neutral: "border-transparent bg-muted text-muted-foreground",
+};
+
+// Linha genérica label→valor reusada pelo ChartTooltip (Phase 79) e pelo card
+// de Detalhamento de MCO (Phase 101) — movida para escopo de módulo para
+// evitar duplicação de JSX entre os dois consumidores (D-03: tooltip intacto).
+const Row = ({ k, v, accent, danger, muted, dotColor }: {
+  k: string; v: string; accent?: boolean; danger?: boolean; muted?: boolean; dotColor?: string;
+}) => (
+  <p className={cn("flex justify-between gap-6", muted && "text-[10px]")}>
+    <span className="text-muted-foreground flex items-center gap-1.5">
+      {dotColor && (
+        <span
+          className="inline-block w-2 h-2 rounded-full shrink-0"
+          style={{ backgroundColor: dotColor }}
+        />
+      )}
+      {k}
+    </span>
+    <span className={cn(
+      "font-semibold tabular-nums",
+      accent && "text-success", danger && "text-destructive",
+      muted && "font-normal text-muted-foreground",
+    )}>{v}</span>
+  </p>
+);
+
 // Tooltip com a decomposição por unidade: preço, break-even, MCO R$/un, MCO %
 // e cada componente do custo (transparência total — nada escondido).
 function ChartTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload as McoSeriesPoint & { label: string };
   const mcoUnit = d.precoUnit - d.breakevenUnit;
-  const Row = ({ k, v, accent, danger, muted, dotColor }: {
-    k: string; v: string; accent?: boolean; danger?: boolean; muted?: boolean; dotColor?: string;
-  }) => (
-    <p className={cn("flex justify-between gap-6", muted && "text-[10px]")}>
-      <span className="text-muted-foreground flex items-center gap-1.5">
-        {dotColor && (
-          <span
-            className="inline-block w-2 h-2 rounded-full shrink-0"
-            style={{ backgroundColor: dotColor }}
-          />
-        )}
-        {k}
-      </span>
-      <span className={cn(
-        "font-semibold tabular-nums",
-        accent && "text-success", danger && "text-destructive",
-        muted && "font-normal text-muted-foreground",
-      )}>{v}</span>
-    </p>
-  );
   return (
     <div className="rounded-lg border border-border bg-background px-3 py-2 text-xs shadow-md">
       <p className="mb-1 font-medium">{d.label}</p>
@@ -560,6 +579,48 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
   const hasData = (rows?.length ?? 0) > 0;
   const hasDailyData = (dailyRows?.length ?? 0) > 0;
 
+  // ── Detalhamento de MCO (Phase 101) ──────────────────────────────────────
+  // Card fixo, sempre visível, waterfall por unidade + recomendação de
+  // margem para o item/variação/período selecionados. Deriva de `rows`, já
+  // buscado para a aba "Evolução no tempo" — nenhum refetch novo (D-01/D-02).
+  const { targets: mcoTargets, keyOf: mcoKeyOf, upsert: upsertMcoTarget } = useMcoTargets();
+  const mcoTargetKey = selectedId ? mcoKeyOf(selectedId, selectedSku) : null;
+  const customMcoTarget = mcoTargetKey ? mcoTargets.get(mcoTargetKey) : undefined;
+  const targetMcoPct = customMcoTarget ?? MCO_SAUDAVEL_PCT.green;
+
+  const waterfallCard = useMemo(
+    () => computeWaterfallCard(rows ?? [], { adsDaily, incluirAds, granularity }),
+    [rows, adsDaily, incluirAds, granularity],
+  );
+  const mcoRecommendation = useMemo(
+    () => computeMcoRecommendation(waterfallCard, targetMcoPct),
+    [waterfallCard, targetMcoPct],
+  );
+  const mcoHealthValue = classifyMcoHealth(waterfallCard.mcoPct);
+  const mcoRole = mcoHealthRole(mcoHealthValue);
+
+  // Edição inline da meta (mesmo padrão onBlur/Enter do InlineEditCell em
+  // MLAnuncios.tsx — validação client-side espelha o CHECK do banco).
+  const [editingMcoTarget, setEditingMcoTarget] = useState(false);
+  const [mcoTargetDraft, setMcoTargetDraft] = useState("");
+  const mcoTargetInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editingMcoTarget) mcoTargetInputRef.current?.focus();
+  }, [editingMcoTarget]);
+
+  const commitMcoTargetEdit = async () => {
+    const raw = mcoTargetDraft.trim().replace(",", ".");
+    const parsed = Number(raw);
+    if (raw === "" || isNaN(parsed) || parsed <= 0 || parsed > 100) {
+      toast.error("Meta precisa ser maior que 0% e até 100%");
+      setEditingMcoTarget(false);
+      return;
+    }
+    setEditingMcoTarget(false);
+    if (selectedId) await upsertMcoTarget(selectedId, selectedSku, parsed);
+  };
+
   return (
     <div className="space-y-4">
       {/* Controles (flex-wrap: paridade mobile/desktop — lição Phase 78) */}
@@ -848,6 +909,149 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                 cobertura em vermelho = risco de ruptura (menos de {COBERTURA_RISCO_DIAS} dias) ·
                 "?" e tom esmaecido = faixa com menos de {MIN_DIAS_CONFIANCA} dias de amostra (estimativa fraca)
               </p>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Detalhamento de MCO + recomendação de margem (Phase 101) — card fixo,
+          sempre visível (D-01), não depende de hover; o tooltip do gráfico
+          acima (ChartTooltip, Phase 79) permanece intocado (D-03). */}
+      <Card className="mt-6">
+        <CardContent className="pt-4 pb-4">
+          {!selectedId || !hasData ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center gap-1.5">
+              <Target className="w-6 h-6 text-muted-foreground opacity-40" />
+              <p className="text-sm font-medium text-muted-foreground">Sem vendas no período selecionado</p>
+              <p className="max-w-sm text-xs text-muted-foreground">
+                Escolha um período com vendas ou troque o anúncio/variação no seletor acima para ver o detalhamento de MCO.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* 1. Header row */}
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Target className="w-4 h-4 text-accent" />
+                  <span className="text-sm font-semibold">Detalhamento de MCO</span>
+                  <Badge variant="outline" className={cn("text-[10px]", MCO_ROLE_BADGE_CLASS[mcoRole])}>
+                    {pctFmt(waterfallCard.mcoPct)}
+                  </Badge>
+                </div>
+                {fromDate && toDate && (
+                  <span className="text-xs text-muted-foreground">
+                    {format(parseISO(fromDate), "dd/MM", { locale: ptBR })} – {format(parseISO(toDate), "dd/MM", { locale: ptBR })}
+                  </span>
+                )}
+              </div>
+
+              {/* 2. Waterfall block — ordem fixa da cascata (D-02) */}
+              <div className="space-y-2">
+                <Row k="Receita/un" v={brl(waterfallCard.precoUnit)} />
+                <Row k="(−) CMV" v={brl(waterfallCard.cmvUnit)} />
+                <Row k="(−) Comissão" v={brl(waterfallCard.comissaoUnit)} />
+                <Row k="(−) Frete" v={brl(waterfallCard.freteUnit)} />
+                <Row k="(−) Impostos" v={brl(waterfallCard.impostoUnit)} />
+                <div className="border-t border-border pt-2">
+                  <Row
+                    k="= Margem de Contribuição/un"
+                    v={brl(waterfallCard.mcUnit)}
+                    accent={waterfallCard.mcUnit >= 0}
+                    danger={waterfallCard.mcUnit < 0}
+                  />
+                </div>
+                {incluirAds && <Row k="(−) Ads" v={brl(waterfallCard.adsUnit)} />}
+                <div className="border-t border-border pt-2">
+                  <Row
+                    k="= MCO/un"
+                    v={`${brl(waterfallCard.mcoUnit)} (${pctFmt(waterfallCard.mcoPct)})`}
+                    accent={mcoRole === "good"}
+                    danger={mcoRole === "critical"}
+                  />
+                </div>
+              </div>
+
+              {/* 3. Meta MCO% — inline-edit (D-05), pré-preenche custom se houver */}
+              <div className="mt-3 border-t border-border pt-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground">Meta MCO%:</span>
+                  {editingMcoTarget ? (
+                    <input
+                      ref={mcoTargetInputRef}
+                      value={mcoTargetDraft}
+                      onChange={(e) => setMcoTargetDraft(e.target.value)}
+                      onBlur={commitMcoTargetEdit}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") { e.preventDefault(); commitMcoTargetEdit(); }
+                        if (e.key === "Escape") setEditingMcoTarget(false);
+                      }}
+                      className="w-20 rounded border border-accent/40 bg-background px-1.5 py-0.5 text-right text-xs outline-none ring-1 ring-accent/30"
+                      type="number"
+                      step="0.1"
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      className="text-xs font-semibold tabular-nums underline decoration-dotted underline-offset-2"
+                      onClick={() => {
+                        setMcoTargetDraft(String(customMcoTarget ?? targetMcoPct));
+                        setEditingMcoTarget(true);
+                      }}
+                    >
+                      {pctFmt(targetMcoPct)}
+                    </button>
+                  )}
+                </div>
+                <p className="mt-0.5 text-[10px] text-muted-foreground">
+                  {customMcoTarget != null
+                    ? "Meta personalizada deste anúncio"
+                    : "Usando padrão do semáforo (≥ 9% saudável)"}
+                </p>
+              </div>
+
+              {/* 4. Recomendação (D-07/D-08) — sempre visível, mesmo com MCO saudável */}
+              <div className="mt-3 space-y-2 border-t border-border pt-3">
+                <div className="flex items-center gap-2">
+                  <DollarSign className="w-4 h-4 shrink-0 text-accent" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Preço mínimo para a meta</p>
+                    {mcoRecommendation.metaImpraticavel ? (
+                      <p className="text-xs text-destructive">Meta impraticável com os custos atuais deste item</p>
+                    ) : (
+                      <p className="text-xl font-semibold tabular-nums">{brl(mcoRecommendation.precoMinimo as number)}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Percent className="w-4 h-4 shrink-0 text-accent" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">ACOS-alvo da campanha (mantendo o preço atual)</p>
+                    {mcoRecommendation.acosInatingivel ? (
+                      <p className="text-xs text-destructive">Meta inatingível mesmo sem gastar em ads</p>
+                    ) : (
+                      <p className="text-xl font-semibold tabular-nums">{pctFmt(mcoRecommendation.acosMeta)}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 5. Warning footer (condicional) — copy verbatim do rodapé existente acima */}
+              {(waterfallCard.custoAusente || waterfallCard.impostoAusente) && (
+                <div className="mt-3 space-y-0.5">
+                  {waterfallCard.custoAusente && (
+                    <p className="flex items-center gap-1 text-[10px] text-warning">
+                      <AlertTriangle className="w-3 h-3 shrink-0" />
+                      custo ausente em parte das unidades — break-even subestimado
+                    </p>
+                  )}
+                  {waterfallCard.impostoAusente && (
+                    <p className="flex items-center gap-1 text-[10px] text-warning">
+                      <AlertTriangle className="w-3 h-3 shrink-0" />
+                      regime fiscal não configurado em parte das vendas — imposto pode estar subestimado
+                    </p>
+                  )}
+                </div>
+              )}
             </>
           )}
         </CardContent>

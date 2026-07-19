@@ -161,6 +161,73 @@ export function computePrecoMcoSeries(
   });
 }
 
+/** Waterfall por unidade, média do período (D-02) — reusa computeMco, sem reinventar a fórmula. */
+export interface WaterfallCard {
+  precoUnit: number;
+  cmvUnit: number;
+  comissaoUnit: number;
+  freteUnit: number;
+  adsUnit: number;
+  impostoUnit: number;
+  /** Margem de contribuição por unidade ANTES de ads */
+  mcUnit: number;
+  /** MCO por unidade (após ads) — mco (via computeMco sobre os totais do período) / Σqtd */
+  mcoUnit: number;
+  /** MCO% do período (não é a média dos mcoPct dos buckets) */
+  mcoPct: number | null;
+  /** mcUnit/precoUnit×100 — margem antes de ads como % do preço */
+  mcBeforeAdsPct: number | null;
+  custoAusente: boolean;
+  impostoAusente: boolean;
+}
+
+/**
+ * Computa o card de waterfall por unidade (média do período) a partir das
+ * mesmas rows/adsDaily que computePrecoMcoSeries já usa. Reusa computeMco
+ * para a fórmula do MCO (nunca recalculada aqui) — fonte única com
+ * computePrecoMcoSeries/computePriceKpis.
+ */
+export function computeWaterfallCard(
+  rows: PrecoSeriesRow[],
+  opts: ComputePrecoMcoSeriesOpts,
+): WaterfallCard {
+  const serie = computePrecoMcoSeries(rows, opts);
+  const adsTotal = serie.reduce((s, p) => s + p.ads, 0);
+
+  const qtd = rows.reduce((s, r) => s + r.qtd, 0);
+  const receita = rows.reduce((s, r) => s + r.total, 0);
+  const cmv = rows.reduce((s, r) => s + r.cmv, 0);
+  const comissao = rows.reduce((s, r) => s + r.comissao, 0);
+  const frete = rows.reduce((s, r) => s + r.frete, 0);
+  const impostos = rows.reduce((s, r) => s + r.impostos, 0);
+
+  const { mco, pct } = computeMco({
+    grossRevenue: receita,
+    cmv,
+    platformCost: comissao + frete,
+    ads: adsTotal,
+    tax: impostos,
+  });
+
+  const precoUnit = qtd > 0 ? receita / qtd : 0;
+  const mcBeforeAdsUnit = qtd > 0 ? (receita - cmv - comissao - frete - impostos) / qtd : 0;
+
+  return {
+    precoUnit,
+    cmvUnit: qtd > 0 ? cmv / qtd : 0,
+    comissaoUnit: qtd > 0 ? comissao / qtd : 0,
+    freteUnit: qtd > 0 ? frete / qtd : 0,
+    adsUnit: qtd > 0 ? adsTotal / qtd : 0,
+    impostoUnit: qtd > 0 ? impostos / qtd : 0,
+    mcUnit: mcBeforeAdsUnit,
+    mcoUnit: qtd > 0 ? mco / qtd : 0,
+    mcoPct: pct,
+    mcBeforeAdsPct: precoUnit > 0 ? (mcBeforeAdsUnit / precoUnit) * 100 : null,
+    custoAusente: rows.some((r) => r.qtd_sem_custo > 0),
+    impostoAusente: rows.some((r) => r.qtd_sem_imposto > 0),
+  };
+}
+
 /**
  * Janela anterior de MESMA duração, imediatamente antes de [from, to] (inclusivos).
  * Usada para o comparativo dos KPIs vs período anterior.

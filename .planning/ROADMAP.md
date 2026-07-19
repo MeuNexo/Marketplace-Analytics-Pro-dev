@@ -850,6 +850,185 @@ Plans:
 - [x] 92-01-PLAN.md — Backend: EF nova ml-claim-attachment (proxy base64, anti-IDOR) + ml-claim-detail normaliza attachments + deploy/smoke via MCP (orquestrador)
 - [x] 92-02-PLAN.md — Frontend: lib pura (normalização + imagem-vs-arquivo) + hook useClaimAttachment + componente ClaimAttachment + fiação no ClaimDetailSheet
 
+### Phase 94: DRE Regime Previsão↔Apuração (imposto real + CMV cheio no fechamento manual do mês)
+
+**Goal:** O card "DRE do Mês" em `/vendas` passa a ter DOIS regimes por mês de venda, com a virada disparada por um clique manual do owner ("marcar mês como apurado"). **PREVISÃO** (default, mês em aberto) = CMV médio (`orders.custo_unit` → `get_cost_waterfall.cmv`) + imposto estimado (~20%, `orders.tax_amount`). **APURAÇÃO** (mês fechado pelo owner) = CMV cheio (`orders.custo_unit_cheio` → `cmv_cheio`) + guias reais de imposto (bloco `impostos_venda`), parando de estimar. As duas bases nunca se misturam (senão o crédito de ICMS/PIS/COFINS conta 2×). O lojista deixa de ver um número que oscila R$40-48k conforme a régua: enquanto o mês está aberto vê a previsão honesta; quando a contabilidade entrega as guias e ele fecha, vê o resultado real.
+
+**Contexto/decisões (já discutidas e validadas com Wesley — NÃO re-discutir):** `/root/.claude/projects/-root/memory/project_garment_dre_ponto_verdade.md` (seções DESENHO FECHADO + VIABILIDADE CONFIRMADA NO BANCO) e `feedback_garment_dre_imposto_apuracao.md` (as DUAS DREs A/B). Supabase proj **ckcdevcxgvueywivefgx** (NÃO o ID do CLAUDE.md), org Pé Vermeio `7f615df7-7bac-45e5-8a93-827fb9ddeec7`. Deploy de RPC/EF via MCP (sem token CLI).
+
+**Regras travadas:**
+
+1. **Mês inteiro ou nada** (Opção A): só apura quando ICMS+PIS+COFINS do mês estiverem reais. O imposto estimado (`tax_amount`) é um número borrado ~20% por produto (não quebrado por tipo), então não dá pra substituir só um imposto.
+2. **Casamento M+1:** imposto do mês de venda M = guia com `competence_date = M+1` (a apuração paga este mês é sobre as vendas do mês passado). Hoje `get_dre_operational_by_competence` casa pela competência crua → **precisa do shift**.
+3. **CMV cheio×médio é consequência do regime**, nunca um toggle separado.
+4. **Gatilho = clique manual**, persistido em nova tabela `dre_month_close` (RLS org-first, reversível). Sinal de data (vencimento≠21) / `status='paid'` / valor≠recorrente é só EMPURRÃOZINHO visual ("parece pronto pra fechar"), NUNCA gatilho automático — o dado real é ambíguo demais (vários apurados reais ficam no dia 21).
+5. Enquanto o mês está aberto, **ignora a linha recorrente do Tiny** (placeholder) e usa a estimativa própria.
+
+**Success Criteria** (o que precisa ser VERDADE):
+
+1. Tabela `dre_month_close` (PK org-first: `organization_id`, `competence_month`) criada com RLS org-first; escrita restrita a owner; reversível (reabrir mês). Migration aplicada em ckcdevcxgvueywivefgx via MCP; advisors sem erro novo.
+2. RPC de resultado por competência ganha o **shift M+1** no bloco de impostos: DRE do mês M usa guias com `competence_date = M+1`. Reconciliação de junho/2026 ao centavo (imposto real = guia jul, não a de jun).
+3. Regime derivado do fechamento: mês SEM registro em `dre_month_close` → previsão (CMV médio + imposto estimado); mês fechado → apuração (CMV cheio + guias reais). Bases nunca misturadas (teste que prova que médio+guia-real não coexistem).
+4. Card `/vendas` mostra selo do regime ("Previsão" / "Apurado — baseado nas guias de DD/MM") + botão owner-only "marcar mês como apurado" / "reabrir"; empurrãozinho 🟢 quando as 3 guias saíram do placeholder.
+5. Anti-IDOR provado (SECURITY INVOKER / policy is_org_member): JWT de uma org não fecha nem lê o fechamento de outra.
+6. Sem regressão na Phase 88 (previsão continua idêntica ao validado por Wesley em 07-10) nem no `get_cashflow`/DFC.
+
+**Depends on:** Phase 87 (RPC `get_dre_operational_by_competence`) + Phase 88 (card "DRE do Mês" em `/vendas`, em prod)
+
+**Design (refinado com <db_reality> — M+1 vive no frontend, RPC grande INTOCADA):** o shift M+1 NÃO modifica `get_dre_operational_by_competence` (zero regressão nos outros 7 blocos + DFC). Em vez disso o hook chama a RPC já-viva `get_imposto_guia_by_competence(org, M+1)` no modo apuração. Backend desta fase = só a tabela nova `dre_month_close`. `get_cost_waterfall.cmv_cheio` já existe em prod — só falta enfiar no hook.
+
+**Plans:** 3/3 plans complete
+
+Plans:
+
+- [x] 94-01-PLAN.md — Backend: tabela `dre_month_close` (RLS org-first owner-only, reversível por DELETE) + apply MCP + prova anti-IDOR (wave 1, autonomous:false, SC1/SC5/SC6)
+- [x] 94-02-PLAN.md — Frontend data + lógica pura: `cmv_cheio` no waterfall + `useDreMonthClose` + `useImpostoGuiaReal` (shift M+1) + `dreRegime.ts` (nunca misturar bases; previsão byte-idêntica; reconciliação junho) (wave 2, SC2/SC3/SC6)
+- [x] 94-03-PLAN.md — Frontend UI: selo do regime + botão owner-only marcar/reabrir + empurrãozinho 🟢 + human-verify junho/2026 (wave 3, autonomous:false, SC4/SC6)
+
+---
+
+### Phase 96: DRE — correções da revisão linha a linha (C1–C9, C11): fechar a DRE com número verdadeiro
+
+**Goal:** A DRE do card `/vendas` passa a fechar o mês com número verdadeiro — maio/2026 sai de **−R$43.423,27** para **~zero a zero** — e **nunca** deixa um mês ser apurado com dado faltando: quando falta custo cheio ou guia de imposto, o sistema **bloqueia o fechamento e diz exatamente o que preencher**, em vez de mascarar com fallback silencioso.
+
+**Contexto:** Saída de 2 sessões de revisão linha a linha da DRE com Wesley (mês de referência maio/2026, org Pé Vermeio `7f615df7-7bac-45e5-8a93-827fb9ddeec7`). Revisão ENCERRADA; todas as correções foram acordadas e decididas pelo dono. Contexto completo, com os números e as armadilhas: `96-CONTEXT.md`.
+
+**Requirements:**
+
+- **[C1] Receita simétrica:** exibir receita BRUTA + nova linha "Cancelamentos de vendas" (−), espelhando "Cancelamentos de tarifas". O cancelamento entra na **fórmula** da margem (`MercadoLivre.tsx:305`), não só na tela. Bottom line permanece 247.216,12 em maio.
+- **[C2/C5] Tarifas — blacklist de parcelamento:** remover `CFONPN` + `BFONPN` de `totalTarifas`. Todo o resto ENTRA (MP "Custo por cobrar", Taxa de recebimento, devolução como frete, Minha Página, DIFAL, afiliados).
+- **[C4] Billing por competência:** filtro `charge_date` → `competence_date` em `useMLBillingDaily`.
+- **[C6] CMV sem máscara:** `get_cost_waterfall.cmv_cheio` usa `COALESCE(custo_unit_cheio, custo_unit)` — a apuração NUNCA pode usar COALESCE. Gate no "marcar mês como apurado" bloqueando quando houver `custo_unit_cheio IS NULL`, **listando os SKUs faltantes**. Previsão (médio) intacta.
+- **[C7] Gate de imposto por status:** o sinal é `status='paid'` nas 3 guias da competência M+1 — **não** o valor `0,01` (0,01 = apurado, deu zero por crédito de Lucro Real).
+- **[C8] Alerta de não classificado:** quando `nao_classificado > 0`, INFORMAR e listar os lançamentos para recategorização no Tiny. Nunca auto-corrigir.
+- **[C9] Alerta de double-count:** expor o `double_count_risk` (hoje a flag só sinaliza, mas o valor É somado na cascata).
+- **[C11] INSS fica no bloco pessoal** — nenhuma correção pode movê-lo para a linha de impostos.
+- **Backfill** do `custo_unit_cheio` REAL (da nota do Tiny, nunca médio×fator) — autorizado por Wesley.
+
+**Fora de escopo (Wesley faz manual no Tiny durante julho/2026):** corrigir as 6 faturas históricas do cartão, recategorizar 7 notas Outros→Fornecedores, cadastrar 4 SKUs sem custo nenhum.
+
+**Rejeitado:** [C10] separar juros de principal do empréstimo — Wesley: *"O empréstimo é tudo, juros mais o valor. Vamos manter assim."*
+
+**Depends on:** Phase 94 (regime previsão/apuração + `dre_month_close` + `resolveDreRegime`)
+
+**Success Criteria:**
+
+1. Maio/2026 fechado reconcilia a cascata com **swing de R$52.496,21** = tarifas 11.248,96 + CMV 9.887,92 + cartão 20.550,13 + não classificado 10.809,20 (bate exato, sem sobra).
+2. Tarifas de maio por competência sem parcelamento = **R$63.878,37** (hoje 75.127,33).
+3. O gate **IMPEDE** o fechamento de maio enquanto os 39 SKUs / 226 linhas / R$23.828,31 não tiverem custo cheio, e lista quais são.
+4. O gate de imposto aceita maio (3 guias `paid`) e rejeita mês com guia `pending`; `0,01` **não** bloqueia.
+5. Previsão (mês aberto) permanece byte-a-byte igual à atual — zero regressão da Phase 88/94.
+6. INSS continua no bloco Pessoal; nenhum valor migra para a linha de impostos.
+
+**Plans:** 6/8 plans executed
+
+Plans:
+
+- [x] 96-01-PLAN.md — [C2/C5] blacklist do parcelamento (CFONPN+BFONPN) em `groupBillingCharges` + [C4] `useMLBillingDaily` por `competence_date` (wave 1, TDD, SC2)
+- [x] 96-02-PLAN.md — [C7] `dreCloseGate.ts` puro: `canApurarImposto` (status, nunca o valor) + `resolveCloseGate` + [C11] teste de regressão do INSS (wave 1, TDD, SC4/SC6)
+- [x] 96-04-PLAN.md — [C1/C8-backend] `get_cancelled_revenue` (cancelamento + reembolso = 14.450,29) + `dre_bloco_for_category` + `get_dre_nao_classificado_items` + 2 hooks (wave 1, autonomous:false, aditivo, SC1)
+- [x] 96-03-PLAN.md — [C6-backend] `get_cost_waterfall` com `cmv_cheio` puro (DROP+CREATE) + RPC `get_cmv_cheio_gaps` + `useCmvCheioGate` (wave 2, autonomous:false, SC1/SC3/SC5)
+- [x] 96-05-PLAN.md — [C1-frontend] receita bruta 261.666,41 + linha Cancelamentos 14.450,29 + `computeMargemContribuicao` (mata as 3 duplicações) (wave 2, TDD, SC1/SC2)
+- [x] 96-06-PLAN.md — [C6/C7] gate no botão com motivo + [C8] lista do não classificado + [C9] double-count com valor (wave 3, SC3/SC4/SC5)
+- [ ] 96-07-PLAN.md — [C6-backfill] port OBRIGATÓRIO das EFs `sync-tiny-costs`/`recalc-order-costs` (jul só 32,9% de cobertura) + backfill idempotente (34 dos 39 SKUs) (wave 4, autonomous:false)
+- [ ] 96-08-PLAN.md — provas SC1..SC6 contra prod (swing R$52.496,21) + distinção SC2×SC5 + checkpoint visual Wesley (wave 5, autonomous:false)
+
+### Phase 98: INSS de folha na DRE deve seguir a régua M+1 (competência) igual ICMS/PIS/COFINS já seguem
+
+**Goal:** O bloco "Pessoal" da DRE do card `/vendas` passa a tratar o INSS de folha com a MESMA régua de competência M+1 que ICMS/PIS/COFINS já usam: em mês **apurado** (fechado), o INSS exibido é o da guia real com `competence_date = M+1` (crédito/cancelada não soma); em mês **aberto** (previsão), nada muda — o bloco Pessoal permanece byte-a-byte idêntico ao comportamento anterior a esta phase.
+
+**Contexto:** Wesley confirmou ao vivo (2026-07-16), durante a validação mês-a-mês pós-Phase 96/97, que o INSS de folha "apura no mês atual, mas é referente ao mês anterior" — mesmo padrão dos 3 impostos de venda. Hoje `Pessoal - INSS` soma junto com Salários/Pró-labore no mês corrente (sem deslocamento), dentro de `get_dre_operational_by_competence` (RPC 87, intocada). Contexto completo + dado real (org Pé Vermeio, `Pessoal - INSS` com 2 linhas na competência de abril: 1.550,00 cancelada + 2.652,31 paga): `98-CONTEXT.md` / `98-RESEARCH.md`.
+
+**Requirements:** INSS-01 (RPC nova `get_inss_guia_by_competence`, categoria única, SECURITY INVOKER), INSS-02 (resolver puro M+1 — cancelled não soma, paid/pending somam, cobre múltiplas linhas na mesma competência), INSS-03 (bloco Pessoal na tela usa o INSS real M+1 só em apuração; previsão inalterada), INSS-04 (checkpoint: decisão do dono capturada sobre estender ou não o gate de fechamento ao INSS — implementação, se aprovada, fica para phase futura). *(feature nova — IDs locais, mesmo padrão da Phase 93)*
+
+**Depends on:** Phase 97 (pipeline de sync confiável) + Phase 94/96 (regime previsão/apuração + gate de fechamento + `dreRegime.ts`/`dreCloseGate.ts` — clonados, nunca modificados)
+
+**Fora de escopo:** Salários/Pró-labore continuam sem deslocamento (só o INSS muda). `get_dre_operational_by_competence` e `get_imposto_guia_by_competence` NUNCA são modificadas. Extensão do gate de fechamento (`resolveCloseGate`) para bloquear com INSS ausente — decisão capturada via checkpoint; implementação (se aprovada) fica para phase futura.
+
+**Success Criteria** (o que precisa ser VERDADE):
+
+1. RPC `get_inss_guia_by_competence(p_org_id, p_competence)` em prod (SECURITY INVOKER, clone de `get_imposto_guia_by_competence` com categoria única `'Pessoal - INSS'`), devolvendo category×status×total×n; anti-IDOR provado (org alheia = 0 linhas).
+2. Mês fechado (apuração): o bloco Pessoal soma Salários/Pró-labore (mês corrente) + INSS da guia real M+1 (cancelada não soma; paga/pendente soma) — inclusive no caso real de abril (2 linhas na mesma competência, uma cancelada).
+3. Mês aberto (previsão): o bloco Pessoal permanece byte-a-byte idêntico ao comportamento pré-Phase-98 (zero regressão) — nenhuma linha crua é filtrada, nenhum valor M+1 é somado.
+4. `get_dre_operational_by_competence`, `get_imposto_guia_by_competence`, `dreRegime.ts` e `dreCascade.ts` permanecem intocados (diffs vazios) — a mudança vive num módulo novo (`dreInss.ts`) + na orquestração de `MercadoLivre.tsx`.
+5. Decisão do dono sobre estender o gate de fechamento ao INSS capturada via checkpoint e registrada (não implementada às pressas nesta phase).
+
+**Plans:** 3/3 plans complete
+
+Plans:
+
+- [x] 98-01-PLAN.md — Backend: migration `get_inss_guia_by_competence` (SECURITY INVOKER, clone de `get_imposto_guia_by_competence`) + checkpoint MCP apply/anti-IDOR/prova com dado real de março-abril (wave 1, autonomous:false, INSS-01)
+- [x] 98-02-PLAN.md — Frontend puro (TDD): `dreInss.ts` (resolveInssReal/filterRawInssRow/applyInssReal/resolveInssForCascade) + `useInssGuiaReal` (mirror de `useImpostoGuiaReal`) (wave 1, INSS-02)
+- [x] 98-03-PLAN.md — Integração: checkpoint de decisão sobre o gate + wiring em `MercadoLivre.tsx` (regime-gated) + reescrita do describe C11 em `dreCascade.test.ts` (wave 2, autonomous:false, INSS-03/INSS-04)
+
+### Phase 99: DRE Caixa — apuração por recebimento Mercado Pago (página dedicada /dre-caixa, spec docs/superpowers/specs/2026-07-16-dre-caixa-design.md)
+
+**Goal:** Página nova dedicada `/dre-caixa` que responde, em destaque, a pergunta do dono: **"o que entrou no mês pagou as contas do mês, ou tirei dinheiro de outro lugar?"** — apuração em regime de caixa puro: entradas = recebimento líquido MP (`cash_inflows.net_amount` por `release_date`), saídas = `cash_outflows` com `status='paid'` pagas no mês, agrupadas nos blocos existentes (`dre_bloco_for_category`). Página completa e detalhada, embrião de dashboard futuro: badge-resposta, KPIs, cascata com drill-down até o lançamento, evolução + histórico 12 meses, linha informativa de previsão de imposto (% médio 3 meses × faturamento) ao lado da guia real. **Spec completa e decisões travadas: `docs/superpowers/specs/2026-07-16-dre-caixa-design.md` (ler ANTES de planejar).**
+
+**Requirements**: DREC-01 (RPC `get_dre_cash` — cascata do mês, SECURITY INVOKER, sem subquery correlacionada), DREC-02 (RPC `get_dre_cash_items` — drill-down sob demanda), DREC-03 (RPC `get_dre_cash_history` — série 12 meses), DREC-04 (página `/dre-caixa` + hooks + lib pura `dreCashCascade.ts` testada), DREC-05 (previsão de imposto informativa + alerta de desvio), DREC-06 (banner dado-velho via `max(synced_at)` de inflows/outflows)
+
+**Constraints:** DRE por faturamento (página Vendas) INTOCADA. NÃO ler nem confrontar saldo/`initial_balance`/projeções do Fluxo de Caixa — só as tabelas-fonte `cash_inflows`/`cash_outflows`. Zero tabela/EF/cron novos. Tarifas ML não abatidas de novo (já retidas na fonte no net do MP).
+
+**Depends on:** Phase 98
+
+**Success Criteria**:
+
+1. Badge-resposta correta no topo: verde "sobrou R$ X" / vermelho "faltou R$ X", com "mês em andamento" no mês corrente.
+2. Entradas do mês fechado reconciliam com o painel/extrato MP (conferido pelo Wesley); refunds já descontados na base.
+3. Saídas = somente `status='paid'` pagas no mês, blocos idênticos à DRE atual; `cancelled` excluídas; `nao_classificado` com gate visual.
+4. Drill-down bloco → categoria → lançamento individual funcionando sob demanda.
+5. Previsão de imposto (média 3 meses fechados) exibida ao lado da guia paga, com alerta de desvio; null → "—".
+6. Anti-IDOR provado nas 3 RPCs (org alheia REAL = 0 linhas) e provas SQL como role `authenticated` < 8s.
+
+**Plans:** 3/3 plans complete
+
+Plans:
+**Wave 1**
+
+- [x] 99-01-PLAN.md — Backend: migration com as 3 RPCs (get_dre_cash/items/history, SECURITY INVOKER, caixa puro) + checkpoint apply MCP com provas authenticated <8s e anti-IDOR (wave 1, DREC-01/02/03/05)
+- [x] 99-02-PLAN.md — Lib pura dreCashCascade.ts (TDD vitest, cascata+badge+previsão) + hooks useDreCash/Items/History/CashFreshness (wave 1, DREC-04/05/06)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 99-03-PLAN.md — Página /dre-caixa completa + wiring rota/role/meta/menu desktop+mobile + checkpoint reconciliação MP × mês fechado e ok visual Wesley (wave 2, DREC-04/05/06)
+
+### Phase 100: Break-even de caixa do mês — quanto falta vender para fechar no zero (painel de previsão na /dre-caixa)
+
+**Goal:** Painel de previsão no topo da `/dre-caixa` (mês corrente) que responde: **"quanto falta entrar para o mês fechar no zero (ou na meta), e quanto preciso VENDER até que dia para isso acontecer?"** Saídas previstas = pagas + pendentes com vencimento no mês (Tiny) + previsão de estornos (% histórico) + previsão de imposto (linha já existente). Entradas garantidas = liberadas + **agendadas a liberar até o fim do mês** (`cash_inflows.release_date > hoje` — dado real do MP, o sync já traz 45 dias). Gap → traduzido em venda bruta necessária usando a taxa venda→caixa medida dos dados (líquido/bruto ~78% − % estornos) e o prazo médio de liberação (aviso "a partir do dia D, venda nova não fecha mais este mês"). Meta ajustável (default zero a zero; ex. "sobrar R$ 20k"), ritmo diário necessário × ritmo real 7d, semáforo. Decisão do dono (2026-07-17, ao aprovar a Phase 99): a DRE Caixa é a régua oficial de caixa; esta phase é a camada de previsão dela.
+
+**Requirements**: BEC-01 (RPC `get_dre_cash_forecast(p_org_id, p_month, p_meta)` — saídas previstas, entradas garantidas, gap, taxa venda→caixa e lag de liberação medidos dos dados; SECURITY INVOKER, sem subquery correlacionada), BEC-02 (painel/card na `/dre-caixa`: gap em destaque + venda necessária + dia-limite + ritmo 7d, meta editável client-side), BEC-03 (lib pura `dreCashForecast.ts` testada — matemática do gap/conversão/dia-limite), BEC-04 (guarda contra pendentes-fantasma: alertar quando pendentes recorrentes idênticos inflarem a previsão — lição da recorrência acidental de ads/full de 2026-07-17)
+
+**Constraints:** mesma separação da Phase 99 (não ler saldo/projeções do Fluxo de Caixa; zero tabela/EF/cron novos; DRE por faturamento intocada). Previsão é INFORMATIVA — nunca altera os números apurados da cascata.
+
+**Depends on:** Phase 99
+**Plans:** 1/2 plans executed
+
+Plans:
+**Wave 1**
+
+- [x] 100-01-PLAN.md — RPC `get_dre_cash_forecast` (migration, clone das réguas da Phase 99) + checkpoint apply via MCP com provas (<8s, anti-IDOR Thales real, reconciliação ao centavo, guarda anti-fantasma ao vivo)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 100-02-PLAN.md — Lib pura `dreCashForecast.ts` (TDD) + hook `useDreCashForecast` + card "Fechar o mês" no topo da /dre-caixa (meta editável client-side, semáforo, alerta recorrência) + ok visual Wesley
+
+### Phase 101: Detalhamento de MCO e recomendação de margem na página /analise-precos: expandir o breakdown de MCO por item (waterfall receita→CMV→comissão→frete→impostos→MC→ads→MCO) diretamente na UI, e adicionar recomendação de margem-alvo/faixa saudável de MCO por item (semáforo, similar ao mcoHealth.ts existente)
+
+**Goal:** A página `/analise-precos` ganha, abaixo do gráfico preço×break-even, um card fixo (sempre visível) com o waterfall de MCO por unidade (média do período) do anúncio/variação selecionado — receita→CMV→comissão→frete→impostos→MC→ads→MCO — com semáforo reusando `mcoHealth.ts` (🔴≤5% 🟡6-8% 🟢≥9%), um campo editável de **meta de MCO% customizada por `item_id`** (persistida na nova tabela `ml_mco_targets`, org-first RLS), e **duas alavancas de recomendação sempre visíveis**: preço mínimo de venda para atingir a meta (via `reversePrice` da Phase 50) e ACOS-alvo da campanha para atingir a meta mantendo o preço atual. 100% aditivo, single-item, tooltip da Phase 79 intocado, fórmula de MCO single-source (`computeMco`).
+**Requirements**: D-01..D-10 (decisões de `101-CONTEXT.md` — sem REQ-IDs formais; milestone v8.0 é Consultor v2, esta phase é extensão de UX de /analise-precos)
+**Depends on:** Phase 100 (linhagem /analise-precos Phases 77/79/81/82)
+**Plans:** 2/3 plans executed
+
+Plans:
+**Wave 1**
+
+- [x] 101-01-PLAN.md — [W1] Backend: migration `ml_mco_targets` (tabela + RLS org-first clonada de ml_product_costs) + apply via MCP + anti-IDOR smoke [BLOCKING] (D-06, D-09)
+- [x] 101-02-PLAN.md — [W1] Utils puros (TDD): `computeWaterfallCard` (precoMcoSeries.ts) + `computeMcoRecommendation` (reversePrice + ACOS-alvo) + testes (D-02, D-04, D-07)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 101-03-PLAN.md — [W2] Frontend: hook `useMcoTargets` + card fixo no `PrecoPraticadoReport.tsx` (waterfall + meta editável + 2 alavancas + avisos) + ok visual (D-01, D-03, D-04, D-05, D-08, D-10)
+
 ---
 
 ### Phase 93: Enviar anexo na resposta da reclamação (upload)

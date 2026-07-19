@@ -149,3 +149,82 @@ describe("buildDreCascade — fixture reconciliação junho/2026 (Phase 87)", ()
     expect(OPERACIONAL_BLOCOS).not.toContain("financeiro");
   });
 });
+
+describe("buildDreCascade — C11/Phase 98: o módulo continua somando o bloco Pessoal cru (a régua M+1 do INSS vive em dreInss.ts, fora deste módulo)", () => {
+  // HISTÓRICO: a Phase 96 fixou este comportamento (INSS somado cru dentro de
+  // `pessoal`, mesmo mês, sem deslocamento) como decisão de negócio DEFINITIVA
+  // — o comentário original dizia "nenhuma linha de dreCascade.ts muda por
+  // causa deste describe" e tratava qualquer alteração como regressão.
+  //
+  // REVERSÃO (Phase 98, 2026-07-16): Wesley reverteu essa decisão de negócio
+  // — o INSS de folha passou a seguir a régua M+1 em apuração (mesmo padrão
+  // já usado para ICMS/PIS/COFINS), exatamente o oposto do que a Phase 96
+  // travava. Mas repare: `buildDreCascade` em si CONTINUA agnóstico a
+  // qualquer régua de competência — ele só soma o que recebe, sem saber que
+  // uma das linhas é INSS. A mudança de comportamento observável acontece
+  // INTEIRAMENTE fora deste módulo, na camada de orquestração:
+  // `resolveInssForCascade`/`applyInssReal` (src/lib/dreInss.ts, ver
+  // src/lib/dreInss.test.ts para a prova do comportamento novo M+1),
+  // ligados ao card DRE do Mês em src/pages/MercadoLivre.tsx (Plano 98-03).
+  //
+  // Os 4 testes abaixo continuam válidos e não foram alterados numericamente
+  // — eles testam exclusivamente a característica MECÂNICA de
+  // `buildDreCascade` (somar categorias dentro de um bloco, sem saber o que
+  // cada categoria significa nem qual régua de competência ela segue). Essa
+  // característica não mudou com a Phase 98 e não deveria mudar: a fixture
+  // usada aqui (Salários + Pessoal - INSS cru, mesmo mês) é só um jeito
+  // conveniente de exercitar a soma pura do bloco `pessoal` — não uma
+  // afirmação sobre a régua de competência real do INSS em produção.
+
+  it("[buildDreCascade puro] Test 1: Salários 24000 + Pessoal - INSS 3852.19 somam 27852.19 no bloco pessoal com label 'Pessoal'", () => {
+    const rows: DreOperationalRow[] = [
+      row("pessoal", 24000, { category: "Salários" }),
+      row("pessoal", 3852.19, { category: "Pessoal - INSS" }),
+    ];
+    const c = buildDreCascade(rows, 100000);
+
+    const pessoal = c.operacionalBlocos.find((b) => b.bloco === "pessoal");
+    expect(pessoal).toBeDefined();
+    expect(pessoal?.total).toBe(27852.19);
+    expect(pessoal?.label).toBe("Pessoal");
+  });
+
+  it("[buildDreCascade puro] Test 2: a mesma fixture não produz nenhuma linha de imposto na cascata", () => {
+    const rows: DreOperationalRow[] = [
+      row("pessoal", 24000, { category: "Salários" }),
+      row("pessoal", 3852.19, { category: "Pessoal - INSS" }),
+    ];
+    const c = buildDreCascade(rows, 100000);
+
+    expect(OPERACIONAL_BLOCOS).not.toContain("impostos_venda");
+    expect(c.operacionalBlocos.every((b) => b.bloco !== "impostos_venda")).toBe(true);
+  });
+
+  it("[buildDreCascade puro] Test 3: uma linha impostos_venda misturada na fixture é filtrada e não altera resultadoOperacional", () => {
+    const semImposto: DreOperationalRow[] = [
+      row("pessoal", 24000, { category: "Salários" }),
+      row("pessoal", 3852.19, { category: "Pessoal - INSS" }),
+    ];
+    const comImposto: DreOperationalRow[] = [
+      ...semImposto,
+      row("impostos_venda", 16015.06, { category: "Imposto Venda - ICMS" }),
+    ];
+
+    const margem = 51969.93;
+    const cSem = buildDreCascade(semImposto, margem);
+    const cCom = buildDreCascade(comImposto, margem);
+
+    expect(cCom.resultadoOperacional).toBe(cSem.resultadoOperacional);
+  });
+
+  it("[buildDreCascade puro] Test 4: o INSS entra no resultadoOperacional DEPOIS da margem de contribuição (dedução operacional)", () => {
+    const rows: DreOperationalRow[] = [
+      row("pessoal", 24000, { category: "Salários" }),
+      row("pessoal", 3852.19, { category: "Pessoal - INSS" }),
+    ];
+    const margem = 51969.93;
+    const c = buildDreCascade(rows, margem);
+
+    expect(c.resultadoOperacional).toBe(24117.74);
+  });
+});

@@ -292,6 +292,7 @@ function expandOrder(
   taxConfig:      any | null,
   brandMap:       Map<string, string | null>,
   skuCostMap:     Map<string, number>,
+  skuCostFullMap: Map<string, number>,
 ): Array<Record<string, unknown>> {
   // Converter para BRT (UTC-3) antes de extrair a data: o range de sync usa meia-noite BRT,
   // e o cliente filtra por data BRT — armazenar em UTC causava desvio de um dia nas bordas.
@@ -334,6 +335,12 @@ function expandOrder(
     const quantidade  = Number(item.quantity || 0);
     const precoUnit   = item.unit_price != null ? Number(item.unit_price) : null;
     const custoUnit   = (itemSku ? skuCostMap.get(itemSku) : null) ?? costMap.get(itemId) ?? null;
+    // Fase 96-07 (Trava C): o cheio é lido da MESMA fonte do médio
+    // (ml_product_costs), num campo separado (cost_full ← precoCusto do Tiny).
+    // NUNCA derivado de custoUnit — derivar o cheio do médio reintroduziria o C6
+    // disfarçado. Sem cost_full cadastrado → null (o pedido entra sem cheio e o
+    // gate do C6 o lista para o Wesley cadastrar no Tiny).
+    const custoUnitCheio = (itemSku ? skuCostFullMap.get(itemSku) : null) ?? null;
     const taxRate     = taxConfig ? computeOrderTaxRate(taxConfig, estado) : null;
     const taxAmount   = (taxRate != null && precoUnit != null)
       ? (precoUnit * quantidade * taxRate) / 100
@@ -363,6 +370,7 @@ function expandOrder(
       comprador,
       synced_at:       syncAt,
       custo_unit:      custoUnit,
+      custo_unit_cheio: custoUnitCheio,
       tax_rate:        taxRate,
       tax_amount:      taxAmount,
       uf_origem:       ufOrigem,
@@ -526,6 +534,13 @@ serve(async (req) => {
     ));
     const costMap = new Map<string, number>();
     const skuCostMap = new Map<string, number>(); // fallback: custo por seller_sku (Tiny sync)
+    // Fase 96-07 (Trava C): custo CHEIO por seller_sku. Este é o caminho de
+    // ingestão de TODO pedido novo — é ele que mantém custo_unit (médio) em
+    // ~95% de cobertura. O cheio não tinha caminho de ingestão nenhum: por isso
+    // congelou em 32,9% em julho enquanto o médio seguia em 94,9%. Só por
+    // seller_sku (sem fallback por item_id): cost_full vem do Tiny, que casa por
+    // SKU — mesmo critério do costFullBySku de recalc-order-costs.
+    const skuCostFullMap = new Map<string, number>();
     {
       // Busca por item_id E por seller_sku (sem filtrar item_id para pegar custos do Tiny)
       // Quando service role (cron, userId=null): busca por org_id OU org_id IS NULL (custos salvos sem contexto de org)
@@ -535,13 +550,17 @@ serve(async (req) => {
         : `${organizationId ? `organization_id.eq.${organizationId},` : ""}organization_id.is.null`;
       const { data: costRows } = await supabaseAdmin
         .from("ml_product_costs")
-        .select("item_id, seller_sku, cost, organization_id, user_id")
+        .select("item_id, seller_sku, cost, cost_full, organization_id, user_id")
         .or(costOr)
         .limit(50000);
       for (const r of (costRows ?? []) as any[]) {
-        if (r.cost == null) continue;
-        if (r.item_id) costMap.set(r.item_id, Number(r.cost));
-        if (r.seller_sku) skuCostMap.set(r.seller_sku, Number(r.cost));
+        // `cost == null` não pode mais abortar a linha: um produto pode ter
+        // cost_full sem cost. O early-continue anterior descartaria o cheio.
+        if (r.cost != null) {
+          if (r.item_id) costMap.set(r.item_id, Number(r.cost));
+          if (r.seller_sku) skuCostMap.set(r.seller_sku, Number(r.cost));
+        }
+        if (r.cost_full != null && r.seller_sku) skuCostFullMap.set(r.seller_sku, Number(r.cost_full));
       }
     }
 
@@ -552,7 +571,7 @@ serve(async (req) => {
 
     // ── Expand + upsert ───────────────────────────────────────────────────────
     const records = orders.flatMap((o) =>
-      expandOrder(o, ml_user_id, effectiveSellerId, userId, organizationId, syncAt, shipmentMap, costMap, taxConfig, brandMap, skuCostMap),
+      expandOrder(o, ml_user_id, effectiveSellerId, userId, organizationId, syncAt, shipmentMap, costMap, taxConfig, brandMap, skuCostMap, skuCostFullMap),
     );
 
     let upserted = 0;

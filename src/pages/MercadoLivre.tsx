@@ -51,7 +51,18 @@ import { useConsultorInsights } from "@/hooks/useConsultorInsights";
 import { MLMcoStrip } from "@/components/mercadolivre/MLMcoStrip";
 import { computeMco } from "@/lib/mco";
 import { useDreOperational } from "@/hooks/useDreOperational";
+import { useCancelledRevenue } from "@/hooks/useCancelledRevenue";
 import { buildDreCascade } from "@/lib/dreCascade";
+import { computeMargemContribuicao } from "@/lib/dreMargem";
+import { resolveDreRegime, shouldNudgeClose, monthPlusOne } from "@/lib/dreRegime";
+import { useDreMonthClose } from "@/hooks/useDreMonthClose";
+import { useImpostoGuiaReal, useImpostoGuiaNudge } from "@/hooks/useImpostoGuiaReal";
+import { useInssGuiaReal } from "@/hooks/useInssGuiaReal";
+import { resolveInssForCascade, applyInssReal } from "@/lib/dreInss";
+import { useCmvCheioGate } from "@/hooks/useCmvCheioGate";
+import { useNaoClassificadoItems } from "@/hooks/useNaoClassificadoItems";
+import { resolveCloseGate } from "@/lib/dreCloseGate";
+import { toast } from "sonner";
 
 const currencyFmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -95,7 +106,7 @@ export default function MercadoLivre() {
   const { user } = useAuth();
   const { stores, selectedStore, setSalesCache, scopeKey, sellerId, resolvedMLUserIds, hasMLConnection, loading: storeLoading } = useMLStore();
   const { selectedSeller, selectedStoreIds } = useSeller();
-  const { currentOrg } = useOrganization();
+  const { currentOrg, orgRole } = useOrganization();
 
   // ── Dashboard layout personalização ──
   const { widgets, toggleWidget, moveUp, moveDown, resetLayout, isVisible } = useDashboardLayout();
@@ -244,6 +255,15 @@ export default function MercadoLivre() {
   // receita R$0 com lucro negativo ao navegar entre meses
   const dreWaterfallLoading = filterMonthWaterfallLoading;
 
+  // [C1] Receita cancelada — MESMO eixo de mês do dreWaterfall (mês corrente →
+  // monthlyFrom/monthlyTo; mês navegado → billingMonthFrom/billingMonthTo).
+  // Um eixo diferente faz bruto e líquido discordarem.
+  const { data: cancelledRevenueData } = useCancelledRevenue(
+    billingMonthIsCurrentMonth ? monthlyFrom : billingMonthFrom,
+    billingMonthIsCurrentMonth ? monthlyTo : billingMonthTo,
+  );
+  const cancelamentosVendas = cancelledRevenueData?.cancelledRevenue ?? 0;
+
   // Grupos de tarifas — fonte primária daily (mês-calendário), senão fatura mensal
   const { groups: gruposTarifas, totalTarifas } = useMemo(
     () => groupBillingCharges(dailyBilling?.charges ?? billingData?.charges ?? []),
@@ -258,10 +278,122 @@ export default function MercadoLivre() {
     return `${monthName.charAt(0).toUpperCase() + monthName.slice(1)}/${year}`;
   }, [billingMonth]);
 
-  // Receita, CMV e impostos do mês do filtro
+  // Receita do mês do filtro
   const receitaMes = dreWaterfall?.paid_revenue ?? 0;
-  const cmvMes = (dreWaterfall?.has_cmv ? dreWaterfall.cmv : null) ?? null;
-  const impostosMes = (dreWaterfall?.has_tax_data ? dreWaterfall.total_tax : null) ?? null;
+  // [C1] Receita bruta = líquida + cancelada — exclusiva do card do DRE. Os
+  // blocos de MCO e meta de lucro deste arquivo preservam a receita paga
+  // (líquida), inalterados por esta phase.
+  const receitaBrutaMes = receitaMes + cancelamentosVendas;
+
+  // ── Regime PREVISÃO/APURAÇÃO (Phase 94) ──
+  // Mesmo eixo de mês do dreWaterfall (mês corrente → monthlyFrom; navegado →
+  // billingMonthFrom). dre_month_close usa sempre "YYYY-MM-01" (Pitfall 3).
+  const dreSaleMonth = billingMonthIsCurrentMonth ? monthlyFrom : billingMonthFrom;
+  const monthClose = useDreMonthClose(dreSaleMonth);
+  const guiaReal = useImpostoGuiaReal(dreSaleMonth);
+  const guiaNudge = useImpostoGuiaNudge(dreSaleMonth);
+  // [Phase 98] MESMO eixo dreSaleMonth de guiaReal/guiaNudge/monthClose —
+  // nunca um eixo de mês diferente, ou apuração e previsão passam a olhar
+  // meses diferentes e o deslocamento M+1 do INSS desalinha.
+  const inssGuiaReal = useInssGuiaReal(dreSaleMonth);
+
+  // [C6] Gate de CMV cheio — MESMO eixo de mês do dreWaterfall (billingMonthIsCurrentMonth
+  // decide monthlyFrom/To vs billingMonthFrom/To). Eixo diferente = o gate olha
+  // um mês e o CMV outro.
+  const cmvGate = useCmvCheioGate(
+    billingMonthIsCurrentMonth ? monthlyFrom : billingMonthFrom,
+    billingMonthIsCurrentMonth ? monthlyTo : billingMonthTo,
+  );
+
+  // [C6/C7] Gate combinado de fechamento. resolveCloseGate trata gaps === null
+  // (useQuery ainda carregando) como fail-closed — por isso `cmvGate.data ?? null`,
+  // nunca `cmvGate.data` cru (que seria `undefined` durante o loading e
+  // desarmaria o fail-closed, já que `undefined !== null`).
+  // O gate SÓ vale para FECHAR: um mês já fechado (isClosed) continua
+  // reabrível mesmo com gate bloqueado, senão um mês fechado com dado
+  // faltando fica preso para sempre (T-96-19).
+  const closeGate = resolveCloseGate({
+    gaps: cmvGate.data ?? null,
+    guia: guiaReal.data ?? null,
+  });
+  const closeBlocked = !monthClose.isClosed && closeGate.blocked;
+
+  // [C8] Lançamentos do bloco "Não classificado" da competência de VENDA
+  // (dreSaleMonth) — não o M+1 da guia (M+1 é exclusivo do imposto).
+  const naoClassificadoItemsQuery = useNaoClassificadoItems(dreSaleMonth);
+
+  // CMV e impostos do mês — CONSEQUÊNCIA do regime resolvido acima, nunca um
+  // toggle solto (nunca-misturar). Enquanto o mês está aberto (isClosed=false)
+  // reproduz byte-a-byte a expressão legada (SC6 — zero regressão Phase 88).
+  const regimeResult = resolveDreRegime({
+    isClosed: monthClose.isClosed,
+    cmvMedio: dreWaterfall?.cmv ?? 0,
+    hasCmv: !!dreWaterfall?.has_cmv,
+    cmvCheio: dreWaterfall?.cmv_cheio ?? 0,
+    hasCmvCheio: !!dreWaterfall?.has_cmv_cheio,
+    totalTaxEstimado: dreWaterfall?.total_tax ?? 0,
+    hasTaxData: !!dreWaterfall?.has_tax_data,
+    guiaReal: guiaReal.data ?? null,
+  });
+  const cmvMes = regimeResult.cmvMes;
+  const impostosMes = regimeResult.impostosMes;
+
+  // [Phase 98] Régua M+1 do INSS de folha no bloco Pessoal. Em previsão,
+  // resolveInssForCascade devolve as rows sem alteração e inssReal: null —
+  // applyInssReal (abaixo) vira no-op e a cascata fica byte-idêntica à
+  // legada. Em apuração, a linha crua de INSS é removida daqui e o valor
+  // real M+1 é somado no lugar dela (nunca os dois somados).
+  const { rows: dreOperationalRowsParaCascata, inssReal: inssRealApuracao } = useMemo(
+    () =>
+      resolveInssForCascade({
+        regime: regimeResult.regime,
+        rows: dreOperationalRows ?? [],
+        guia: inssGuiaReal.data ?? null,
+      }),
+    [regimeResult.regime, dreOperationalRows, inssGuiaReal.data],
+  );
+
+  // Empurrãozinho (dica visual, NUNCA gatilho) + gate owner-only do botão
+  // marcar/reabrir (RLS de dre_month_close é a autoridade real — este gate é
+  // só UX, igual ao ReplenishmentParamsDialog/ml_tax_config).
+  const nudgeClose = shouldNudgeClose({
+    rows: guiaNudge.data ?? [],
+    targetCompetence: monthPlusOne(dreSaleMonth),
+  });
+  const canClose = orgRole === "owner";
+  const guiaCompetenceLabel = useMemo(() => {
+    const [year, month] = monthPlusOne(dreSaleMonth).split("-").map(Number);
+    return `${String(month).padStart(2, "0")}/${year}`;
+  }, [dreSaleMonth]);
+
+  const handleCloseDreMonth = useCallback(async () => {
+    // [C6/C7] Defesa em profundidade: o `disabled` do botão é UX (MLCostCard);
+    // esta é a segunda barreira antes de chamar monthClose.close(). A RLS de
+    // dre_month_close só checa owner — não conhece o gate (T-96-18, aceito).
+    if (closeBlocked) {
+      toast.error("Não é possível marcar o mês como apurado", {
+        description: closeGate.reasons.join(" · "),
+      });
+      return;
+    }
+    try {
+      await monthClose.close();
+    } catch (err) {
+      toast.error("Erro ao marcar mês como apurado", {
+        description: err instanceof Error ? err.message : undefined,
+      });
+    }
+  }, [monthClose, closeBlocked, closeGate.reasons]);
+
+  const handleReopenDreMonth = useCallback(async () => {
+    try {
+      await monthClose.reopen();
+    } catch (err) {
+      toast.error("Erro ao reabrir mês", {
+        description: err instanceof Error ? err.message : undefined,
+      });
+    }
+  }, [monthClose]);
 
   // Fallback estimado: ads do mês do filtro somado para linha de publicidade
   const adsSpendMes = useMemo(
@@ -274,41 +406,53 @@ export default function MercadoLivre() {
   const dreFonte: "competencia" | "billing" | "estimado" =
     dailyBilling ? "competencia" : billingData ? "billing" : "estimado";
 
-  // Quando não há billing real (daily nem mensal), grupos estimados de orders
-  const gruposTarifasEfetivos = useMemo(() => {
-    if (dailyBilling || billingData) return gruposTarifas;
+  // Grupos + total de tarifas — memo ÚNICO (Phase 96 Plan 05: os dois memos
+  // separados que existiam antes tinham `totalTarifasEfetivo` RE-SOMANDO o
+  // array de grupos, descartando a exclusão do parcelamento (`excluded`) que
+  // o hook já aplica em `totalTarifas`. Com billing real, o total que chega
+  // à tela e à fórmula é o do hook — nunca uma re-soma local.
+  const { groups: gruposTarifasEfetivos, totalTarifas: totalTarifasEfetivo } = useMemo(() => {
+    if (dailyBilling || billingData) return { groups: gruposTarifas, totalTarifas };
     // fallback: grupos estimados de orders (comissão=total_comissao, frete, ads)
+    // — parcelamento estimado é sempre 0, então a exclusão é inócua aqui, mas
+    // o shape do retorno precisa ser o mesmo dos dois ramos.
     const comissao = dreWaterfall?.total_comissao ?? 0;
     const frete    = dreWaterfall?.total_frete    ?? 0;
     const ads      = adsSpendMes;
-    return [
-      { key: "tarifas_venda", label: "Tarifas de venda",          amount: comissao },
-      { key: "envios_ml",     label: "Envios Mercado Livre",       amount: frete    },
-      { key: "parcelamento",  label: "Taxas de parcelamento",      amount: 0        },
-      { key: "publicidade",   label: "Campanhas de publicidade",   amount: ads      },
-      { key: "tarifas_full",  label: "Tarifas Full",               amount: 0        },
-      { key: "difal",         label: "Impostos cobrados pelo ML (DIFAL)", amount: 0 },
-      { key: "afiliados_outras", label: "Outras tarifas",          amount: 0        },
+    const groups = [
+      { key: "tarifas_venda", label: "Tarifas de venda",          amount: comissao, excluded: false },
+      { key: "envios_ml",     label: "Envios Mercado Livre",       amount: frete,    excluded: false },
+      { key: "parcelamento",  label: "Taxas de parcelamento",      amount: 0,        excluded: true  },
+      { key: "publicidade",   label: "Campanhas de publicidade",   amount: ads,      excluded: false },
+      { key: "tarifas_full",  label: "Tarifas Full",               amount: 0,        excluded: false },
+      { key: "difal",         label: "Impostos cobrados pelo ML (DIFAL)", amount: 0, excluded: false },
+      { key: "afiliados_outras", label: "Outras tarifas",          amount: 0,        excluded: false },
     ];
-  }, [dailyBilling, billingData, gruposTarifas, dreWaterfall, adsSpendMes]);
-
-  const totalTarifasEfetivo = useMemo(
-    () => gruposTarifasEfetivos.reduce((s, g) => s + g.amount, 0),
-    [gruposTarifasEfetivos],
-  );
+    const total = groups.filter((g) => !g.excluded).reduce((s, g) => s + g.amount, 0);
+    return { groups, totalTarifas: total };
+  }, [dailyBilling, billingData, gruposTarifas, totalTarifas, dreWaterfall, adsSpendMes]);
 
   // ── DRE: cascata do resultado (Phase 88) ──
-  // Margem de contribuição = MESMO cálculo do subtotal do card
-  // (receita − tarifas ML − CMV − impostos). Alimenta buildDreCascade junto
-  // com as linhas operacionais/financeiro da RPC 87 → Resultado operacional e
-  // Resultado líquido. Guardrail SC-3 (impostos_venda/excluido) é do helper.
+  // Margem de contribuição = fonte única (dreMargem.ts, Phase 96 Plan 05).
+  // [C1] receitaBrutaMes − cancelamentosVendas === receitaMes (algebricamente
+  // idêntico à expressão legada — SC5/SC6, prova em dreMargem.test.ts Test 2).
+  // Alimenta buildDreCascade junto com as linhas operacionais/financeiro da
+  // RPC 87 → Resultado operacional e Resultado líquido. Guardrail SC-3
+  // (impostos_venda/excluido) é do helper buildDreCascade.
   const margemContribuicao = useMemo(
-    () => receitaMes - totalTarifasEfetivo - (cmvMes ?? 0) - (impostosMes ?? 0),
-    [receitaMes, totalTarifasEfetivo, cmvMes, impostosMes],
+    () =>
+      computeMargemContribuicao({
+        receitaBruta: receitaBrutaMes,
+        cancelamentosVendas,
+        totalTarifas: totalTarifasEfetivo,
+        cmvMes,
+        impostosMes,
+      }),
+    [receitaBrutaMes, cancelamentosVendas, totalTarifasEfetivo, cmvMes, impostosMes],
   );
   const dreCascade = useMemo(
-    () => buildDreCascade(dreOperationalRows ?? [], margemContribuicao),
-    [dreOperationalRows, margemContribuicao],
+    () => applyInssReal(buildDreCascade(dreOperationalRowsParaCascata, margemContribuicao), inssRealApuracao),
+    [dreOperationalRowsParaCascata, margemContribuicao, inssRealApuracao],
   );
 
   const currentGrossProfit = useMemo(() => {
@@ -798,6 +942,9 @@ export default function MercadoLivre() {
                 <MLCostCard
                   mesLabel={mesLabel}
                   receitaMes={receitaMes}
+                  receitaBruta={receitaBrutaMes}
+                  cancelamentosVendas={cancelamentosVendas}
+                  margemContribuicao={margemContribuicao}
                   gruposTarifas={gruposTarifasEfetivos}
                   totalTarifas={totalTarifasEfetivo}
                   cmvMes={cmvMes}
@@ -814,6 +961,18 @@ export default function MercadoLivre() {
                   resultadoOperacional={dreCascade.resultadoOperacional}
                   financeiro={dreCascade.financeiro}
                   resultadoLiquido={dreCascade.resultadoLiquido}
+                  regime={regimeResult.regime}
+                  mesClosed={monthClose.isClosed}
+                  guiaCompetenceLabel={guiaCompetenceLabel}
+                  canClose={canClose}
+                  nudgeClose={nudgeClose}
+                  onClose={handleCloseDreMonth}
+                  onReopen={handleReopenDreMonth}
+                  closeBusy={monthClose.isMutating}
+                  closeBlocked={closeBlocked}
+                  closeBlockReasons={closeGate.reasons}
+                  cmvGaps={cmvGate.data ?? []}
+                  naoClassificadoItems={naoClassificadoItemsQuery.data ?? []}
                 />
                 <MLTopProducts products={effectiveProducts} marginMap={marginMap} />
               </div>
