@@ -5,16 +5,16 @@ milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem
 current_phase: 101
 current_phase_name: detalhamento-de-mco-e-recomenda-o-de-margem-na-p-gina-analis
 status: verifying
-stopped_at: context exhaustion at 75% (2026-07-19)
-last_updated: "2026-07-19T22:29:21.069Z"
+stopped_at: Phase 102 context gathered
+last_updated: "2026-07-19T23:44:57.856Z"
 last_activity: 2026-07-19
 last_activity_desc: Phase 101 execution started
 progress:
-  total_phases: 45
+  total_phases: 46
   completed_phases: 25
   total_plans: 101
   completed_plans: 90
-  percent: 56
+  percent: 54
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
@@ -452,6 +452,7 @@ Dashboard atual mostra:
 - Phase 98 completed: Phase 98 (INSS M+1) EXECUTADA e commitada — RPC get_inss_guia_by_competence em prod, dreInss.ts + hook + wiring em MercadoLivre.tsx, 606/606 testes verdes. Pendencia registrada: extensao do gate de fechamento (canApurarInss) para bloquear com INSS ausente — decisao Opcao A do Wesley, NAO implementada nesta phase, candidata Phase 99.
 - Phase 99 added: DRE Caixa — apuração por recebimento Mercado Pago, página dedicada /dre-caixa (spec docs/superpowers/specs/2026-07-16-dre-caixa-design.md). Pendência antiga do gate INSS (ex-candidata a 99) passa a ser candidata a Phase 100.
 - Phase 100 added: Break-even de caixa do mês (painel de previsão na /dre-caixa) — pedido do Wesley ao aprovar a Phase 99
+- Phase 102 added: Simulador manual de MCO no card de detalhamento (Phase 101) na /analise-precos — edição livre what-if de preço/CMV/comissão/frete/impostos/ads, efêmera (sem persistência), pedido Wesley ao aprovar a Phase 101 (2026-07-19)
 
 ## Deferred Items
 
@@ -469,12 +470,12 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-**Last session:** 2026-07-19T22:28:44.799Z
+**Last session:** 2026-07-19T23:44:57.835Z
 
 **Resume file:** 
 
-None
-Stopped at: context exhaustion at 75% (2026-07-19)
+.planning/phases/102-simulador-manual-de-mco-na-p-gina-analise-precos-permitir-qu/102-CONTEXT.md
+Stopped at: Phase 102 context gathered
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
