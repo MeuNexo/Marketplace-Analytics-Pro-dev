@@ -5,16 +5,16 @@ milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem
 current_phase: 100
 current_phase_name: Break-even de caixa do mês
 status: executing
-stopped_at: "Completado 100-01-PLAN.md (RPC get_dre_cash_forecast em prod, 8 provas aprovadas). Proximo: 100-02 (Wave 2) — lib pura dreCashForecast.ts + hook + card Fechar o mes na /dre-caixa"
-last_updated: "2026-07-17T03:04:54.949Z"
-last_activity: 2026-07-17
-last_activity_desc: Phase 100 execution started
+stopped_at: Phase 101 context gathered
+last_updated: "2026-07-19T18:25:44.377Z"
+last_activity: 2026-07-19
+last_activity_desc: "Completed quick task 260719-o6q: migrar sync-ads para os novos endpoints Product Ads do ML (endpoint antigo descontinuado 26/02/2026); MCO real do MLB7159819994 corrigido 12,64%→2,81%"
 progress:
-  total_phases: 44
+  total_phases: 45
   completed_phases: 24
   total_plans: 98
   completed_plans: 87
-  percent: 55
+  percent: 53
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
@@ -436,6 +436,7 @@ Dashboard atual mostra:
 - Phase 88 added: DRE — Frontend Resultado Completo
 - Phase 90 added: Atendimento de reclamações: triagem + mensagens rápidas (spec em docs/superpowers/specs/2026-07-07-atendimento-reclamacoes-design.md)
 - Phase 94 added: DRE Regime Previsão↔Apuração (imposto real + CMV cheio no fechamento manual do mês)
+- Phase 101 added: Detalhamento de MCO e recomendação de margem na página /analise-precos (waterfall receita→CMV→comissão→frete→impostos→MC→ads→MCO por item + semáforo de margem-alvo, pedido Wesley 2026-07-19)
 - Phase 94 planned: 3 planos/3 waves, plan-checker PASS; M+1 no frontend, dre_month_close nova
 - Phase 96 added: DRE — correções da revisão linha a linha (C1–C9, C11); C10 rejeitado pelo dono; ramificada do main (Phase 95 em voo)
 - Phase 98 added: INSS de folha deve seguir regua M+1 igual ICMS/PIS/COFINS (descoberto na validacao mes-a-mes pos Phase 96/97; decisao Wesley 2026-07-16: Opcao A confirmada)
@@ -459,12 +460,12 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-**Last session:** 2026-07-17T03:04:54.930Z
+**Last session:** 2026-07-19T18:25:44.345Z
 
 **Resume file:** 
 
-None
-Stopped at: Completado 100-01-PLAN.md (RPC get_dre_cash_forecast em prod, 8 provas aprovadas). Proximo: 100-02 (Wave 2) — lib pura dreCashForecast.ts + hook + card Fechar o mes na /dre-caixa
+.planning/phases/101-detalhamento-de-mco-e-recomenda-o-de-margem-na-p-gina-analis/101-CONTEXT.md
+Stopped at: Phase 101 context gathered
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
