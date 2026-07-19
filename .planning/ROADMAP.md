@@ -1020,9 +1020,13 @@ Plans:
 **Plans:** 3 plans (2 waves)
 
 Plans:
+**Wave 1**
 
 - [ ] 101-01-PLAN.md — [W1] Backend: migration `ml_mco_targets` (tabela + RLS org-first clonada de ml_product_costs) + apply via MCP + anti-IDOR smoke [BLOCKING] (D-06, D-09)
 - [ ] 101-02-PLAN.md — [W1] Utils puros (TDD): `computeWaterfallCard` (precoMcoSeries.ts) + `computeMcoRecommendation` (reversePrice + ACOS-alvo) + testes (D-02, D-04, D-07)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 101-03-PLAN.md — [W2] Frontend: hook `useMcoTargets` + card fixo no `PrecoPraticadoReport.tsx` (waterfall + meta editável + 2 alavancas + avisos) + ok visual (D-01, D-03, D-04, D-05, D-08, D-10)
 
 ---
