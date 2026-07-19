@@ -6,14 +6,14 @@ current_phase: 101
 current_phase_name: detalhamento-de-mco-e-recomenda-o-de-margem-na-p-gina-analis
 status: executing
 stopped_at: Phase 101 UI-SPEC approved
-last_updated: "2026-07-19T19:45:55.664Z"
+last_updated: "2026-07-19T19:52:09.642Z"
 last_activity: 2026-07-19
 last_activity_desc: Phase 101 execution started
 progress:
   total_phases: 45
   completed_phases: 24
   total_plans: 101
-  completed_plans: 88
+  completed_plans: 89
   percent: 53
 ---
 
@@ -136,7 +136,7 @@ See: .planning/PROJECT.md
 ## Current Position
 
 Phase: 101 (detalhamento-de-mco-e-recomenda-o-de-margem-na-p-gina-analis) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-07-19 — Phase 101 execution started
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
@@ -294,6 +294,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | 99 | 3 | - | - |
 | Phase 100-break-even-de-caixa-do-m-s-quanto-falta-vender-para-fechar-n P01 | ~10min | 2 tasks | 1 files |
 | Phase 101 P01 | 15min | 2 tasks | 1 files |
+| Phase 101 P02 | 10min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -396,6 +397,8 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 - [Phase ?]: Phase 100-01: saidas_pendentes nunca inclui mes futuro (guarda anti-fantasma parte a) — pendente so entra se outflow_date >= hoje E < fim do mes corrente
 - [Phase 101-01]: No RPC for ml_mco_targets writes — direct supabase.from().upsert() per repo convention for simple config tables
 - [Phase 101-01]: sku column is NOT NULL DEFAULT '' (sentinel), never nullable, to keep UNIQUE(organization_id, item_id, sku) enforce dedup correctly
+- [Phase ?]: Phase 101-02: precoUnit<=0 in computeMcoRecommendation short-circuits both levers to null before calling reversePrice — avoids a misleading R$0 minimum price
+- [Phase ?]: Phase 101-02: acosInatingivel = acosMeta <= 0 (not strictly <) — zero ACOS headroom treated as unreachable
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -463,7 +466,7 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-**Last session:** 2026-07-19T19:45:29.206Z
+**Last session:** 2026-07-19T19:51:07.217Z
 
 **Resume file:** 
 
