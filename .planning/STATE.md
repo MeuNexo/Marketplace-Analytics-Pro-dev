@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 100
-current_phase_name: Break-even de caixa do mês
+current_phase: 101
+current_phase_name: detalhamento-de-mco-e-recomenda-o-de-margem-na-p-gina-analis
 status: executing
 stopped_at: Phase 101 UI-SPEC approved
-last_updated: "2026-07-19T18:44:44.776Z"
+last_updated: "2026-07-19T19:45:55.664Z"
 last_activity: 2026-07-19
-last_activity_desc: "Completed quick task 260719-o6q: migrar sync-ads para os novos endpoints Product Ads do ML (endpoint antigo descontinuado 26/02/2026); MCO real do MLB7159819994 corrigido 12,64%→2,81%"
+last_activity_desc: Phase 101 execution started
 progress:
   total_phases: 45
   completed_phases: 24
-  total_plans: 98
-  completed_plans: 87
+  total_plans: 101
+  completed_plans: 88
   percent: 53
 ---
 
@@ -131,14 +131,14 @@ See: .planning/PROJECT.md
 
 **Milestone:** v8.0 — Consultor v2 (Inteligência)
 **Core value:** Consultor que explica, prioriza e ajuda a agir — LLM sob demanda + ações com aprovação, sobre o motor determinístico do v1.
-**Current focus:** Phase 100 — Break-even de caixa do mês
+**Current focus:** Phase 101 — detalhamento-de-mco-e-recomenda-o-de-margem-na-p-gina-analis
 
 ## Current Position
 
-Phase: 100 (Break-even de caixa do mês) — EXECUTING
-Plan: 2 of 2
+Phase: 101 (detalhamento-de-mco-e-recomenda-o-de-margem-na-p-gina-analis) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-07-19 - Completed quick task 260719-o6q: migrar sync-ads para os novos endpoints Product Ads do ML (endpoint antigo descontinuado 26/02/2026); MCO real do MLB7159819994 corrigido 12,64%→2,81%
+Last activity: 2026-07-19 — Phase 101 execution started
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
 
 ### Phase 54 — Wave 1 EXECUTADA (2026-06-24), Wave 2 PENDENTE
@@ -293,6 +293,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | Phase 99 P03 | ~3h | 3 tasks | 15 files |
 | 99 | 3 | - | - |
 | Phase 100-break-even-de-caixa-do-m-s-quanto-falta-vender-para-fechar-n P01 | ~10min | 2 tasks | 1 files |
+| Phase 101 P01 | 15min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -393,6 +394,8 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 - [Phase ?]: Phase 100-01: get_dre_cash_forecast(p_org_id, p_month) sem parametro de meta — meta aplicada client-side no 100-02 sobre o gap (D-04), superando o 3o parametro citado no ROADMAP
 - [Phase ?]: Phase 100-01: estornos_ocorridos clona literalmente refunds_agg da get_dre_cash (regua COALESCE(refund_date, release_date)) para reconciliar ao centavo com a DRE Caixa apurada
 - [Phase ?]: Phase 100-01: saidas_pendentes nunca inclui mes futuro (guarda anti-fantasma parte a) — pendente so entra se outflow_date >= hoje E < fim do mes corrente
+- [Phase 101-01]: No RPC for ml_mco_targets writes — direct supabase.from().upsert() per repo convention for simple config tables
+- [Phase 101-01]: sku column is NOT NULL DEFAULT '' (sentinel), never nullable, to keep UNIQUE(organization_id, item_id, sku) enforce dedup correctly
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -460,11 +463,11 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-**Last session:** 2026-07-19T18:44:44.757Z
+**Last session:** 2026-07-19T19:45:29.206Z
 
 **Resume file:** 
 
-.planning/phases/101-detalhamento-de-mco-e-recomenda-o-de-margem-na-p-gina-analis/101-UI-SPEC.md
+None
 Stopped at: Phase 101 UI-SPEC approved
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
