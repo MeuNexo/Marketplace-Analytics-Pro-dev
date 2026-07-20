@@ -1034,12 +1034,12 @@ Plans:
 **Goal:** No card "Detalhamento de MCO" (Phase 101, vivo em prod em `/analise-precos`), o usuário liga um toggle "Simular" e edita livremente os campos do waterfall por unidade (preço, CMV, comissão%, frete, impostos%, ads); MC/un, MCO/un e o semáforo recalculam ao vivo com os valores digitados, enquanto as duas linhas de recomendação (preço mínimo, ACOS-alvo) permanecem ancoradas nos custos/preço REAIS (D-04). Tudo client-side/efêmero — sem tabela, sem RPC, sem persistência.
 **Requirements**: D-01..D-05 (scoping local do 102-CONTEXT.md — sem IDs formais de requisito)
 **Depends on:** Phase 101
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 102-01-PLAN.md — [W1] Função pura `computeSimulatedWaterfall` (novo `src/lib/pricing/mcoSimulation.ts`, reusa `computeMco`) + testes TDD (D-04)
+- [x] 102-01-PLAN.md — [W1] Função pura `computeSimulatedWaterfall` (novo `src/lib/pricing/mcoSimulation.ts`, reusa `computeMco`) + testes TDD (D-04)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 

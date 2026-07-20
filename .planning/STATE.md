@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 101
-current_phase_name: detalhamento-de-mco-e-recomenda-o-de-margem-na-p-gina-analis
+current_phase: 102
+current_phase_name: simulador-manual-de-mco-na-p-gina-analise-precos-permitir-qu
 status: executing
-stopped_at: Phase 102 UI-SPEC approved
-last_updated: "2026-07-20T00:16:44.059Z"
-last_activity: 2026-07-19
-last_activity_desc: Phase 101 execution started
+stopped_at: Completed 102-01-PLAN.md
+last_updated: "2026-07-20T00:22:32.932Z"
+last_activity: 2026-07-20
+last_activity_desc: Phase 102 execution started
 progress:
   total_phases: 46
   completed_phases: 25
-  total_plans: 101
-  completed_plans: 90
+  total_plans: 104
+  completed_plans: 91
   percent: 54
 ---
 
@@ -131,14 +131,14 @@ See: .planning/PROJECT.md
 
 **Milestone:** v8.0 — Consultor v2 (Inteligência)
 **Core value:** Consultor que explica, prioriza e ajuda a agir — LLM sob demanda + ações com aprovação, sobre o motor determinístico do v1.
-**Current focus:** Phase 101 — detalhamento-de-mco-e-recomenda-o-de-margem-na-p-gina-analis
+**Current focus:** Phase 102 — simulador-manual-de-mco-na-p-gina-analise-precos-permitir-qu
 
 ## Current Position
 
-Phase: 101 (detalhamento-de-mco-e-recomenda-o-de-margem-na-p-gina-analis) — EXECUTING
-Plan: 3 of 3
+Phase: 102 (simulador-manual-de-mco-na-p-gina-analise-precos-permitir-qu) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-07-19 — Phase 101 execution started
+Last activity: 2026-07-20 — Phase 102 execution started
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
 
 ### Phase 54 — Wave 1 EXECUTADA (2026-06-24), Wave 2 PENDENTE
@@ -296,6 +296,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | Phase 101 P01 | 15min | 2 tasks | 1 files |
 | Phase 101 P02 | 10min | 2 tasks | 4 files |
 | Phase 101 P03 | ~25min | 3 tasks | 2 files |
+| Phase 102 P01 | 5min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -402,6 +403,8 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 - [Phase ?]: Phase 101-02: acosInatingivel = acosMeta <= 0 (not strictly <) — zero ACOS headroom treated as unreachable
 - [Phase 101]: 101-03: No delete path for custom MCO targets (out of scope) - clearing back to semaforo default deferred
 - [Phase 101]: 101-03: ml_mco_targets left untyped in types.ts, consistent with Phase 90-04 precedent
+- [Phase 102-01]: computeSimulatedWaterfall chama computeMco diretamente (nunca reimplementa a fórmula mco = revenue - cmv - platformCost - ads - tax) — verificado por grep no acceptance criteria
+- [Phase 102-01]: comissaoPct/impostoPct aceitos como %, convertidos para R$ internamente com guard precoUnit > 0, espelhando a derivação já existente em mcoRecommendation.ts (linhas 43-44)
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -470,12 +473,12 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-**Last session:** 2026-07-19T23:58:19.938Z
+**Last session:** 2026-07-20T00:22:32.906Z
 
 **Resume file:** 
 
-.planning/phases/102-simulador-manual-de-mco-na-p-gina-analise-precos-permitir-qu/102-UI-SPEC.md
-Stopped at: Phase 102 UI-SPEC approved
+None
+Stopped at: Completed 102-01-PLAN.md
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
