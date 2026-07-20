@@ -5,15 +5,15 @@ milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem
 current_phase: 102
 current_phase_name: simulador-manual-de-mco-na-p-gina-analise-precos-permitir-qu
 status: executing
-stopped_at: Completed 102-01-PLAN.md
-last_updated: "2026-07-20T00:22:32.932Z"
+stopped_at: Completed 102-02-PLAN.md
+last_updated: "2026-07-20T00:34:49.117Z"
 last_activity: 2026-07-20
 last_activity_desc: Phase 102 execution started
 progress:
   total_phases: 46
   completed_phases: 25
   total_plans: 104
-  completed_plans: 91
+  completed_plans: 92
   percent: 54
 ---
 
@@ -136,7 +136,7 @@ See: .planning/PROJECT.md
 ## Current Position
 
 Phase: 102 (simulador-manual-de-mco-na-p-gina-analise-precos-permitir-qu) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-07-20 — Phase 102 execution started
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
@@ -297,6 +297,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | Phase 101 P02 | 10min | 2 tasks | 4 files |
 | Phase 101 P03 | ~25min | 3 tasks | 2 files |
 | Phase 102 P01 | 5min | 2 tasks | 2 files |
+| Phase 102 P02 | 8min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -405,6 +406,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 - [Phase 101]: 101-03: ml_mco_targets left untyped in types.ts, consistent with Phase 90-04 precedent
 - [Phase 102-01]: computeSimulatedWaterfall chama computeMco diretamente (nunca reimplementa a fórmula mco = revenue - cmv - platformCost - ads - tax) — verificado por grep no acceptance criteria
 - [Phase 102-01]: comissaoPct/impostoPct aceitos como %, convertidos para R$ internamente com guard precoUnit > 0, espelhando a derivação já existente em mcoRecommendation.ts (linhas 43-44)
+- [Phase 102-02]: seedKey counter (increments only on toggle-ON/Resetar) replaces useEffect([value]) resync in SimField — the latter cannot distinguish self-triggered keystroke echoes from real external reseeds — Fixes D-05 revert bug found by the modo Simular test suite: onReject was a no-op per the plan draft, but live onLiveChange already writes every keystroke into simDraft, so the invalid value was already current by blur time
 
 ### Nexo MCP Data Reference (análise 2026-05-21)
 
@@ -473,12 +475,12 @@ Dashboard atual mostra:
 
 ## Session Continuity
 
-**Last session:** 2026-07-20T00:22:32.906Z
+**Last session:** 2026-07-20T00:34:49.097Z
 
 **Resume file:** 
 
 None
-Stopped at: Completed 102-01-PLAN.md
+Stopped at: Completed 102-02-PLAN.md
 
 ### Sessão 2026-06-14 — Phase 43 fechada (43-04 isolamento)
 
