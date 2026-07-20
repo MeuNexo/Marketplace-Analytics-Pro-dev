@@ -1037,9 +1037,16 @@ Plans:
 **Plans:** 3 plans
 
 Plans:
+**Wave 1**
 
 - [ ] 102-01-PLAN.md — [W1] Função pura `computeSimulatedWaterfall` (novo `src/lib/pricing/mcoSimulation.ts`, reusa `computeMco`) + testes TDD (D-04)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 102-02-PLAN.md — [W2] Wire no `PrecoPraticadoReport.tsx`: toggle Simular + SimField editável + painel tingido + recompute ao vivo + âncora D-04 + reset D-03 + validação D-05 + testes do componente (D-01..D-05)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 102-03-PLAN.md — [W3] Checkpoint: ok visual do Wesley no preview (D-01..D-05)
 
 ---
