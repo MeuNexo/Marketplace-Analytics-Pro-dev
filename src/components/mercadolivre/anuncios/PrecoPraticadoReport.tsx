@@ -158,23 +158,43 @@ const Row = ({ k, v, accent, danger, muted, dotColor }: {
 // no blur/Enter (Meta MCO% inline-edit, commitMcoTargetEdit acima). Raw
 // <input>, não o shadcn Input — mesma convenção do campo Meta MCO%.
 function SimField({
-  value, min, max, unit, onLiveChange, onReject,
+  value, min, max, unit, seedKey, onLiveChange, onReject,
 }: {
   value: number;
   min: number;
   max?: number;
   unit: "currency" | "percent";
+  /** Muda SÓ quando o valor deve ser re-semeado por uma fonte externa
+   *  (toggle "Simular" ligado, "Resetar", troca de item/variação) — nunca
+   *  a cada tecla. Isso distingue "value mudou porque o próprio SimField
+   *  chamou onLiveChange" (não deve resincronizar o draft/lastValid) de
+   *  "value mudou porque simDraft inteiro foi re-semeado" (deve). */
+  seedKey: number;
   onLiveChange: (v: number) => void;
-  onReject: () => void;
+  /** Chamado no commit inválido com o último valor VÁLIDO conhecido — o
+   *  chamador deve restaurar esse número no campo correspondente de
+   *  simDraft (não basta reverter só o texto do input; o valor que
+   *  alimenta computeSimulatedWaterfall também precisa voltar). */
+  onReject: (lastValid: number) => void;
 }) {
   const [draft, setDraft] = useState(String(value));
+  // Último valor conhecido como VÁLIDO (commitado) — onLiveChange roda a cada
+  // tecla sem gate (D-04), então `value` (vindo de simDraft) pode transitar
+  // por números fora do intervalo enquanto o usuário digita; só o commit
+  // (blur/Enter) decide o que é válido, e é esse número que precisa
+  // sobreviver a um revert (D-05), não o `value` corrente.
+  const lastValidRef = useRef(value);
 
-  // Ressincroniza o draft quando o valor muda por fonte externa (Resetar,
-  // troca de item/variação, ou revert de outro campo) — sem isso o reseed
-  // não refletiria na tela (RESEARCH.md Pattern 2).
+  // Ressincroniza o draft SÓ quando `seedKey` muda (reseed externo real —
+  // Resetar/toggle-on/troca de item), nunca a cada tecla própria (que também
+  // altera `value` via onLiveChange, mas não deve reescrever lastValidRef
+  // com um número ainda não validado — bug corrigido: ver docblock de
+  // `seedKey` acima).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     setDraft(String(value));
-  }, [value]);
+    lastValidRef.current = value;
+  }, [seedKey]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value;
@@ -193,10 +213,11 @@ function SimField({
           ? "Valor precisa estar entre 0% e 100%"
           : "Valor precisa ser maior ou igual a zero",
       );
-      setDraft(String(value));
-      onReject();
+      setDraft(String(lastValidRef.current));
+      onReject(lastValidRef.current);
       return;
     }
+    lastValidRef.current = parsed;
     setDraft(String(parsed));
   };
 
@@ -672,6 +693,11 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
   // acima SEMPRE recebe waterfallCard REAL — invariante D-04, nunca simCard.
   const [simulating, setSimulating] = useState(false);
   const [simDraft, setSimDraft] = useState<SimulatedInputs | null>(null);
+  // Incrementado SÓ em reseeds externos reais (toggle ON / Resetar) — sinaliza
+  // a cada SimField "resincronize seu draft/último-válido a partir de `value`
+  // agora", distinto de mudanças de `value` geradas pelo próprio SimField
+  // digitando (ver docblock de `seedKey` no componente SimField).
+  const [simSeedKey, setSimSeedKey] = useState(0);
 
   const seedFromReal = useCallback(
     (card: typeof waterfallCard): SimulatedInputs => ({
@@ -690,9 +716,15 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
     setSimulating(checked);
     // Pitfall 3: sempre reseed do card real ATUAL no momento do clique, nunca
     // um lazy initializer congelado.
-    if (checked) setSimDraft(seedFromReal(waterfallCard));
+    if (checked) {
+      setSimDraft(seedFromReal(waterfallCard));
+      setSimSeedKey((k) => k + 1);
+    }
   };
-  const handleResetar = () => setSimDraft(seedFromReal(waterfallCard));
+  const handleResetar = () => {
+    setSimDraft(seedFromReal(waterfallCard));
+    setSimSeedKey((k) => k + 1);
+  };
 
   // D-03: trocar de item/variação sempre reseta a simulação automaticamente.
   useEffect(() => {
@@ -1096,8 +1128,9 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                         value={simDraft.precoUnit}
                         min={0}
                         unit="currency"
+                        seedKey={simSeedKey}
                         onLiveChange={(v) => setSimDraft((d) => (d ? { ...d, precoUnit: v } : d))}
-                        onReject={() => {}}
+                        onReject={(lastValid) => setSimDraft((d) => (d ? { ...d, precoUnit: lastValid } : d))}
                       />
                     </p>
                     <p className="flex justify-between gap-6">
@@ -1106,8 +1139,9 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                         value={simDraft.cmvUnit}
                         min={0}
                         unit="currency"
+                        seedKey={simSeedKey}
                         onLiveChange={(v) => setSimDraft((d) => (d ? { ...d, cmvUnit: v } : d))}
-                        onReject={() => {}}
+                        onReject={(lastValid) => setSimDraft((d) => (d ? { ...d, cmvUnit: lastValid } : d))}
                       />
                     </p>
                     <p className="flex justify-between gap-6">
@@ -1117,8 +1151,9 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                         min={0}
                         max={100}
                         unit="percent"
+                        seedKey={simSeedKey}
                         onLiveChange={(v) => setSimDraft((d) => (d ? { ...d, comissaoPct: v } : d))}
-                        onReject={() => {}}
+                        onReject={(lastValid) => setSimDraft((d) => (d ? { ...d, comissaoPct: lastValid } : d))}
                       />
                     </p>
                     <p className="flex justify-between gap-6">
@@ -1127,8 +1162,9 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                         value={simDraft.freteUnit}
                         min={0}
                         unit="currency"
+                        seedKey={simSeedKey}
                         onLiveChange={(v) => setSimDraft((d) => (d ? { ...d, freteUnit: v } : d))}
-                        onReject={() => {}}
+                        onReject={(lastValid) => setSimDraft((d) => (d ? { ...d, freteUnit: lastValid } : d))}
                       />
                     </p>
                     <p className="flex justify-between gap-6">
@@ -1138,8 +1174,9 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                         min={0}
                         max={100}
                         unit="percent"
+                        seedKey={simSeedKey}
                         onLiveChange={(v) => setSimDraft((d) => (d ? { ...d, impostoPct: v } : d))}
-                        onReject={() => {}}
+                        onReject={(lastValid) => setSimDraft((d) => (d ? { ...d, impostoPct: lastValid } : d))}
                       />
                     </p>
                     <div className="border-t border-border pt-2">
@@ -1157,8 +1194,9 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                           value={simDraft.adsUnit}
                           min={0}
                           unit="currency"
+                          seedKey={simSeedKey}
                           onLiveChange={(v) => setSimDraft((d) => (d ? { ...d, adsUnit: v } : d))}
-                          onReject={() => {}}
+                          onReject={(lastValid) => setSimDraft((d) => (d ? { ...d, adsUnit: lastValid } : d))}
                         />
                       </p>
                     )}
