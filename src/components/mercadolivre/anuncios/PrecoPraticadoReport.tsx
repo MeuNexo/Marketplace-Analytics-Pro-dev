@@ -1039,14 +1039,41 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
             </div>
           ) : (
             <>
-              {/* 1. Header row */}
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5">
+              {/* 1. Header row (Phase 102: + toggle Simular / badge Simulando / Resetar) */}
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <Target className="w-4 h-4 text-accent" />
                   <span className="text-sm font-semibold">Detalhamento de MCO</span>
                   <Badge variant="outline" className={cn("text-[10px]", MCO_ROLE_BADGE_CLASS[mcoRole])}>
-                    {pctFmt(waterfallCard.mcoPct)}
+                    {pctFmt(activeMcoPct)}
                   </Badge>
+                  <div className="flex items-center gap-2 ml-2">
+                    <Switch
+                      id="simular-mco"
+                      checked={simulating}
+                      onCheckedChange={handleToggleSimular}
+                    />
+                    <Label htmlFor="simular-mco" className="text-xs text-muted-foreground cursor-pointer">
+                      Simular
+                    </Label>
+                  </div>
+                  {simulating && (
+                    <>
+                      <Badge variant="outline" className="text-[10px] border-transparent bg-accent/15 text-accent">
+                        Simulando
+                      </Badge>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 gap-1 px-1.5 text-xs"
+                        onClick={handleResetar}
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        Resetar
+                      </Button>
+                    </>
+                  )}
                 </div>
                 {fromDate && toDate && (
                   <span className="text-xs text-muted-foreground">
@@ -1055,30 +1082,121 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                 )}
               </div>
 
-              {/* 2. Waterfall block — ordem fixa da cascata (D-02) */}
-              <div className="space-y-2">
-                <Row k="Receita/un" v={brl(waterfallCard.precoUnit)} />
-                <Row k="(−) CMV" v={brl(waterfallCard.cmvUnit)} />
-                <Row k="(−) Comissão" v={brl(waterfallCard.comissaoUnit)} />
-                <Row k="(−) Frete" v={brl(waterfallCard.freteUnit)} />
-                <Row k="(−) Impostos" v={brl(waterfallCard.impostoUnit)} />
-                <div className="border-t border-border pt-2">
-                  <Row
-                    k="= Margem de Contribuição/un"
-                    v={brl(waterfallCard.mcUnit)}
-                    accent={waterfallCard.mcUnit >= 0}
-                    danger={waterfallCard.mcUnit < 0}
-                  />
-                </div>
-                {incluirAds && <Row k="(−) Ads" v={brl(waterfallCard.adsUnit)} />}
-                <div className="border-t border-border pt-2">
-                  <Row
-                    k="= MCO/un"
-                    v={`${brl(waterfallCard.mcoUnit)} (${pctFmt(waterfallCard.mcoPct)})`}
-                    accent={mcoRole === "good"}
-                    danger={mcoRole === "critical"}
-                  />
-                </div>
+              {/* 2. Waterfall block — ordem fixa da cascata (D-02); Phase 102: campos
+                  editáveis dentro de painel tingido quando simulating===true */}
+              <div className={cn(
+                "space-y-2",
+                simulating && "rounded-lg bg-accent/5 border border-accent/20 p-2 -mx-2",
+              )}>
+                {simulating && simDraft ? (
+                  <>
+                    <p className="flex justify-between gap-6">
+                      <span className="text-muted-foreground">Receita/un</span>
+                      <SimField
+                        value={simDraft.precoUnit}
+                        min={0}
+                        unit="currency"
+                        onLiveChange={(v) => setSimDraft((d) => (d ? { ...d, precoUnit: v } : d))}
+                        onReject={() => {}}
+                      />
+                    </p>
+                    <p className="flex justify-between gap-6">
+                      <span className="text-muted-foreground">(−) CMV</span>
+                      <SimField
+                        value={simDraft.cmvUnit}
+                        min={0}
+                        unit="currency"
+                        onLiveChange={(v) => setSimDraft((d) => (d ? { ...d, cmvUnit: v } : d))}
+                        onReject={() => {}}
+                      />
+                    </p>
+                    <p className="flex justify-between gap-6">
+                      <span className="text-muted-foreground">(−) Comissão</span>
+                      <SimField
+                        value={simDraft.comissaoPct}
+                        min={0}
+                        max={100}
+                        unit="percent"
+                        onLiveChange={(v) => setSimDraft((d) => (d ? { ...d, comissaoPct: v } : d))}
+                        onReject={() => {}}
+                      />
+                    </p>
+                    <p className="flex justify-between gap-6">
+                      <span className="text-muted-foreground">(−) Frete</span>
+                      <SimField
+                        value={simDraft.freteUnit}
+                        min={0}
+                        unit="currency"
+                        onLiveChange={(v) => setSimDraft((d) => (d ? { ...d, freteUnit: v } : d))}
+                        onReject={() => {}}
+                      />
+                    </p>
+                    <p className="flex justify-between gap-6">
+                      <span className="text-muted-foreground">(−) Impostos</span>
+                      <SimField
+                        value={simDraft.impostoPct}
+                        min={0}
+                        max={100}
+                        unit="percent"
+                        onLiveChange={(v) => setSimDraft((d) => (d ? { ...d, impostoPct: v } : d))}
+                        onReject={() => {}}
+                      />
+                    </p>
+                    <div className="border-t border-border pt-2">
+                      <Row
+                        k="= Margem de Contribuição/un"
+                        v={simCard ? brl(simCard.mcUnit) : "—"}
+                        accent={(simCard?.mcUnit ?? 0) >= 0}
+                        danger={(simCard?.mcUnit ?? 0) < 0}
+                      />
+                    </div>
+                    {incluirAds && (
+                      <p className="flex justify-between gap-6">
+                        <span className="text-muted-foreground">(−) Ads</span>
+                        <SimField
+                          value={simDraft.adsUnit}
+                          min={0}
+                          unit="currency"
+                          onLiveChange={(v) => setSimDraft((d) => (d ? { ...d, adsUnit: v } : d))}
+                          onReject={() => {}}
+                        />
+                      </p>
+                    )}
+                    <div className="border-t border-border pt-2">
+                      <Row
+                        k="= MCO/un"
+                        v={`${brl(simCard?.mcoUnit ?? 0)} (${pctFmt(simCard?.mcoPct ?? null)})`}
+                        accent={mcoRole === "good"}
+                        danger={mcoRole === "critical"}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <Row k="Receita/un" v={brl(waterfallCard.precoUnit)} />
+                    <Row k="(−) CMV" v={brl(waterfallCard.cmvUnit)} />
+                    <Row k="(−) Comissão" v={brl(waterfallCard.comissaoUnit)} />
+                    <Row k="(−) Frete" v={brl(waterfallCard.freteUnit)} />
+                    <Row k="(−) Impostos" v={brl(waterfallCard.impostoUnit)} />
+                    <div className="border-t border-border pt-2">
+                      <Row
+                        k="= Margem de Contribuição/un"
+                        v={brl(waterfallCard.mcUnit)}
+                        accent={waterfallCard.mcUnit >= 0}
+                        danger={waterfallCard.mcUnit < 0}
+                      />
+                    </div>
+                    {incluirAds && <Row k="(−) Ads" v={brl(waterfallCard.adsUnit)} />}
+                    <div className="border-t border-border pt-2">
+                      <Row
+                        k="= MCO/un"
+                        v={`${brl(waterfallCard.mcoUnit)} (${pctFmt(waterfallCard.mcoPct)})`}
+                        accent={mcoRole === "good"}
+                        danger={mcoRole === "critical"}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* 3. Meta MCO% — inline-edit (D-05), pré-preenche custom se houver */}
@@ -1143,6 +1261,11 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                     )}
                   </div>
                 </div>
+                {simulating && (
+                  <p className="text-[10px] text-muted-foreground">
+                    Preço mínimo e ACOS-alvo continuam calculados com os custos e preço reais — não mudam com a simulação
+                  </p>
+                )}
               </div>
 
               {/* 5. Warning footer (condicional) — copy verbatim do rodapé existente acima */}
