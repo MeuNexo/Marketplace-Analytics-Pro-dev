@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import {
   Check, ChevronsUpDown, RefreshCw, Package, BarChart2,
-  DollarSign, Percent, AlertTriangle, Target,
+  DollarSign, Percent, AlertTriangle, Target, RotateCcw,
 } from "lucide-react";
 import {
   ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid,
@@ -55,6 +55,11 @@ import {
 import { computeMcoRecommendation } from "@/lib/pricing/mcoRecommendation";
 import { classifyMcoHealth, mcoHealthRole, MCO_SAUDAVEL_PCT } from "@/lib/mcoHealth";
 import { useMcoTargets } from "@/hooks/useMcoTargets";
+import { parseNumber } from "@/lib/pricing/calculator";
+import {
+  computeSimulatedWaterfall,
+  type SimulatedInputs,
+} from "@/lib/pricing/mcoSimulation";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -146,6 +151,71 @@ const Row = ({ k, v, accent, danger, muted, dotColor }: {
     )}>{v}</span>
   </p>
 );
+
+// Campo editável do simulador manual de MCO (Phase 102, D-01/D-02/D-04/D-05).
+// Sintetiza dois padrões já existentes no codebase: recompute ao vivo a cada
+// tecla (SimuladorPrecificacao.tsx) + validação commit-time com toast+revert
+// no blur/Enter (Meta MCO% inline-edit, commitMcoTargetEdit acima). Raw
+// <input>, não o shadcn Input — mesma convenção do campo Meta MCO%.
+function SimField({
+  value, min, max, unit, onLiveChange, onReject,
+}: {
+  value: number;
+  min: number;
+  max?: number;
+  unit: "currency" | "percent";
+  onLiveChange: (v: number) => void;
+  onReject: () => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+
+  // Ressincroniza o draft quando o valor muda por fonte externa (Resetar,
+  // troca de item/variação, ou revert de outro campo) — sem isso o reseed
+  // não refletiria na tela (RESEARCH.md Pattern 2).
+  useEffect(() => {
+    setDraft(String(value));
+  }, [value]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    setDraft(raw);
+    // Live recompute (D-04): parseNumber nunca lança, degrada graciosamente —
+    // seguro chamar a cada tecla.
+    onLiveChange(parseNumber(raw));
+  };
+
+  const handleBlur = () => {
+    const parsed = parseNumber(draft);
+    const invalid = draft.trim() === "" || parsed < min || (max != null && parsed > max);
+    if (invalid) {
+      toast.error(
+        unit === "percent"
+          ? "Valor precisa estar entre 0% e 100%"
+          : "Valor precisa ser maior ou igual a zero",
+      );
+      setDraft(String(value));
+      onReject();
+      return;
+    }
+    setDraft(String(parsed));
+  };
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      {unit === "currency" && <span className="text-[10px] text-muted-foreground">R$</span>}
+      <input
+        value={draft}
+        onChange={handleChange}
+        onBlur={handleBlur}
+        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+        type="text"
+        inputMode="decimal"
+        className="w-20 rounded border border-accent/40 bg-background px-1.5 py-0.5 text-right text-xs outline-none ring-1 ring-accent/30 tabular-nums"
+      />
+      {unit === "percent" && <span className="text-[10px] text-muted-foreground">%</span>}
+    </span>
+  );
+}
 
 // Tooltip com a decomposição por unidade: preço, break-even, MCO R$/un, MCO %
 // e cada componente do custo (transparência total — nada escondido).
@@ -596,7 +666,47 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
     () => computeMcoRecommendation(waterfallCard, targetMcoPct),
     [waterfallCard, targetMcoPct],
   );
-  const mcoHealthValue = classifyMcoHealth(waterfallCard.mcoPct);
+
+  // ── Simulador manual de MCO (Phase 102) ──────────────────────────────────
+  // "E se" ephemeral, 100% component-local (D-01..D-05). computeMcoRecommendation
+  // acima SEMPRE recebe waterfallCard REAL — invariante D-04, nunca simCard.
+  const [simulating, setSimulating] = useState(false);
+  const [simDraft, setSimDraft] = useState<SimulatedInputs | null>(null);
+
+  const seedFromReal = useCallback(
+    (card: typeof waterfallCard): SimulatedInputs => ({
+      precoUnit: card.precoUnit,
+      cmvUnit: card.cmvUnit,
+      comissaoPct: card.precoUnit > 0 ? (card.comissaoUnit / card.precoUnit) * 100 : 0,
+      freteUnit: card.freteUnit,
+      impostoPct: card.precoUnit > 0 ? (card.impostoUnit / card.precoUnit) * 100 : 0,
+      // Pitfall 4: nunca semear ads quando "incluir publicidade" está desligado.
+      adsUnit: incluirAds ? card.adsUnit : 0,
+    }),
+    [incluirAds],
+  );
+
+  const handleToggleSimular = (checked: boolean) => {
+    setSimulating(checked);
+    // Pitfall 3: sempre reseed do card real ATUAL no momento do clique, nunca
+    // um lazy initializer congelado.
+    if (checked) setSimDraft(seedFromReal(waterfallCard));
+  };
+  const handleResetar = () => setSimDraft(seedFromReal(waterfallCard));
+
+  // D-03: trocar de item/variação sempre reseta a simulação automaticamente.
+  useEffect(() => {
+    setSimulating(false);
+    setSimDraft(null);
+  }, [selectedId, selectedSku]);
+
+  const simCard = useMemo(
+    () => (simDraft ? computeSimulatedWaterfall(simDraft) : null),
+    [simDraft],
+  );
+
+  const activeMcoPct = simulating && simCard ? simCard.mcoPct : waterfallCard.mcoPct;
+  const mcoHealthValue = classifyMcoHealth(activeMcoPct);
   const mcoRole = mcoHealthRole(mcoHealthValue);
 
   // Edição inline da meta (mesmo padrão onBlur/Enter do InlineEditCell em
