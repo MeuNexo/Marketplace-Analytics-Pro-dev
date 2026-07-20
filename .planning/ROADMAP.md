@@ -1029,6 +1029,19 @@ Plans:
 
 - [x] 101-03-PLAN.md — [W2] Frontend: hook `useMcoTargets` + card fixo no `PrecoPraticadoReport.tsx` (waterfall + meta editável + 2 alavancas + avisos) + ok visual (D-01, D-03, D-04, D-05, D-08, D-10)
 
+### Phase 102: Simulador manual de MCO na página /analise-precos — permitir que o usuário edite livremente os valores no card de detalhamento de MCO (Phase 101: preço, CMV, comissão, frete, impostos, ads) para rodar simulações what-if além da recomendação de meta fixa já existente, vendo em tempo real como MC/un e MCO/un mudam conforme os valores editados, sem persistir nada — é simulação efêmera, não uma edição de custo real do produto.
+
+**Goal:** No card "Detalhamento de MCO" (Phase 101, vivo em prod em `/analise-precos`), o usuário liga um toggle "Simular" e edita livremente os campos do waterfall por unidade (preço, CMV, comissão%, frete, impostos%, ads); MC/un, MCO/un e o semáforo recalculam ao vivo com os valores digitados, enquanto as duas linhas de recomendação (preço mínimo, ACOS-alvo) permanecem ancoradas nos custos/preço REAIS (D-04). Tudo client-side/efêmero — sem tabela, sem RPC, sem persistência.
+**Requirements**: D-01..D-05 (scoping local do 102-CONTEXT.md — sem IDs formais de requisito)
+**Depends on:** Phase 101
+**Plans:** 3 plans
+
+Plans:
+
+- [ ] 102-01-PLAN.md — [W1] Função pura `computeSimulatedWaterfall` (novo `src/lib/pricing/mcoSimulation.ts`, reusa `computeMco`) + testes TDD (D-04)
+- [ ] 102-02-PLAN.md — [W2] Wire no `PrecoPraticadoReport.tsx`: toggle Simular + SimField editável + painel tingido + recompute ao vivo + âncora D-04 + reset D-03 + validação D-05 + testes do componente (D-01..D-05)
+- [ ] 102-03-PLAN.md — [W3] Checkpoint: ok visual do Wesley no preview (D-01..D-05)
+
 ---
 
 ### Phase 93: Enviar anexo na resposta da reclamação (upload)
