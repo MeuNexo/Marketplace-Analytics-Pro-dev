@@ -117,3 +117,12 @@ None - no external service configuration required.
 ---
 *Phase: 102-simulador-manual-de-mco-na-p-gina-analise-precos-permitir-qu*
 *Completed: 2026-07-20*
+
+## Self-Check: PASSED
+
+- FOUND: src/components/mercadolivre/anuncios/PrecoPraticadoReport.tsx
+- FOUND: src/components/mercadolivre/anuncios/PrecoPraticadoReport.test.tsx
+- FOUND commit: d0c1106d (feat)
+- FOUND commit: eba1399c (feat)
+- FOUND commit: 33500d06 (test)
+- FOUND commit: 9ba9782a (docs)
