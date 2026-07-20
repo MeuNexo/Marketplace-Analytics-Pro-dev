@@ -1034,7 +1034,7 @@ Plans:
 **Goal:** No card "Detalhamento de MCO" (Phase 101, vivo em prod em `/analise-precos`), o usuário liga um toggle "Simular" e edita livremente os campos do waterfall por unidade (preço, CMV, comissão%, frete, impostos%, ads); MC/un, MCO/un e o semáforo recalculam ao vivo com os valores digitados, enquanto as duas linhas de recomendação (preço mínimo, ACOS-alvo) permanecem ancoradas nos custos/preço REAIS (D-04). Tudo client-side/efêmero — sem tabela, sem RPC, sem persistência.
 **Requirements**: D-01..D-05 (scoping local do 102-CONTEXT.md — sem IDs formais de requisito)
 **Depends on:** Phase 101
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 **Wave 1**
@@ -1047,7 +1047,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 102-03-PLAN.md — [W3] Checkpoint: ok visual do Wesley no preview (D-01..D-05)
+- [x] 102-03-PLAN.md — [W3] Checkpoint: ok visual do Wesley no preview (D-01..D-05)
 
 ---
 
