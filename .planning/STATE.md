@@ -6,15 +6,15 @@ current_phase: 102
 current_phase_name: simulador-manual-de-mco-na-p-gina-analise-precos-permitir-qu
 status: executing
 stopped_at: Phase 102 completa — ok visual do Wesley
-last_updated: "2026-07-20T02:25:33.969Z"
+last_updated: "2026-07-28T16:15:20.625Z"
 last_activity: 2026-07-20
 last_activity_desc: Phase 102 execution started
 progress:
-  total_phases: 46
+  total_phases: 49
   completed_phases: 26
   total_plans: 104
   completed_plans: 93
-  percent: 57
+  percent: 53
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
@@ -458,6 +458,9 @@ Dashboard atual mostra:
 - Phase 99 added: DRE Caixa — apuração por recebimento Mercado Pago, página dedicada /dre-caixa (spec docs/superpowers/specs/2026-07-16-dre-caixa-design.md). Pendência antiga do gate INSS (ex-candidata a 99) passa a ser candidata a Phase 100.
 - Phase 100 added: Break-even de caixa do mês (painel de previsão na /dre-caixa) — pedido do Wesley ao aprovar a Phase 99
 - Phase 102 added: Simulador manual de MCO no card de detalhamento (Phase 101) na /analise-precos — edição livre what-if de preço/CMV/comissão/frete/impostos/ads, efêmera (sem persistência), pedido Wesley ao aprovar a Phase 101 (2026-07-19)
+- Phase 103 added: Consultor CCO Ferramentas de Compra vs Venda
+- Phase 104 added: Consultor CCO DRE real e caixa
+- Phase 105 added: Consultor CCO Precos competitivo e completude
 
 ## Deferred Items
 

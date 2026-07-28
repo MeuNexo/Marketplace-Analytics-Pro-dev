@@ -1049,6 +1049,39 @@ Plans:
 
 - [x] 102-03-PLAN.md — [W3] Checkpoint: ok visual do Wesley no preview (D-01..D-05)
 
+### Phase 103: Consultor CCO — Ferramentas de Compra vs Venda: adicionar tools read-only get_replenishment (RPC get_replenishment_by_sku: compra sugerida, gatilho, venda/dia x estoque, cobertura, micos/sem giro, custo ausente, OC em transito) e get_purchase_suppliers (RPC get_purchase_order_suppliers) no nexo-chat/tools.ts escopadas anti-IDOR; ampliar playbook Estela em playbooks.ts (mix de compra, capital parado/micos, MOQ x giro, ponto de pedido sazonal, ABC de compra, raciocinio compra x venda); ensinar raciocinio compra x venda na persona prompt.ts; testes espelhando tools.test.ts/prompt.test.ts; deploy da EF nexo-chat pelo orquestrador. Ref spec: docs/superpowers/specs/2026-07-28-consultor-cco-completo-design.md
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 102
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 103 to break down)
+
+### Phase 104: Consultor CCO — DRE real e caixa: adicionar tools read-only get_dre_result (RPC get_dre_operational_by_competence, o lucro real por competencia), get_dre_cash (RPCs get_dre_cash + get_dre_cash_forecast), get_projected_balance (RPC get_projected_balance_summary, 3 cenarios) e get_taxes_paid (RPCs get_imposto_guia_by_competence + get_inss_guia_by_competence) no nexo-chat/tools.ts anti-IDOR com rotulos de veracidade (competencia != pagos != caixa; imposto guia != imposto cheio); ampliar playbook Gabriel (DRE resultado vs caixa vs pagos, break-even de caixa); testes. Deploy da EF nexo-chat pelo orquestrador. Ref spec: docs/superpowers/specs/2026-07-28-consultor-cco-completo-design.md
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 103
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 104 to break down)
+
+### Phase 105: Consultor CCO — Precos, competitivo e completude: adicionar tools read-only get_price_practiced (RPC orders_sold_products_agg + tabela ml_mco_targets: preco praticado x meta MCO), get_competitive_price (edge fn ml-precos-custos modo references, sugestao competitiva + comissao; usa JWT real do usuario se exigido), get_cost_gaps (RPC get_cmv_cheio_gaps: quais SKUs sem custo) e get_cancelled_revenue (RPC get_cancelled_revenue) no nexo-chat/tools.ts anti-IDOR; ampliar playbook Rafael com dado competitivo real; finalizar persona prompt.ts (apontar todas as novas tools + rotulos); testes de integracao. Deploy da EF nexo-chat pelo orquestrador. Ref spec: docs/superpowers/specs/2026-07-28-consultor-cco-completo-design.md
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 104
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 105 to break down)
+
 ---
 
 ### Phase 93: Enviar anexo na resposta da reclamação (upload)
