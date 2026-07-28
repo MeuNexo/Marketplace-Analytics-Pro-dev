@@ -10,7 +10,7 @@
  * sb é um stub encadeável que registra os argumentos recebidos por .rpc()/.from().
  */
 import { describe, it, expect } from "vitest";
-import { TOOL_DECLARATIONS, dispatchTool, summarizeVariations } from "./tools";
+import { TOOL_DECLARATIONS, dispatchTool, summarizeVariations, buildReplenishmentResult } from "./tools";
 
 // ── Stub Supabase encadeável que grava o que foi chamado ─────────────────────
 type RpcCall = { fn: string; params: Record<string, unknown> };
@@ -55,7 +55,7 @@ const ML_IDS_SERVER = ["111", "222"];
 const EVIL_ARGS = { org_id: "ORG-ALHEIA", seller_id: "999", ml_user_id: "888" };
 
 describe("TOOL_DECLARATIONS", () => {
-  it("declara as 25 tools esperadas (inclui get_reputation e get_goals — OPS-1/OPS-2)", () => {
+  it("declara as 27 tools esperadas (inclui get_reputation, get_goals, get_replenishment, get_purchase_suppliers)", () => {
     const names = TOOL_DECLARATIONS.map((d) => d.name).sort();
     expect(names).toEqual(
       [
@@ -88,6 +88,9 @@ describe("TOOL_DECLARATIONS", () => {
         // OPS-1/OPS-2 novas (58-04)
         "get_reputation",
         "get_goals",
+        // Phase 103 novas: compra × venda
+        "get_replenishment",
+        "get_purchase_suppliers",
       ].sort(),
     );
   });
@@ -329,6 +332,151 @@ describe("dispatchTool — anti-IDOR (orgId/mlUserIds só do servidor)", () => {
       expect(campaigns[0]).not.toHaveProperty("roas");
       expect(campaigns[0]).not.toHaveProperty("impressions");
     }
+  });
+});
+
+describe("dispatchTool — anti-IDOR get_replenishment/get_purchase_suppliers (Phase 103)", () => {
+  it("get_replenishment (org-only) passa só p_org_id do servidor, ignora seller alheio, SEM p_user_ids", async () => {
+    const { sb, rpcCalls } = makeStub([{ item_id: "Y", compra_sugerida: 10 }]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_replenishment", EVIL_ARGS);
+    const call = rpcCalls.find((c) => c.fn === "get_replenishment_by_sku");
+    expect(call).toBeDefined();
+    expect(call!.params.p_org_id).toBe(ORG_SERVER);
+    expect(JSON.stringify(call!.params)).not.toContain("ORG-ALHEIA");
+    expect(JSON.stringify(call!.params)).not.toContain("999");
+    expect(JSON.stringify(call!.params)).not.toContain("888");
+    // a RPC não aceita p_user_ids — nunca deve aparecer nos params
+    expect(call!.params).not.toHaveProperty("p_user_ids");
+  });
+
+  it("get_replenishment aplica p_smart=true por default (paridade com o painel /compras — Pitfall 2)", async () => {
+    const { sb, rpcCalls } = makeStub([]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_replenishment", {});
+    const call = rpcCalls.find((c) => c.fn === "get_replenishment_by_sku");
+    expect(call).toBeDefined();
+    expect(call!.params.p_smart).toBe(true);
+  });
+
+  it("get_purchase_suppliers (org-only) passa só p_org_id do servidor, único parâmetro", async () => {
+    const { sb, rpcCalls } = makeStub([{ fornecedor: "Fornecedor X" }]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_purchase_suppliers", EVIL_ARGS);
+    const call = rpcCalls.find((c) => c.fn === "get_purchase_order_suppliers");
+    expect(call).toBeDefined();
+    expect(call!.params.p_org_id).toBe(ORG_SERVER);
+    expect(Object.keys(call!.params)).toEqual(["p_org_id"]);
+  });
+
+  it("get_purchase_suppliers mapeia data para lista de fornecedores (string[]), capada", async () => {
+    const { sb } = makeStub([{ fornecedor: "Fornecedor A" }, { fornecedor: "Fornecedor B" }]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_purchase_suppliers", {}) as string[];
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toEqual(["Fornecedor A", "Fornecedor B"]);
+  });
+});
+
+describe("buildReplenishmentResult — preservação de micos no sample estratificado (Pitfall 1)", () => {
+  it("summary.sem_giro_count conta TODO o conjunto e sample preserva ≥1 mico apesar do ORDER BY compra DESC", () => {
+    // Simula ORDER BY compra DESC NULLS LAST da RPC: ~48 linhas "gatilho" (compra_sugerida > 0,
+    // decrescente) SEGUIDAS de ~5 linhas de micos nas ÚLTIMAS posições (compra_sugerida=0).
+    const gatilhoRows = Array.from({ length: 48 }, (_, i) => ({
+      item_id: `G${i}`,
+      variation_id: null,
+      title: `Produto Gatilho ${i}`,
+      brand: "Pé Vermeio",
+      sku_code: `SKU-G${i}`,
+      sku_stock: 5,
+      venda_dia: 1.2,
+      venda_inteligente: 1.2,
+      cobertura_atual: 4,
+      ponto_reposicao: 10,
+      alvo: 20,
+      compra_sugerida: 48 - i, // decrescente, sempre > 0
+      valor_estimado: (48 - i) * 50,
+      custo_ausente: false,
+      sem_giro: false,
+      gatilho_ativo: true,
+      qtd_a_caminho: 0,
+      data_proxima_chegada: null,
+      status_esgotado: "com_giro",
+      tendencia: "estavel",
+      fator_sazonal: 1.0,
+    }));
+    const micoRows = Array.from({ length: 5 }, (_, i) => ({
+      item_id: `M${i}`,
+      variation_id: null,
+      title: `Produto Mico ${i}`,
+      brand: "Pé Vermeio",
+      sku_code: `SKU-M${i}`,
+      sku_stock: 100 - i, // capital parado alto
+      venda_dia: 0,
+      venda_inteligente: 0,
+      cobertura_atual: 999,
+      ponto_reposicao: 10,
+      alvo: 20,
+      compra_sugerida: 0,
+      valor_estimado: 0,
+      custo_ausente: false,
+      sem_giro: true,
+      gatilho_ativo: false,
+      qtd_a_caminho: 0,
+      data_proxima_chegada: null,
+      status_esgotado: "com_giro", // tem estoque — não é esgotado, é mico (eixo ortogonal)
+      tendencia: "queda",
+      fator_sazonal: 1.0,
+    }));
+    const rows = [...gatilhoRows, ...micoRows]; // micos nas ÚLTIMAS posições (reproduz ORDER BY compra DESC)
+
+    const result = buildReplenishmentResult(rows);
+
+    // summary conta sobre TODO o conjunto, não sobre a amostra capada
+    expect(result.summary.sem_giro_count).toBe(5);
+    expect(result.summary.total_skus).toBe(rows.length);
+    expect(result.summary.gatilho_ativo_count).toBe(48);
+
+    // sample respeita o teto
+    expect(result.sample.length).toBeLessThanOrEqual(50);
+
+    // ao menos 1 mico aparece no sample APESAR do ORDER BY que o afunda —
+    // um teste genérico length<=50 passaria mesmo descartando todos os micos.
+    const micosInSample = result.sample.filter((r) => r.sem_giro === true);
+    expect(micosInSample.length).toBeGreaterThanOrEqual(1);
+    expect(micosInSample.length).toBe(5); // bucket de micos cabe inteiro (5 ≤ 15)
+  });
+
+  it("label rotula compra sugerida como projeção e distingue sem_giro de status_esgotado", () => {
+    const result = buildReplenishmentResult([]);
+    expect(result.label).toMatch(/projeção/i);
+    expect(result.label).toMatch(/não.*pedido feito|nunca.*pedido/i);
+    expect(result.label).toMatch(/sem_giro/i);
+    expect(result.label).toMatch(/status_esgotado/i);
+  });
+
+  it("dedupe por item_id|variation_id: linha não aparece duplicada entre buckets", () => {
+    // Uma linha gatilho_ativo=true E sem_giro=true (caso extremo hipotético) não deve duplicar
+    const rows = [
+      {
+        item_id: "DUP1", variation_id: "v1", sku_stock: 10, compra_sugerida: 5,
+        gatilho_ativo: true, sem_giro: true, custo_ausente: false, status_esgotado: "com_giro",
+      },
+    ];
+    const result = buildReplenishmentResult(rows);
+    const occurrences = result.sample.filter((r) => r.item_id === "DUP1" && r.variation_id === "v1");
+    expect(occurrences.length).toBe(1);
+  });
+
+  it("respeita dispatchTool: get_replenishment retorna {label,summary,sample} via buildReplenishmentResult", async () => {
+    const rows = [
+      { item_id: "A", variation_id: null, compra_sugerida: 3, gatilho_ativo: true, sem_giro: false, custo_ausente: false, sku_stock: 2, status_esgotado: "com_giro" },
+      { item_id: "B", variation_id: null, compra_sugerida: 0, gatilho_ativo: false, sem_giro: true, custo_ausente: false, sku_stock: 40, status_esgotado: "com_giro" },
+    ];
+    const { sb } = makeStub(rows);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_replenishment", {}) as {
+      label: string; summary: Record<string, unknown>; sample: Record<string, unknown>[];
+    };
+    expect(typeof result.label).toBe("string");
+    expect(result.summary).toHaveProperty("total_skus", 2);
+    expect(result.summary).toHaveProperty("sem_giro_count", 1);
+    expect(result.sample.some((r) => r.sem_giro === true)).toBe(true);
   });
 });
 
