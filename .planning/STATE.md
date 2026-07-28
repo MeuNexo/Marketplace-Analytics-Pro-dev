@@ -2,24 +2,24 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 102
-current_phase_name: simulador-manual-de-mco-na-p-gina-analise-precos-permitir-qu
-status: executing
+current_phase: 103
+status: completed
 stopped_at: Phase 102 completa — ok visual do Wesley
-last_updated: "2026-07-28T16:15:20.625Z"
-last_activity: 2026-07-20
-last_activity_desc: Phase 102 execution started
+last_updated: "2026-07-28T16:45:26.199Z"
+last_activity: 2026-07-28
+last_activity_desc: Phase 103 marked complete
 progress:
   total_phases: 49
-  completed_phases: 26
-  total_plans: 104
-  completed_plans: 93
-  percent: 53
+  completed_phases: 27
+  total_plans: 105
+  completed_plans: 94
+  percent: 55
+current_phase_name: consultor-cco-ferramentas-de-compra-vs-venda
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
 
-- **Status:** Ready to execute
+- **Status:** Phase 103 complete
 - **Backend:** tabela `purchase_orders` (migration `20260665000000`, RLS org-first); EF `sync-tiny-purchase-orders` v1 (endpoint Tiny correto = `/ordem-compra` singular; waitUntil 202; `organization_id` no insert); RPC `get_replenishment_by_sku` (migration `20260665000100`, +CTE `incoming_by_sku`, +colunas `qtd_a_caminho`/`data_proxima_chegada`, desconta TODA a qtd a caminho — decisão Wesley); cron `sync-tiny-purchase-orders-daily` (jobid 34, 03:15 UTC).
 - **Prova:** sync 22 OCs/135 SKUs/1.885 un; RPC 93 SKUs a caminho, 80 zeraram sugestão, cobertura parcial preserva gatilho (ex `11011273-CAFE3374G` → ainda sugere 10). tsc 0 + 208 testes + build ok.
 - **Decisão tunável:** "a caminho" = situação `3` (aguardando recebimento); ampliar p/ `2` (aprovada) = 1 linha em `SITUACOES_A_CAMINHO` na EF.
@@ -131,14 +131,14 @@ See: .planning/PROJECT.md
 
 **Milestone:** v8.0 — Consultor v2 (Inteligência)
 **Core value:** Consultor que explica, prioriza e ajuda a agir — LLM sob demanda + ações com aprovação, sobre o motor determinístico do v1.
-**Current focus:** Phase 102 — simulador-manual-de-mco-na-p-gina-analise-precos-permitir-qu
+**Current focus:** Phase 103 — consultor-cco-ferramentas-de-compra-vs-venda
 
 ## Current Position
 
-Phase: 102 (simulador-manual-de-mco-na-p-gina-analise-precos-permitir-qu) — EXECUTING
-Plan: 3 of 3
-Status: Ready to execute
-Last activity: 2026-07-20 — Phase 102 execution started
+Phase: 103 — COMPLETE
+Plan: 1 of 1
+Status: Phase 103 complete
+Last activity: 2026-07-28 — Phase 103 marked complete
 Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mergear). Depois, próxima frente em aberto = **Phase 54 Wave 2** (`54-03` UI fila/diff/aprovar/histórico) ou as pendências do motor de reposição (MAX + param cobertura≥lead + 57 OCs órfãs) descritas em project_garment_compras_v2_roadmap.md.
 
 ### Phase 54 — Wave 1 EXECUTADA (2026-06-24), Wave 2 PENDENTE
