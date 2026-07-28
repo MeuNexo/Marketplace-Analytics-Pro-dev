@@ -10,7 +10,14 @@
  * sb é um stub encadeável que registra os argumentos recebidos por .rpc()/.from().
  */
 import { describe, it, expect } from "vitest";
-import { TOOL_DECLARATIONS, dispatchTool, summarizeVariations, buildReplenishmentResult } from "./tools";
+import {
+  TOOL_DECLARATIONS,
+  dispatchTool,
+  summarizeVariations,
+  buildReplenishmentResult,
+  sumGuiaReal,
+  today,
+} from "./tools";
 
 // ── Stub Supabase encadeável que grava o que foi chamado ─────────────────────
 type RpcCall = { fn: string; params: Record<string, unknown> };
@@ -32,6 +39,9 @@ function makeStub(rows: unknown[] = []) {
       order: () => chain,
       limit: () => chain,
       range: () => Promise.resolve({ data: rows, error: null }),
+      // maybeSingle: usado por get_dre_result (select em dre_month_close) — default
+      // null (mês em previsão) salvo quando o teste não precisa provar "apuracao".
+      maybeSingle: () => Promise.resolve({ data: null, error: null }),
       // termina o await quando não há range (selects sem paginação)
       then: (res: (v: { data: unknown[]; error: null }) => void) =>
         res({ data: rows, error: null }),
@@ -55,7 +65,7 @@ const ML_IDS_SERVER = ["111", "222"];
 const EVIL_ARGS = { org_id: "ORG-ALHEIA", seller_id: "999", ml_user_id: "888" };
 
 describe("TOOL_DECLARATIONS", () => {
-  it("declara as 27 tools esperadas (inclui get_reputation, get_goals, get_replenishment, get_purchase_suppliers)", () => {
+  it("declara as 31 tools esperadas (inclui as 4 novas de DRE real & caixa — Phase 104)", () => {
     const names = TOOL_DECLARATIONS.map((d) => d.name).sort();
     expect(names).toEqual(
       [
@@ -91,6 +101,11 @@ describe("TOOL_DECLARATIONS", () => {
         // Phase 103 novas: compra × venda
         "get_replenishment",
         "get_purchase_suppliers",
+        // Phase 104 novas: DRE real (competência) & caixa
+        "get_dre_result",
+        "get_dre_cash",
+        "get_projected_balance",
+        "get_taxes_paid",
       ].sort(),
     );
   });
@@ -371,6 +386,130 @@ describe("dispatchTool — anti-IDOR get_replenishment/get_purchase_suppliers (P
     const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_purchase_suppliers", {}) as string[];
     expect(Array.isArray(result)).toBe(true);
     expect(result).toEqual(["Fornecedor A", "Fornecedor B"]);
+  });
+});
+
+describe("dispatchTool — anti-IDOR get_dre_result/get_dre_cash/get_projected_balance/get_taxes_paid (Phase 104)", () => {
+  it("get_dre_result (org-only) passa só p_org_id/p_month do servidor, ignora org alheia, SEM p_user_ids", async () => {
+    const { sb, rpcCalls } = makeStub([{ bloco: "pessoal", category: "Salários", total: 1000, n: 1 }]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_dre_result", {
+      ...EVIL_ARGS,
+      month: "2026-06",
+    }) as Record<string, unknown>;
+    const call = rpcCalls.find((c) => c.fn === "get_dre_operational_by_competence");
+    expect(call).toBeDefined();
+    expect(call!.params.p_org_id).toBe(ORG_SERVER);
+    expect(call!.params.p_month).toBe("2026-06-01");
+    expect(call!.params).not.toHaveProperty("p_user_ids");
+    expect(JSON.stringify(call!.params)).not.toContain("ORG-ALHEIA");
+    expect(JSON.stringify(call!.params)).not.toContain("999");
+    // rótulo obrigatório: deduções operacionais ≠ DRE completo
+    expect(typeof result.label).toBe("string");
+    expect((result.label as string)).toMatch(/NÃO é o DRE completo/i);
+    expect(result).toHaveProperty("regime");
+  });
+
+  it("get_dre_cash (org-only) passa p_org_id do servidor na RPC get_dre_cash, ignora EVIL_ARGS", async () => {
+    const { sb, rpcCalls } = makeStub([{ secao: "entrada", bloco: null, categoria: "bruto", total: 5000, n: 3 }]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_dre_cash", { ...EVIL_ARGS, month: "2026-01" });
+    const call = rpcCalls.find((c) => c.fn === "get_dre_cash");
+    expect(call).toBeDefined();
+    expect(call!.params.p_org_id).toBe(ORG_SERVER);
+    expect(call!.params).not.toHaveProperty("p_user_ids");
+    expect(JSON.stringify(call!.params)).not.toContain("ORG-ALHEIA");
+  });
+
+  it("get_dre_cash SÓ chama get_dre_cash_forecast quando month = mês corrente", async () => {
+    const { sb, rpcCalls } = makeStub([]);
+    // mês passado fixo (2026-01) — sempre no passado relativo ao currentDate real de execução
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_dre_cash", { month: "2026-01" });
+    expect(rpcCalls.some((c) => c.fn === "get_dre_cash_forecast")).toBe(false);
+    expect(rpcCalls.some((c) => c.fn === "get_dre_cash")).toBe(true);
+  });
+
+  it("get_dre_cash CHAMA get_dre_cash_forecast quando month = mês corrente (derivado de today())", async () => {
+    const { sb, rpcCalls } = makeStub([]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_dre_cash", { month: today().slice(0, 7) });
+    expect(rpcCalls.some((c) => c.fn === "get_dre_cash_forecast")).toBe(true);
+  });
+
+  it("get_projected_balance usa p_projection_days=120 default (NÃO 30) e p_include_purchase_forecasts=false default", async () => {
+    const { sb, rpcCalls } = makeStub([
+      { current_balance: 1000, pessimistic_balance: 500, realistic_balance: 800, critical_date: null, min_balance: 400, confirmed_income: 2000, total_expenses: 1500 },
+    ]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_projected_balance", {});
+    const call = rpcCalls.find((c) => c.fn === "get_projected_balance_summary");
+    expect(call).toBeDefined();
+    expect(call!.params.p_projection_days).toBe(120);
+    expect(call!.params.p_include_purchase_forecasts).toBe(false);
+    expect(call!.params.p_org_id).toBe(ORG_SERVER);
+  });
+
+  it("get_projected_balance (org-only) ignora EVIL_ARGS e NUNCA expõe campo otimista", async () => {
+    const { sb, rpcCalls } = makeStub([
+      { current_balance: 1000, pessimistic_balance: 500, realistic_balance: 800 },
+    ]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_projected_balance", EVIL_ARGS);
+    const call = rpcCalls.find((c) => c.fn === "get_projected_balance_summary");
+    expect(call!.params.p_org_id).toBe(ORG_SERVER);
+    expect(JSON.stringify(call!.params)).not.toContain("ORG-ALHEIA");
+    expect(JSON.stringify(result)).not.toMatch(/optimistic|otimista/i);
+  });
+
+  it("get_taxes_paid chama as RPCs com p_competence = mês+1 (régua M+1), nunca o mês pedido direto — SEM p_user_ids", async () => {
+    const { sb, rpcCalls } = makeStub([]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_taxes_paid", { ...EVIL_ARGS, month: "2026-06" });
+    const impostoCall = rpcCalls.find((c) => c.fn === "get_imposto_guia_by_competence");
+    const inssCall = rpcCalls.find((c) => c.fn === "get_inss_guia_by_competence");
+    expect(impostoCall).toBeDefined();
+    expect(inssCall).toBeDefined();
+    expect(impostoCall!.params.p_competence).toBe("2026-07-01"); // M+1 de 2026-06
+    expect(inssCall!.params.p_competence).toBe("2026-07-01");
+    expect(impostoCall!.params.p_org_id).toBe(ORG_SERVER);
+    expect(inssCall!.params.p_org_id).toBe(ORG_SERVER);
+    expect(impostoCall!.params).not.toHaveProperty("p_user_ids");
+    expect(inssCall!.params).not.toHaveProperty("p_user_ids");
+    expect(JSON.stringify(impostoCall!.params)).not.toContain("ORG-ALHEIA");
+  });
+
+  it("get_taxes_paid trata virada de dezembro corretamente (mês 12 → mês 01 do ano seguinte)", async () => {
+    const { sb, rpcCalls } = makeStub([]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_taxes_paid", { month: "2026-12" });
+    const impostoCall = rpcCalls.find((c) => c.fn === "get_imposto_guia_by_competence");
+    expect(impostoCall!.params.p_competence).toBe("2027-01-01");
+  });
+
+  it("get_taxes_paid retorna sale_month/guia_competence e total_real via sumGuiaReal (exclui cancelled)", async () => {
+    const { sb } = makeStub([
+      { category: "Imposto Venda - ICMS", total: 100, status: "paid" },
+      { category: "Imposto Venda - PIS", total: 50, status: "pending" },
+      { category: "Imposto Venda - COFINS", total: 9999, status: "cancelled" },
+    ]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_taxes_paid", { month: "2026-06" }) as Record<string, unknown>;
+    expect(result.sale_month).toBe("2026-06");
+    expect(result.guia_competence).toBe("2026-07");
+    const impostoVenda = result.imposto_venda as Record<string, unknown>;
+    expect(impostoVenda.total_real).toBe(150); // 100+50, cancelled não soma
+  });
+});
+
+describe("sumGuiaReal — helper puro (Phase 104)", () => {
+  it("soma total excluindo status='cancelled'", () => {
+    const rows = [
+      { status: "paid", total: 100 },
+      { status: "pending", total: 50 },
+      { status: "cancelled", total: 9999 },
+    ];
+    expect(sumGuiaReal(rows)).toBe(150);
+  });
+
+  it("mês 100% cancelado soma 0 (nunca null)", () => {
+    const rows = [{ status: "cancelled", total: 9999 }];
+    expect(sumGuiaReal(rows)).toBe(0);
+  });
+
+  it("array vazio soma 0", () => {
+    expect(sumGuiaReal([])).toBe(0);
   });
 });
 
