@@ -41,6 +41,10 @@
  *   get_dre_cash          → get_dre_cash(p_org_id,p_month) [INVOKER, org-only, sempre] + get_dre_cash_forecast(idem) [SÓ mês corrente]
  *   get_projected_balance → get_projected_balance_summary(p_org_id,p_projection_days,p_include_purchase_forecasts) [INVOKER, org-only, default 120d]
  *   get_taxes_paid        → get_imposto_guia_by_competence(p_org_id,p_competence) + get_inss_guia_by_competence(idem) [INVOKER, org-only, régua M+1]
+ *   get_price_practiced   → orders_sold_products_agg(_ml_user_ids SÓ, sem p_org_id) + ml_mco_targets(.eq org, sku='') [só-mlUserIds]
+ *   get_competitive_price → EF ml-precos-custos ?type=references via ctx.userJwt [EF-com-JWT, molde get_reputation]
+ *   get_cost_gaps         → get_cmv_cheio_gaps(p_org_id,p_user_ids,p_from,p_to) [INVOKER, org+mlUserIds]
+ *   get_cancelled_revenue → get_cancelled_revenue(idem) [INVOKER, org+mlUserIds]
  */
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -436,6 +440,48 @@ export const TOOL_DECLARATIONS: FnDecl[] = [
       },
     },
   },
+
+  // ── Phase 105: preços/competitivo/completude — Consultor CCO ────────────────
+  {
+    name: "get_price_practiced",
+    description:
+      "Preço MÉDIO praticado (histórico, DERIVADO de receita_bruta/quantidade de pedidos pagos no " +
+      "período — NÃO é o preço ATUAL do anúncio) por anúncio (item_id), cruzado com a meta de MCO " +
+      "cadastrada (ml_mco_targets). A meta só existe para o anúncio INTEIRO (metas por " +
+      "variação/SKU não aparecem — este agregado é por item_id, não por SKU). " +
+      "meta_mco_pct=null significa SEM meta cadastrada (não é 0%).",
+    parameters: { type: "object", properties: { ...DATE_PROPS } },
+  },
+  {
+    name: "get_competitive_price",
+    description:
+      "SUGESTÃO de preço competitiva do próprio Mercado Livre (endpoint de referência de preços) + " +
+      "custos ML embutidos (comissão/frete) — é SUGESTÃO/indicativo, NÃO garantia de venda nem " +
+      "preço mínimo obrigatório, e NÃO é o preço do concorrente. Sem item_id retorna sugestões em " +
+      "lote por loja; com item_id detalha 1 anúncio específico. Nem todo item tem sugestão " +
+      "disponível.",
+    parameters: {
+      type: "object",
+      properties: {
+        item_id: { type: "string", description: "ID do anúncio ML (opcional — ex.: MLB123456789)" },
+      },
+    },
+  },
+  {
+    name: "get_cost_gaps",
+    description:
+      "QUAIS SKUs estão sem custo CHEIO cadastrado no período (não só a contagem) — custo ausente " +
+      "pode ser LEGÍTIMO em conta de revenda (custo não está no Tiny), não necessariamente erro. " +
+      "tem_custo_medio=true distingue 'tem custo médio, falta o cheio' de 'sem custo nenhum'.",
+    parameters: { type: "object", properties: { ...DATE_PROPS } },
+  },
+  {
+    name: "get_cancelled_revenue",
+    description:
+      "Receita de pedidos cancelados/estornados no período — NÃO é faturamento. Complementa " +
+      "get_sales_kpis (que só soma pedidos pagos).",
+    parameters: { type: "object", properties: { ...DATE_PROPS } },
+  },
 ];
 
 // ── Phase 103: get_replenishment — summary+sample estratificado (Pitfall 1) ──
@@ -556,6 +602,56 @@ export function buildReplenishmentResult(
   const sample = sampleRows.slice(0, MAX_ROWS).map(projectReplRow);
 
   return { label: REPL_LABEL, summary, sample };
+}
+
+// ── Phase 105: buildPricePracticed — helper PURO exportado ───────────────────
+/**
+ * buildPricePracticed — helper PURO exportado (Task 1, Phase 105). Recebe as rows
+ * CRUAS de orders_sold_products_agg (item_id, titulo, marca, quantidade, receita_bruta)
+ * e as rows de ml_mco_targets (item_id, sku, target_mco_pct); monta
+ * Map<item_id, target_mco_pct> SOMENTE a partir das targetRows com sku === '' (defensivo
+ * — Pitfall 4, mesmo que o select já filtre, o helper filtra de novo para ser
+ * determinístico em teste com fixture mista). Deriva
+ * preco_medio_praticado = quantidade>0 ? receita_bruta/quantidade : null (GUARDA de
+ * divisão por zero obrigatória — Pitfall 3, nunca NaN/Infinity).
+ */
+export function buildPricePracticed(
+  soldRows: Array<{
+    item_id: string;
+    titulo?: string | null;
+    marca?: string | null;
+    quantidade: number | string;
+    receita_bruta: number | string;
+  }>,
+  targetRows: Array<{ item_id: string; sku?: string; target_mco_pct: number | string }>,
+): Array<{
+  item_id: string;
+  titulo: string | null;
+  marca: string | null;
+  quantidade: number;
+  receita_bruta: number;
+  preco_medio_praticado: number | null;
+  meta_mco_pct: number | null;
+}> {
+  const targetMap = new Map<string, number>();
+  for (const t of targetRows) {
+    if (t.sku !== "") continue; // só o sentinela do anúncio inteiro (Pitfall 4)
+    targetMap.set(t.item_id, Number(t.target_mco_pct));
+  }
+  return soldRows.map((r) => {
+    const quantidade = Number(r.quantidade) || 0;
+    const receita_bruta = Number(r.receita_bruta) || 0;
+    return {
+      item_id: r.item_id,
+      titulo: r.titulo ?? null,
+      marca: r.marca ?? null,
+      quantidade,
+      receita_bruta,
+      preco_medio_praticado:
+        quantidade > 0 ? Math.round((receita_bruta / quantidade) * 100) / 100 : null,
+      meta_mco_pct: targetMap.get(r.item_id) ?? null,
+    };
+  });
 }
 
 // ── dispatcher escopado (anti-IDOR) ──────────────────────────────────────────
@@ -1282,6 +1378,131 @@ export async function dispatchTool(
           "real. status='cancelled' é crédito e NUNCA soma; 'paid'/'pending' somam (competência).",
         imposto_venda: { rows: cap(impostoRows), total_real: sumGuiaReal(impostoRows) },
         inss_folha: { rows: cap(inssRows), total_real: sumGuiaReal(inssRows) },
+      };
+    }
+
+    // ── Phase 105: preço praticado × meta MCO — SÓ mlUserIds (molde get_goals) ──
+    case "get_price_practiced": {
+      const { data: soldData } = await sb.rpc("orders_sold_products_agg", {
+        _ml_user_ids: mlUserIds, _from: from, _to: to,
+      });
+      const soldRows = (soldData ?? []) as Array<{
+        item_id: string; titulo: string | null; marca: string | null;
+        quantidade: number | string; receita_bruta: number | string;
+      }>;
+
+      // Anti-IDOR: select direto via service_role bypassa RLS — .eq(organization_id)
+      // obrigatório. Só o sentinela sku='' ("anúncio inteiro") casa com o agregado por
+      // item_id da RPC acima — metas por variação (sku != '') não têm equivalente aqui.
+      const { data: targetData } = await sb
+        .from("ml_mco_targets")
+        .select("item_id, target_mco_pct, sku")
+        .eq("organization_id", orgId)
+        .eq("sku", "");
+      const targetRows = (targetData ?? []) as Array<
+        { item_id: string; target_mco_pct: number | string; sku?: string }
+      >;
+
+      const enriched = buildPricePracticed(soldRows, targetRows);
+
+      return {
+        label:
+          "preco_medio_praticado é HISTÓRICO (receita_bruta/quantidade do período, pedidos pagos) — " +
+          "não é o preço atual do anúncio. meta_mco_pct vem de ml_mco_targets (alvo cadastrado para " +
+          "o anúncio INTEIRO — sku=''); meta_mco_pct=null significa SEM meta cadastrada para esse " +
+          "item (não é 0% — declare a limitação, não invente). Metas específicas por VARIAÇÃO (SKU) " +
+          "não aparecem aqui — este agregado é por item_id, não por variação.",
+        rows: cap(enriched),
+      };
+    }
+
+    // ── Phase 105: sinal competitivo real — EF via ctx.userJwt (molde get_reputation) ──
+    // Anti-IDOR/credencial: ml_user_id SEMPRE de mlUserIds (servidor); ctx.userJwt é o
+    // JWT real do usuário (a EF revalida is_org_member como 2ª barreira). NUNCA logar
+    // nem colocar ctx.userJwt no objeto de retorno.
+    case "get_competitive_price": {
+      if (!ctx.userJwt) {
+        return { error: "sem_jwt", label: "não foi possível consultar preço competitivo agora" };
+      }
+      const supabaseUrl = Deno.env.get("SUPABASE_URL");
+      // item_id é input livre do modelo (não-sensível): sanitiza allow-list alfanumérico + slice 30
+      const itemId = typeof args.item_id === "string" && args.item_id.trim()
+        ? args.item_id.trim().replace(/[^a-zA-Z0-9]/g, "").slice(0, 30)
+        : undefined;
+
+      type RefResult = {
+        ml_user_id: string;
+        reference?: unknown;
+        references?: unknown[];
+        no_suggestion?: boolean;
+        error?: string;
+      };
+      const results: RefResult[] = [];
+      for (const mlUserId of mlUserIds) {
+        try {
+          const qs = new URLSearchParams({ ml_user_id: mlUserId, type: "references" });
+          if (itemId) qs.set("item_id", itemId);
+          const res = await fetch(
+            `${supabaseUrl}/functions/v1/ml-precos-custos?${qs}`,
+            { headers: { Authorization: `Bearer ${ctx.userJwt}` } },
+          );
+          if (!res.ok) {
+            results.push({ ml_user_id: mlUserId, error: `ef_status_${res.status}` });
+            continue;
+          }
+          const data = await res.json() as Record<string, unknown>;
+          results.push({
+            ml_user_id: mlUserId,
+            reference: data.reference ?? null,
+            references: Array.isArray(data.references) ? data.references : undefined,
+            no_suggestion: data.no_suggestion === true,
+          });
+        } catch {
+          results.push({ ml_user_id: mlUserId, error: "ef_fetch_error" });
+        }
+      }
+      return {
+        label:
+          "Sugestão de preço competitiva do próprio Mercado Livre (endpoint de referência de " +
+          "preços) — é SUGESTÃO/indicativo, NÃO garantia de venda nem preço mínimo obrigatório, e " +
+          "NÃO é o preço do concorrente. current_price/suggested_price/lowest_price vêm direto do " +
+          "ML; selling_fees/shipping_fees são custos ML já embutidos na sugestão. Sem item_id, " +
+          "retorna sugestões em lote por loja; com item_id, detalhe de 1 item. Nem todo item tem " +
+          "sugestão disponível (no_suggestion / omitido no bulk).",
+        data: cap(results),
+      };
+    }
+
+    // ── Phase 105: SKUs sem custo cheio (completude) — org+mlUserIds ─────────
+    case "get_cost_gaps": {
+      const { data } = await sb.rpc("get_cmv_cheio_gaps", {
+        p_org_id: orgId, p_user_ids: mlUserIds, p_from: from, p_to: to,
+      });
+      const rows = (data ?? []) as Array<{
+        sku: string; marca: string | null; linhas: number; unidades: number;
+        receita: number; tem_custo_medio: boolean;
+      }>;
+      return {
+        label:
+          "SKUs sem custo CHEIO cadastrado no período. custo ausente pode ser legítimo em conta " +
+          "de revenda (custo não está no Tiny) — não é necessariamente erro. tem_custo_medio=true " +
+          "distingue 'tem custo médio, falta o cheio' de 'sem custo nenhum'.",
+        rows: cap(rows),
+      };
+    }
+
+    // ── Phase 105: receita cancelada (completude) — org+mlUserIds ────────────
+    case "get_cancelled_revenue": {
+      const { data } = await sb.rpc("get_cancelled_revenue", {
+        p_org_id: orgId, p_user_ids: mlUserIds, p_from: from, p_to: to,
+      });
+      const row = (Array.isArray(data) ? data[0] : data) as
+        { cancelled_revenue?: number; cancelled_orders?: number } | null;
+      return {
+        label: "Receita de pedidos cancelados — NÃO é faturamento; complementa get_sales_kpis " +
+          "(que só soma pedidos pagos).",
+        cancelled_revenue: Number(row?.cancelled_revenue ?? 0),
+        cancelled_orders: Number(row?.cancelled_orders ?? 0),
       };
     }
 
