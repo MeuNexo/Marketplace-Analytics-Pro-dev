@@ -35,6 +35,8 @@
  *   get_health_score      → table consultor_health_snapshots (.eq org)
  *   get_reputation        → EF ml-reputation (jwt real do usuário via ctx.userJwt) — sem tabela persistida
  *   get_goals             → table ml_targets (.in seller_id, mlUserIds — sem organization_id!) anti-IDOR via seller_id
+ *   get_replenishment     → get_replenishment_by_sku(p_org_id,p_sales_window_days,p_demand_multiplier,p_smart) [INVOKER, org-only, p_smart=true]
+ *   get_purchase_suppliers → get_purchase_order_suppliers(p_org_id) [INVOKER, org-only]
  */
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -317,7 +319,150 @@ export const TOOL_DECLARATIONS: FnDecl[] = [
       },
     },
   },
+
+  // ── Phase 103: reposição/compra × fornecedores (mesma fonte de /compras) ────
+  {
+    name: "get_replenishment",
+    description:
+      "Reposição/compra sugerida por SKU (mesma fonte da página /compras): compra_sugerida e " +
+      "valor_estimado são PROJEÇÃO baseada em velocidade de venda, NÃO pedido feito. gatilho_ativo " +
+      "indica SKU com compra recomendada agora. cobertura_atual/ponto_reposicao/alvo mostram a " +
+      "régua de estoque. sem_giro=true (capital parado / mico — tem estoque mas não vende) é " +
+      "DIFERENTE de status_esgotado (SKU zerado, classificado por recência: repor_esgotado / " +
+      "revisar_esgotado / descontinuar). custo_ausente=true (comum em conta de revenda sem custo " +
+      "cadastrado no Tiny) torna valor_estimado incompleto. qtd_a_caminho/data_proxima_chegada " +
+      "indicam OC já em trânsito (compra parcial já registrada). Use para 'o que comprar agora', " +
+      "capital parado, priorização de compra.",
+    parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "get_purchase_suppliers",
+    description:
+      "Lista de fornecedores distintos das ordens de compra da conta. Use antes de recomendar " +
+      "consolidação de pedido ou responder 'de quem eu compro'.",
+    parameters: { type: "object", properties: {} },
+  },
 ];
+
+// ── Phase 103: get_replenishment — summary+sample estratificado (Pitfall 1) ──
+/**
+ * REPL_LABEL — rótulo de veracidade anexado a TODO retorno de get_replenishment.
+ * compra_sugerida/valor_estimado são PROJEÇÃO (não pedido feito); custo_ausente=true
+ * (comum em revenda) torna valor_estimado incompleto; qtd_a_caminho/data_proxima_chegada
+ * refletem OC já registrada (parcial); sem_giro (capital parado, tem estoque) ≠
+ * status_esgotado (estoque zerado).
+ */
+const REPL_LABEL =
+  "compra_sugerida/valor_estimado são PROJEÇÃO baseada em velocidade de venda, NÃO pedido feito. " +
+  "custo_ausente=true (comum em conta de revenda sem custo cadastrado no Tiny) torna valor_estimado " +
+  "incompleto. qtd_a_caminho/data_proxima_chegada refletem OC já registrada — parcial se não cobrir " +
+  "toda a compra sugerida. sem_giro=true (capital parado, tem estoque) é DIFERENTE de " +
+  "status_esgotado (estoque zerado, classificado por recência de venda).";
+
+const REPL_SAMPLE_FIELDS = [
+  "item_id", "variation_id", "title", "brand", "sku_code", "sku_stock", "venda_dia",
+  "venda_inteligente", "cobertura_atual", "ponto_reposicao", "alvo", "compra_sugerida",
+  "valor_estimado", "custo_ausente", "sem_giro", "gatilho_ativo", "qtd_a_caminho",
+  "data_proxima_chegada", "status_esgotado", "tendencia", "fator_sazonal",
+] as const;
+
+function replKey(row: Record<string, unknown>): string {
+  return `${row.item_id ?? ""}|${row.variation_id ?? ""}`;
+}
+
+function projectReplRow(row: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const f of REPL_SAMPLE_FIELDS) out[f] = row[f];
+  return out;
+}
+
+const STATUS_ESGOTADO_BUCKETS = ["com_giro", "repor_esgotado", "revisar_esgotado", "descontinuar"] as const;
+
+/**
+ * buildReplenishmentResult — helper PURO exportado (Task 1). Recebe TODAS as linhas
+ * cruas retornadas por get_replenishment_by_sku (a RPC não pagina — 1 chamada só) e
+ * devolve { label, summary, sample }.
+ *
+ * summary: computado sobre TODAS as rows (não a amostra) — total_skus, gatilho_ativo_count,
+ * sem_giro_count, custo_ausente_count, by_status_esgotado.
+ *
+ * sample: estratificado, DETERMINÍSTICO, teto MAX_ROWS (50), dedupe por item_id|variation_id,
+ * na ordem: (1) gatilho_ativo=true por compra_sugerida DESC até 25; (2) sem_giro=true ainda não
+ * incluído por sku_stock DESC até 15; (3) preenchimento restante por compra_sugerida DESC até
+ * completar 50. Garante representação de micos (sem_giro) mesmo com a ordenação natural da RPC
+ * (compra DESC NULLS LAST), que os afunda por terem compra_sugerida=0 — Pitfall 1.
+ */
+export function buildReplenishmentResult(
+  rows: Array<Record<string, unknown>>,
+): { label: string; summary: Record<string, unknown>; sample: Record<string, unknown>[] } {
+  const total_skus = rows.length;
+  let gatilho_ativo_count = 0;
+  let sem_giro_count = 0;
+  let custo_ausente_count = 0;
+  const by_status_esgotado: Record<string, number> = {};
+  for (const b of STATUS_ESGOTADO_BUCKETS) by_status_esgotado[b] = 0;
+  for (const r of rows) {
+    if (r.gatilho_ativo === true) gatilho_ativo_count++;
+    if (r.sem_giro === true) sem_giro_count++;
+    if (r.custo_ausente === true) custo_ausente_count++;
+    const status = typeof r.status_esgotado === "string" ? r.status_esgotado : null;
+    if (status && status in by_status_esgotado) {
+      by_status_esgotado[status]++;
+    }
+  }
+  const summary = {
+    total_skus,
+    gatilho_ativo_count,
+    sem_giro_count,
+    custo_ausente_count,
+    by_status_esgotado,
+  };
+
+  const included = new Set<string>();
+  const sampleRows: Record<string, unknown>[] = [];
+
+  // Bucket 1: gatilho_ativo=true, ordenado por compra_sugerida DESC, até 25
+  const gatilhoBucket = rows
+    .filter((r) => r.gatilho_ativo === true)
+    .sort((a, b) => (Number(b.compra_sugerida) || 0) - (Number(a.compra_sugerida) || 0))
+    .slice(0, 25);
+  for (const r of gatilhoBucket) {
+    const key = replKey(r);
+    if (included.has(key)) continue;
+    included.add(key);
+    sampleRows.push(r);
+  }
+
+  // Bucket 2: sem_giro=true ainda não incluído, ordenado por sku_stock DESC, até 15
+  const microsBucket = rows
+    .filter((r) => r.sem_giro === true && !included.has(replKey(r)))
+    .sort((a, b) => (Number(b.sku_stock) || 0) - (Number(a.sku_stock) || 0))
+    .slice(0, 15);
+  for (const r of microsBucket) {
+    const key = replKey(r);
+    if (included.has(key)) continue;
+    included.add(key);
+    sampleRows.push(r);
+  }
+
+  // Bucket 3: preenchimento — restante não incluído, por compra_sugerida DESC, até completar 50
+  if (sampleRows.length < MAX_ROWS) {
+    const remaining = rows
+      .filter((r) => !included.has(replKey(r)))
+      .sort((a, b) => (Number(b.compra_sugerida) || 0) - (Number(a.compra_sugerida) || 0));
+    for (const r of remaining) {
+      if (sampleRows.length >= MAX_ROWS) break;
+      const key = replKey(r);
+      if (included.has(key)) continue;
+      included.add(key);
+      sampleRows.push(r);
+    }
+  }
+
+  const sample = sampleRows.slice(0, MAX_ROWS).map(projectReplRow);
+
+  return { label: REPL_LABEL, summary, sample };
+}
 
 // ── dispatcher escopado (anti-IDOR) ──────────────────────────────────────────
 /**
@@ -904,6 +1049,25 @@ export async function dispatchTool(
         label: `meta × realizado ${pm} — realizado é receita de pedidos pagos (get_kpi_summary)`,
         by_seller: bySeller,
       };
+    }
+
+    // ── Phase 103: reposição/compra × fornecedores — org-only, SEM p_user_ids ──
+    case "get_purchase_suppliers": {
+      const { data } = await sb.rpc("get_purchase_order_suppliers", { p_org_id: orgId });
+      const fornecedores = ((data ?? []) as Array<{ fornecedor: string }>).map((r) => r.fornecedor);
+      return cap(fornecedores);
+    }
+    case "get_replenishment": {
+      // p_smart:true EXPLÍCITO — paridade com o hook useReplenishmentBySku (painel /compras).
+      // O default SQL é FALSE (Pitfall 2) — NÃO omitir este parâmetro.
+      const { data } = await sb.rpc("get_replenishment_by_sku", {
+        p_org_id: orgId,
+        p_sales_window_days: 30,
+        p_demand_multiplier: 1.0,
+        p_smart: true,
+      });
+      const rows = (data ?? []) as Array<Record<string, unknown>>;
+      return buildReplenishmentResult(rows);
     }
 
     default:
