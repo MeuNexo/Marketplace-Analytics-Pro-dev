@@ -16,6 +16,7 @@ import {
   summarizeVariations,
   buildReplenishmentResult,
   sumGuiaReal,
+  buildPricePracticed,
   today,
 } from "./tools";
 
@@ -65,7 +66,7 @@ const ML_IDS_SERVER = ["111", "222"];
 const EVIL_ARGS = { org_id: "ORG-ALHEIA", seller_id: "999", ml_user_id: "888" };
 
 describe("TOOL_DECLARATIONS", () => {
-  it("declara as 31 tools esperadas (inclui as 4 novas de DRE real & caixa — Phase 104)", () => {
+  it("declara as 35 tools esperadas (inclui as 4 novas de preços/competitivo/completude — Phase 105)", () => {
     const names = TOOL_DECLARATIONS.map((d) => d.name).sort();
     expect(names).toEqual(
       [
@@ -106,6 +107,11 @@ describe("TOOL_DECLARATIONS", () => {
         "get_dre_cash",
         "get_projected_balance",
         "get_taxes_paid",
+        // Phase 105 novas: preços/competitivo/completude
+        "get_price_practiced",
+        "get_competitive_price",
+        "get_cost_gaps",
+        "get_cancelled_revenue",
       ].sort(),
     );
   });
@@ -1080,5 +1086,166 @@ describe("dispatchTool — get_health_score ordena por snapshot_month (OPS-4/D14
     // Prova que snapshot_month está no select (o stub retorna o que passamos, mas a chain
     // registra que select() foi chamado — verificamos via resultado e que o stub tem o campo)
     expect(Array.isArray(result)).toBe(true);
+  });
+});
+
+// ── Phase 105: preços/competitivo/completude — Consultor CCO ─────────────────
+
+describe("dispatchTool — anti-IDOR get_price_practiced (Phase 105, molde get_goals só-mlUserIds)", () => {
+  it("orders_sold_products_agg NUNCA recebe p_org_id, só _ml_user_ids do servidor; select ml_mco_targets org-scoped com sku=''", async () => {
+    const { sb, rpcCalls, selectCalls } = makeStub([
+      { item_id: "MLB1", titulo: "T", marca: "M", quantidade: 10, receita_bruta: 1000 },
+    ]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_price_practiced", EVIL_ARGS);
+
+    const rpcCall = rpcCalls.find((c) => c.fn === "orders_sold_products_agg");
+    expect(rpcCall).toBeDefined();
+    expect(rpcCall!.params).not.toHaveProperty("p_org_id"); // essa RPC não tem esse param
+    expect(rpcCall!.params._ml_user_ids).toEqual(ML_IDS_SERVER);
+    expect(JSON.stringify(rpcCall!.params)).not.toContain("888");
+    expect(JSON.stringify(rpcCall!.params)).not.toContain("ORG-ALHEIA");
+
+    const targetCall = selectCalls.find((c) => c.table === "ml_mco_targets");
+    expect(targetCall).toBeDefined();
+    expect(targetCall!.eqs.organization_id).toBe(ORG_SERVER);
+    expect(targetCall!.eqs.sku).toBe(""); // só o sentinela do anúncio inteiro
+  });
+
+  it("retorna {label, rows} rotulando histórico e limitação de meta por variação", async () => {
+    const { sb } = makeStub([
+      { item_id: "MLB1", titulo: "T", marca: "M", quantidade: 10, receita_bruta: 1000 },
+    ]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_price_practiced", {}) as Record<string, unknown>;
+    expect(typeof result.label).toBe("string");
+    expect((result.label as string)).toMatch(/HISTÓRICO/);
+    expect((result.label as string)).toMatch(/variação/i);
+    expect(Array.isArray(result.rows)).toBe(true);
+  });
+});
+
+describe("buildPricePracticed — helper puro (Phase 105, div/0 + filtro sku='')", () => {
+  it("quantidade=0 → preco_medio_praticado null (nunca NaN/Infinity); quantidade>0 deriva receita/quantidade", () => {
+    const soldRows = [
+      { item_id: "MLB1", titulo: "T", marca: "M", quantidade: 0, receita_bruta: 0 },
+      { item_id: "MLB2", quantidade: 10, receita_bruta: 1000 },
+    ];
+    const result = buildPricePracticed(soldRows, []);
+    const row1 = result.find((r) => r.item_id === "MLB1")!;
+    const row2 = result.find((r) => r.item_id === "MLB2")!;
+    expect(row1.preco_medio_praticado).toBeNull();
+    expect(Number.isNaN(row1.preco_medio_praticado)).toBe(false);
+    expect(row2.preco_medio_praticado).toBe(100);
+  });
+
+  it("filtro sku='' (Pitfall 4): meta_mco_pct resultante é a do sku='', NUNCA a da variação", () => {
+    const soldRows = [{ item_id: "MLB1", quantidade: 10, receita_bruta: 1000 }];
+    const targetRows = [
+      { item_id: "MLB1", sku: "", target_mco_pct: 15 },
+      { item_id: "MLB1", sku: "SKU-A", target_mco_pct: 99 },
+    ];
+    const result = buildPricePracticed(soldRows, targetRows);
+    expect(result[0].meta_mco_pct).toBe(15);
+    expect(result[0].meta_mco_pct).not.toBe(99);
+  });
+
+  it("meta_mco_pct=null quando não há meta cadastrada (não 0%)", () => {
+    const soldRows = [{ item_id: "MLB1", quantidade: 10, receita_bruta: 1000 }];
+    const result = buildPricePracticed(soldRows, []);
+    expect(result[0].meta_mco_pct).toBeNull();
+  });
+});
+
+describe("dispatchTool — get_competitive_price (Phase 105, EF via ctx.userJwt — molde get_reputation)", () => {
+  it("sem ctx.userJwt → {error:'sem_jwt'} sem lançar e SEM fetch", async () => {
+    const { sb } = makeStub([]);
+    const originalFetch = globalThis.fetch;
+    let fetchCalled = false;
+    globalThis.fetch = (async (...args: unknown[]) => {
+      fetchCalled = true;
+      return originalFetch(...(args as [any]));
+    }) as typeof fetch;
+    try {
+      const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_competitive_price", EVIL_ARGS) as Record<string, unknown>;
+      expect(result.error).toBe("sem_jwt");
+      expect(result).toHaveProperty("label");
+      expect(fetchCalled).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("com userJwt — invoca ml-precos-custos com type=references (NÃO mode) e Bearer do usuário por loja", async () => {
+    const { sb } = makeStub([]);
+    const FAKE_SUPABASE_URL = "https://ckcdevcxgvueywivefgx.supabase.co";
+    // @ts-ignore
+    globalThis.Deno = { env: { get: (k: string) => k === "SUPABASE_URL" ? FAKE_SUPABASE_URL : undefined } };
+    const fetchCalls: Array<{ url: string; authHeader: string }> = [];
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = (async (url: any, init?: RequestInit) => {
+        const urlStr = String(url instanceof Request ? url.url : url);
+        fetchCalls.push({ url: urlStr, authHeader: (init?.headers as any)?.Authorization ?? "" });
+        return new Response(JSON.stringify({ references: [] }), { status: 200 });
+      }) as typeof fetch;
+
+      const result = await dispatchTool(
+        sb, ORG_SERVER, ML_IDS_SERVER, "get_competitive_price", EVIL_ARGS,
+        { userJwt: "JWT-REAL" },
+      );
+
+      expect(fetchCalls.length).toBe(ML_IDS_SERVER.length);
+      for (const c of fetchCalls) {
+        expect(c.url).toContain("/functions/v1/ml-precos-custos");
+        expect(c.url).toContain("type=references"); // NÃO mode=references
+        expect(c.url).not.toContain("mode=references");
+        const params = new URL(c.url).searchParams;
+        expect(ML_IDS_SERVER).toContain(params.get("ml_user_id"));
+        expect(params.get("ml_user_id")).not.toBe("888"); // EVIL_ARGS ignorado
+        expect(c.authHeader).toBe("Bearer JWT-REAL");
+      }
+
+      // JWT nunca vaza no retorno serializado
+      expect(JSON.stringify(result)).not.toContain("JWT-REAL");
+    } finally {
+      globalThis.fetch = originalFetch;
+      // @ts-ignore
+      delete globalThis.Deno;
+    }
+  });
+});
+
+describe("dispatchTool — anti-IDOR get_cost_gaps/get_cancelled_revenue (Phase 105, org+mlUserIds)", () => {
+  it("get_cost_gaps: get_cmv_cheio_gaps recebe p_org_id + p_user_ids do servidor, ignora EVIL_ARGS", async () => {
+    const { sb, rpcCalls } = makeStub([
+      { sku: "SKU-1", marca: "M", linhas: 3, unidades: 10, receita: 500, tem_custo_medio: false },
+    ]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_cost_gaps", EVIL_ARGS) as Record<string, unknown>;
+    const call = rpcCalls.find((c) => c.fn === "get_cmv_cheio_gaps");
+    expect(call).toBeDefined();
+    expect(call!.params.p_org_id).toBe(ORG_SERVER);
+    expect(call!.params.p_user_ids).toEqual(ML_IDS_SERVER);
+    expect(JSON.stringify(call!.params)).not.toContain("ORG-ALHEIA");
+    expect(JSON.stringify(call!.params)).not.toContain("888");
+    expect((result.label as string)).toMatch(/legítimo/i);
+    expect(Array.isArray(result.rows)).toBe(true);
+  });
+
+  it("get_cancelled_revenue: get_cancelled_revenue recebe p_org_id + p_user_ids do servidor, retorna números (default 0)", async () => {
+    const { sb, rpcCalls } = makeStub([{ cancelled_revenue: 1234, cancelled_orders: 5 }]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_cancelled_revenue", EVIL_ARGS) as Record<string, unknown>;
+    const call = rpcCalls.find((c) => c.fn === "get_cancelled_revenue");
+    expect(call).toBeDefined();
+    expect(call!.params.p_org_id).toBe(ORG_SERVER);
+    expect(call!.params.p_user_ids).toEqual(ML_IDS_SERVER);
+    expect(JSON.stringify(call!.params)).not.toContain("ORG-ALHEIA");
+    expect(result.cancelled_revenue).toBe(1234);
+    expect(result.cancelled_orders).toBe(5);
+  });
+
+  it("get_cancelled_revenue: sem rows → default 0, nunca null/NaN", async () => {
+    const { sb } = makeStub([]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_cancelled_revenue", {}) as Record<string, unknown>;
+    expect(result.cancelled_revenue).toBe(0);
+    expect(result.cancelled_orders).toBe(0);
   });
 });
