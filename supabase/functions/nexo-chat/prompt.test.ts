@@ -138,4 +138,54 @@ describe("nexo-chat system prompt", () => {
   it("DRE real & caixa: distingue regime de caixa (get_dre_cash) de regime de competência (get_dre_result)", () => {
     expect(PERSONA).toMatch(/regime de caixa.*≠.*regime de competência/i);
   });
+
+  // --- Phase 105: preços/competitivo/completude (FINALIZAÇÃO da milestone) ---
+
+  it("preços/competitivo: cita as 4 tools novas de 105 na PERSONA", () => {
+    expect(PERSONA).toContain("get_price_practiced");
+    expect(PERSONA).toContain("get_competitive_price");
+    expect(PERSONA).toContain("get_cost_gaps");
+    expect(PERSONA).toContain("get_cancelled_revenue");
+  });
+
+  it("preços/competitivo: sugestão competitiva do ML = sinal, NÃO garantia nem preço do concorrente", () => {
+    expect(PERSONA).toMatch(/sugestão competitiva.*(não .*garantia|não .*preço do concorrente)/i);
+  });
+
+  it("preços/competitivo: custo ausente pode ser LEGÍTIMO em conta de revenda", () => {
+    expect(PERSONA).toMatch(/custo ausente.*(legítim|revenda)/i);
+  });
+
+  it("preços/competitivo: cancelado ≠ faturamento", () => {
+    expect(PERSONA).toMatch(/cancelad[oa].*≠.*faturamento/i);
+  });
+
+  it("preços/competitivo: preço praticado é histórico derivado, meta MCO só do anúncio inteiro (não por variação)", () => {
+    expect(PERSONA).toMatch(/preço praticado.*histórico derivado/i);
+    expect(PERSONA).toMatch(/meta de MCO.*anúncio inteiro.*não por variação/i);
+  });
+
+  it("cobertura da milestone: PERSONA cita as 8 tools novas de 103+104+105 (finalização)", () => {
+    const milestoneTools = [
+      "get_replenishment",
+      "get_purchase_suppliers",
+      "get_dre_result",
+      "get_dre_cash",
+      "get_projected_balance",
+      "get_taxes_paid",
+      "get_price_practiced",
+      "get_competitive_price",
+    ];
+    for (const tool of milestoneTools) {
+      expect(PERSONA).toContain(tool);
+    }
+  });
+
+  it("regressão: ordens/greps de 103/104 continuam válidos após finalização de 105", () => {
+    const idxAnti = PERSONA.indexOf("REGRA ANTI-INVENÇÃO DE NÚMERO");
+    const idxVerac = PERSONA.indexOf("VERACIDADE, FRESCURA E SEMÂNTICA");
+    const idxUso = PERSONA.indexOf("USO DAS FERRAMENTAS");
+    expect(idxVerac).toBeGreaterThan(idxAnti);
+    expect(idxVerac).toBeLessThan(idxUso);
+  });
 });

@@ -282,6 +282,31 @@ export const STRATEGIC = `# Nexo — Playbooks Estratégicos por Agente
   2. Antecipar estoque para sazonalidade (consultar Google Trends para projetar picos).
   3. Aumentar investimento em ads para capturar demanda incremental antes dos concorrentes.
 
+### 4.3 Sinal Competitivo Real (sugestão de preço do ML)
+
+**Contexto (Phase 105):** pela primeira vez o Rafael tem um DADO competitivo real —
+\`get_competitive_price\` (EF ml-precos-custos, sugestão de referência de preço do próprio
+Mercado Livre) — e um DADO de preço praticado próprio — \`get_price_practiced\` (preço médio
+histórico derivado, cruzado com a meta de MCO em ml_mco_targets).
+
+#### DADO: "vale reagir ao concorrente neste anúncio?" — get_competitive_price
+- **Diagnóstico:** a sugestão de preço do ML é um SINAL, nunca uma ordem — é o indicativo do
+  próprio ML, não o preço real do concorrente nem obrigação de igualar. Comparar SEMPRE o PREÇO
+  TOTAL (preço + frete), não só o preço do anúncio — a sugestão já traz os custos ML
+  (selling_fees/shipping_fees) embutidos. Cruzar com a margem (get_margin_summary /
+  get_price_practiced) e a meta de MCO antes de mexer em qualquer preço.
+- **Ação validada (passos):**
+  1. Se a sugestão está ABAIXO do preço praticado (get_price_practiced) e a MC%/MCO ainda fica
+     saudável ao igualar → considerar ajuste para não perder Buy Box/posição.
+  2. Se ao igualar a sugestão a MCO fura a meta cadastrada (get_price_practiced.meta_mco_pct) →
+     NÃO igualar: diferenciar por frete grátis/prazo (Full)/conteúdo/reputação (reforça 4.1) em
+     vez de queimar margem.
+  3. Se não há sugestão disponível para o item (no_suggestion=true ou item omitido no bulk) →
+     declarar a limitação, nunca inventar um concorrente ou um preço.
+- **Métrica de sucesso:** acompanhar MCO% praticado (get_price_practiced) vs meta e
+  posição/Buy Box após o ajuste; a sugestão do ML é indicativa — reavaliar em 7 dias (mesma
+  cadência do monitoramento de concorrentes em 4.1).
+
 ---
 
 ## 5. REGRAS TRANSVERSAIS (todos os agentes)
