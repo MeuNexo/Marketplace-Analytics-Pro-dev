@@ -1073,14 +1073,14 @@ Plans:
 
 ### Phase 105: Consultor CCO — Precos, competitivo e completude: adicionar tools read-only get_price_practiced (RPC orders_sold_products_agg + tabela ml_mco_targets: preco praticado x meta MCO), get_competitive_price (edge fn ml-precos-custos modo references, sugestao competitiva + comissao; usa JWT real do usuario se exigido), get_cost_gaps (RPC get_cmv_cheio_gaps: quais SKUs sem custo) e get_cancelled_revenue (RPC get_cancelled_revenue) no nexo-chat/tools.ts anti-IDOR; ampliar playbook Rafael com dado competitivo real; finalizar persona prompt.ts (apontar todas as novas tools + rotulos); testes de integracao. Deploy da EF nexo-chat pelo orquestrador. Ref spec: docs/superpowers/specs/2026-07-28-consultor-cco-completo-design.md
 
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** Fechar a milestone "Consultor CCO Completo": acender o pilar competitivo (Rafael) com dado real (get_competitive_price via EF ml-precos-custos, sugestão do ML), adicionar preço praticado × meta de MCO (get_price_practiced) e completar a leitura de dados (get_cost_gaps, get_cancelled_revenue) — 4 tools read-only anti-IDOR no nexo-chat + playbook Rafael ampliado + persona FINAL cobrindo todas as tools 103/104/105.
+**Requirements**: CCO-PRICE, CCO-COMPETITIVE, CCO-GAPS, CCO-CANCELLED, CCO-PLAYBOOK-R, CCO-PERSONA-FINAL, CCO-TESTS-105
 **Depends on:** Phase 104
-**Plans:** 0 plans
+**Plans:** 1 plan
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 105 to break down)
+- [ ] 105-01-PLAN.md — 4 tools read-only (get_price_practiced, get_competitive_price, get_cost_gaps, get_cancelled_revenue) com 3 padrões anti-IDOR + playbook Rafael 4.3 + persona FINAL + testes (contagem 31→35)
 
 ---
 
