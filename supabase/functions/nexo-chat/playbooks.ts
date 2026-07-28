@@ -152,14 +152,64 @@ export const STRATEGIC = `# Nexo — Playbooks Estratégicos por Agente
   4. **Monitoramento contínuo:** Velocidade de venda muda com sazonalidade e campanhas. Recalcular semanalmente, não mensalmente.
 - **Métrica de sucesso:** Zero rupturas em SKUs classe A | Cobertura média > 50 dias
 
-#### DADO: Estoque parado (giro < 1x em 60 dias)
-- **Diagnóstico:** Capital imobilizado sem retorno. Estoque parado tem custo de oportunidade (dinheiro que poderia estar em produto de alto giro).
+#### DADO: Estoque parado (giro < 1x em 60 dias) — mico / capital parado (sem_giro=true)
+- **Diagnóstico:** Capital imobilizado sem retorno. Estoque parado tem custo de oportunidade (dinheiro que poderia estar em produto de alto giro). Na tool get_replenishment, este é o campo \`sem_giro=true\` (definido como tem estoque e não vende — \`sku_stock>0\` e sem venda recente). **sem_giro é DIFERENTE de status_esgotado**: sem_giro = capital parado (tem produto, não gira); status_esgotado = SKU zerado, classificado por recência de venda (repor_esgotado / revisar_esgotado / descontinuar). Nunca confundir os dois eixos — recomendar "promoção flash" para um SKU com estoque ZERADO (status_esgotado) é erro; a ação certa ali é reposição, não desconto.
 - **Ação validada:**
   1. Verificar se anúncio está ativo e otimizado (às vezes estoque para porque anúncio está pausado ou mal posicionado).
   2. Se anúncio ok: criar promoção flash (15-20% off) por 7 dias para testar demanda.
   3. Se não vender mesmo com promoção: avaliar liquidação ou venda em outro canal (Shopee, Amazon, B2B).
   4. Regra de corte: se SKU não vende há > 90 dias e margem é negativa ou neutra, descontinuar.
-- **Métrica de sucesso:** Capital em estoque parado < 15% do estoque total | Giro médio > 2x em 60 dias
+- **Métrica de sucesso:** Capital em estoque parado < 15% do estoque total | Giro médio > 2x em 60 dias | sem_giro_count (get_replenishment) em queda mês a mês
+
+#### DADO: "O que comprar agora?" — mix de compra
+- **Diagnóstico:** Comprar sem critério (só pelo que "parece estar faltando") produz mix errado: repõe o que já tem giro alto e ignora quem realmente precisa. A tool get_replenishment retorna compra_sugerida por SKU já cruzando velocidade de venda × cobertura × ponto de reposição — é a fonte, não um chute.
+- **Ação validada:**
+  1. Rodar get_replenishment e priorizar SKUs com gatilho_ativo=true (compra recomendada agora).
+  2. Priorizar por impacto financeiro: compra_sugerida × margem do SKU (não só quantidade) — SKU de margem alta e giro alto vale mais que SKU de margem baixa com o mesmo volume.
+  3. Cruzar com get_margin_by_product antes de decidir o mix final: comprar volume de SKU com MC% negativa é destruir caixa, não repor.
+  4. Nunca decidir compra só pelo compra_sugerida isolado — é PROJEÇÃO baseada em velocidade de venda, não pedido feito; validar com o dono da conta antes de emitir OC.
+- **Métrica de sucesso:** % do valor comprado concentrado em SKUs classe A/B (margem×giro) > 70% | Zero OC emitida para SKU com MC% negativa
+
+#### DADO: MOQ × giro — lote econômico
+- **Diagnóstico:** Comprar o lote mínimo do fornecedor (MOQ) sem checar giro trava capital em excesso de estoque de baixo giro; comprar abaixo do MOQ às vezes nem é possível. get_replenishment retorna \`param_moq\`/\`param_pack\` (lote mínimo/múltiplo, com fallback sku→fornecedor→marca→global) — cruzar com venda_dia antes de fechar OC.
+- **Ação validada:**
+  1. Calcular quantos dias de cobertura o MOQ representa: MOQ / venda_dia. Se > 90 dias de cobertura, o lote é grande demais para o giro do SKU.
+  2. Se MOQ força excesso: negociar lote menor com o fornecedor OU absorver o excesso apenas para SKUs classe A (alto giro, aceita capital parado temporário).
+  3. Para SKU classe C (cauda longa) com MOQ alto: considerar não repor — melhor ruptura controlada que capital parado num SKU de baixo giro.
+- **Métrica de sucesso:** Cobertura implícita do MOQ < 60 dias para SKUs classe A/B | Nenhuma OC de SKU classe C força mais de 90 dias de estoque
+
+#### DADO: Ponto de pedido com fator sazonal
+- **Diagnóstico:** Ponto de pedido fixo (sem ajuste sazonal) gera ruptura em pico de demanda e excesso em baixa temporada. get_replenishment retorna \`ponto_reposicao\`/\`alvo\` já ajustados e \`fator_sazonal\` (multiplicador de demanda esperada pela época) — usar esse dado em vez de assumir venda_dia constante.
+- **Ação validada:**
+  1. Antes de decidir "comprar pouco" ou "não é urgente", checar fator_sazonal do SKU — se > 1, a demanda esperada é maior que a histórica recente (ex.: pré-temporada de rodeio/inverno).
+  2. Para SKUs com fator_sazonal alto e cobertura_atual próxima do ponto_reposicao, antecipar a compra (lead time real + buffer, não esperar o gatilho estourar).
+  3. Registrar SKUs onde o fator_sazonal divergiu muito do realizado (ex.: pico não veio) para recalibrar a próxima temporada.
+- **Métrica de sucesso:** Zero ruptura em SKU classe A durante pico sazonal identificado | Erro médio entre fator_sazonal previsto e demanda realizada em queda
+
+#### DADO: Priorização ABC de COMPRA (distinto de ABC de urgência)
+- **Diagnóstico:** A Curva ABC de urgência (já usada no bloco de cobertura) prioriza por velocidade × preço × MC% para decidir QUANDO repor. ABC de COMPRA é sobre QUANTO investir: mesmo SKU classe A de urgência pode não merecer o maior cheque se a margem for baixa. São perguntas diferentes — "preciso repor logo?" vs "vale investir mais capital aqui?".
+- **Ação validada:**
+  1. Classe A de compra: SKU com compra_sugerida alta × margem alta (get_margin_by_product) — prioridade de capital, comprar sem hesitar.
+  2. Classe B: compra_sugerida alta mas margem mediana — comprar, mas negociar melhor custo antes.
+  3. Classe C: compra_sugerida baixa ou margem baixa — avaliar se vale manter o SKU no mix antes de investir mais capital.
+  4. Nunca tratar "produto vende muito" (urgência) como sinônimo de "produto merece mais capital" (compra) — cruzar sempre os dois eixos.
+- **Métrica de sucesso:** % do capital de compra alocado em classe A de compra > 60% | Zero SKU classe C recebendo o maior aporte de capital do mês
+
+#### DADO: OC em trânsito — quanto comprar AGORA descontando o que já vem
+- **Diagnóstico:** Recomendar compra sem checar OC já emitida gera compra duplicada (capital parado em dobro quando a OC chegar). get_replenishment retorna \`qtd_a_caminho\`/\`data_proxima_chegada\` — sempre checar antes de sugerir nova compra.
+- **Ação validada:**
+  1. Antes de recomendar compra_sugerida como valor final, verificar se qtd_a_caminho > 0 — se sim, a necessidade real de compra nova é menor (a RPC já desconta isso no cálculo, mas o rótulo deve deixar claro ao usuário que parte já está a caminho).
+  2. Se data_proxima_chegada estiver distante (> lead time normal do fornecedor), sinalizar risco de atraso e considerar reforçar a compra mesmo com OC em trânsito.
+  3. Nunca tratar qtd_a_caminho como estoque disponível hoje — é uma fonte separada e parcial (pode atrasar ou ser cancelada pelo fornecedor).
+- **Métrica de sucesso:** Zero OC duplicada emitida para SKU com qtd_a_caminho > cobertura necessária | Atraso médio entre data_proxima_chegada e chegada real em queda
+
+#### DADO: Raciocínio compra × venda — "comprei o mix certo?"
+- **Diagnóstico:** Comprar bem não é só reposição pontual — é perguntar periodicamente se o mix comprado bate com o que realmente vendeu (margem × giro), e não só "o que faltou". Cruzar get_replenishment (o que foi/está sendo reposto) com get_margin_by_product e get_margin_by_brand (o que realmente deu lucro) revela desalinhamento entre compra e venda.
+- **Ação validada:**
+  1. Periodicamente, comparar SKUs com alto compra_sugerida acumulado vs SKUs com maior margem/venda no período — se forem grupos diferentes, o mix de compra está desalinhado com o que vende bem.
+  2. Identificar capital parado (sem_giro=true) concentrado em marcas/categorias específicas — pode indicar erro sistemático de compra, não só SKU isolado.
+  3. Erro comum a evitar: escalar ads (get_ads_by_product) num SKU que está em ruptura ou runway curto (get_replenishment sem cobertura suficiente) — gera reclamação e desperdiça budget; sempre checar estoque/reposição ANTES de recomendar escalar ads.
+- **Métrica de sucesso:** SKUs no top 10 de compra_sugerida acumulada também aparecem no top 10 de margem/venda (correlação alta) | Redução de capital parado (sem_giro) concentrado nas mesmas marcas mês a mês
 
 ### 3.2 Logística & Envio
 

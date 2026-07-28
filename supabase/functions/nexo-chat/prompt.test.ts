@@ -89,4 +89,24 @@ describe("nexo-chat system prompt", () => {
     expect(idxVerac).toBeGreaterThan(0);
     expect(idxVerac).toBeLessThan(idxUso);
   });
+
+  // --- Phase 103: compra × venda (Consultor CCO) ---
+
+  it("compra-venda: cita get_replenishment e get_purchase_suppliers na PERSONA", () => {
+    expect(PERSONA).toContain("get_replenishment");
+    expect(PERSONA).toContain("get_purchase_suppliers");
+  });
+
+  it("compra-venda: rótulo de compra sugerida = projeção, não pedido feito", () => {
+    expect(PERSONA).toMatch(/compra sugerida.*(projeção|não .*pedido feito)/i);
+  });
+
+  it("compra-venda: distingue sem_giro (capital parado) de status_esgotado (SKU zerado)", () => {
+    expect(PERSONA).toContain("sem_giro");
+    expect(PERSONA).toMatch(/status_esgotado|esgotado/i);
+  });
+
+  it("compra-venda: instrui raciocínio compra × venda cruzando velocidade × estoque × cobertura × caixa", () => {
+    expect(PERSONA).toMatch(/velocidade de venda.*estoque.*cobertura.*caixa/i);
+  });
 });
