@@ -109,4 +109,33 @@ describe("nexo-chat system prompt", () => {
   it("compra-venda: instrui raciocínio compra × venda cruzando velocidade × estoque × cobertura × caixa", () => {
     expect(PERSONA).toMatch(/velocidade de venda.*estoque.*cobertura.*caixa/i);
   });
+
+  // --- Phase 104: DRE real & caixa (Consultor CCO) ---
+
+  it("DRE real & caixa: cita as 4 tools novas na PERSONA", () => {
+    expect(PERSONA).toContain("get_dre_result");
+    expect(PERSONA).toContain("get_dre_cash");
+    expect(PERSONA).toContain("get_projected_balance");
+    expect(PERSONA).toContain("get_taxes_paid");
+  });
+
+  it("DRE real & caixa: rotula que get_dre_result sozinho NÃO é o resultado completo", () => {
+    expect(PERSONA).toMatch(/get_dre_result sozinho NÃO é o resultado completo/i);
+  });
+
+  it("DRE real & caixa: rotula imposto guia real ≠ imposto estimado (total_tax)", () => {
+    expect(PERSONA).toMatch(/imposto guia real.*≠.*(estimado|total_tax)/i);
+  });
+
+  it("DRE real & caixa: saldo projetado = 2 cenários (pessimista/realista), sem menção a 'otimista' perto da projeção", () => {
+    expect(PERSONA).toMatch(/2 cenários|pessimista.*realista/i);
+    const idx = PERSONA.indexOf("saldo projetado");
+    expect(idx).toBeGreaterThan(-1);
+    const trecho = PERSONA.slice(Math.max(0, idx - 100), idx + 200);
+    expect(trecho).not.toMatch(/otimista/i);
+  });
+
+  it("DRE real & caixa: distingue regime de caixa (get_dre_cash) de regime de competência (get_dre_result)", () => {
+    expect(PERSONA).toMatch(/regime de caixa.*≠.*regime de competência/i);
+  });
 });

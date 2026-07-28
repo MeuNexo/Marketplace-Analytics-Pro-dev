@@ -132,6 +132,40 @@ export const STRATEGIC = `# Nexo — Playbooks Estratégicos por Agente
   3. Revisar ordens de compra pendentes: postergar OCs de itens com cobertura > 60 dias.
   4. Concentrar investimento em ads nos produtos com MC% > 20% (geram caixa rápido).
 
+### 2.3 DRE de Resultado (competência) vs DRE de Caixa (recebimento) vs Base-Pagos
+
+**Contexto:** o Consultor tem 3 lentes financeiras que NUNCA devem ser misturadas na mesma resposta sem dizer qual é qual: (1) DRE por COMPETÊNCIA (get_dre_result + get_margin_summary/get_day_kpis) — quando a venda aconteceu, independente de quando o dinheiro entrou; (2) DRE de CAIXA (get_dre_cash) — quando o dinheiro efetivamente entrou/saiu (liberação Mercado Pago); (3) base-pagos (get_margin_summary sozinho) — pedidos com status pago no período, sem a régua de competência/bloco.
+
+#### DADO: usuário pergunta "qual foi meu lucro/resultado real em [mês]"
+- **Diagnóstico:** "lucro real" tem 3 respostas possíveis dependendo do regime perguntado — nunca assumir qual sem checar o contexto da pergunta.
+- **Ação validada:**
+  1. Chamar get_dre_result(month) para as deduções operacionais do mês por competência.
+  2. Chamar get_margin_summary ou get_day_kpis do MESMO mês para receita/CMV/margem de contribuição — get_dre_result sozinho NÃO tem essas linhas.
+  3. Se o mês estiver em regime de APURAÇÃO (get_dre_result.regime === "apuracao"), usar get_taxes_paid para o imposto/INSS reais em vez do estimado.
+  4. Se a pergunta for sobre CAIXA ("quanto entrou de verdade"), usar get_dre_cash em vez de 1-3.
+- **Métrica de sucesso:** a resposta cita explicitamente qual regime (competência/caixa/pagos) foi usado.
+
+### 2.4 Break-even de Caixa do Mês (Phase 100)
+
+#### DADO: usuário pergunta "quanto falta vender para fechar o mês no zero" / "break-even de caixa"
+- **Diagnóstico:** get_dre_cash(month=mês corrente) já traz o forecast completo (Phase 100) — saídas previstas totais, entradas garantidas/agendadas e o ritmo de vendas dos últimos 7 dias.
+- **Ação validada:**
+  1. Somar saída prevista total (saidas_pagas + saidas_pendentes + estornos_ocorridos/previstos + imposto_previsto_restante) do campo forecast.
+  2. Comparar com entrada garantida (entradas_liberadas + entradas_agendadas).
+  3. O gap dividido pela taxa_venda_para_caixa (que já desconta estornos) e pelo ritmo diário médio (vendas_7d_media_diaria) dá a estimativa de dias/venda adicional necessária.
+  4. Checar alerta_recorrencia — se houver linha, avisar que pode ser falso-positivo (parcela real recorrente, não um vazamento de caixa) antes de soar alarme.
+- **Métrica de sucesso:** resposta traz um número de R$ faltante E um horizonte de dias, nunca só um "está apertado" vago.
+
+### 2.5 Imposto Guia Real vs Imposto Cheio (estimado)
+
+#### DADO: usuário pergunta "quanto pago de imposto de verdade" / "ICMS PIS COFINS real" / "INSS real"
+- **Diagnóstico:** total_tax (de get_day_kpis/get_margin_summary) é uma ESTIMATIVA sobre a venda, usada para MCO/precificação. O valor REAL pago (com créditos) só existe na guia emitida, que sai no mês SEGUINTE ao mês de venda (régua M+1).
+- **Ação validada:**
+  1. Usar get_taxes_paid(month=mês de venda perguntado) — a tool já aplica o deslocamento M+1 internamente.
+  2. Se a guia ainda não existir para aquele mês (ex.: mês muito recente, guia ainda não emitida), declarar a limitação e usar o estimado como PREVISÃO, nunca como fato.
+  3. Nunca somar linhas com status='cancelled' — são crédito, não imposto pago.
+- **Métrica de sucesso:** nunca afirmar "imposto real" de um mês sem ter chamado get_taxes_paid primeiro.
+
 ---
 
 ## 3. ESTELA — Estoque & Operações
