@@ -37,6 +37,10 @@
  *   get_goals             → table ml_targets (.in seller_id, mlUserIds — sem organization_id!) anti-IDOR via seller_id
  *   get_replenishment     → get_replenishment_by_sku(p_org_id,p_sales_window_days,p_demand_multiplier,p_smart) [INVOKER, org-only, p_smart=true]
  *   get_purchase_suppliers → get_purchase_order_suppliers(p_org_id) [INVOKER, org-only]
+ *   get_dre_result        → get_dre_operational_by_competence(p_org_id,p_month) [INVOKER, org-only] + select dre_month_close (regime)
+ *   get_dre_cash          → get_dre_cash(p_org_id,p_month) [INVOKER, org-only, sempre] + get_dre_cash_forecast(idem) [SÓ mês corrente]
+ *   get_projected_balance → get_projected_balance_summary(p_org_id,p_projection_days,p_include_purchase_forecasts) [INVOKER, org-only, default 120d]
+ *   get_taxes_paid        → get_imposto_guia_by_competence(p_org_id,p_competence) + get_inss_guia_by_competence(idem) [INVOKER, org-only, régua M+1]
  */
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -65,6 +69,33 @@ export function clampDate(s: unknown): string | null {
 
 function cap(rows: unknown): unknown {
   return Array.isArray(rows) ? rows.slice(0, MAX_ROWS) : rows;
+}
+
+/**
+ * sumGuiaReal — helper PURO exportado (Task 1, Phase 104). Soma `total` das linhas
+ * de guia (get_imposto_guia_by_competence / get_inss_guia_by_competence) EXCLUINDO
+ * status='cancelled' (crédito, nunca imposto pago). Mirror de apuracaoImpostoReal
+ * (src/lib/dreRegime.ts) / resolveInssReal (src/lib/dreInss.ts). Um mês 100%
+ * cancelado soma 0, nunca null.
+ */
+export function sumGuiaReal(rows: Array<{ status?: string; total?: number }>): number {
+  return Math.round(
+    rows
+      .filter((r) => r.status !== "cancelled")
+      .reduce((sum, r) => sum + (Number(r.total) || 0), 0) * 100,
+  ) / 100;
+}
+
+/**
+ * monthPlusOne — mês seguinte a `pMonth` ("YYYY-MM-01" → "YYYY-MM-01" do mês seguinte),
+ * aritmética NUMÉRICA (nunca concat de string), tratando virada de dezembro. Mirror de
+ * monthPlusOne em src/lib/dreRegime.ts. Usado pela régua M+1 de get_taxes_paid.
+ */
+function monthPlusOne(pMonth: string): string {
+  const [y, m] = pMonth.split("-").map(Number);
+  const nextMonth = m === 12 ? 1 : m + 1;
+  const nextYear = m === 12 ? y + 1 : y;
+  return `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
 }
 
 // ── function declarations (Gemini) — SEM param de org/seller ─────────────────
@@ -341,6 +372,69 @@ export const TOOL_DECLARATIONS: FnDecl[] = [
       "Lista de fornecedores distintos das ordens de compra da conta. Use antes de recomendar " +
       "consolidação de pedido ou responder 'de quem eu compro'.",
     parameters: { type: "object", properties: {} },
+  },
+
+  // ── Phase 104: DRE real (competência) & caixa (recebimento) — Consultor CCO ──
+  {
+    name: "get_dre_result",
+    description:
+      "DEDUÇÕES OPERACIONAIS por bloco/categoria do mês por COMPETÊNCIA (Pessoal, Estrutura, " +
+      "Serviços, Operacional, Financeiro, Não classificado). NÃO é o DRE completo — falta " +
+      "receita/CMV/margem (para isso combinar com get_margin_summary/get_day_kpis do mesmo mês). " +
+      "Os blocos impostos_venda e excluido são informativos e NÃO devem ser somados ao resultado " +
+      "operacional (duplicaria). Expõe regime (apuracao=mês fechado / previsao=mês aberto) e o " +
+      "flag double_count_risk por linha. Competência ≠ pagos ≠ caixa.",
+    parameters: {
+      type: "object",
+      properties: {
+        month: { type: "string", description: "Mês YYYY-MM (opcional, default mês corrente)" },
+      },
+    },
+  },
+  {
+    name: "get_dre_cash",
+    description:
+      "DRE de regime de CAIXA — quando o dinheiro entrou/saiu de fato (recebimento Mercado Pago), " +
+      "DIFERENTE de get_dre_result (competência). Inclui um forecast completo do painel 'Fechar o " +
+      "mês' (ritmo de vendas, taxas medidas, break-even), presente SÓ para o mês corrente.",
+    parameters: {
+      type: "object",
+      properties: {
+        month: { type: "string", description: "Mês YYYY-MM (opcional, default mês corrente)" },
+      },
+    },
+  },
+  {
+    name: "get_projected_balance",
+    description:
+      "Saldo PROJETADO em 2 cenários (pessimista/realista — NÃO existe otimista) + data crítica + " +
+      "saldo mínimo, no fim de um horizonte longo (default 120 dias). DIFERENTE de get_treasury_panel " +
+      "(saldo mínimo, horizonte curto, foco alerta) e get_cashflow (série diária). É PROJEÇÃO, não " +
+      "realizado.",
+    parameters: {
+      type: "object",
+      properties: {
+        horizon_days: { type: "integer", description: "Horizonte em dias (opcional, default 120)" },
+        include_purchase_forecasts: {
+          type: "boolean",
+          description: "Incluir previsões de compra no cálculo (opcional, default false)",
+        },
+      },
+    },
+  },
+  {
+    name: "get_taxes_paid",
+    description:
+      "Imposto (ICMS/PIS/COFINS) e INSS REAIS por guia (com créditos), do mês de venda pedido — a " +
+      "tool aplica a régua M+1 internamente (a guia da venda do mês M vence em M+1). DIFERENTE do " +
+      "imposto estimado (total_tax de get_day_kpis/get_margin_summary, que serve só para " +
+      "MCO/precificação). Passe só o mês de VENDA, nunca a competência da guia.",
+    parameters: {
+      type: "object",
+      properties: {
+        month: { type: "string", description: "Mês de VENDA YYYY-MM (opcional, default mês corrente)" },
+      },
+    },
   },
 ];
 
@@ -1068,6 +1162,127 @@ export async function dispatchTool(
       });
       const rows = (data ?? []) as Array<Record<string, unknown>>;
       return buildReplenishmentResult(rows);
+    }
+
+    // ── Phase 104: DRE real (competência) & caixa (recebimento) — org-only ──────
+    case "get_dre_result": {
+      const pm = clampMonth(args.month) ?? today().slice(0, 7);
+      const pMonth = `${pm}-01`;
+      const { data } = await sb.rpc("get_dre_operational_by_competence", {
+        p_org_id: orgId, p_month: pMonth,
+      });
+      const rows = (data ?? []) as Array<Record<string, unknown>>;
+
+      // Regime: checar se o mês está FECHADO (apuração) — select direto anti-IDOR.
+      const { data: closeRow } = await sb
+        .from("dre_month_close")
+        .select("closed_at")
+        .eq("organization_id", orgId)
+        .eq("competence_month", pMonth)
+        .maybeSingle();
+      const regime = closeRow ? "apuracao" : "previsao";
+
+      return {
+        month: pm,
+        regime,
+        label:
+          "Estas são as DEDUÇÕES OPERACIONAIS por bloco/categoria (Pessoal, Estrutura, Serviços, " +
+          "Operacional, Não classificado, Financeiro) que descem da Margem de Contribuição até o " +
+          "Resultado — NÃO é o DRE completo (falta receita/CMV/margem: use get_margin_summary ou " +
+          "get_day_kpis para o mesmo mês). Blocos impostos_venda e excluido são informativos — NÃO " +
+          "somar ao resultado operacional (já contabilizados em outra camada, senão duplica). " +
+          `Regime deste mês: ${
+            regime === "apuracao"
+              ? "APURAÇÃO (fechado — imposto/INSS deveriam vir de get_taxes_paid, não do estimado)"
+              : "PREVISÃO (aberto — valores ainda são estimativa)"
+          }.`,
+        rows: cap(rows),
+      };
+    }
+    case "get_dre_cash": {
+      const pm = clampMonth(args.month) ?? today().slice(0, 7);
+      const pMonth = `${pm}-01`;
+      const isCurrentMonth = pm === today().slice(0, 7);
+
+      const { data: cashData } = await sb.rpc("get_dre_cash", { p_org_id: orgId, p_month: pMonth });
+      const rows = (cashData ?? []) as Array<Record<string, unknown>>;
+
+      let forecast: unknown = null;
+      if (isCurrentMonth) {
+        const { data: fcData } = await sb.rpc("get_dre_cash_forecast", {
+          p_org_id: orgId, p_month: pMonth,
+        });
+        forecast = cap(fcData ?? []);
+      }
+
+      return {
+        month: pm,
+        label:
+          "DRE de regime de CAIXA — quando o dinheiro efetivamente entrou/saiu (recebimento Mercado " +
+          "Pago), DIFERENTE de get_dre_result (regime de competência). Seção 'entrada': " +
+          "bruto/liquido/descontos_fonte/refunds/a_liberar por liberação do MP. Seção 'saida': pago " +
+          "no mês por bloco/categoria (SEM filtrar impostos_venda/excluido — inclui tudo). Seção " +
+          "'previsao': previsão SIMPLES de imposto (não confundir com o campo forecast abaixo).",
+        rows: cap(rows),
+        forecast,
+        forecast_note: isCurrentMonth
+          ? "Forecast completo do painel 'Fechar o mês' (Phase 100) — inclui ritmo de vendas, taxas " +
+            "medidas e alerta_recorrencia (detector de recorrência suspeita — PODE ter falso-positivo " +
+            "em parcelas reais, tratar como sinal a checar, não como fato)."
+          : "Forecast só se aplica ao MÊS CORRENTE — não disponível para mês passado/futuro.",
+      };
+    }
+    case "get_projected_balance": {
+      const horizonDays = typeof args.horizon_days === "number" && args.horizon_days > 0 &&
+          args.horizon_days <= 365
+        ? Math.floor(args.horizon_days)
+        : 120; // default do hook, NÃO 30 (get_treasury_panel usa 30)
+      const includePurchaseForecasts = args.include_purchase_forecasts === true; // default false (CASHFIX-06)
+
+      const { data } = await sb.rpc("get_projected_balance_summary", {
+        p_org_id: orgId,
+        p_projection_days: horizonDays,
+        p_include_purchase_forecasts: includePurchaseForecasts,
+      });
+      const row = Array.isArray(data) ? data[0] : data;
+
+      return {
+        horizon_days: horizonDays,
+        label:
+          "Saldo PROJETADO em 2 cenários (pessimista e realista — não há um terceiro cenário): " +
+          "pessimista = saldo atual menos TODAS as saídas previstas no horizonte, sem contar " +
+          "nenhuma entrada futura (pior caso); realista = saldo atual + entradas − saídas " +
+          "projetadas dia a dia. critical_date = 1º dia em que o realista fica negativo; " +
+          "min_balance = pior ponto do horizonte. DIFERENTE de get_treasury_panel (saldo MÍNIMO em " +
+          "horizonte curto, foco em alerta) e de get_cashflow (série diária detalhada) — esta é a " +
+          "projeção de 'quanto vou ter' no fim do horizonte.",
+        ...(row ?? {}),
+      };
+    }
+    case "get_taxes_paid": {
+      const pm = clampMonth(args.month) ?? today().slice(0, 7);
+      const saleMonth = `${pm}-01`;
+      const guiaCompetence = monthPlusOne(saleMonth); // régua M+1 — NUNCA o mês de venda direto
+
+      const [{ data: impostoData }, { data: inssData }] = await Promise.all([
+        sb.rpc("get_imposto_guia_by_competence", { p_org_id: orgId, p_competence: guiaCompetence }),
+        sb.rpc("get_inss_guia_by_competence", { p_org_id: orgId, p_competence: guiaCompetence }),
+      ]);
+      const impostoRows = (impostoData ?? []) as Array<{ category: string; total: number; status: string }>;
+      const inssRows = (inssData ?? []) as Array<{ category: string; total: number; status: string }>;
+
+      return {
+        sale_month: pm,
+        guia_competence: guiaCompetence.slice(0, 7),
+        label:
+          "Imposto/INSS REAIS por guia (com créditos), régua de COMPETÊNCIA DESLOCADA: a guia que " +
+          `sai/vence em ${guiaCompetence.slice(0, 7)} é o encargo real do mês de venda ${pm} (M+1, ` +
+          "regra travada — ICMS de venda de junho é pago ~dia 21 de julho). DIFERENTE do imposto " +
+          "estimado (total_tax) de get_day_kpis/get_margin_summary, que é sobre a venda, não a guia " +
+          "real. status='cancelled' é crédito e NUNCA soma; 'paid'/'pending' somam (competência).",
+        imposto_venda: { rows: cap(impostoRows), total_real: sumGuiaReal(impostoRows) },
+        inss_folha: { rows: cap(inssRows), total_real: sumGuiaReal(inssRows) },
+      };
     }
 
     default:
