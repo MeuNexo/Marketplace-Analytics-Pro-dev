@@ -1051,14 +1051,14 @@ Plans:
 
 ### Phase 103: Consultor CCO — Ferramentas de Compra vs Venda: adicionar tools read-only get_replenishment (RPC get_replenishment_by_sku: compra sugerida, gatilho, venda/dia x estoque, cobertura, micos/sem giro, custo ausente, OC em transito) e get_purchase_suppliers (RPC get_purchase_order_suppliers) no nexo-chat/tools.ts escopadas anti-IDOR; ampliar playbook Estela em playbooks.ts (mix de compra, capital parado/micos, MOQ x giro, ponto de pedido sazonal, ABC de compra, raciocinio compra x venda); ensinar raciocinio compra x venda na persona prompt.ts; testes espelhando tools.test.ts/prompt.test.ts; deploy da EF nexo-chat pelo orquestrador. Ref spec: docs/superpowers/specs/2026-07-28-consultor-cco-completo-design.md
 
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** O Consultor de IA (nexo-chat) responde análises de compra × venda — o que comprar agora, micos/capital parado, "comprei o mix certo?" e fornecedores de OC — via 2 tools read-only escopadas anti-IDOR, com playbook e persona ampliados.
+**Requirements**: CCO-REPL, CCO-SUPPLIERS, CCO-PLAYBOOK, CCO-PERSONA, CCO-TESTS
 **Depends on:** Phase 102
-**Plans:** 0 plans
+**Plans:** 1 plan
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 103 to break down)
+- [ ] 103-01-PLAN.md — [W1] get_replenishment + get_purchase_suppliers em tools.ts (anti-IDOR org-only, summary+sample estratificado), playbook Estela + persona compra×venda, testes espelhados
 
 ### Phase 104: Consultor CCO — DRE real e caixa: adicionar tools read-only get_dre_result (RPC get_dre_operational_by_competence, o lucro real por competencia), get_dre_cash (RPCs get_dre_cash + get_dre_cash_forecast), get_projected_balance (RPC get_projected_balance_summary, 3 cenarios) e get_taxes_paid (RPCs get_imposto_guia_by_competence + get_inss_guia_by_competence) no nexo-chat/tools.ts anti-IDOR com rotulos de veracidade (competencia != pagos != caixa; imposto guia != imposto cheio); ampliar playbook Gabriel (DRE resultado vs caixa vs pagos, break-even de caixa); testes. Deploy da EF nexo-chat pelo orquestrador. Ref spec: docs/superpowers/specs/2026-07-28-consultor-cco-completo-design.md
 
