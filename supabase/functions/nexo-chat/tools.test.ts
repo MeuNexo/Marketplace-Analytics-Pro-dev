@@ -22,7 +22,13 @@ import {
 
 // ── Stub Supabase encadeável que grava o que foi chamado ─────────────────────
 type RpcCall = { fn: string; params: Record<string, unknown> };
-type SelectCall = { table: string; eqs: Record<string, unknown>; ins: Record<string, unknown[]> };
+type SelectCall = {
+  table: string;
+  eqs: Record<string, unknown>;
+  ins: Record<string, unknown[]>;
+  /** Phase 106: payload de .insert() — usado só por propose_memory. */
+  inserted?: Record<string, unknown>;
+};
 
 function makeStub(rows: unknown[] = []) {
   const rpcCalls: RpcCall[] = [];
@@ -35,6 +41,11 @@ function makeStub(rows: unknown[] = []) {
       select: () => chain,
       eq: (col: string, val: unknown) => { call.eqs[col] = val; return chain; },
       in: (col: string, val: unknown[]) => { call.ins[col] = val; return chain; },
+      // Phase 106: propose_memory é a única tool que escreve (e só em nexo_memories)
+      insert: (payload: Record<string, unknown>) => {
+        call.inserted = payload;
+        return Promise.resolve({ data: null, error: null });
+      },
       gte: () => chain,
       lte: () => chain,
       order: () => chain,
@@ -66,7 +77,7 @@ const ML_IDS_SERVER = ["111", "222"];
 const EVIL_ARGS = { org_id: "ORG-ALHEIA", seller_id: "999", ml_user_id: "888" };
 
 describe("TOOL_DECLARATIONS", () => {
-  it("declara as 35 tools esperadas (inclui as 4 novas de preços/competitivo/completude — Phase 105)", () => {
+  it("declara as 36 tools esperadas (35 read-only + propose_memory da Phase 106)", () => {
     const names = TOOL_DECLARATIONS.map((d) => d.name).sort();
     expect(names).toEqual(
       [
@@ -102,6 +113,8 @@ describe("TOOL_DECLARATIONS", () => {
         // Phase 103 novas: compra × venda
         "get_replenishment",
         "get_purchase_suppliers",
+        // Phase 106 nova: única de escrita (só em nexo_memories)
+        "propose_memory",
         // Phase 104 novas: DRE real (competência) & caixa
         "get_dre_result",
         "get_dre_cash",
@@ -1247,5 +1260,79 @@ describe("dispatchTool — anti-IDOR get_cost_gaps/get_cancelled_revenue (Phase 
     const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_cancelled_revenue", {}) as Record<string, unknown>;
     expect(result.cancelled_revenue).toBe(0);
     expect(result.cancelled_orders).toBe(0);
+  });
+});
+
+// ── Phase 106: propose_memory (única tool que escreve — só em nexo_memories) ──
+describe("dispatchTool — propose_memory (Phase 106)", () => {
+  const CONV = "11111111-1111-1111-1111-111111111111";
+  const USER = "22222222-2222-2222-2222-222222222222";
+
+  it("grava SEMPRE status='pending' — nunca 'active' (aprovação é humana)", async () => {
+    const { sb, selectCalls } = makeStub([]);
+    const r = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "propose_memory", {
+      title: "CMV", body: "custo cheio da nota", type: "decision",
+    }, { userId: USER, conversationId: CONV }) as Record<string, unknown>;
+
+    const call = selectCalls.find((c) => c.table === "nexo_memories");
+    expect(call?.inserted?.status).toBe("pending");
+    expect(call?.inserted?.status).not.toBe("active");
+    expect(r.proposed).toBe(true);
+    // o modelo é instruído a NÃO dizer que já salvou
+    expect(String(r.aviso)).toMatch(/PENDENTE/);
+  });
+
+  it("anti-IDOR: organization_id vem do SERVIDOR, ignorando o que o modelo mandar", async () => {
+    const { sb, selectCalls } = makeStub([]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "propose_memory", {
+      ...EVIL_ARGS, title: "x", body: "y", type: "context",
+    }, { userId: USER });
+    const call = selectCalls.find((c) => c.table === "nexo_memories");
+    expect(call?.inserted?.organization_id).toBe(ORG_SERVER);
+    expect(JSON.stringify(call?.inserted)).not.toContain("ORG-ALHEIA");
+  });
+
+  it("escopo 'user' sem userId do servidor cai para 'org' (respeita o CHECK do schema)", async () => {
+    const { sb, selectCalls } = makeStub([]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "propose_memory", {
+      title: "x", body: "y", type: "preference", scope: "user",
+    }, {});
+    const call = selectCalls.find((c) => c.table === "nexo_memories");
+    expect(call?.inserted?.scope).toBe("org");
+    expect(call?.inserted?.user_id).toBeNull();
+  });
+
+  it("type inválido do modelo vira 'context' (nunca viola o CHECK)", async () => {
+    const { sb, selectCalls } = makeStub([]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "propose_memory", {
+      title: "x", body: "y", type: "DROP TABLE",
+    }, { userId: USER });
+    const call = selectCalls.find((c) => c.table === "nexo_memories");
+    expect(call?.inserted?.type).toBe("context");
+  });
+
+  it("title/body vazios → não grava", async () => {
+    const { sb, selectCalls } = makeStub([]);
+    const r = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "propose_memory", {
+      title: "  ", body: "", type: "context",
+    }, { userId: USER }) as Record<string, unknown>;
+    expect(r.proposed).toBe(false);
+    expect(selectCalls.find((c) => c.table === "nexo_memories")?.inserted).toBeUndefined();
+  });
+
+  it("declaration não expõe org/user como parâmetro do modelo", () => {
+    const decl = TOOL_DECLARATIONS.find((d) => d.name === "propose_memory")!;
+    const props = Object.keys(decl.parameters.properties ?? {});
+    expect(props).not.toContain("org_id");
+    expect(props).not.toContain("user_id");
+    expect(props).not.toContain("organization_id");
+    expect(props).not.toContain("status");
+  });
+
+  it("é a ÚNICA tool de escrita: nenhuma outra declaration sugere mutação no ML", () => {
+    const escrita = TOOL_DECLARATIONS.filter((d) =>
+      /^(set_|update_|create_|delete_|pause_|apply_)/.test(d.name),
+    );
+    expect(escrita).toEqual([]);
   });
 });

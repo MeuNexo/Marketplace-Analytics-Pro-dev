@@ -17,8 +17,13 @@
  * influenciam datas (com clamp/default). Selects diretos via service_role bypassam
  * RLS → .eq('organization_id', orgId) (+ .in('ml_user_id', mlUserIds)) é obrigatório.
  *
- * Read-only (T-57-12): só rpc()/select(). NENHUMA mutação. Cap de 50 linhas/tool
- * (T-57-09) para conter tokens/custo do functionResponse.
+ * Read-only (T-57-12): só rpc()/select() sobre dados do Mercado Livre. NENHUMA mutação
+ * no ML. Cap de 50 linhas/tool (T-57-09) para conter tokens/custo do functionResponse.
+ *
+ * ÚNICA EXCEÇÃO (Phase 106): `propose_memory` insere em `nexo_memories` — a memória do
+ * próprio Consultor — sempre com status='pending' (aprovação humana). Não toca em preço,
+ * lance, status de anúncio nem em nada do ML: o contrato read-only sobre o marketplace
+ * permanece intacto.
  *
  * Mapeamento confirmado em 57-RESEARCH (grep nas migrations):
  *   get_margin_by_product → get_margin_with_ads_by_product(p_org_id,p_user_ids,p_from,p_to) [INVOKER]
@@ -482,6 +487,40 @@ export const TOOL_DECLARATIONS: FnDecl[] = [
       "get_sales_kpis (que só soma pedidos pagos).",
     parameters: { type: "object", properties: { ...DATE_PROPS } },
   },
+  // ── Phase 106: única tool que ESCREVE — e só na memória do próprio Consultor ──
+  {
+    name: "propose_memory",
+    description:
+      "PROPÕE (não grava direto) um fato para a memória de longo prazo do Consultor. A proposta " +
+      "fica pendente até o lojista aprovar na interface — você NUNCA deve afirmar que algo 'foi " +
+      "salvo', apenas que foi proposto. Use SÓ para fato DURÁVEL que mude análises futuras: " +
+      "decisão travada pelo lojista (ex: 'CMV = custo cheio da nota'), preferência de trabalho, " +
+      "contexto estrutural do negócio (ex: 'lead time da Pralana é longo, pedido não pega o pico') " +
+      "ou referência. NÃO proponha número volátil que a tool já responde sob demanda (faturamento " +
+      "do mês, estoque atual, ROAS da semana) — isso vira memória velha e leva a erro. Se o fato " +
+      "contiver número, marque has_numbers=true: ele será tratado como pista histórica, nunca " +
+      "como valor atual. Proponha no máximo 1 por conversa, e só quando o fato for realmente novo.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Título curto do fato (aparece na lista de aprovação)" },
+        body: { type: "string", description: "O fato em 1-3 frases, autocontido" },
+        type: {
+          type: "string",
+          description: "decision | preference | context | reference",
+        },
+        scope: {
+          type: "string",
+          description: "org (fato do negócio) | user (preferência pessoal de quem conversa)",
+        },
+        has_numbers: {
+          type: "boolean",
+          description: "true se o fato contém número que envelhece (lead time, meta, patamar)",
+        },
+      },
+      required: ["title", "body", "type"],
+    },
+  },
 ];
 
 // ── Phase 103: get_replenishment — summary+sample estratificado (Pitfall 1) ──
@@ -673,7 +712,7 @@ export async function dispatchTool(
   mlUserIds: string[],
   name: string,
   args: Record<string, unknown>,
-  ctx: { userJwt?: string } = {},
+  ctx: { userJwt?: string; userId?: string; conversationId?: string } = {},
 ): Promise<unknown> {
   // janela de datas: SÓ datas vindas do modelo são respeitadas (não-sensíveis),
   // com clamp + defaults. org/seller dos args são SEMPRE ignorados.
@@ -1503,6 +1542,46 @@ export async function dispatchTool(
           "(que só soma pedidos pagos).",
         cancelled_revenue: Number(row?.cancelled_revenue ?? 0),
         cancelled_orders: Number(row?.cancelled_orders ?? 0),
+      };
+    }
+
+    // ── Phase 106: propose_memory ────────────────────────────────────────────
+    // ÚNICA tool que escreve — e SÓ na tabela nexo_memories. O read-only sobre o
+    // Mercado Livre (T-57-12) permanece intacto: nenhuma mutação de preço, lance,
+    // status de anúncio ou qualquer coisa no ML passa por aqui.
+    // status é SEMPRE 'pending': aprovação é humana (decisão travada por Wesley).
+    case "propose_memory": {
+      const title = String(args.title ?? "").trim();
+      const body = String(args.body ?? "").trim();
+      if (!title || !body) return { proposed: false, error: "title_and_body_required" };
+
+      const tipo = String(args.type ?? "context");
+      const type = ["decision", "preference", "context", "reference"].includes(tipo)
+        ? tipo
+        : "context";
+      // escopo 'user' exige dono; sem userId do servidor, cai para 'org'
+      const querUser = String(args.scope ?? "org") === "user";
+      const scope = querUser && ctx.userId ? "user" : "org";
+
+      const { error } = await sb.from("nexo_memories").insert({
+        organization_id: orgId,                       // SEMPRE do servidor (anti-IDOR)
+        scope,
+        user_id: scope === "user" ? ctx.userId : null,
+        type,
+        title: title.slice(0, 200),
+        body: body.slice(0, 2000),
+        has_numbers: args.has_numbers === true,
+        status: "pending",                            // NUNCA 'active'
+        source_conversation_id: ctx.conversationId ?? null,
+        created_by: ctx.userId ?? null,
+      });
+      if (error) return { proposed: false, error: "insert_failed" };
+      return {
+        proposed: true,
+        title,
+        aviso:
+          "Proposta registrada como PENDENTE. Diga ao lojista que você sugeriu lembrar disso e " +
+          "que ele precisa aprovar na interface — não afirme que já está salvo.",
       };
     }
 

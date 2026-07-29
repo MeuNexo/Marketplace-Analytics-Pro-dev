@@ -194,6 +194,24 @@ describe("nexo-chat system prompt", () => {
     expect(PERSONA).toMatch(/mesmo que o dado da tool.*venham em inglês/i);
   });
 
+  it("memória (Phase 106): bloco entra entre a persona e os playbooks", () => {
+    const bloco = "## MEMÓRIA DA OPERAÇÃO (fatos curados e aprovados pelo lojista)\n- (decisão travada) CMV: cheio";
+    const comMemoria = buildSystemPrompt(bloco);
+    const idxPersona = comMemoria.indexOf("Você é o Nexo");
+    const idxMemoria = comMemoria.indexOf("MEMÓRIA DA OPERAÇÃO");
+    const idxPlaybooks = comMemoria.indexOf("PLAYBOOKS ESTRATÉGICOS");
+    expect(idxMemoria).toBeGreaterThan(idxPersona);
+    expect(idxMemoria).toBeLessThan(idxPlaybooks);
+  });
+
+  it("memória vazia/ausente: bloco omitido inteiro (não gasta token)", () => {
+    expect(buildSystemPrompt()).not.toMatch(/MEMÓRIA DA OPERAÇÃO/);
+    expect(buildSystemPrompt("")).not.toMatch(/MEMÓRIA DA OPERAÇÃO/);
+    expect(buildSystemPrompt("   ")).not.toMatch(/MEMÓRIA DA OPERAÇÃO/);
+    // e o prompt sem memória continua idêntico ao contrato anterior
+    expect(buildSystemPrompt()).toBe(buildSystemPrompt(undefined));
+  });
+
   it("regressão: ordens/greps de 103/104 continuam válidos após finalização de 105", () => {
     const idxAnti = PERSONA.indexOf("REGRA ANTI-INVENÇÃO DE NÚMERO");
     const idxVerac = PERSONA.indexOf("VERACIDADE, FRESCURA E SEMÂNTICA");

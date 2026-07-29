@@ -73,10 +73,18 @@ Abaixo seguem TODOS os seus playbooks (metodologia validada). Use-os como base d
 /**
  * buildSystemPrompt — concatena a PERSONA com os 5 blocos de playbook embutidos.
  * Determinístico e puro (sem I/O). Resultado: ~49KB de prompt do especialista.
+ *
+ * Phase 106: `memoryBlock` (opcional) entra DEPOIS da persona e ANTES dos playbooks —
+ * o modelo lê quem é e as regras, então o contexto curado do negócio, então a
+ * metodologia. Bloco vazio/ausente é omitido inteiro (não gasta token dizendo que não
+ * há memória). O conteúdo já vem rotulado por renderMemoryBlock (memory.ts), inclusive
+ * a defesa anti-injeção e o rótulo de fato perecível.
  */
-export function buildSystemPrompt(): string {
+export function buildSystemPrompt(memoryBlock?: string): string {
+  const memoria = memoryBlock && memoryBlock.trim() ? [memoryBlock] : [];
   return [
     PERSONA,
+    ...memoria,
     "## PLAYBOOKS ESTRATÉGICOS (financeiro, ads, estoque, competitivo)\n\n" + STRATEGIC,
     "## PLAYBOOKS DE ADS (break-even, lifecycle, TACoS, funil, lances, ads×orgânico, runway)\n\n" + ADS_PLAYBOOKS,
     "## BENCHMARKS DE ADS (por categoria e por lifecycle)\n\n" + ADS_BENCHMARKS,

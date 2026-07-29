@@ -48,7 +48,7 @@ export type RunChatOpts = {
   /** dispatcher injetável (default dispatchTool de ./tools.ts) — mockado no teste. */
   dispatchImpl?: (
     sb: SupabaseClient, orgId: string, mlUserIds: string[], name: string, args: Record<string, unknown>,
-    ctx?: { userJwt?: string },
+    ctx?: { userJwt?: string; userId?: string; conversationId?: string },
   ) => Promise<unknown>;
   /** relógio injetável (default Date.now) — força timeout no teste. */
   nowImpl?: () => number;
@@ -60,6 +60,10 @@ export type RunChatOpts = {
    * (ex.: get_reputation → ml-reputation). NUNCA logado, NUNCA exposto ao modelo.
    */
   userJwt?: string;
+  /** Phase 106: id do usuário (dono da conversa) — usado por propose_memory. */
+  userId?: string;
+  /** Phase 106: conversa corrente — vira source_conversation_id da proposta de memória. */
+  conversationId?: string;
 };
 
 export async function runChat(
@@ -159,7 +163,11 @@ export async function runChat(
     const responseParts: GeminiPart[] = [];
     for (const fc of fnCalls) {
       usedTools.push(fc.name);
-      const result = await dispatch(sb, orgId, mlUserIds, fc.name, fc.args ?? {}, { userJwt: opts.userJwt });
+      const result = await dispatch(sb, orgId, mlUserIds, fc.name, fc.args ?? {}, {
+        userJwt: opts.userJwt,
+        userId: opts.userId,
+        conversationId: opts.conversationId,
+      });
       responseParts.push({ functionResponse: { name: fc.name, response: { content: result } } });
     }
 

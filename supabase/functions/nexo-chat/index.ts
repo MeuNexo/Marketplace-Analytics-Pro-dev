@@ -25,6 +25,13 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { buildSystemPrompt } from "./prompt.ts";
 import { runChat } from "./loop.ts";
+import {
+  loadHistory,
+  createConversation,
+  appendMessage,
+  loadMemories,
+  renderMemoryBlock,
+} from "./memory.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -56,7 +63,16 @@ serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     const orgId: string | undefined = body.org_id;
-    const messages: unknown = body.messages;
+
+    // Phase 106 — dois contratos aceitos:
+    //   NOVO:    { org_id, conversation_id?, message }   → histórico vem do banco
+    //   LEGADO:  { org_id, messages: [...] }             → cliente manda tudo (NEXO-04)
+    // Persistimos só no contrato novo: no legado não há conversation_id, e criar uma
+    // conversa por turno encheria a tabela de fragmentos.
+    const persistir = typeof body.message === "string" || typeof body.conversation_id === "string";
+    const messages: unknown = persistir
+      ? [{ role: "user", parts: [{ text: String(body.message ?? "") }] }]
+      : body.messages;
 
     // ── auth: JWT do usuário + membership na org (anti-IDOR) ────────────────
     const auth = req.headers.get("authorization");
@@ -69,6 +85,8 @@ serve(async (req) => {
 
     // ── body válido: messages não-vazio no formato Gemini contents ──────────
     if (!isValidMessages(messages)) return j({ error: "messages required" }, 400);
+    // contents do turno: sobrescrito pelo histórico do banco quando persistimos
+    let contents: GeminiContent[] = messages;
 
     // ── kill-switch (NEXO-06) ───────────────────────────────────────────────
     const { data: cfg } = await sb.from("consultor_config")
@@ -102,18 +120,59 @@ serve(async (req) => {
     // invocam EFs que exigem JWT do usuário (ex.: get_reputation → ml-reputation).
     // NUNCA logado, NUNCA exposto ao modelo.
     const userJwt = auth.replace("Bearer ", "");
+
+    // ── Phase 106: memória persistente ──────────────────────────────────────
+    // Contrato novo: { conversation_id?, message }. O contrato antigo ({ messages })
+    // segue funcionando — o front migra sem janela de quebra entre os deploys.
+    const userId = u.user.id;
+    let conversationId: string | null = body.conversation_id ?? null;
+    const novaMensagem: string = (messages[messages.length - 1]?.parts ?? [])
+      .map((p: GeminiPart) => p.text ?? "")
+      .join("")
+      .trim();
+
+    if (persistir) {
+      if (!conversationId) {
+        conversationId = await createConversation(sb, orgId, userId, novaMensagem);
+      }
+      if (conversationId) {
+        // histórico do BANCO é a autoridade — o cliente só manda a mensagem nova
+        const historico = await loadHistory(sb, conversationId, orgId, userId);
+        contents = [...historico, { role: "user", parts: [{ text: novaMensagem }] }];
+        await appendMessage(sb, conversationId, orgId, "user", novaMensagem);
+      }
+    }
+
+    // fatos ATIVOS (pending nunca entra no prompt) — teto em memory.ts
+    const memorias = await loadMemories(sb, orgId, userId);
+    const systemPrompt = buildSystemPrompt(renderMemoryBlock(memorias));
+
     const { reply, usedTools, fallback } = await runChat(
       sb,
       gkey,
       orgId,
       mlUserIds,
-      buildSystemPrompt(),
-      messages,
-      { model, userJwt },
+      systemPrompt,
+      contents,
+      { model, userJwt, userId, conversationId: conversationId ?? undefined },
     );
+
+    if (persistir && conversationId) {
+      await appendMessage(sb, conversationId, orgId, "model", reply, usedTools);
+    }
+
     // observabilidade: só metadados (nunca conteúdo das mensagens nem segredos)
-    console.log(`nexo-chat: tools=${usedTools.length} fallback=${fallback}`);
-    return j({ reply, used_tools: usedTools, fallback });
+    console.log(
+      `nexo-chat: tools=${usedTools.length} fallback=${fallback} ` +
+        `memorias=${memorias.length} persistido=${persistir && !!conversationId}`,
+    );
+    return j({
+      reply,
+      used_tools: usedTools,
+      fallback,
+      conversation_id: conversationId,
+      memories_used: memorias.length,
+    });
   } catch (e) {
     console.error("nexo-chat error:", e instanceof Error ? e.message : "unknown");
     return j({ error: "Internal server error" }, 500);
