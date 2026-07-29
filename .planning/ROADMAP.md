@@ -1084,6 +1084,25 @@ Plans:
 
 ---
 
+### Phase 106: Consultor com memória persistente — conversas salvas no banco (nexo_conversations + nexo_messages, RLS org-first, histórico deixa de ser efêmero/client-held) e memória de fatos curados (nexo_memories: decisão/preferência/contexto/referência, escopo org|user, status pending→active só por aprovação humana) injetada no system prompt a cada turno com teto de 30 fatos; tool propose_memory (escreve SÓ em nexo_memories, read-only sobre o ML intacto); UI de lista de conversas, card "O Nexo quer lembrar disso" (Aprovar/Descartar/Editar) e tela /consultor/memoria. RAG (Fase 2 da spec) permanece adiado.
+
+**Goal:** O Consultor deixa de ser amnésico: retoma conversas anteriores e carrega fatos curados sobre a operação e sobre o Wesley em toda nova sessão — o análogo do que o Claude Code faz com sessão + MEMORY.md, sem RAG.
+**Origem:** Wesley (2026-07-29), depois do fix dos guardrails: "poderia ter uma memória ou contexto salvo no backend para sempre que iniciar novas sessões funcione a memória, como é aqui no Claude". Escopo e curadoria decididos por ele — ver `106-CONTEXT.md` (decisões LOCKED).
+**Decisões travadas:** (1) curadoria = **o Consultor propõe, Wesley aprova** — extração automática foi rejeitada; (2) **fato numérico envelhece** — entra marcado como perecível, é pista e nunca número atual (espelha a regra de recall do Claude Code); (3) `propose_memory` **não** vira escrita no ML — T-57-12 permanece; (4) teto de injeção (~30 fatos) porque o prompt já tem ~49 KB.
+**Ganho colateral:** hoje `useNexoChat` reenvia a conversa INTEIRA a cada turno (cresce sem limite + superfície de injeção). Carregar do banco pelo `conversation_id` torna o servidor a autoridade do histórico.
+**Requirements**: MEM-CONV-01, MEM-CONV-02, MEM-FACT-01, MEM-RLS-01, MEM-INJECT-01, MEM-PROPOSE-01, MEM-UI-01, MEM-UI-02, MEM-UI-03, MEM-TESTS-106 *(feature nova — IDs locais)*
+**Depends on:** Phases 103-105 (milestone Consultor CCO Fase 1, no PR #33)
+**Verificação alvo:** tsc 0, vitest verde, build ok. Anti-IDOR provado nas 2 tabelas novas (org própria > 0 linhas, org alheia = 0, viewer não escreve) impersonando as orgs reais. `pending` nunca injetado no prompt. Deploy da EF `nexo-chat` pelo ORQUESTRADOR + smoke 401/OPTIONS. E2E: 2º turno recupera contexto do 1º.
+**Planejada 2026-07-29.**
+
+**Plans:** 3 plans
+
+- [ ] 106-01-PLAN.md — Schema: `nexo_conversations`/`nexo_messages`/`nexo_memories` + RLS org-first clonada de `ml_mco_targets` + provas anti-IDOR (wave 1)
+- [ ] 106-02-PLAN.md — EF: `memory.ts` (histórico + fatos ativos), `conversation_id` no contrato, injeção no prompt, tool `propose_memory`, deploy+E2E (wave 2)
+- [ ] 106-03-PLAN.md — Frontend: `useNexoChat` persistido, lista de conversas (mobile+desktop), card de aprovação, `/consultor/memoria` (wave 3)
+
+---
+
 ### Phase 93: Enviar anexo na resposta da reclamação (upload)
 
 **Goal:** Na resposta a uma reclamação (`ClaimDetailSheet` em `/devolucoes`), o vendedor pode **anexar arquivos** (foto/PDF) à mensagem que envia ao cliente — hoje só dá pra mandar texto. Complementa a Phase 92 (que só EXIBE anexos). Junto o vendedor consegue ler e responder com anexo, fechando a conversa dentro do dashboard.

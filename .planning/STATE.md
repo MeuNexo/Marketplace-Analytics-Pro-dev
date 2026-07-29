@@ -2,19 +2,31 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
-current_phase: 105
-status: completed
-stopped_at: Phase 102 completa — ok visual do Wesley
-last_updated: "2026-07-28T17:59:09.632Z"
+current_phase: 106
+status: planned
+stopped_at: "Phase 106 planejada (3 plans) — aguarda /gsd-execute-phase 106"
+last_updated: "2026-07-29T18:00:00.000Z"
 last_activity: 2026-07-29
-last_activity_desc: "Quick 260729-o7w: fix guardrails nexo-chat deployado em prod (v8)"
+last_activity_desc: "PR #33 aberto (Phases 99-105) + Phase 106 (memoria do Consultor) planejada"
 progress:
-  total_phases: 49
+  total_phases: 50
   completed_phases: 29
-  total_plans: 107
+  total_plans: 110
   completed_plans: 96
   percent: 59
-current_phase_name: consultor-cco-ferramentas-de-compra-vs-venda
+current_phase_name: consultor-memoria-persistente
+---
+
+## 🔵 Phase 106 PLANEJADA (2026-07-29) — Consultor com memória persistente
+
+- **Origem:** Wesley pediu memória "como é no Claude" depois do fix dos guardrails do nexo-chat.
+- **Escopo travado:** conversas persistidas + memória de fatos curados. **RAG adiado** (Fase 2 da spec) — não é o que dá a sensação de "ele me conhece", e a base documental ainda não existe.
+- **Curadoria:** o Consultor **propõe**, Wesley **aprova**. Extração automática foi rejeitada por risco de fato velho contaminar análise.
+- **Regras travadas:** fato numérico entra marcado como perecível (pista, nunca número atual); `propose_memory` escreve só em `nexo_memories` (read-only sobre o ML intacto); teto de ~30 fatos na injeção (prompt já tem ~49 KB).
+- **Ganho colateral:** `useNexoChat` deixa de reenviar a conversa inteira a cada turno (crescimento sem limite + superfície de injeção) — servidor vira a autoridade do histórico.
+- **Artefatos:** `phases/106-consultor-memoria-persistente/` → `106-CONTEXT.md` (decisões LOCKED) + `106-01/02/03-PLAN.md`.
+- **PRÓXIMO:** `/gsd-execute-phase 106`. Depende do PR #33 (Phases 99-105) — decidir se mergeia antes de empilhar.
+
 ---
 
 ## 🟡 Phase 65 EXECUTADA — Estoque a Chegar (2026-06-26) — backend live em prod, frontend no PR
