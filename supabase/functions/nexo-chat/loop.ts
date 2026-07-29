@@ -21,8 +21,17 @@ import { TOOL_DECLARATIONS, dispatchTool as defaultDispatch } from "./tools.ts";
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models/";
 const DEFAULT_MODEL = "gemini-2.5-pro";
-export const MAX_TOOL_ITERS = 5;
-export const TURN_DEADLINE_MS = 25_000;
+export const MAX_TOOL_ITERS = 8;
+export const TURN_DEADLINE_MS = 75_000;
+/**
+ * Teto de saída do turno. ⚠️ No Gemini 2.5 os *thinking tokens contam dentro de
+ * maxOutputTokens*. Com teto baixo + thinkingBudget dinâmico (-1), uma pergunta
+ * multi-domínio queima o orçamento raciocinando e o candidato volta SEM parts
+ * (finishReason MAX_TOKENS) → caía no fallback "Sem resposta.".
+ */
+export const MAX_OUTPUT_TOKENS = 8192;
+/** Fatia reservada ao raciocínio. 2.5-pro aceita 128..32768 — NUNCA 0 (HTTP 400). */
+export const THINKING_BUDGET = 2048;
 
 export type GeminiPart = {
   text?: string;
@@ -93,9 +102,11 @@ export async function runChat(
           toolConfig: { functionCallingConfig: { mode: "AUTO" } },
           generationConfig: {
             temperature: 0.3,
-            maxOutputTokens: 1200,
-            // ⚠️ 2.5-PRO: thinkingBudget NUNCA 0 (HTTP 400). -1 = dinâmico.
-            thinkingConfig: { thinkingBudget: -1 },
+            maxOutputTokens: MAX_OUTPUT_TOKENS,
+            // ⚠️ 2.5-PRO: thinkingBudget NUNCA 0 (HTTP 400). Teto FIXO (não -1):
+            // thinking divide o mesmo orçamento de maxOutputTokens, e o dinâmico
+            // consumia tudo em pergunta complexa → candidato sem parts.
+            thinkingConfig: { thinkingBudget: THINKING_BUDGET },
           },
         }),
       });
@@ -110,7 +121,22 @@ export async function runChat(
     }
 
     const gj = await res.json();
+
+    // observabilidade do turno: SÓ metadados (nunca conteúdo, JWT ou api key).
+    // finishReason=MAX_TOKENS com parts vazio = thinking comeu o orçamento de saída.
+    const finishReason: string = gj?.candidates?.[0]?.finishReason ?? "none";
+    const um = gj?.usageMetadata ?? {};
+    console.log(
+      `nexo-chat: iter=${iter} finish=${finishReason} promptTok=${um.promptTokenCount ?? 0} ` +
+        `outTok=${um.candidatesTokenCount ?? 0} thoughtTok=${um.thoughtsTokenCount ?? 0} ` +
+        `totalTok=${um.totalTokenCount ?? 0}`,
+    );
+
     const parts: GeminiPart[] = gj?.candidates?.[0]?.content?.parts ?? [];
+    if (parts.length === 0) {
+      // candidato sem texto E sem functionCall — causa do fallback "Sem resposta."
+      console.error(`nexo-chat: candidato SEM parts (finish=${finishReason}) iter=${iter}`);
+    }
     const fnCalls = parts
       .filter((p) => p.functionCall)
       .map((p) => p.functionCall!) as Array<{ name: string; args?: Record<string, unknown> }>;
