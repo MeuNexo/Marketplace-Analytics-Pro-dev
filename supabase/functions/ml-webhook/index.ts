@@ -16,6 +16,15 @@ const ML_APP_ID        = Deno.env.get("ML_APP_ID") ?? "";
 const ML_CLIENT_SECRET = Deno.env.get("ML_CLIENT_SECRET") ?? "";
 const ML_API           = "https://api.mercadolibre.com";
 
+// Kill-switch de emergência (2026-07-20): processEvent() faz uma query sem
+// índice em ml_webhook_events (debounce de orders) que estava consumindo 77%
+// do tempo de CPU do banco a cada webhook real recebido do ML. Desligado até
+// o índice ser criado (ver .planning ou pedir pro Wesley) — o evento cru
+// ainda é gravado (linha "received"), só o processamento pesado é pulado.
+// Para reativar: true (ou setar ML_WEBHOOK_PROCESSING_ENABLED=true).
+const WEBHOOK_PROCESSING_ENABLED =
+  (Deno.env.get("ML_WEBHOOK_PROCESSING_ENABLED") ?? "false") !== "false";
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -191,6 +200,7 @@ serve(async (req) => {
 
   // Reprocess mode: cron (Pattern B) repesca eventos presos há >5min.
   if (isServiceCall) {
+    if (!WEBHOOK_PROCESSING_ENABLED) return jsonResp({ ok: true, reprocessed: 0, disabled: true });
     const sb = createClient(SUPABASE_URL, SERVICE_KEY);
     const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const { data: stuck } = await sb.from("ml_webhook_events")
@@ -243,8 +253,9 @@ serve(async (req) => {
     .select("id").maybeSingle();
   if (insErr) console.error("ml-webhook insert:", insErr.message);
 
-  // 4. Responde 200 já; processa em background (só se não rejeitado e não duplicado).
-  if (!rejected && orgId && inserted?.id) {
+  // 4. Responde 200 já; processa em background (só se não rejeitado, não duplicado,
+  //    e o processamento não estiver desligado pelo kill-switch de emergência).
+  if (WEBHOOK_PROCESSING_ENABLED && !rejected && orgId && inserted?.id) {
     const ev = { id: inserted.id as string, topic, resource, ml_user_id: mlUserId!, organization_id: orgId };
     // @ts-ignore EdgeRuntime é global no Supabase Edge
     EdgeRuntime.waitUntil(processEvent(sb, ev));

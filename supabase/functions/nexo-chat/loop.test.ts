@@ -9,7 +9,13 @@
  * thinkingBudget:-1 (nunca 0).
  */
 import { describe, it, expect, vi } from "vitest";
-import { runChat } from "./loop";
+import {
+  runChat,
+  MAX_TOOL_ITERS,
+  TURN_DEADLINE_MS,
+  MAX_OUTPUT_TOKENS,
+  THINKING_BUDGET,
+} from "./loop";
 
 // Resposta Gemini só-texto
 function textResponse(text: string) {
@@ -80,14 +86,35 @@ describe("runChat — functionCall → text", () => {
 });
 
 describe("runChat — guardrails (NEXO-07)", () => {
-  it("cap de iterações: sempre functionCall → para em 5 chamadas com fallback:true", async () => {
+  it("cap de iterações: sempre functionCall → para em MAX_TOOL_ITERS chamadas com fallback:true", async () => {
     const fetchImpl = vi.fn(async () => fnCallResponse("get_coverage", {}));
     const dispatchImpl = vi.fn(async () => [{ item_id: "X" }]);
     const r = await runChat(sb, "gkey", "ORG", ["111"], SYS, MSGS, { fetchImpl, dispatchImpl });
     expect(r.fallback).toBe(true);
-    // nunca ultrapassa o cap=5 de chamadas ao Gemini
-    expect(fetchImpl).toHaveBeenCalledTimes(5);
-    expect(dispatchImpl).toHaveBeenCalledTimes(5);
+    // nunca ultrapassa o cap de chamadas ao Gemini
+    expect(MAX_TOOL_ITERS).toBe(8);
+    expect(fetchImpl).toHaveBeenCalledTimes(MAX_TOOL_ITERS);
+    expect(dispatchImpl).toHaveBeenCalledTimes(MAX_TOOL_ITERS);
+  });
+
+  it("candidato SEM parts (MAX_TOKENS) → fallback 'Sem resposta.' — o bug de 2026-07-29", async () => {
+    // regressão: thinking dinâmico consumia maxOutputTokens e o candidato voltava vazio
+    const fetchImpl = vi.fn(async () =>
+      ({
+        ok: true,
+        json: async () => ({ candidates: [{ finishReason: "MAX_TOKENS", content: {} }] }),
+      }) as unknown as Response,
+    );
+    const r = await runChat(sb, "gkey", "ORG", ["111"], SYS, MSGS, {
+      fetchImpl,
+      dispatchImpl: vi.fn(),
+    });
+    expect(r.reply).toBe("Sem resposta.");
+    expect(r.fallback).toBe(true);
+  });
+
+  it("deadline do turno cabe no wall-clock da EF (75s)", () => {
+    expect(TURN_DEADLINE_MS).toBe(75_000);
   });
 
   it("timeout: deadline estourado → fallback:true sem nova chamada ao Gemini", async () => {
@@ -110,15 +137,18 @@ describe("runChat — guardrails (NEXO-07)", () => {
 });
 
 describe("runChat — config Gemini", () => {
-  it("envia thinkingBudget:-1 (NUNCA 0), tools e toolConfig AUTO", async () => {
+  it("envia thinkingBudget FIXO (NUNCA 0), maxOutputTokens folgado, tools e toolConfig AUTO", async () => {
     const fetchImpl = vi.fn(async () => textResponse("ok"));
     await runChat(sb, "gkey", "ORG", ["111"], SYS, MSGS, {
       fetchImpl,
       dispatchImpl: vi.fn(),
     });
     const body = JSON.parse((fetchImpl.mock.calls[0][1] as RequestInit).body as string);
-    expect(body.generationConfig.thinkingConfig.thinkingBudget).toBe(-1);
+    expect(body.generationConfig.thinkingConfig.thinkingBudget).toBe(THINKING_BUDGET);
     expect(body.generationConfig.thinkingConfig.thinkingBudget).not.toBe(0);
+    // thinking cabe DENTRO de maxOutputTokens no 2.5 — precisa sobrar espaço p/ a resposta
+    expect(body.generationConfig.maxOutputTokens).toBe(MAX_OUTPUT_TOKENS);
+    expect(MAX_OUTPUT_TOKENS - THINKING_BUDGET).toBeGreaterThan(4000);
     expect(body.toolConfig.functionCallingConfig.mode).toBe("AUTO");
     expect(Array.isArray(body.tools[0].functionDeclarations)).toBe(true);
     expect(body.tools[0].functionDeclarations.length).toBeGreaterThan(0);

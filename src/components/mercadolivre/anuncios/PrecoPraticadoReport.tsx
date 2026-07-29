@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import {
   Check, ChevronsUpDown, RefreshCw, Package, BarChart2,
-  DollarSign, Percent, AlertTriangle, Target,
+  DollarSign, Percent, AlertTriangle, Target, RotateCcw,
 } from "lucide-react";
 import {
   ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid,
@@ -55,6 +55,11 @@ import {
 import { computeMcoRecommendation } from "@/lib/pricing/mcoRecommendation";
 import { classifyMcoHealth, mcoHealthRole, MCO_SAUDAVEL_PCT } from "@/lib/mcoHealth";
 import { useMcoTargets } from "@/hooks/useMcoTargets";
+import { parseNumber } from "@/lib/pricing/calculator";
+import {
+  computeSimulatedWaterfall,
+  type SimulatedInputs,
+} from "@/lib/pricing/mcoSimulation";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -146,6 +151,92 @@ const Row = ({ k, v, accent, danger, muted, dotColor }: {
     )}>{v}</span>
   </p>
 );
+
+// Campo editável do simulador manual de MCO (Phase 102, D-01/D-02/D-04/D-05).
+// Sintetiza dois padrões já existentes no codebase: recompute ao vivo a cada
+// tecla (SimuladorPrecificacao.tsx) + validação commit-time com toast+revert
+// no blur/Enter (Meta MCO% inline-edit, commitMcoTargetEdit acima). Raw
+// <input>, não o shadcn Input — mesma convenção do campo Meta MCO%.
+function SimField({
+  value, min, max, unit, seedKey, onLiveChange, onReject,
+}: {
+  value: number;
+  min: number;
+  max?: number;
+  unit: "currency" | "percent";
+  /** Muda SÓ quando o valor deve ser re-semeado por uma fonte externa
+   *  (toggle "Simular" ligado, "Resetar", troca de item/variação) — nunca
+   *  a cada tecla. Isso distingue "value mudou porque o próprio SimField
+   *  chamou onLiveChange" (não deve resincronizar o draft/lastValid) de
+   *  "value mudou porque simDraft inteiro foi re-semeado" (deve). */
+  seedKey: number;
+  onLiveChange: (v: number) => void;
+  /** Chamado no commit inválido com o último valor VÁLIDO conhecido — o
+   *  chamador deve restaurar esse número no campo correspondente de
+   *  simDraft (não basta reverter só o texto do input; o valor que
+   *  alimenta computeSimulatedWaterfall também precisa voltar). */
+  onReject: (lastValid: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  // Último valor conhecido como VÁLIDO (commitado) — onLiveChange roda a cada
+  // tecla sem gate (D-04), então `value` (vindo de simDraft) pode transitar
+  // por números fora do intervalo enquanto o usuário digita; só o commit
+  // (blur/Enter) decide o que é válido, e é esse número que precisa
+  // sobreviver a um revert (D-05), não o `value` corrente.
+  const lastValidRef = useRef(value);
+
+  // Ressincroniza o draft SÓ quando `seedKey` muda (reseed externo real —
+  // Resetar/toggle-on/troca de item), nunca a cada tecla própria (que também
+  // altera `value` via onLiveChange, mas não deve reescrever lastValidRef
+  // com um número ainda não validado — bug corrigido: ver docblock de
+  // `seedKey` acima).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    setDraft(String(value));
+    lastValidRef.current = value;
+  }, [seedKey]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    setDraft(raw);
+    // Live recompute (D-04): parseNumber nunca lança, degrada graciosamente —
+    // seguro chamar a cada tecla.
+    onLiveChange(parseNumber(raw));
+  };
+
+  const handleBlur = () => {
+    const parsed = parseNumber(draft);
+    const invalid = draft.trim() === "" || parsed < min || (max != null && parsed > max);
+    if (invalid) {
+      toast.error(
+        unit === "percent"
+          ? "Valor precisa estar entre 0% e 100%"
+          : "Valor precisa ser maior ou igual a zero",
+      );
+      setDraft(String(lastValidRef.current));
+      onReject(lastValidRef.current);
+      return;
+    }
+    lastValidRef.current = parsed;
+    setDraft(String(parsed));
+  };
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      {unit === "currency" && <span className="text-[10px] text-muted-foreground">R$</span>}
+      <input
+        value={draft}
+        onChange={handleChange}
+        onBlur={handleBlur}
+        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+        type="text"
+        inputMode="decimal"
+        className="w-20 rounded border border-accent/40 bg-background px-1.5 py-0.5 text-right text-xs outline-none ring-1 ring-accent/30 tabular-nums"
+      />
+      {unit === "percent" && <span className="text-[10px] text-muted-foreground">%</span>}
+    </span>
+  );
+}
 
 // Tooltip com a decomposição por unidade: preço, break-even, MCO R$/un, MCO %
 // e cada componente do custo (transparência total — nada escondido).
@@ -596,7 +687,58 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
     () => computeMcoRecommendation(waterfallCard, targetMcoPct),
     [waterfallCard, targetMcoPct],
   );
-  const mcoHealthValue = classifyMcoHealth(waterfallCard.mcoPct);
+
+  // ── Simulador manual de MCO (Phase 102) ──────────────────────────────────
+  // "E se" ephemeral, 100% component-local (D-01..D-05). computeMcoRecommendation
+  // acima SEMPRE recebe waterfallCard REAL — invariante D-04, nunca simCard.
+  const [simulating, setSimulating] = useState(false);
+  const [simDraft, setSimDraft] = useState<SimulatedInputs | null>(null);
+  // Incrementado SÓ em reseeds externos reais (toggle ON / Resetar) — sinaliza
+  // a cada SimField "resincronize seu draft/último-válido a partir de `value`
+  // agora", distinto de mudanças de `value` geradas pelo próprio SimField
+  // digitando (ver docblock de `seedKey` no componente SimField).
+  const [simSeedKey, setSimSeedKey] = useState(0);
+
+  const seedFromReal = useCallback(
+    (card: typeof waterfallCard): SimulatedInputs => ({
+      precoUnit: card.precoUnit,
+      cmvUnit: card.cmvUnit,
+      comissaoPct: card.precoUnit > 0 ? (card.comissaoUnit / card.precoUnit) * 100 : 0,
+      freteUnit: card.freteUnit,
+      impostoPct: card.precoUnit > 0 ? (card.impostoUnit / card.precoUnit) * 100 : 0,
+      // Pitfall 4: nunca semear ads quando "incluir publicidade" está desligado.
+      adsUnit: incluirAds ? card.adsUnit : 0,
+    }),
+    [incluirAds],
+  );
+
+  const handleToggleSimular = (checked: boolean) => {
+    setSimulating(checked);
+    // Pitfall 3: sempre reseed do card real ATUAL no momento do clique, nunca
+    // um lazy initializer congelado.
+    if (checked) {
+      setSimDraft(seedFromReal(waterfallCard));
+      setSimSeedKey((k) => k + 1);
+    }
+  };
+  const handleResetar = () => {
+    setSimDraft(seedFromReal(waterfallCard));
+    setSimSeedKey((k) => k + 1);
+  };
+
+  // D-03: trocar de item/variação sempre reseta a simulação automaticamente.
+  useEffect(() => {
+    setSimulating(false);
+    setSimDraft(null);
+  }, [selectedId, selectedSku]);
+
+  const simCard = useMemo(
+    () => (simDraft ? computeSimulatedWaterfall(simDraft) : null),
+    [simDraft],
+  );
+
+  const activeMcoPct = simulating && simCard ? simCard.mcoPct : waterfallCard.mcoPct;
+  const mcoHealthValue = classifyMcoHealth(activeMcoPct);
   const mcoRole = mcoHealthRole(mcoHealthValue);
 
   // Edição inline da meta (mesmo padrão onBlur/Enter do InlineEditCell em
@@ -929,14 +1071,41 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
             </div>
           ) : (
             <>
-              {/* 1. Header row */}
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5">
+              {/* 1. Header row (Phase 102: + toggle Simular / badge Simulando / Resetar) */}
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <Target className="w-4 h-4 text-accent" />
                   <span className="text-sm font-semibold">Detalhamento de MCO</span>
                   <Badge variant="outline" className={cn("text-[10px]", MCO_ROLE_BADGE_CLASS[mcoRole])}>
-                    {pctFmt(waterfallCard.mcoPct)}
+                    {pctFmt(activeMcoPct)}
                   </Badge>
+                  <div className="flex items-center gap-2 ml-2">
+                    <Switch
+                      id="simular-mco"
+                      checked={simulating}
+                      onCheckedChange={handleToggleSimular}
+                    />
+                    <Label htmlFor="simular-mco" className="text-xs text-muted-foreground cursor-pointer">
+                      Simular
+                    </Label>
+                  </div>
+                  {simulating && (
+                    <>
+                      <Badge variant="outline" className="text-[10px] border-transparent bg-accent/15 text-accent">
+                        Simulando
+                      </Badge>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 gap-1 px-1.5 text-xs"
+                        onClick={handleResetar}
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        Resetar
+                      </Button>
+                    </>
+                  )}
                 </div>
                 {fromDate && toDate && (
                   <span className="text-xs text-muted-foreground">
@@ -945,30 +1114,127 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                 )}
               </div>
 
-              {/* 2. Waterfall block — ordem fixa da cascata (D-02) */}
-              <div className="space-y-2">
-                <Row k="Receita/un" v={brl(waterfallCard.precoUnit)} />
-                <Row k="(−) CMV" v={brl(waterfallCard.cmvUnit)} />
-                <Row k="(−) Comissão" v={brl(waterfallCard.comissaoUnit)} />
-                <Row k="(−) Frete" v={brl(waterfallCard.freteUnit)} />
-                <Row k="(−) Impostos" v={brl(waterfallCard.impostoUnit)} />
-                <div className="border-t border-border pt-2">
-                  <Row
-                    k="= Margem de Contribuição/un"
-                    v={brl(waterfallCard.mcUnit)}
-                    accent={waterfallCard.mcUnit >= 0}
-                    danger={waterfallCard.mcUnit < 0}
-                  />
-                </div>
-                {incluirAds && <Row k="(−) Ads" v={brl(waterfallCard.adsUnit)} />}
-                <div className="border-t border-border pt-2">
-                  <Row
-                    k="= MCO/un"
-                    v={`${brl(waterfallCard.mcoUnit)} (${pctFmt(waterfallCard.mcoPct)})`}
-                    accent={mcoRole === "good"}
-                    danger={mcoRole === "critical"}
-                  />
-                </div>
+              {/* 2. Waterfall block — ordem fixa da cascata (D-02); Phase 102: campos
+                  editáveis dentro de painel tingido quando simulating===true */}
+              <div className={cn(
+                "space-y-2",
+                simulating && "rounded-lg bg-accent/5 border border-accent/20 p-2 -mx-2",
+              )}>
+                {simulating && simDraft ? (
+                  <>
+                    <p className="flex justify-between gap-6">
+                      <span className="text-muted-foreground">Receita/un</span>
+                      <SimField
+                        value={simDraft.precoUnit}
+                        min={0}
+                        unit="currency"
+                        seedKey={simSeedKey}
+                        onLiveChange={(v) => setSimDraft((d) => (d ? { ...d, precoUnit: v } : d))}
+                        onReject={(lastValid) => setSimDraft((d) => (d ? { ...d, precoUnit: lastValid } : d))}
+                      />
+                    </p>
+                    <p className="flex justify-between gap-6">
+                      <span className="text-muted-foreground">(−) CMV</span>
+                      <SimField
+                        value={simDraft.cmvUnit}
+                        min={0}
+                        unit="currency"
+                        seedKey={simSeedKey}
+                        onLiveChange={(v) => setSimDraft((d) => (d ? { ...d, cmvUnit: v } : d))}
+                        onReject={(lastValid) => setSimDraft((d) => (d ? { ...d, cmvUnit: lastValid } : d))}
+                      />
+                    </p>
+                    <p className="flex justify-between gap-6">
+                      <span className="text-muted-foreground">(−) Comissão</span>
+                      <SimField
+                        value={simDraft.comissaoPct}
+                        min={0}
+                        max={100}
+                        unit="percent"
+                        seedKey={simSeedKey}
+                        onLiveChange={(v) => setSimDraft((d) => (d ? { ...d, comissaoPct: v } : d))}
+                        onReject={(lastValid) => setSimDraft((d) => (d ? { ...d, comissaoPct: lastValid } : d))}
+                      />
+                    </p>
+                    <p className="flex justify-between gap-6">
+                      <span className="text-muted-foreground">(−) Frete</span>
+                      <SimField
+                        value={simDraft.freteUnit}
+                        min={0}
+                        unit="currency"
+                        seedKey={simSeedKey}
+                        onLiveChange={(v) => setSimDraft((d) => (d ? { ...d, freteUnit: v } : d))}
+                        onReject={(lastValid) => setSimDraft((d) => (d ? { ...d, freteUnit: lastValid } : d))}
+                      />
+                    </p>
+                    <p className="flex justify-between gap-6">
+                      <span className="text-muted-foreground">(−) Impostos</span>
+                      <SimField
+                        value={simDraft.impostoPct}
+                        min={0}
+                        max={100}
+                        unit="percent"
+                        seedKey={simSeedKey}
+                        onLiveChange={(v) => setSimDraft((d) => (d ? { ...d, impostoPct: v } : d))}
+                        onReject={(lastValid) => setSimDraft((d) => (d ? { ...d, impostoPct: lastValid } : d))}
+                      />
+                    </p>
+                    <div className="border-t border-border pt-2">
+                      <Row
+                        k="= Margem de Contribuição/un"
+                        v={simCard ? brl(simCard.mcUnit) : "—"}
+                        accent={(simCard?.mcUnit ?? 0) >= 0}
+                        danger={(simCard?.mcUnit ?? 0) < 0}
+                      />
+                    </div>
+                    {incluirAds && (
+                      <p className="flex justify-between gap-6">
+                        <span className="text-muted-foreground">(−) Ads</span>
+                        <SimField
+                          value={simDraft.adsUnit}
+                          min={0}
+                          unit="currency"
+                          seedKey={simSeedKey}
+                          onLiveChange={(v) => setSimDraft((d) => (d ? { ...d, adsUnit: v } : d))}
+                          onReject={(lastValid) => setSimDraft((d) => (d ? { ...d, adsUnit: lastValid } : d))}
+                        />
+                      </p>
+                    )}
+                    <div className="border-t border-border pt-2">
+                      <Row
+                        k="= MCO/un"
+                        v={`${brl(simCard?.mcoUnit ?? 0)} (${pctFmt(simCard?.mcoPct ?? null)})`}
+                        accent={mcoRole === "good"}
+                        danger={mcoRole === "critical"}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <Row k="Receita/un" v={brl(waterfallCard.precoUnit)} />
+                    <Row k="(−) CMV" v={brl(waterfallCard.cmvUnit)} />
+                    <Row k="(−) Comissão" v={brl(waterfallCard.comissaoUnit)} />
+                    <Row k="(−) Frete" v={brl(waterfallCard.freteUnit)} />
+                    <Row k="(−) Impostos" v={brl(waterfallCard.impostoUnit)} />
+                    <div className="border-t border-border pt-2">
+                      <Row
+                        k="= Margem de Contribuição/un"
+                        v={brl(waterfallCard.mcUnit)}
+                        accent={waterfallCard.mcUnit >= 0}
+                        danger={waterfallCard.mcUnit < 0}
+                      />
+                    </div>
+                    {incluirAds && <Row k="(−) Ads" v={brl(waterfallCard.adsUnit)} />}
+                    <div className="border-t border-border pt-2">
+                      <Row
+                        k="= MCO/un"
+                        v={`${brl(waterfallCard.mcoUnit)} (${pctFmt(waterfallCard.mcoPct)})`}
+                        accent={mcoRole === "good"}
+                        danger={mcoRole === "critical"}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* 3. Meta MCO% — inline-edit (D-05), pré-preenche custom se houver */}
@@ -1033,6 +1299,11 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                     )}
                   </div>
                 </div>
+                {simulating && (
+                  <p className="text-[10px] text-muted-foreground">
+                    Preço mínimo e ACOS-alvo continuam calculados com os custos e preço reais — não mudam com a simulação
+                  </p>
+                )}
               </div>
 
               {/* 5. Warning footer (condicional) — copy verbatim do rodapé existente acima */}

@@ -10,11 +10,25 @@
  * sb é um stub encadeável que registra os argumentos recebidos por .rpc()/.from().
  */
 import { describe, it, expect } from "vitest";
-import { TOOL_DECLARATIONS, dispatchTool, summarizeVariations } from "./tools";
+import {
+  TOOL_DECLARATIONS,
+  dispatchTool,
+  summarizeVariations,
+  buildReplenishmentResult,
+  sumGuiaReal,
+  buildPricePracticed,
+  today,
+} from "./tools";
 
 // ── Stub Supabase encadeável que grava o que foi chamado ─────────────────────
 type RpcCall = { fn: string; params: Record<string, unknown> };
-type SelectCall = { table: string; eqs: Record<string, unknown>; ins: Record<string, unknown[]> };
+type SelectCall = {
+  table: string;
+  eqs: Record<string, unknown>;
+  ins: Record<string, unknown[]>;
+  /** Phase 106: payload de .insert() — usado só por propose_memory. */
+  inserted?: Record<string, unknown>;
+};
 
 function makeStub(rows: unknown[] = []) {
   const rpcCalls: RpcCall[] = [];
@@ -27,11 +41,19 @@ function makeStub(rows: unknown[] = []) {
       select: () => chain,
       eq: (col: string, val: unknown) => { call.eqs[col] = val; return chain; },
       in: (col: string, val: unknown[]) => { call.ins[col] = val; return chain; },
+      // Phase 106: propose_memory é a única tool que escreve (e só em nexo_memories)
+      insert: (payload: Record<string, unknown>) => {
+        call.inserted = payload;
+        return Promise.resolve({ data: null, error: null });
+      },
       gte: () => chain,
       lte: () => chain,
       order: () => chain,
       limit: () => chain,
       range: () => Promise.resolve({ data: rows, error: null }),
+      // maybeSingle: usado por get_dre_result (select em dre_month_close) — default
+      // null (mês em previsão) salvo quando o teste não precisa provar "apuracao".
+      maybeSingle: () => Promise.resolve({ data: null, error: null }),
       // termina o await quando não há range (selects sem paginação)
       then: (res: (v: { data: unknown[]; error: null }) => void) =>
         res({ data: rows, error: null }),
@@ -55,7 +77,7 @@ const ML_IDS_SERVER = ["111", "222"];
 const EVIL_ARGS = { org_id: "ORG-ALHEIA", seller_id: "999", ml_user_id: "888" };
 
 describe("TOOL_DECLARATIONS", () => {
-  it("declara as 25 tools esperadas (inclui get_reputation e get_goals — OPS-1/OPS-2)", () => {
+  it("declara as 36 tools esperadas (35 read-only + propose_memory da Phase 106)", () => {
     const names = TOOL_DECLARATIONS.map((d) => d.name).sort();
     expect(names).toEqual(
       [
@@ -88,6 +110,21 @@ describe("TOOL_DECLARATIONS", () => {
         // OPS-1/OPS-2 novas (58-04)
         "get_reputation",
         "get_goals",
+        // Phase 103 novas: compra × venda
+        "get_replenishment",
+        "get_purchase_suppliers",
+        // Phase 106 nova: única de escrita (só em nexo_memories)
+        "propose_memory",
+        // Phase 104 novas: DRE real (competência) & caixa
+        "get_dre_result",
+        "get_dre_cash",
+        "get_projected_balance",
+        "get_taxes_paid",
+        // Phase 105 novas: preços/competitivo/completude
+        "get_price_practiced",
+        "get_competitive_price",
+        "get_cost_gaps",
+        "get_cancelled_revenue",
       ].sort(),
     );
   });
@@ -329,6 +366,275 @@ describe("dispatchTool — anti-IDOR (orgId/mlUserIds só do servidor)", () => {
       expect(campaigns[0]).not.toHaveProperty("roas");
       expect(campaigns[0]).not.toHaveProperty("impressions");
     }
+  });
+});
+
+describe("dispatchTool — anti-IDOR get_replenishment/get_purchase_suppliers (Phase 103)", () => {
+  it("get_replenishment (org-only) passa só p_org_id do servidor, ignora seller alheio, SEM p_user_ids", async () => {
+    const { sb, rpcCalls } = makeStub([{ item_id: "Y", compra_sugerida: 10 }]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_replenishment", EVIL_ARGS);
+    const call = rpcCalls.find((c) => c.fn === "get_replenishment_by_sku");
+    expect(call).toBeDefined();
+    expect(call!.params.p_org_id).toBe(ORG_SERVER);
+    expect(JSON.stringify(call!.params)).not.toContain("ORG-ALHEIA");
+    expect(JSON.stringify(call!.params)).not.toContain("999");
+    expect(JSON.stringify(call!.params)).not.toContain("888");
+    // a RPC não aceita p_user_ids — nunca deve aparecer nos params
+    expect(call!.params).not.toHaveProperty("p_user_ids");
+  });
+
+  it("get_replenishment aplica p_smart=true por default (paridade com o painel /compras — Pitfall 2)", async () => {
+    const { sb, rpcCalls } = makeStub([]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_replenishment", {});
+    const call = rpcCalls.find((c) => c.fn === "get_replenishment_by_sku");
+    expect(call).toBeDefined();
+    expect(call!.params.p_smart).toBe(true);
+  });
+
+  it("get_purchase_suppliers (org-only) passa só p_org_id do servidor, único parâmetro", async () => {
+    const { sb, rpcCalls } = makeStub([{ fornecedor: "Fornecedor X" }]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_purchase_suppliers", EVIL_ARGS);
+    const call = rpcCalls.find((c) => c.fn === "get_purchase_order_suppliers");
+    expect(call).toBeDefined();
+    expect(call!.params.p_org_id).toBe(ORG_SERVER);
+    expect(Object.keys(call!.params)).toEqual(["p_org_id"]);
+  });
+
+  it("get_purchase_suppliers mapeia data para lista de fornecedores (string[]), capada", async () => {
+    const { sb } = makeStub([{ fornecedor: "Fornecedor A" }, { fornecedor: "Fornecedor B" }]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_purchase_suppliers", {}) as string[];
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toEqual(["Fornecedor A", "Fornecedor B"]);
+  });
+});
+
+describe("dispatchTool — anti-IDOR get_dre_result/get_dre_cash/get_projected_balance/get_taxes_paid (Phase 104)", () => {
+  it("get_dre_result (org-only) passa só p_org_id/p_month do servidor, ignora org alheia, SEM p_user_ids", async () => {
+    const { sb, rpcCalls } = makeStub([{ bloco: "pessoal", category: "Salários", total: 1000, n: 1 }]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_dre_result", {
+      ...EVIL_ARGS,
+      month: "2026-06",
+    }) as Record<string, unknown>;
+    const call = rpcCalls.find((c) => c.fn === "get_dre_operational_by_competence");
+    expect(call).toBeDefined();
+    expect(call!.params.p_org_id).toBe(ORG_SERVER);
+    expect(call!.params.p_month).toBe("2026-06-01");
+    expect(call!.params).not.toHaveProperty("p_user_ids");
+    expect(JSON.stringify(call!.params)).not.toContain("ORG-ALHEIA");
+    expect(JSON.stringify(call!.params)).not.toContain("999");
+    // rótulo obrigatório: deduções operacionais ≠ DRE completo
+    expect(typeof result.label).toBe("string");
+    expect((result.label as string)).toMatch(/NÃO é o DRE completo/i);
+    expect(result).toHaveProperty("regime");
+  });
+
+  it("get_dre_cash (org-only) passa p_org_id do servidor na RPC get_dre_cash, ignora EVIL_ARGS", async () => {
+    const { sb, rpcCalls } = makeStub([{ secao: "entrada", bloco: null, categoria: "bruto", total: 5000, n: 3 }]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_dre_cash", { ...EVIL_ARGS, month: "2026-01" });
+    const call = rpcCalls.find((c) => c.fn === "get_dre_cash");
+    expect(call).toBeDefined();
+    expect(call!.params.p_org_id).toBe(ORG_SERVER);
+    expect(call!.params).not.toHaveProperty("p_user_ids");
+    expect(JSON.stringify(call!.params)).not.toContain("ORG-ALHEIA");
+  });
+
+  it("get_dre_cash SÓ chama get_dre_cash_forecast quando month = mês corrente", async () => {
+    const { sb, rpcCalls } = makeStub([]);
+    // mês passado fixo (2026-01) — sempre no passado relativo ao currentDate real de execução
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_dre_cash", { month: "2026-01" });
+    expect(rpcCalls.some((c) => c.fn === "get_dre_cash_forecast")).toBe(false);
+    expect(rpcCalls.some((c) => c.fn === "get_dre_cash")).toBe(true);
+  });
+
+  it("get_dre_cash CHAMA get_dre_cash_forecast quando month = mês corrente (derivado de today())", async () => {
+    const { sb, rpcCalls } = makeStub([]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_dre_cash", { month: today().slice(0, 7) });
+    expect(rpcCalls.some((c) => c.fn === "get_dre_cash_forecast")).toBe(true);
+  });
+
+  it("get_projected_balance usa p_projection_days=120 default (NÃO 30) e p_include_purchase_forecasts=false default", async () => {
+    const { sb, rpcCalls } = makeStub([
+      { current_balance: 1000, pessimistic_balance: 500, realistic_balance: 800, critical_date: null, min_balance: 400, confirmed_income: 2000, total_expenses: 1500 },
+    ]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_projected_balance", {});
+    const call = rpcCalls.find((c) => c.fn === "get_projected_balance_summary");
+    expect(call).toBeDefined();
+    expect(call!.params.p_projection_days).toBe(120);
+    expect(call!.params.p_include_purchase_forecasts).toBe(false);
+    expect(call!.params.p_org_id).toBe(ORG_SERVER);
+  });
+
+  it("get_projected_balance (org-only) ignora EVIL_ARGS e NUNCA expõe campo otimista", async () => {
+    const { sb, rpcCalls } = makeStub([
+      { current_balance: 1000, pessimistic_balance: 500, realistic_balance: 800 },
+    ]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_projected_balance", EVIL_ARGS);
+    const call = rpcCalls.find((c) => c.fn === "get_projected_balance_summary");
+    expect(call!.params.p_org_id).toBe(ORG_SERVER);
+    expect(JSON.stringify(call!.params)).not.toContain("ORG-ALHEIA");
+    expect(JSON.stringify(result)).not.toMatch(/optimistic|otimista/i);
+  });
+
+  it("get_taxes_paid chama as RPCs com p_competence = mês+1 (régua M+1), nunca o mês pedido direto — SEM p_user_ids", async () => {
+    const { sb, rpcCalls } = makeStub([]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_taxes_paid", { ...EVIL_ARGS, month: "2026-06" });
+    const impostoCall = rpcCalls.find((c) => c.fn === "get_imposto_guia_by_competence");
+    const inssCall = rpcCalls.find((c) => c.fn === "get_inss_guia_by_competence");
+    expect(impostoCall).toBeDefined();
+    expect(inssCall).toBeDefined();
+    expect(impostoCall!.params.p_competence).toBe("2026-07-01"); // M+1 de 2026-06
+    expect(inssCall!.params.p_competence).toBe("2026-07-01");
+    expect(impostoCall!.params.p_org_id).toBe(ORG_SERVER);
+    expect(inssCall!.params.p_org_id).toBe(ORG_SERVER);
+    expect(impostoCall!.params).not.toHaveProperty("p_user_ids");
+    expect(inssCall!.params).not.toHaveProperty("p_user_ids");
+    expect(JSON.stringify(impostoCall!.params)).not.toContain("ORG-ALHEIA");
+  });
+
+  it("get_taxes_paid trata virada de dezembro corretamente (mês 12 → mês 01 do ano seguinte)", async () => {
+    const { sb, rpcCalls } = makeStub([]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_taxes_paid", { month: "2026-12" });
+    const impostoCall = rpcCalls.find((c) => c.fn === "get_imposto_guia_by_competence");
+    expect(impostoCall!.params.p_competence).toBe("2027-01-01");
+  });
+
+  it("get_taxes_paid retorna sale_month/guia_competence e total_real via sumGuiaReal (exclui cancelled)", async () => {
+    const { sb } = makeStub([
+      { category: "Imposto Venda - ICMS", total: 100, status: "paid" },
+      { category: "Imposto Venda - PIS", total: 50, status: "pending" },
+      { category: "Imposto Venda - COFINS", total: 9999, status: "cancelled" },
+    ]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_taxes_paid", { month: "2026-06" }) as Record<string, unknown>;
+    expect(result.sale_month).toBe("2026-06");
+    expect(result.guia_competence).toBe("2026-07");
+    const impostoVenda = result.imposto_venda as Record<string, unknown>;
+    expect(impostoVenda.total_real).toBe(150); // 100+50, cancelled não soma
+  });
+});
+
+describe("sumGuiaReal — helper puro (Phase 104)", () => {
+  it("soma total excluindo status='cancelled'", () => {
+    const rows = [
+      { status: "paid", total: 100 },
+      { status: "pending", total: 50 },
+      { status: "cancelled", total: 9999 },
+    ];
+    expect(sumGuiaReal(rows)).toBe(150);
+  });
+
+  it("mês 100% cancelado soma 0 (nunca null)", () => {
+    const rows = [{ status: "cancelled", total: 9999 }];
+    expect(sumGuiaReal(rows)).toBe(0);
+  });
+
+  it("array vazio soma 0", () => {
+    expect(sumGuiaReal([])).toBe(0);
+  });
+});
+
+describe("buildReplenishmentResult — preservação de micos no sample estratificado (Pitfall 1)", () => {
+  it("summary.sem_giro_count conta TODO o conjunto e sample preserva ≥1 mico apesar do ORDER BY compra DESC", () => {
+    // Simula ORDER BY compra DESC NULLS LAST da RPC: ~48 linhas "gatilho" (compra_sugerida > 0,
+    // decrescente) SEGUIDAS de ~5 linhas de micos nas ÚLTIMAS posições (compra_sugerida=0).
+    const gatilhoRows = Array.from({ length: 48 }, (_, i) => ({
+      item_id: `G${i}`,
+      variation_id: null,
+      title: `Produto Gatilho ${i}`,
+      brand: "Pé Vermeio",
+      sku_code: `SKU-G${i}`,
+      sku_stock: 5,
+      venda_dia: 1.2,
+      venda_inteligente: 1.2,
+      cobertura_atual: 4,
+      ponto_reposicao: 10,
+      alvo: 20,
+      compra_sugerida: 48 - i, // decrescente, sempre > 0
+      valor_estimado: (48 - i) * 50,
+      custo_ausente: false,
+      sem_giro: false,
+      gatilho_ativo: true,
+      qtd_a_caminho: 0,
+      data_proxima_chegada: null,
+      status_esgotado: "com_giro",
+      tendencia: "estavel",
+      fator_sazonal: 1.0,
+    }));
+    const micoRows = Array.from({ length: 5 }, (_, i) => ({
+      item_id: `M${i}`,
+      variation_id: null,
+      title: `Produto Mico ${i}`,
+      brand: "Pé Vermeio",
+      sku_code: `SKU-M${i}`,
+      sku_stock: 100 - i, // capital parado alto
+      venda_dia: 0,
+      venda_inteligente: 0,
+      cobertura_atual: 999,
+      ponto_reposicao: 10,
+      alvo: 20,
+      compra_sugerida: 0,
+      valor_estimado: 0,
+      custo_ausente: false,
+      sem_giro: true,
+      gatilho_ativo: false,
+      qtd_a_caminho: 0,
+      data_proxima_chegada: null,
+      status_esgotado: "com_giro", // tem estoque — não é esgotado, é mico (eixo ortogonal)
+      tendencia: "queda",
+      fator_sazonal: 1.0,
+    }));
+    const rows = [...gatilhoRows, ...micoRows]; // micos nas ÚLTIMAS posições (reproduz ORDER BY compra DESC)
+
+    const result = buildReplenishmentResult(rows);
+
+    // summary conta sobre TODO o conjunto, não sobre a amostra capada
+    expect(result.summary.sem_giro_count).toBe(5);
+    expect(result.summary.total_skus).toBe(rows.length);
+    expect(result.summary.gatilho_ativo_count).toBe(48);
+
+    // sample respeita o teto
+    expect(result.sample.length).toBeLessThanOrEqual(50);
+
+    // ao menos 1 mico aparece no sample APESAR do ORDER BY que o afunda —
+    // um teste genérico length<=50 passaria mesmo descartando todos os micos.
+    const micosInSample = result.sample.filter((r) => r.sem_giro === true);
+    expect(micosInSample.length).toBeGreaterThanOrEqual(1);
+    expect(micosInSample.length).toBe(5); // bucket de micos cabe inteiro (5 ≤ 15)
+  });
+
+  it("label rotula compra sugerida como projeção e distingue sem_giro de status_esgotado", () => {
+    const result = buildReplenishmentResult([]);
+    expect(result.label).toMatch(/projeção/i);
+    expect(result.label).toMatch(/não.*pedido feito|nunca.*pedido/i);
+    expect(result.label).toMatch(/sem_giro/i);
+    expect(result.label).toMatch(/status_esgotado/i);
+  });
+
+  it("dedupe por item_id|variation_id: linha não aparece duplicada entre buckets", () => {
+    // Uma linha gatilho_ativo=true E sem_giro=true (caso extremo hipotético) não deve duplicar
+    const rows = [
+      {
+        item_id: "DUP1", variation_id: "v1", sku_stock: 10, compra_sugerida: 5,
+        gatilho_ativo: true, sem_giro: true, custo_ausente: false, status_esgotado: "com_giro",
+      },
+    ];
+    const result = buildReplenishmentResult(rows);
+    const occurrences = result.sample.filter((r) => r.item_id === "DUP1" && r.variation_id === "v1");
+    expect(occurrences.length).toBe(1);
+  });
+
+  it("respeita dispatchTool: get_replenishment retorna {label,summary,sample} via buildReplenishmentResult", async () => {
+    const rows = [
+      { item_id: "A", variation_id: null, compra_sugerida: 3, gatilho_ativo: true, sem_giro: false, custo_ausente: false, sku_stock: 2, status_esgotado: "com_giro" },
+      { item_id: "B", variation_id: null, compra_sugerida: 0, gatilho_ativo: false, sem_giro: true, custo_ausente: false, sku_stock: 40, status_esgotado: "com_giro" },
+    ];
+    const { sb } = makeStub(rows);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_replenishment", {}) as {
+      label: string; summary: Record<string, unknown>; sample: Record<string, unknown>[];
+    };
+    expect(typeof result.label).toBe("string");
+    expect(result.summary).toHaveProperty("total_skus", 2);
+    expect(result.summary).toHaveProperty("sem_giro_count", 1);
+    expect(result.sample.some((r) => r.sem_giro === true)).toBe(true);
   });
 });
 
@@ -793,5 +1099,240 @@ describe("dispatchTool — get_health_score ordena por snapshot_month (OPS-4/D14
     // Prova que snapshot_month está no select (o stub retorna o que passamos, mas a chain
     // registra que select() foi chamado — verificamos via resultado e que o stub tem o campo)
     expect(Array.isArray(result)).toBe(true);
+  });
+});
+
+// ── Phase 105: preços/competitivo/completude — Consultor CCO ─────────────────
+
+describe("dispatchTool — anti-IDOR get_price_practiced (Phase 105, molde get_goals só-mlUserIds)", () => {
+  it("orders_sold_products_agg NUNCA recebe p_org_id, só _ml_user_ids do servidor; select ml_mco_targets org-scoped com sku=''", async () => {
+    const { sb, rpcCalls, selectCalls } = makeStub([
+      { item_id: "MLB1", titulo: "T", marca: "M", quantidade: 10, receita_bruta: 1000 },
+    ]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_price_practiced", EVIL_ARGS);
+
+    const rpcCall = rpcCalls.find((c) => c.fn === "orders_sold_products_agg");
+    expect(rpcCall).toBeDefined();
+    expect(rpcCall!.params).not.toHaveProperty("p_org_id"); // essa RPC não tem esse param
+    expect(rpcCall!.params._ml_user_ids).toEqual(ML_IDS_SERVER);
+    expect(JSON.stringify(rpcCall!.params)).not.toContain("888");
+    expect(JSON.stringify(rpcCall!.params)).not.toContain("ORG-ALHEIA");
+
+    const targetCall = selectCalls.find((c) => c.table === "ml_mco_targets");
+    expect(targetCall).toBeDefined();
+    expect(targetCall!.eqs.organization_id).toBe(ORG_SERVER);
+    expect(targetCall!.eqs.sku).toBe(""); // só o sentinela do anúncio inteiro
+  });
+
+  it("retorna {label, rows} rotulando histórico e limitação de meta por variação", async () => {
+    const { sb } = makeStub([
+      { item_id: "MLB1", titulo: "T", marca: "M", quantidade: 10, receita_bruta: 1000 },
+    ]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_price_practiced", {}) as Record<string, unknown>;
+    expect(typeof result.label).toBe("string");
+    expect((result.label as string)).toMatch(/HISTÓRICO/);
+    expect((result.label as string)).toMatch(/variação/i);
+    expect(Array.isArray(result.rows)).toBe(true);
+  });
+});
+
+describe("buildPricePracticed — helper puro (Phase 105, div/0 + filtro sku='')", () => {
+  it("quantidade=0 → preco_medio_praticado null (nunca NaN/Infinity); quantidade>0 deriva receita/quantidade", () => {
+    const soldRows = [
+      { item_id: "MLB1", titulo: "T", marca: "M", quantidade: 0, receita_bruta: 0 },
+      { item_id: "MLB2", quantidade: 10, receita_bruta: 1000 },
+    ];
+    const result = buildPricePracticed(soldRows, []);
+    const row1 = result.find((r) => r.item_id === "MLB1")!;
+    const row2 = result.find((r) => r.item_id === "MLB2")!;
+    expect(row1.preco_medio_praticado).toBeNull();
+    expect(Number.isNaN(row1.preco_medio_praticado)).toBe(false);
+    expect(row2.preco_medio_praticado).toBe(100);
+  });
+
+  it("filtro sku='' (Pitfall 4): meta_mco_pct resultante é a do sku='', NUNCA a da variação", () => {
+    const soldRows = [{ item_id: "MLB1", quantidade: 10, receita_bruta: 1000 }];
+    const targetRows = [
+      { item_id: "MLB1", sku: "", target_mco_pct: 15 },
+      { item_id: "MLB1", sku: "SKU-A", target_mco_pct: 99 },
+    ];
+    const result = buildPricePracticed(soldRows, targetRows);
+    expect(result[0].meta_mco_pct).toBe(15);
+    expect(result[0].meta_mco_pct).not.toBe(99);
+  });
+
+  it("meta_mco_pct=null quando não há meta cadastrada (não 0%)", () => {
+    const soldRows = [{ item_id: "MLB1", quantidade: 10, receita_bruta: 1000 }];
+    const result = buildPricePracticed(soldRows, []);
+    expect(result[0].meta_mco_pct).toBeNull();
+  });
+});
+
+describe("dispatchTool — get_competitive_price (Phase 105, EF via ctx.userJwt — molde get_reputation)", () => {
+  it("sem ctx.userJwt → {error:'sem_jwt'} sem lançar e SEM fetch", async () => {
+    const { sb } = makeStub([]);
+    const originalFetch = globalThis.fetch;
+    let fetchCalled = false;
+    globalThis.fetch = (async (...args: unknown[]) => {
+      fetchCalled = true;
+      return originalFetch(...(args as [any]));
+    }) as typeof fetch;
+    try {
+      const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_competitive_price", EVIL_ARGS) as Record<string, unknown>;
+      expect(result.error).toBe("sem_jwt");
+      expect(result).toHaveProperty("label");
+      expect(fetchCalled).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("com userJwt — invoca ml-precos-custos com type=references (NÃO mode) e Bearer do usuário por loja", async () => {
+    const { sb } = makeStub([]);
+    const FAKE_SUPABASE_URL = "https://ckcdevcxgvueywivefgx.supabase.co";
+    // @ts-ignore
+    globalThis.Deno = { env: { get: (k: string) => k === "SUPABASE_URL" ? FAKE_SUPABASE_URL : undefined } };
+    const fetchCalls: Array<{ url: string; authHeader: string }> = [];
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = (async (url: any, init?: RequestInit) => {
+        const urlStr = String(url instanceof Request ? url.url : url);
+        fetchCalls.push({ url: urlStr, authHeader: (init?.headers as any)?.Authorization ?? "" });
+        return new Response(JSON.stringify({ references: [] }), { status: 200 });
+      }) as typeof fetch;
+
+      const result = await dispatchTool(
+        sb, ORG_SERVER, ML_IDS_SERVER, "get_competitive_price", EVIL_ARGS,
+        { userJwt: "JWT-REAL" },
+      );
+
+      expect(fetchCalls.length).toBe(ML_IDS_SERVER.length);
+      for (const c of fetchCalls) {
+        expect(c.url).toContain("/functions/v1/ml-precos-custos");
+        expect(c.url).toContain("type=references"); // NÃO mode=references
+        expect(c.url).not.toContain("mode=references");
+        const params = new URL(c.url).searchParams;
+        expect(ML_IDS_SERVER).toContain(params.get("ml_user_id"));
+        expect(params.get("ml_user_id")).not.toBe("888"); // EVIL_ARGS ignorado
+        expect(c.authHeader).toBe("Bearer JWT-REAL");
+      }
+
+      // JWT nunca vaza no retorno serializado
+      expect(JSON.stringify(result)).not.toContain("JWT-REAL");
+    } finally {
+      globalThis.fetch = originalFetch;
+      // @ts-ignore
+      delete globalThis.Deno;
+    }
+  });
+});
+
+describe("dispatchTool — anti-IDOR get_cost_gaps/get_cancelled_revenue (Phase 105, org+mlUserIds)", () => {
+  it("get_cost_gaps: get_cmv_cheio_gaps recebe p_org_id + p_user_ids do servidor, ignora EVIL_ARGS", async () => {
+    const { sb, rpcCalls } = makeStub([
+      { sku: "SKU-1", marca: "M", linhas: 3, unidades: 10, receita: 500, tem_custo_medio: false },
+    ]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_cost_gaps", EVIL_ARGS) as Record<string, unknown>;
+    const call = rpcCalls.find((c) => c.fn === "get_cmv_cheio_gaps");
+    expect(call).toBeDefined();
+    expect(call!.params.p_org_id).toBe(ORG_SERVER);
+    expect(call!.params.p_user_ids).toEqual(ML_IDS_SERVER);
+    expect(JSON.stringify(call!.params)).not.toContain("ORG-ALHEIA");
+    expect(JSON.stringify(call!.params)).not.toContain("888");
+    expect((result.label as string)).toMatch(/legítimo/i);
+    expect(Array.isArray(result.rows)).toBe(true);
+  });
+
+  it("get_cancelled_revenue: get_cancelled_revenue recebe p_org_id + p_user_ids do servidor, retorna números (default 0)", async () => {
+    const { sb, rpcCalls } = makeStub([{ cancelled_revenue: 1234, cancelled_orders: 5 }]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_cancelled_revenue", EVIL_ARGS) as Record<string, unknown>;
+    const call = rpcCalls.find((c) => c.fn === "get_cancelled_revenue");
+    expect(call).toBeDefined();
+    expect(call!.params.p_org_id).toBe(ORG_SERVER);
+    expect(call!.params.p_user_ids).toEqual(ML_IDS_SERVER);
+    expect(JSON.stringify(call!.params)).not.toContain("ORG-ALHEIA");
+    expect(result.cancelled_revenue).toBe(1234);
+    expect(result.cancelled_orders).toBe(5);
+  });
+
+  it("get_cancelled_revenue: sem rows → default 0, nunca null/NaN", async () => {
+    const { sb } = makeStub([]);
+    const result = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "get_cancelled_revenue", {}) as Record<string, unknown>;
+    expect(result.cancelled_revenue).toBe(0);
+    expect(result.cancelled_orders).toBe(0);
+  });
+});
+
+// ── Phase 106: propose_memory (única tool que escreve — só em nexo_memories) ──
+describe("dispatchTool — propose_memory (Phase 106)", () => {
+  const CONV = "11111111-1111-1111-1111-111111111111";
+  const USER = "22222222-2222-2222-2222-222222222222";
+
+  it("grava SEMPRE status='pending' — nunca 'active' (aprovação é humana)", async () => {
+    const { sb, selectCalls } = makeStub([]);
+    const r = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "propose_memory", {
+      title: "CMV", body: "custo cheio da nota", type: "decision",
+    }, { userId: USER, conversationId: CONV }) as Record<string, unknown>;
+
+    const call = selectCalls.find((c) => c.table === "nexo_memories");
+    expect(call?.inserted?.status).toBe("pending");
+    expect(call?.inserted?.status).not.toBe("active");
+    expect(r.proposed).toBe(true);
+    // o modelo é instruído a NÃO dizer que já salvou
+    expect(String(r.aviso)).toMatch(/PENDENTE/);
+  });
+
+  it("anti-IDOR: organization_id vem do SERVIDOR, ignorando o que o modelo mandar", async () => {
+    const { sb, selectCalls } = makeStub([]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "propose_memory", {
+      ...EVIL_ARGS, title: "x", body: "y", type: "context",
+    }, { userId: USER });
+    const call = selectCalls.find((c) => c.table === "nexo_memories");
+    expect(call?.inserted?.organization_id).toBe(ORG_SERVER);
+    expect(JSON.stringify(call?.inserted)).not.toContain("ORG-ALHEIA");
+  });
+
+  it("escopo 'user' sem userId do servidor cai para 'org' (respeita o CHECK do schema)", async () => {
+    const { sb, selectCalls } = makeStub([]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "propose_memory", {
+      title: "x", body: "y", type: "preference", scope: "user",
+    }, {});
+    const call = selectCalls.find((c) => c.table === "nexo_memories");
+    expect(call?.inserted?.scope).toBe("org");
+    expect(call?.inserted?.user_id).toBeNull();
+  });
+
+  it("type inválido do modelo vira 'context' (nunca viola o CHECK)", async () => {
+    const { sb, selectCalls } = makeStub([]);
+    await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "propose_memory", {
+      title: "x", body: "y", type: "DROP TABLE",
+    }, { userId: USER });
+    const call = selectCalls.find((c) => c.table === "nexo_memories");
+    expect(call?.inserted?.type).toBe("context");
+  });
+
+  it("title/body vazios → não grava", async () => {
+    const { sb, selectCalls } = makeStub([]);
+    const r = await dispatchTool(sb, ORG_SERVER, ML_IDS_SERVER, "propose_memory", {
+      title: "  ", body: "", type: "context",
+    }, { userId: USER }) as Record<string, unknown>;
+    expect(r.proposed).toBe(false);
+    expect(selectCalls.find((c) => c.table === "nexo_memories")?.inserted).toBeUndefined();
+  });
+
+  it("declaration não expõe org/user como parâmetro do modelo", () => {
+    const decl = TOOL_DECLARATIONS.find((d) => d.name === "propose_memory")!;
+    const props = Object.keys(decl.parameters.properties ?? {});
+    expect(props).not.toContain("org_id");
+    expect(props).not.toContain("user_id");
+    expect(props).not.toContain("organization_id");
+    expect(props).not.toContain("status");
+  });
+
+  it("é a ÚNICA tool de escrita: nenhuma outra declaration sugere mutação no ML", () => {
+    const escrita = TOOL_DECLARATIONS.filter((d) =>
+      /^(set_|update_|create_|delete_|pause_|apply_)/.test(d.name),
+    );
+    expect(escrita).toEqual([]);
   });
 });

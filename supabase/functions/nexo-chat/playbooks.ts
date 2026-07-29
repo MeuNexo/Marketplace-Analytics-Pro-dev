@@ -132,6 +132,40 @@ export const STRATEGIC = `# Nexo — Playbooks Estratégicos por Agente
   3. Revisar ordens de compra pendentes: postergar OCs de itens com cobertura > 60 dias.
   4. Concentrar investimento em ads nos produtos com MC% > 20% (geram caixa rápido).
 
+### 2.3 DRE de Resultado (competência) vs DRE de Caixa (recebimento) vs Base-Pagos
+
+**Contexto:** o Consultor tem 3 lentes financeiras que NUNCA devem ser misturadas na mesma resposta sem dizer qual é qual: (1) DRE por COMPETÊNCIA (get_dre_result + get_margin_summary/get_day_kpis) — quando a venda aconteceu, independente de quando o dinheiro entrou; (2) DRE de CAIXA (get_dre_cash) — quando o dinheiro efetivamente entrou/saiu (liberação Mercado Pago); (3) base-pagos (get_margin_summary sozinho) — pedidos com status pago no período, sem a régua de competência/bloco.
+
+#### DADO: usuário pergunta "qual foi meu lucro/resultado real em [mês]"
+- **Diagnóstico:** "lucro real" tem 3 respostas possíveis dependendo do regime perguntado — nunca assumir qual sem checar o contexto da pergunta.
+- **Ação validada:**
+  1. Chamar get_dre_result(month) para as deduções operacionais do mês por competência.
+  2. Chamar get_margin_summary ou get_day_kpis do MESMO mês para receita/CMV/margem de contribuição — get_dre_result sozinho NÃO tem essas linhas.
+  3. Se o mês estiver em regime de APURAÇÃO (get_dre_result.regime === "apuracao"), usar get_taxes_paid para o imposto/INSS reais em vez do estimado.
+  4. Se a pergunta for sobre CAIXA ("quanto entrou de verdade"), usar get_dre_cash em vez de 1-3.
+- **Métrica de sucesso:** a resposta cita explicitamente qual regime (competência/caixa/pagos) foi usado.
+
+### 2.4 Break-even de Caixa do Mês (Phase 100)
+
+#### DADO: usuário pergunta "quanto falta vender para fechar o mês no zero" / "break-even de caixa"
+- **Diagnóstico:** get_dre_cash(month=mês corrente) já traz o forecast completo (Phase 100) — saídas previstas totais, entradas garantidas/agendadas e o ritmo de vendas dos últimos 7 dias.
+- **Ação validada:**
+  1. Somar saída prevista total (saidas_pagas + saidas_pendentes + estornos_ocorridos/previstos + imposto_previsto_restante) do campo forecast.
+  2. Comparar com entrada garantida (entradas_liberadas + entradas_agendadas).
+  3. O gap dividido pela taxa_venda_para_caixa (que já desconta estornos) e pelo ritmo diário médio (vendas_7d_media_diaria) dá a estimativa de dias/venda adicional necessária.
+  4. Checar alerta_recorrencia — se houver linha, avisar que pode ser falso-positivo (parcela real recorrente, não um vazamento de caixa) antes de soar alarme.
+- **Métrica de sucesso:** resposta traz um número de R$ faltante E um horizonte de dias, nunca só um "está apertado" vago.
+
+### 2.5 Imposto Guia Real vs Imposto Cheio (estimado)
+
+#### DADO: usuário pergunta "quanto pago de imposto de verdade" / "ICMS PIS COFINS real" / "INSS real"
+- **Diagnóstico:** total_tax (de get_day_kpis/get_margin_summary) é uma ESTIMATIVA sobre a venda, usada para MCO/precificação. O valor REAL pago (com créditos) só existe na guia emitida, que sai no mês SEGUINTE ao mês de venda (régua M+1).
+- **Ação validada:**
+  1. Usar get_taxes_paid(month=mês de venda perguntado) — a tool já aplica o deslocamento M+1 internamente.
+  2. Se a guia ainda não existir para aquele mês (ex.: mês muito recente, guia ainda não emitida), declarar a limitação e usar o estimado como PREVISÃO, nunca como fato.
+  3. Nunca somar linhas com status='cancelled' — são crédito, não imposto pago.
+- **Métrica de sucesso:** nunca afirmar "imposto real" de um mês sem ter chamado get_taxes_paid primeiro.
+
 ---
 
 ## 3. ESTELA — Estoque & Operações
@@ -152,14 +186,64 @@ export const STRATEGIC = `# Nexo — Playbooks Estratégicos por Agente
   4. **Monitoramento contínuo:** Velocidade de venda muda com sazonalidade e campanhas. Recalcular semanalmente, não mensalmente.
 - **Métrica de sucesso:** Zero rupturas em SKUs classe A | Cobertura média > 50 dias
 
-#### DADO: Estoque parado (giro < 1x em 60 dias)
-- **Diagnóstico:** Capital imobilizado sem retorno. Estoque parado tem custo de oportunidade (dinheiro que poderia estar em produto de alto giro).
+#### DADO: Estoque parado (giro < 1x em 60 dias) — mico / capital parado (sem_giro=true)
+- **Diagnóstico:** Capital imobilizado sem retorno. Estoque parado tem custo de oportunidade (dinheiro que poderia estar em produto de alto giro). Na tool get_replenishment, este é o campo \`sem_giro=true\` (definido como tem estoque e não vende — \`sku_stock>0\` e sem venda recente). **sem_giro é DIFERENTE de status_esgotado**: sem_giro = capital parado (tem produto, não gira); status_esgotado = SKU zerado, classificado por recência de venda (repor_esgotado / revisar_esgotado / descontinuar). Nunca confundir os dois eixos — recomendar "promoção flash" para um SKU com estoque ZERADO (status_esgotado) é erro; a ação certa ali é reposição, não desconto.
 - **Ação validada:**
   1. Verificar se anúncio está ativo e otimizado (às vezes estoque para porque anúncio está pausado ou mal posicionado).
   2. Se anúncio ok: criar promoção flash (15-20% off) por 7 dias para testar demanda.
   3. Se não vender mesmo com promoção: avaliar liquidação ou venda em outro canal (Shopee, Amazon, B2B).
   4. Regra de corte: se SKU não vende há > 90 dias e margem é negativa ou neutra, descontinuar.
-- **Métrica de sucesso:** Capital em estoque parado < 15% do estoque total | Giro médio > 2x em 60 dias
+- **Métrica de sucesso:** Capital em estoque parado < 15% do estoque total | Giro médio > 2x em 60 dias | sem_giro_count (get_replenishment) em queda mês a mês
+
+#### DADO: "O que comprar agora?" — mix de compra
+- **Diagnóstico:** Comprar sem critério (só pelo que "parece estar faltando") produz mix errado: repõe o que já tem giro alto e ignora quem realmente precisa. A tool get_replenishment retorna compra_sugerida por SKU já cruzando velocidade de venda × cobertura × ponto de reposição — é a fonte, não um chute.
+- **Ação validada:**
+  1. Rodar get_replenishment e priorizar SKUs com gatilho_ativo=true (compra recomendada agora).
+  2. Priorizar por impacto financeiro: compra_sugerida × margem do SKU (não só quantidade) — SKU de margem alta e giro alto vale mais que SKU de margem baixa com o mesmo volume.
+  3. Cruzar com get_margin_by_product antes de decidir o mix final: comprar volume de SKU com MC% negativa é destruir caixa, não repor.
+  4. Nunca decidir compra só pelo compra_sugerida isolado — é PROJEÇÃO baseada em velocidade de venda, não pedido feito; validar com o dono da conta antes de emitir OC.
+- **Métrica de sucesso:** % do valor comprado concentrado em SKUs classe A/B (margem×giro) > 70% | Zero OC emitida para SKU com MC% negativa
+
+#### DADO: MOQ × giro — lote econômico
+- **Diagnóstico:** Comprar o lote mínimo do fornecedor (MOQ) sem checar giro trava capital em excesso de estoque de baixo giro; comprar abaixo do MOQ às vezes nem é possível. get_replenishment retorna \`param_moq\`/\`param_pack\` (lote mínimo/múltiplo, com fallback sku→fornecedor→marca→global) — cruzar com venda_dia antes de fechar OC.
+- **Ação validada:**
+  1. Calcular quantos dias de cobertura o MOQ representa: MOQ / venda_dia. Se > 90 dias de cobertura, o lote é grande demais para o giro do SKU.
+  2. Se MOQ força excesso: negociar lote menor com o fornecedor OU absorver o excesso apenas para SKUs classe A (alto giro, aceita capital parado temporário).
+  3. Para SKU classe C (cauda longa) com MOQ alto: considerar não repor — melhor ruptura controlada que capital parado num SKU de baixo giro.
+- **Métrica de sucesso:** Cobertura implícita do MOQ < 60 dias para SKUs classe A/B | Nenhuma OC de SKU classe C força mais de 90 dias de estoque
+
+#### DADO: Ponto de pedido com fator sazonal
+- **Diagnóstico:** Ponto de pedido fixo (sem ajuste sazonal) gera ruptura em pico de demanda e excesso em baixa temporada. get_replenishment retorna \`ponto_reposicao\`/\`alvo\` já ajustados e \`fator_sazonal\` (multiplicador de demanda esperada pela época) — usar esse dado em vez de assumir venda_dia constante.
+- **Ação validada:**
+  1. Antes de decidir "comprar pouco" ou "não é urgente", checar fator_sazonal do SKU — se > 1, a demanda esperada é maior que a histórica recente (ex.: pré-temporada de rodeio/inverno).
+  2. Para SKUs com fator_sazonal alto e cobertura_atual próxima do ponto_reposicao, antecipar a compra (lead time real + buffer, não esperar o gatilho estourar).
+  3. Registrar SKUs onde o fator_sazonal divergiu muito do realizado (ex.: pico não veio) para recalibrar a próxima temporada.
+- **Métrica de sucesso:** Zero ruptura em SKU classe A durante pico sazonal identificado | Erro médio entre fator_sazonal previsto e demanda realizada em queda
+
+#### DADO: Priorização ABC de COMPRA (distinto de ABC de urgência)
+- **Diagnóstico:** A Curva ABC de urgência (já usada no bloco de cobertura) prioriza por velocidade × preço × MC% para decidir QUANDO repor. ABC de COMPRA é sobre QUANTO investir: mesmo SKU classe A de urgência pode não merecer o maior cheque se a margem for baixa. São perguntas diferentes — "preciso repor logo?" vs "vale investir mais capital aqui?".
+- **Ação validada:**
+  1. Classe A de compra: SKU com compra_sugerida alta × margem alta (get_margin_by_product) — prioridade de capital, comprar sem hesitar.
+  2. Classe B: compra_sugerida alta mas margem mediana — comprar, mas negociar melhor custo antes.
+  3. Classe C: compra_sugerida baixa ou margem baixa — avaliar se vale manter o SKU no mix antes de investir mais capital.
+  4. Nunca tratar "produto vende muito" (urgência) como sinônimo de "produto merece mais capital" (compra) — cruzar sempre os dois eixos.
+- **Métrica de sucesso:** % do capital de compra alocado em classe A de compra > 60% | Zero SKU classe C recebendo o maior aporte de capital do mês
+
+#### DADO: OC em trânsito — quanto comprar AGORA descontando o que já vem
+- **Diagnóstico:** Recomendar compra sem checar OC já emitida gera compra duplicada (capital parado em dobro quando a OC chegar). get_replenishment retorna \`qtd_a_caminho\`/\`data_proxima_chegada\` — sempre checar antes de sugerir nova compra.
+- **Ação validada:**
+  1. Antes de recomendar compra_sugerida como valor final, verificar se qtd_a_caminho > 0 — se sim, a necessidade real de compra nova é menor (a RPC já desconta isso no cálculo, mas o rótulo deve deixar claro ao usuário que parte já está a caminho).
+  2. Se data_proxima_chegada estiver distante (> lead time normal do fornecedor), sinalizar risco de atraso e considerar reforçar a compra mesmo com OC em trânsito.
+  3. Nunca tratar qtd_a_caminho como estoque disponível hoje — é uma fonte separada e parcial (pode atrasar ou ser cancelada pelo fornecedor).
+- **Métrica de sucesso:** Zero OC duplicada emitida para SKU com qtd_a_caminho > cobertura necessária | Atraso médio entre data_proxima_chegada e chegada real em queda
+
+#### DADO: Raciocínio compra × venda — "comprei o mix certo?"
+- **Diagnóstico:** Comprar bem não é só reposição pontual — é perguntar periodicamente se o mix comprado bate com o que realmente vendeu (margem × giro), e não só "o que faltou". Cruzar get_replenishment (o que foi/está sendo reposto) com get_margin_by_product e get_margin_by_brand (o que realmente deu lucro) revela desalinhamento entre compra e venda.
+- **Ação validada:**
+  1. Periodicamente, comparar SKUs com alto compra_sugerida acumulado vs SKUs com maior margem/venda no período — se forem grupos diferentes, o mix de compra está desalinhado com o que vende bem.
+  2. Identificar capital parado (sem_giro=true) concentrado em marcas/categorias específicas — pode indicar erro sistemático de compra, não só SKU isolado.
+  3. Erro comum a evitar: escalar ads (get_ads_by_product) num SKU que está em ruptura ou runway curto (get_replenishment sem cobertura suficiente) — gera reclamação e desperdiça budget; sempre checar estoque/reposição ANTES de recomendar escalar ads.
+- **Métrica de sucesso:** SKUs no top 10 de compra_sugerida acumulada também aparecem no top 10 de margem/venda (correlação alta) | Redução de capital parado (sem_giro) concentrado nas mesmas marcas mês a mês
 
 ### 3.2 Logística & Envio
 
@@ -197,6 +281,31 @@ export const STRATEGIC = `# Nexo — Playbooks Estratégicos por Agente
   1. Ampliar sortimento: adicionar variações (cores, tamanhos) dos SKUs já validados.
   2. Antecipar estoque para sazonalidade (consultar Google Trends para projetar picos).
   3. Aumentar investimento em ads para capturar demanda incremental antes dos concorrentes.
+
+### 4.3 Sinal Competitivo Real (sugestão de preço do ML)
+
+**Contexto (Phase 105):** pela primeira vez o Rafael tem um DADO competitivo real —
+\`get_competitive_price\` (EF ml-precos-custos, sugestão de referência de preço do próprio
+Mercado Livre) — e um DADO de preço praticado próprio — \`get_price_practiced\` (preço médio
+histórico derivado, cruzado com a meta de MCO em ml_mco_targets).
+
+#### DADO: "vale reagir ao concorrente neste anúncio?" — get_competitive_price
+- **Diagnóstico:** a sugestão de preço do ML é um SINAL, nunca uma ordem — é o indicativo do
+  próprio ML, não o preço real do concorrente nem obrigação de igualar. Comparar SEMPRE o PREÇO
+  TOTAL (preço + frete), não só o preço do anúncio — a sugestão já traz os custos ML
+  (selling_fees/shipping_fees) embutidos. Cruzar com a margem (get_margin_summary /
+  get_price_practiced) e a meta de MCO antes de mexer em qualquer preço.
+- **Ação validada (passos):**
+  1. Se a sugestão está ABAIXO do preço praticado (get_price_practiced) e a MC%/MCO ainda fica
+     saudável ao igualar → considerar ajuste para não perder Buy Box/posição.
+  2. Se ao igualar a sugestão a MCO fura a meta cadastrada (get_price_practiced.meta_mco_pct) →
+     NÃO igualar: diferenciar por frete grátis/prazo (Full)/conteúdo/reputação (reforça 4.1) em
+     vez de queimar margem.
+  3. Se não há sugestão disponível para o item (no_suggestion=true ou item omitido no bulk) →
+     declarar a limitação, nunca inventar um concorrente ou um preço.
+- **Métrica de sucesso:** acompanhar MCO% praticado (get_price_practiced) vs meta e
+  posição/Buy Box após o ajuste; a sugestão do ML é indicativa — reavaliar em 7 dias (mesma
+  cadência do monitoramento de concorrentes em 4.1).
 
 ---
 

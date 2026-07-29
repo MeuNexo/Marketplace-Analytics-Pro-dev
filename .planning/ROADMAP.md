@@ -1017,7 +1017,7 @@ Plans:
 **Goal:** A página `/analise-precos` ganha, abaixo do gráfico preço×break-even, um card fixo (sempre visível) com o waterfall de MCO por unidade (média do período) do anúncio/variação selecionado — receita→CMV→comissão→frete→impostos→MC→ads→MCO — com semáforo reusando `mcoHealth.ts` (🔴≤5% 🟡6-8% 🟢≥9%), um campo editável de **meta de MCO% customizada por `item_id`** (persistida na nova tabela `ml_mco_targets`, org-first RLS), e **duas alavancas de recomendação sempre visíveis**: preço mínimo de venda para atingir a meta (via `reversePrice` da Phase 50) e ACOS-alvo da campanha para atingir a meta mantendo o preço atual. 100% aditivo, single-item, tooltip da Phase 79 intocado, fórmula de MCO single-source (`computeMco`).
 **Requirements**: D-01..D-10 (decisões de `101-CONTEXT.md` — sem REQ-IDs formais; milestone v8.0 é Consultor v2, esta phase é extensão de UX de /analise-precos)
 **Depends on:** Phase 100 (linhagem /analise-precos Phases 77/79/81/82)
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 **Wave 1**
@@ -1027,7 +1027,82 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 101-03-PLAN.md — [W2] Frontend: hook `useMcoTargets` + card fixo no `PrecoPraticadoReport.tsx` (waterfall + meta editável + 2 alavancas + avisos) + ok visual (D-01, D-03, D-04, D-05, D-08, D-10)
+- [x] 101-03-PLAN.md — [W2] Frontend: hook `useMcoTargets` + card fixo no `PrecoPraticadoReport.tsx` (waterfall + meta editável + 2 alavancas + avisos) + ok visual (D-01, D-03, D-04, D-05, D-08, D-10)
+
+### Phase 102: Simulador manual de MCO na página /analise-precos — permitir que o usuário edite livremente os valores no card de detalhamento de MCO (Phase 101: preço, CMV, comissão, frete, impostos, ads) para rodar simulações what-if além da recomendação de meta fixa já existente, vendo em tempo real como MC/un e MCO/un mudam conforme os valores editados, sem persistir nada — é simulação efêmera, não uma edição de custo real do produto.
+
+**Goal:** No card "Detalhamento de MCO" (Phase 101, vivo em prod em `/analise-precos`), o usuário liga um toggle "Simular" e edita livremente os campos do waterfall por unidade (preço, CMV, comissão%, frete, impostos%, ads); MC/un, MCO/un e o semáforo recalculam ao vivo com os valores digitados, enquanto as duas linhas de recomendação (preço mínimo, ACOS-alvo) permanecem ancoradas nos custos/preço REAIS (D-04). Tudo client-side/efêmero — sem tabela, sem RPC, sem persistência.
+**Requirements**: D-01..D-05 (scoping local do 102-CONTEXT.md — sem IDs formais de requisito)
+**Depends on:** Phase 101
+**Plans:** 3/3 plans complete
+
+Plans:
+**Wave 1**
+
+- [x] 102-01-PLAN.md — [W1] Função pura `computeSimulatedWaterfall` (novo `src/lib/pricing/mcoSimulation.ts`, reusa `computeMco`) + testes TDD (D-04)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 102-02-PLAN.md — [W2] Wire no `PrecoPraticadoReport.tsx`: toggle Simular + SimField editável + painel tingido + recompute ao vivo + âncora D-04 + reset D-03 + validação D-05 + testes do componente (D-01..D-05)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 102-03-PLAN.md — [W3] Checkpoint: ok visual do Wesley no preview (D-01..D-05)
+
+### Phase 103: Consultor CCO — Ferramentas de Compra vs Venda: adicionar tools read-only get_replenishment (RPC get_replenishment_by_sku: compra sugerida, gatilho, venda/dia x estoque, cobertura, micos/sem giro, custo ausente, OC em transito) e get_purchase_suppliers (RPC get_purchase_order_suppliers) no nexo-chat/tools.ts escopadas anti-IDOR; ampliar playbook Estela em playbooks.ts (mix de compra, capital parado/micos, MOQ x giro, ponto de pedido sazonal, ABC de compra, raciocinio compra x venda); ensinar raciocinio compra x venda na persona prompt.ts; testes espelhando tools.test.ts/prompt.test.ts; deploy da EF nexo-chat pelo orquestrador. Ref spec: docs/superpowers/specs/2026-07-28-consultor-cco-completo-design.md
+
+**Goal:** O Consultor de IA (nexo-chat) responde análises de compra × venda — o que comprar agora, micos/capital parado, "comprei o mix certo?" e fornecedores de OC — via 2 tools read-only escopadas anti-IDOR, com playbook e persona ampliados.
+**Requirements**: CCO-REPL, CCO-SUPPLIERS, CCO-PLAYBOOK, CCO-PERSONA, CCO-TESTS
+**Depends on:** Phase 102
+**Plans:** 1 plan
+
+Plans:
+
+- [ ] 103-01-PLAN.md — [W1] get_replenishment + get_purchase_suppliers em tools.ts (anti-IDOR org-only, summary+sample estratificado), playbook Estela + persona compra×venda, testes espelhados
+
+### Phase 104: Consultor CCO — DRE real e caixa: adicionar tools read-only get_dre_result (RPC get_dre_operational_by_competence, o lucro real por competencia), get_dre_cash (RPCs get_dre_cash + get_dre_cash_forecast), get_projected_balance (RPC get_projected_balance_summary, 2 cenarios: pessimista+realista) e get_taxes_paid (RPCs get_imposto_guia_by_competence + get_inss_guia_by_competence) no nexo-chat/tools.ts anti-IDOR com rotulos de veracidade (competencia != pagos != caixa; imposto guia != imposto cheio); ampliar playbook Gabriel (DRE resultado vs caixa vs pagos, break-even de caixa); testes. Deploy da EF nexo-chat pelo orquestrador. Ref spec: docs/superpowers/specs/2026-07-28-consultor-cco-completo-design.md
+
+**Goal:** O Consultor de IA (nexo-chat) responde o lucro real por competência, o regime de caixa, o saldo projetado e os impostos reais por guia — 4 tools read-only anti-IDOR sobre RPCs já em produção, com rótulos de veracidade (competência ≠ pagos ≠ caixa; guia real ≠ imposto estimado; saldo = 2 cenários).
+**Requirements**: CCO-DRE-RESULT, CCO-DRE-CASH, CCO-PROJ-BAL, CCO-TAXES, CCO-PLAYBOOK-G, CCO-PERSONA-DRE, CCO-TESTS-DRE
+**Depends on:** Phase 103
+**Plans:** 1 plan
+
+Plans:
+
+- [ ] 104-01-PLAN.md — 4 tools DRE real & caixa (get_dre_result, get_dre_cash com forecast condicional, get_projected_balance 2 cenários, get_taxes_paid régua M+1) + playbook Gabriel + persona + testes (27→31 tools)
+
+### Phase 105: Consultor CCO — Precos, competitivo e completude: adicionar tools read-only get_price_practiced (RPC orders_sold_products_agg + tabela ml_mco_targets: preco praticado x meta MCO), get_competitive_price (edge fn ml-precos-custos modo references, sugestao competitiva + comissao; usa JWT real do usuario se exigido), get_cost_gaps (RPC get_cmv_cheio_gaps: quais SKUs sem custo) e get_cancelled_revenue (RPC get_cancelled_revenue) no nexo-chat/tools.ts anti-IDOR; ampliar playbook Rafael com dado competitivo real; finalizar persona prompt.ts (apontar todas as novas tools + rotulos); testes de integracao. Deploy da EF nexo-chat pelo orquestrador. Ref spec: docs/superpowers/specs/2026-07-28-consultor-cco-completo-design.md
+
+**Goal:** Fechar a milestone "Consultor CCO Completo": acender o pilar competitivo (Rafael) com dado real (get_competitive_price via EF ml-precos-custos, sugestão do ML), adicionar preço praticado × meta de MCO (get_price_practiced) e completar a leitura de dados (get_cost_gaps, get_cancelled_revenue) — 4 tools read-only anti-IDOR no nexo-chat + playbook Rafael ampliado + persona FINAL cobrindo todas as tools 103/104/105.
+**Requirements**: CCO-PRICE, CCO-COMPETITIVE, CCO-GAPS, CCO-CANCELLED, CCO-PLAYBOOK-R, CCO-PERSONA-FINAL, CCO-TESTS-105
+**Depends on:** Phase 104
+**Plans:** 1 plan
+
+Plans:
+
+- [ ] 105-01-PLAN.md — 4 tools read-only (get_price_practiced, get_competitive_price, get_cost_gaps, get_cancelled_revenue) com 3 padrões anti-IDOR + playbook Rafael 4.3 + persona FINAL + testes (contagem 31→35)
+
+---
+
+### Phase 106: Consultor com memória persistente — conversas salvas no banco (nexo_conversations + nexo_messages, RLS org-first, histórico deixa de ser efêmero/client-held) e memória de fatos curados (nexo_memories: decisão/preferência/contexto/referência, escopo org|user, status pending→active só por aprovação humana) injetada no system prompt a cada turno com teto de 30 fatos; tool propose_memory (escreve SÓ em nexo_memories, read-only sobre o ML intacto); UI de lista de conversas, card "O Nexo quer lembrar disso" (Aprovar/Descartar/Editar) e tela /consultor/memoria. RAG (Fase 2 da spec) permanece adiado.
+
+**Goal:** O Consultor deixa de ser amnésico: retoma conversas anteriores e carrega fatos curados sobre a operação e sobre o Wesley em toda nova sessão — o análogo do que o Claude Code faz com sessão + MEMORY.md, sem RAG.
+**Origem:** Wesley (2026-07-29), depois do fix dos guardrails: "poderia ter uma memória ou contexto salvo no backend para sempre que iniciar novas sessões funcione a memória, como é aqui no Claude". Escopo e curadoria decididos por ele — ver `106-CONTEXT.md` (decisões LOCKED).
+**Decisões travadas:** (1) curadoria = **o Consultor propõe, Wesley aprova** — extração automática foi rejeitada; (2) **fato numérico envelhece** — entra marcado como perecível, é pista e nunca número atual (espelha a regra de recall do Claude Code); (3) `propose_memory` **não** vira escrita no ML — T-57-12 permanece; (4) teto de injeção (~30 fatos) porque o prompt já tem ~49 KB.
+**Ganho colateral:** hoje `useNexoChat` reenvia a conversa INTEIRA a cada turno (cresce sem limite + superfície de injeção). Carregar do banco pelo `conversation_id` torna o servidor a autoridade do histórico.
+**Requirements**: MEM-CONV-01, MEM-CONV-02, MEM-FACT-01, MEM-RLS-01, MEM-INJECT-01, MEM-PROPOSE-01, MEM-UI-01, MEM-UI-02, MEM-UI-03, MEM-TESTS-106 *(feature nova — IDs locais)*
+**Depends on:** Phases 103-105 (milestone Consultor CCO Fase 1, no PR #33)
+**Verificação alvo:** tsc 0, vitest verde, build ok. Anti-IDOR provado nas 2 tabelas novas (org própria > 0 linhas, org alheia = 0, viewer não escreve) impersonando as orgs reais. `pending` nunca injetado no prompt. Deploy da EF `nexo-chat` pelo ORQUESTRADOR + smoke 401/OPTIONS. E2E: 2º turno recupera contexto do 1º.
+**Planejada 2026-07-29.**
+
+**EXECUTADA 2026-07-29** — 3 planos completos. Schema em prod (2 migrations via MCP, anti-IDOR provado: dono 1 / org alheia 0 / CHECK barra scope=user sem user_id / advisors limpos). EF **nexo-chat v10** (142 testes, contrato novo + legado, propose_memory sempre `pending`). Frontend completo (737 testes, tsc 0, build ok). E2E em prod: proposta `pending` NÃO é injetada (0 ativas) e vira injetável após aprovação (1). **Pendente: ok visual do Wesley + PR.**
+**Lição de método:** `SET ROLE`+`LATERAL` na mesma statement NÃO prova RLS em SELECT direto (policies resolvem no planejamento, com o role `postgres` que tem BYPASSRLS) — deu falso negativo de vazamento. Usar `query_to_xml` (plano montado em runtime). O padrão LATERAL da Phase 79 segue válido para RPC.
+
+**Plans:** 3 plans
+
+- [x] 106-01-PLAN.md — Schema: `nexo_conversations`/`nexo_messages`/`nexo_memories` + RLS org-first clonada de `ml_mco_targets` + provas anti-IDOR (wave 1)
+- [x] 106-02-PLAN.md — EF: `memory.ts` (histórico + fatos ativos), `conversation_id` no contrato, injeção no prompt, tool `propose_memory`, deploy+E2E (wave 2)
+- [x] 106-03-PLAN.md — Frontend: `useNexoChat` persistido, lista de conversas (mobile+desktop), card de aprovação, `/consultor/memoria` (wave 3)
 
 ---
 

@@ -5,14 +5,21 @@
  *   1. fixture com vendas → waterfall completo (todas as linhas fixas) +
  *      as duas alavancas de recomendação sempre visíveis
  *   2. período sem vendas → copy de estado vazio do card (D-01, UI-SPEC)
+ *   3. modo Simular (Phase 102) → D-02/D-03/D-04/D-05
  *
  * Phase: 101-detalhamento-de-mco-e-recomenda-o-de-margem-na-p-gina-analis / Plan 03
+ * Phase: 102-simulador-manual-de-mco-na-p-gina-analise-precos-permitir-qu / Plan 02
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { toast } from "sonner";
 import { PrecoPraticadoReport } from "./PrecoPraticadoReport";
 import type { ProductItem } from "@/contexts/MLInventoryContext";
+
+vi.mock("sonner", () => ({
+  toast: { error: vi.fn(), success: vi.fn() },
+}));
 
 // jsdom não implementa ResizeObserver (recharts ResponsiveContainer usa via
 // effect) — polyfill mínimo local, não altera o setup global do projeto.
@@ -124,5 +131,173 @@ describe("PrecoPraticadoReport — card Detalhamento de MCO", () => {
       expect(screen.getByText("Sem vendas no período selecionado")).toBeInTheDocument();
     });
     expect(screen.queryByText("Detalhamento de MCO")).not.toBeInTheDocument();
+  });
+});
+
+describe("modo Simular", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    rpcRows = [SALES_ROW];
+  });
+
+  // Helper: valor (último <span> direto) da linha `Row` cujo rótulo é `label`.
+  function rowValue(label: string): string {
+    const p = screen.getByText(label).closest("p") as HTMLElement;
+    const spans = p.querySelectorAll(":scope > span");
+    return spans[spans.length - 1]?.textContent ?? "";
+  }
+
+  it("D-02: ligar o toggle 'Simular' transforma as linhas do waterfall em campos editáveis", async () => {
+    render(
+      <PrecoPraticadoReport
+        products={[{ id: "MLB1", title: "Item Teste" }]}
+        mlUserIds={["123"]}
+        fromDate="2026-07-01"
+        toDate="2026-07-19"
+      />,
+    );
+    await screen.findByText("Detalhamento de MCO");
+
+    // Antes de simular: "Receita/un" não tem <input> na linha.
+    const receitaLabel = screen.getByText("Receita/un");
+    expect(within(receitaLabel.closest("p") as HTMLElement).queryByRole("textbox")).not.toBeInTheDocument();
+
+    const simularSwitch = screen.getByRole("switch", { name: "Simular" });
+    fireEvent.click(simularSwitch);
+
+    await waitFor(() => {
+      const p = screen.getByText("Receita/un").closest("p") as HTMLElement;
+      expect(within(p).getByRole("textbox")).toBeInTheDocument();
+    });
+
+    // Semeado do valor real: precoUnit = total/qtd = 1000/10 = 100.
+    const receitaInput = within(
+      screen.getByText("Receita/un").closest("p") as HTMLElement,
+    ).getByRole("textbox") as HTMLInputElement;
+    expect(receitaInput.value).toBe("100");
+  });
+
+  it("D-04: recomendação (preço mínimo, ACOS-alvo) permanece byte-idêntica durante a simulação", async () => {
+    render(
+      <PrecoPraticadoReport
+        products={[{ id: "MLB1", title: "Item Teste" }]}
+        mlUserIds={["123"]}
+        fromDate="2026-07-01"
+        toDate="2026-07-19"
+      />,
+    );
+    await screen.findByText("Detalhamento de MCO");
+
+    const precoMinLabel = screen.getByText("Preço mínimo para a meta");
+    const acosLabel = screen.getByText("ACOS-alvo da campanha (mantendo o preço atual)");
+    const precoMinAntes = precoMinLabel.nextElementSibling?.textContent;
+    const acosAntes = acosLabel.nextElementSibling?.textContent;
+
+    fireEvent.click(screen.getByRole("switch", { name: "Simular" }));
+    await waitFor(() => {
+      expect(screen.getByText("Simulando")).toBeInTheDocument();
+    });
+
+    // Altera o preço simulado para um valor bem diferente do real.
+    const receitaInput = within(
+      screen.getByText("Receita/un").closest("p") as HTMLElement,
+    ).getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(receitaInput, { target: { value: "999" } });
+
+    // Recomendação continua idêntica — nunca reage à simulação (D-04).
+    expect(screen.getByText("Preço mínimo para a meta").nextElementSibling?.textContent).toBe(precoMinAntes);
+    expect(
+      screen.getByText("ACOS-alvo da campanha (mantendo o preço atual)").nextElementSibling?.textContent,
+    ).toBe(acosAntes);
+  });
+
+  it("D-04: alterar o campo de preço recalcula MC/un e o semáforo ao vivo", async () => {
+    render(
+      <PrecoPraticadoReport
+        products={[{ id: "MLB1", title: "Item Teste" }]}
+        mlUserIds={["123"]}
+        fromDate="2026-07-01"
+        toDate="2026-07-19"
+      />,
+    );
+    await screen.findByText("Detalhamento de MCO");
+
+    fireEvent.click(screen.getByRole("switch", { name: "Simular" }));
+    await waitFor(() => {
+      expect(screen.getByText("Simulando")).toBeInTheDocument();
+    });
+
+    const mcoAntes = rowValue("= MCO/un");
+
+    // precoUnit real=100 → simulado=1 (bem abaixo dos custos) força MCO negativo.
+    const receitaInput = within(
+      screen.getByText("Receita/un").closest("p") as HTMLElement,
+    ).getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(receitaInput, { target: { value: "1" } });
+
+    await waitFor(() => {
+      expect(rowValue("= MCO/un")).not.toBe(mcoAntes);
+    });
+  });
+
+  it("D-05: valor inválido (comissão > 100%) dispara toast.error e reverte o campo", async () => {
+    render(
+      <PrecoPraticadoReport
+        products={[{ id: "MLB1", title: "Item Teste" }]}
+        mlUserIds={["123"]}
+        fromDate="2026-07-01"
+        toDate="2026-07-19"
+      />,
+    );
+    await screen.findByText("Detalhamento de MCO");
+
+    fireEvent.click(screen.getByRole("switch", { name: "Simular" }));
+    await waitFor(() => {
+      expect(screen.getByText("Simulando")).toBeInTheDocument();
+    });
+
+    const comissaoInput = within(
+      screen.getByText("(−) Comissão").closest("p") as HTMLElement,
+    ).getByRole("textbox") as HTMLInputElement;
+    expect(comissaoInput.value).toBe("10"); // comissaoUnit=10 / precoUnit=100 * 100 = 10%
+
+    fireEvent.change(comissaoInput, { target: { value: "150" } });
+    fireEvent.blur(comissaoInput);
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("Valor precisa estar entre 0% e 100%");
+    });
+    expect(comissaoInput.value).toBe("10"); // reverteu ao último valor válido
+  });
+
+  it("D-03: trocar de anúncio reseta o modo Simular automaticamente", async () => {
+    const { rerender } = render(
+      <PrecoPraticadoReport
+        products={[{ id: "MLB1", title: "Item Teste" }, { id: "MLB2", title: "Outro Item" }]}
+        mlUserIds={["123"]}
+        fromDate="2026-07-01"
+        toDate="2026-07-19"
+      />,
+    );
+    await screen.findByText("Detalhamento de MCO");
+
+    fireEvent.click(screen.getByRole("switch", { name: "Simular" }));
+    await waitFor(() => {
+      expect(screen.getByText("Simulando")).toBeInTheDocument();
+    });
+
+    rerender(
+      <PrecoPraticadoReport
+        products={[{ id: "MLB1", title: "Item Teste" }, { id: "MLB2", title: "Outro Item" }]}
+        mlUserIds={["123"]}
+        fromDate="2026-07-01"
+        toDate="2026-07-19"
+        request={{ itemId: "MLB2", nonce: 1 }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText("Simulando")).not.toBeInTheDocument();
+    });
   });
 });

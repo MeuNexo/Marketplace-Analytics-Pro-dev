@@ -1,13 +1,21 @@
 import { useState, useRef, useEffect, KeyboardEvent } from "react";
-import { Sparkles, Send, Loader2, X } from "lucide-react";
+import { Sparkles, Send, Loader2, X, MessageSquarePlus, History, Brain, Check, Trash2 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { ChatMarkdown } from "@/components/nexo/ChatMarkdown";
 import { useNexoChat, type ChatMsg } from "@/hooks/useNexoChat";
+import { useNexoMemory } from "@/hooks/useNexoMemory";
 
 interface NexoChatPanelProps {
   open: boolean;
@@ -26,7 +34,10 @@ interface NexoChatPanelProps {
  *   fluxo de aprovação (Phase 54), nunca executada daqui.
  */
 export function NexoChatPanel({ open, onOpenChange }: NexoChatPanelProps) {
-  const { messages, send, loading } = useNexoChat();
+  const {
+    messages, send, loading, conversations, openConversation, newConversation,
+  } = useNexoChat();
+  const { pending, approve, discard } = useNexoMemory();
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -76,14 +87,58 @@ export function NexoChatPanel({ open, onOpenChange }: NexoChatPanelProps) {
               <span className="text-sm font-semibold">Nexo</span>
               <span className="text-xs text-muted-foreground">· seu consultor</span>
             </div>
-            <button
-              type="button"
-              onClick={() => onOpenChange(false)}
-              aria-label="Fechar"
-              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-0.5">
+              {/* Conversas salvas (Phase 106) — o histórico deixou de ser efêmero */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Conversas anteriores"
+                    className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <History className="h-4 w-4" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="max-h-72 w-64 overflow-y-auto">
+                  <DropdownMenuLabel>Conversas anteriores</DropdownMenuLabel>
+                  {conversations.length === 0 && (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                      Nenhuma conversa salva ainda.
+                    </div>
+                  )}
+                  {conversations.map((c) => (
+                    <DropdownMenuItem
+                      key={c.id}
+                      onClick={() => void openConversation(c.id)}
+                      className="flex flex-col items-start gap-0.5"
+                    >
+                      <span className="line-clamp-1 text-sm">{c.title || "Sem título"}</span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {new Date(c.updated_at).toLocaleDateString("pt-BR")}
+                      </span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <button
+                type="button"
+                onClick={newConversation}
+                aria-label="Nova conversa"
+                className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <MessageSquarePlus className="h-4 w-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onOpenChange(false)}
+                aria-label="Fechar"
+                className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
           {/* ── Corpo: lista de mensagens ──────────────────────────────────── */}
@@ -109,6 +164,47 @@ export function NexoChatPanel({ open, onOpenChange }: NexoChatPanelProps) {
                   <span>Nexo está pensando…</span>
                 </div>
               )}
+
+              {/* Propostas de memória (Phase 106): nada entra sem o clique do lojista */}
+              {pending.map((m) => (
+                <div
+                  key={m.id}
+                  className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm"
+                >
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-primary">
+                    <Brain className="h-3.5 w-3.5" />
+                    O Nexo quer lembrar disso
+                  </div>
+                  <p className="mt-1.5 font-medium text-foreground">{m.title}</p>
+                  <p className="mt-0.5 text-muted-foreground">{m.body}</p>
+                  {m.has_numbers && (
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      Contém número — será tratado como pista histórica, nunca como valor atual.
+                    </p>
+                  )}
+                  <div className="mt-2 flex gap-2">
+                    <Button
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        void approve(m.id).then(() => toast.success("Memória aprovada."));
+                      }}
+                    >
+                      <Check className="mr-1 h-3.5 w-3.5" /> Aprovar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        void discard(m.id).then(() => toast("Proposta descartada."));
+                      }}
+                    >
+                      <Trash2 className="mr-1 h-3.5 w-3.5" /> Descartar
+                    </Button>
+                  </div>
+                </div>
+              ))}
 
               <div ref={bottomRef} />
             </div>
