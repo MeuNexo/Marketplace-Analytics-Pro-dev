@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, KeyboardEvent } from "react";
-import { Sparkles, Send, Loader2, X, MessageSquarePlus, History, Brain, Check, Trash2 } from "lucide-react";
+import {
+  Sparkles, Send, Loader2, X, MessageSquarePlus, History, Brain, Check, Trash2, Mic, MicOff,
+} from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -16,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { ChatMarkdown } from "@/components/nexo/ChatMarkdown";
 import { useNexoChat, type ChatMsg } from "@/hooks/useNexoChat";
 import { useNexoMemory } from "@/hooks/useNexoMemory";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
 
 interface NexoChatPanelProps {
   open: boolean;
@@ -46,9 +49,17 @@ export function NexoChatPanel({ open, onOpenChange }: NexoChatPanelProps) {
     if (open) bottomRef.current?.scrollIntoView({ block: "end" });
   }, [messages, loading, open]);
 
+  // ditado por voz — Web Speech API, custo zero, sem backend
+  const { supported: vozSuportada, listening, toggle: alternarDitado, stop: pararDitado } =
+    useSpeechToText({
+      onTranscript: setInput,
+      onError: (msg) => toast.error(msg),
+    });
+
   const handleSend = async () => {
     const text = input.trim();
     if (!text || loading) return;
+    if (listening) pararDitado(); // não faz sentido seguir ouvindo depois de enviar
     setInput("");
     try {
       await send(text);
@@ -217,11 +228,27 @@ export function NexoChatPanel({ open, onOpenChange }: NexoChatPanelProps) {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Pergunte ao Nexo…"
+                placeholder={listening ? "Pode falar — estou ouvindo…" : "Pergunte ao Nexo…"}
                 rows={1}
                 className="min-h-[40px] max-h-28 resize-none text-sm"
                 aria-label="Mensagem para o Nexo"
               />
+              {/* Só aparece onde o navegador suporta (Chrome/Edge). No celular, o
+                  microfone do próprio teclado já cobre o ditado. */}
+              {vozSuportada && (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant={listening ? "destructive" : "outline"}
+                  onClick={() => alternarDitado(input)}
+                  aria-pressed={listening}
+                  aria-label={listening ? "Parar de gravar" : "Ditar por voz"}
+                  title={listening ? "Parar de gravar" : "Ditar por voz"}
+                  className={cn("h-10 w-10 shrink-0", listening && "animate-pulse")}
+                >
+                  {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                </Button>
+              )}
               <Button
                 type="button"
                 size="icon"
