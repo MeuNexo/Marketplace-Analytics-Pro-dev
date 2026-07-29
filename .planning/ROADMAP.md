@@ -1095,11 +1095,14 @@ Plans:
 **Verificação alvo:** tsc 0, vitest verde, build ok. Anti-IDOR provado nas 2 tabelas novas (org própria > 0 linhas, org alheia = 0, viewer não escreve) impersonando as orgs reais. `pending` nunca injetado no prompt. Deploy da EF `nexo-chat` pelo ORQUESTRADOR + smoke 401/OPTIONS. E2E: 2º turno recupera contexto do 1º.
 **Planejada 2026-07-29.**
 
+**EXECUTADA 2026-07-29** — 3 planos completos. Schema em prod (2 migrations via MCP, anti-IDOR provado: dono 1 / org alheia 0 / CHECK barra scope=user sem user_id / advisors limpos). EF **nexo-chat v10** (142 testes, contrato novo + legado, propose_memory sempre `pending`). Frontend completo (737 testes, tsc 0, build ok). E2E em prod: proposta `pending` NÃO é injetada (0 ativas) e vira injetável após aprovação (1). **Pendente: ok visual do Wesley + PR.**
+**Lição de método:** `SET ROLE`+`LATERAL` na mesma statement NÃO prova RLS em SELECT direto (policies resolvem no planejamento, com o role `postgres` que tem BYPASSRLS) — deu falso negativo de vazamento. Usar `query_to_xml` (plano montado em runtime). O padrão LATERAL da Phase 79 segue válido para RPC.
+
 **Plans:** 3 plans
 
-- [ ] 106-01-PLAN.md — Schema: `nexo_conversations`/`nexo_messages`/`nexo_memories` + RLS org-first clonada de `ml_mco_targets` + provas anti-IDOR (wave 1)
-- [ ] 106-02-PLAN.md — EF: `memory.ts` (histórico + fatos ativos), `conversation_id` no contrato, injeção no prompt, tool `propose_memory`, deploy+E2E (wave 2)
-- [ ] 106-03-PLAN.md — Frontend: `useNexoChat` persistido, lista de conversas (mobile+desktop), card de aprovação, `/consultor/memoria` (wave 3)
+- [x] 106-01-PLAN.md — Schema: `nexo_conversations`/`nexo_messages`/`nexo_memories` + RLS org-first clonada de `ml_mco_targets` + provas anti-IDOR (wave 1)
+- [x] 106-02-PLAN.md — EF: `memory.ts` (histórico + fatos ativos), `conversation_id` no contrato, injeção no prompt, tool `propose_memory`, deploy+E2E (wave 2)
+- [x] 106-03-PLAN.md — Frontend: `useNexoChat` persistido, lista de conversas (mobile+desktop), card de aprovação, `/consultor/memoria` (wave 3)
 
 ---
 

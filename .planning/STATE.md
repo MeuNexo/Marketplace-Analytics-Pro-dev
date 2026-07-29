@@ -3,21 +3,21 @@ gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: "**Goal**: O schema e as RPCs que sustentam as 4 trilhas existem em produção, com RLS org-first e a state-machine de ações atômica — pronto para LLM, ações, snooze, limiares e por-loja serem construídos por cima sem retrabalho de modelo."
 current_phase: 106
-status: planned
-stopped_at: "Phase 106 planejada (3 plans) — aguarda /gsd-execute-phase 106"
+status: executed
+stopped_at: "Phase 106 EXECUTADA (3/3 plans, em prod) — aguarda ok visual do Wesley + PR"
 last_updated: "2026-07-29T18:00:00.000Z"
 last_activity: 2026-07-29
-last_activity_desc: "PR #33 aberto (Phases 99-105) + Phase 106 (memoria do Consultor) planejada"
+last_activity_desc: "Phase 106 executada: memoria do Consultor em prod (nexo-chat v10)"
 progress:
   total_phases: 50
-  completed_phases: 29
+  completed_phases: 30
   total_plans: 110
-  completed_plans: 96
+  completed_plans: 99
   percent: 59
 current_phase_name: consultor-memoria-persistente
 ---
 
-## 🔵 Phase 106 PLANEJADA (2026-07-29) — Consultor com memória persistente
+## ✅ Phase 106 EXECUTADA + EM PROD (2026-07-29) — Consultor com memória persistente
 
 - **Origem:** Wesley pediu memória "como é no Claude" depois do fix dos guardrails do nexo-chat.
 - **Escopo travado:** conversas persistidas + memória de fatos curados. **RAG adiado** (Fase 2 da spec) — não é o que dá a sensação de "ele me conhece", e a base documental ainda não existe.
@@ -25,7 +25,10 @@ current_phase_name: consultor-memoria-persistente
 - **Regras travadas:** fato numérico entra marcado como perecível (pista, nunca número atual); `propose_memory` escreve só em `nexo_memories` (read-only sobre o ML intacto); teto de ~30 fatos na injeção (prompt já tem ~49 KB).
 - **Ganho colateral:** `useNexoChat` deixa de reenviar a conversa inteira a cada turno (crescimento sem limite + superfície de injeção) — servidor vira a autoridade do histórico.
 - **Artefatos:** `phases/106-consultor-memoria-persistente/` → `106-CONTEXT.md` (decisões LOCKED) + `106-01/02/03-PLAN.md`.
-- **PRÓXIMO:** `/gsd-execute-phase 106`. Depende do PR #33 (Phases 99-105) — decidir se mergeia antes de empilhar.
+- **Entregue (3/3 plans):** schema (`nexo_conversations`/`nexo_messages`/`nexo_memories`, RLS org-first + conversa pessoal) em prod via MCP; **EF nexo-chat v10** (contrato `{conversation_id, message}` + legado, histórico do banco, injeção de memória, tool `propose_memory` sempre `pending`); frontend (dropdown de conversas, card de aprovação, `/nexo-memoria`).
+- **Provas:** anti-IDOR (dono 1 / org alheia 0 / CHECK barra scope=user sem user_id / advisors limpos); **737 testes**, tsc 0, build ok; E2E em prod — `pending` NÃO injetada (0 ativas), vira 1 após aprovação; seed removido.
+- **Lição de método:** `SET ROLE`+`LATERAL` na mesma statement NÃO prova RLS em SELECT direto (policy resolve no planejamento, sob `postgres` com BYPASSRLS) → deu **falso negativo de vazamento**. Provar com `query_to_xml` (plano em runtime). O padrão LATERAL da Phase 79 continua válido para RPC.
+- **PRÓXIMO:** ok visual do Wesley (chat + `/nexo-memoria`) → PR da 106. O PR #33 (Phases 99-105) segue aberto e a 106 está empilhada nele.
 
 ---
 
