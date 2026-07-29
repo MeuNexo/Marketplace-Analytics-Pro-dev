@@ -11,6 +11,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   runChat,
+  stripThinking,
   MAX_TOOL_ITERS,
   TURN_DEADLINE_MS,
   MAX_OUTPUT_TOKENS,
@@ -165,5 +166,61 @@ describe("runChat — config Gemini", () => {
       dispatchImpl: vi.fn(),
     });
     expect(r.fallback).toBe(true);
+  });
+});
+
+// ── Vazamento de raciocínio (bug de 2026-07-29) ──────────────────────────────
+describe("runChat — raciocínio interno NUNCA vai para o reply", () => {
+  it("descarta parts com thought:true, mantendo só a resposta", async () => {
+    const fetchImpl = vi.fn(async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          candidates: [{
+            content: {
+              parts: [
+                { thought: true, text: "Here's a thinking process to construct the response..." },
+                { text: "Sua margem está em 18%." },
+              ],
+            },
+          }],
+        }),
+      }) as unknown as Response,
+    );
+    const r = await runChat(sb, "gkey", "ORG", ["111"], SYS, MSGS, { fetchImpl, dispatchImpl: vi.fn() });
+    expect(r.reply).toBe("Sua margem está em 18%.");
+    expect(r.reply).not.toMatch(/thinking process/i);
+  });
+
+  it("envia includeThoughts:false ao Gemini", async () => {
+    const fetchImpl = vi.fn(async () => textResponse("ok"));
+    await runChat(sb, "gkey", "ORG", ["111"], SYS, MSGS, { fetchImpl, dispatchImpl: vi.fn() });
+    const body = JSON.parse((fetchImpl.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.generationConfig.thinkingConfig.includeThoughts).toBe(false);
+  });
+});
+
+describe("stripThinking — 2ª camada quando o modelo emite o rascunho como texto", () => {
+  it("corta o rascunho em inglês e devolve a resposta real", () => {
+    const vazado =
+      "thought\nHere's a thinking process to construct the response about the Pralana purchase order:\n\n" +
+      "1.  **Deconstruct the User's Request:**\n    *   Core Problem: user has a R$ 47k order.\n" +
+      "    *   Constraint: lead time is long.\n    *   I need to call get_replenishment first.\n\n" +
+      "### Recomendação Estratégica\n\n**Sim, coloque o pedido**, mas negocie o prazo de pagamento " +
+      "com o fornecedor para alinhar o desembolso à entrada do dinheiro da venda.";
+    const limpo = stripThinking(vazado);
+    expect(limpo).toMatch(/^### Recomendação Estratégica/);
+    expect(limpo).not.toMatch(/thinking process/i);
+    expect(limpo).not.toMatch(/Deconstruct/);
+  });
+
+  it("texto normal passa intacto (não engole resposta legítima)", () => {
+    const normal = "Sua margem está em 18% e o ROAS caiu para 3,2.";
+    expect(stripThinking(normal)).toBe(normal);
+  });
+
+  it("sem corte seguro, devolve o original em vez de engolir tudo", () => {
+    const curto = "thought\nalgo curto sem marcador";
+    expect(stripThinking(curto)).toBe(curto);
   });
 });
