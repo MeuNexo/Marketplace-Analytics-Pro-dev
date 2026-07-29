@@ -1,15 +1,14 @@
 /**
- * Unit test for useNexoChat — estado efêmero + invoke da EF nexo-chat (NEXO-04).
+ * Unit test for useNexoChat — conversa PERSISTIDA + invoke da EF nexo-chat.
  *
- * Mocks @/integrations/supabase/client (functions.invoke) e useOrganization.
- * Prova:
- *  - após send("oi"), o body do invoke contém messages com a msg do user;
- *  - após resolver com {reply:"olá"}, messages tem 2 itens (user+model);
- *  - um segundo send reenvia o histórico acumulado (array de 3 → invoke recebe 3);
- *  - kill-switch ({disabled:true}) não faz append da reply;
- *  - nenhum acesso a localStorage de mensagens (efêmero, client-held).
+ * Phase 106 reviu a NEXO-04 (histórico efêmero client-held): o servidor passou a ser
+ * a autoridade do histórico. Prova:
+ *  - send() manda { org_id, conversation_id, message } — NUNCA a conversa inteira;
+ *  - o 2º turno continua mandando só a mensagem nova (não reenvia o histórico);
+ *  - o conversation_id devolvido pela EF é reaproveitado no turno seguinte;
+ *  - kill-switch ({disabled:true}) não faz append da reply.
  *
- * Phase: 57-nexo-conversacional-chat-consultor / Plan 03
+ * Phase: 57 (origem) + 106 (persistência)
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -30,9 +29,21 @@ function createWrapper() {
 
 const invokeMock = vi.fn();
 
+// builder encadeável para as queries de conversas/mensagens (Phase 106)
+function fromStub() {
+  const chain: Record<string, unknown> = {};
+  for (const m of ["select", "eq", "is", "order", "limit", "update", "insert"]) {
+    chain[m] = () => chain;
+  }
+  chain.then = (resolve: (v: unknown) => unknown) => resolve({ data: [], error: null });
+  return chain;
+}
+
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     functions: { invoke: (...args: unknown[]) => invokeMock(...args) },
+    from: () => fromStub(),
+    auth: { getUser: async () => ({ data: { user: { id: "user-1" } } }) },
   },
 }));
 
@@ -47,19 +58,22 @@ import { useNexoChat } from "@/hooks/useNexoChat";
 
 function lastInvokeBody() {
   const calls = invokeMock.mock.calls;
-  const [, opts] = calls[calls.length - 1] as [string, { body: { org_id: string; messages: unknown[] } }];
+  const [, opts] = calls[calls.length - 1] as [
+    string,
+    { body: { org_id: string; message?: string; conversation_id?: string | null; messages?: unknown[] } },
+  ];
   return opts.body;
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
-describe("useNexoChat — NEXO-04 histórico efêmero reenviado a cada turno", () => {
+describe("useNexoChat — conversa persistida (Phase 106)", () => {
   beforeEach(() => {
     invokeMock.mockReset();
   });
 
-  it("invoca nexo-chat com a msg do user e org_id; acumula user+model na resposta", async () => {
-    invokeMock.mockResolvedValueOnce({ data: { reply: "olá", used_tools: [] }, error: null });
+  it("invoca nexo-chat com { org_id, message } — nunca com a conversa inteira", async () => {
+    invokeMock.mockResolvedValueOnce({ data: { reply: "olá", used_tools: [], conversation_id: "c1" }, error: null });
 
     const { result } = renderHook(() => useNexoChat(), { wrapper: createWrapper() });
 
@@ -67,11 +81,13 @@ describe("useNexoChat — NEXO-04 histórico efêmero reenviado a cada turno", (
       await result.current.send("oi");
     });
 
-    // alvo do invoke é a EF nexo-chat com org_id + messages contendo a msg do user
     expect(invokeMock).toHaveBeenCalledWith("nexo-chat", expect.anything());
     const body = lastInvokeBody();
     expect(body.org_id).toBe("org-1");
-    expect(body.messages).toEqual([{ role: "user", parts: [{ text: "oi" }] }]);
+    expect(body.message).toBe("oi");
+    expect(body.conversation_id).toBeNull();
+    // o contrato antigo (conversa inteira a cada turno) não é mais usado
+    expect(body.messages).toBeUndefined();
 
     // histórico = user + model
     await waitFor(() => {
@@ -82,10 +98,10 @@ describe("useNexoChat — NEXO-04 histórico efêmero reenviado a cada turno", (
     });
   });
 
-  it("reenvia o histórico acumulado a cada turno (3 mensagens no 2º send)", async () => {
+  it("2º turno manda só a mensagem nova + o conversation_id devolvido pela EF", async () => {
     invokeMock
-      .mockResolvedValueOnce({ data: { reply: "r1", used_tools: [] }, error: null })
-      .mockResolvedValueOnce({ data: { reply: "r2", used_tools: [] }, error: null });
+      .mockResolvedValueOnce({ data: { reply: "r1", used_tools: [], conversation_id: "c1" }, error: null })
+      .mockResolvedValueOnce({ data: { reply: "r2", used_tools: [], conversation_id: "c1" }, error: null });
 
     const { result } = renderHook(() => useNexoChat(), { wrapper: createWrapper() });
 
@@ -93,20 +109,33 @@ describe("useNexoChat — NEXO-04 histórico efêmero reenviado a cada turno", (
       await result.current.send("primeira");
     });
     await waitFor(() => expect(result.current.messages).toHaveLength(2));
+    await waitFor(() => expect(result.current.conversationId).toBe("c1"));
 
     await act(async () => {
       await result.current.send("segunda");
     });
 
-    // O 2º invoke recebe [user1, model1, user2] = 3 mensagens (histórico acumulado)
+    // servidor é a autoridade do histórico: o 2º turno NÃO reenvia a conversa
     const body = lastInvokeBody();
-    expect(body.messages).toEqual([
-      { role: "user", parts: [{ text: "primeira" }] },
-      { role: "model", parts: [{ text: "r1" }] },
-      { role: "user", parts: [{ text: "segunda" }] },
-    ]);
+    expect(body.message).toBe("segunda");
+    expect(body.conversation_id).toBe("c1");
+    expect(body.messages).toBeUndefined();
 
     await waitFor(() => expect(result.current.messages).toHaveLength(4));
+  });
+
+  it("newConversation limpa a tela e zera o conversation_id (a anterior fica salva)", async () => {
+    invokeMock.mockResolvedValueOnce({ data: { reply: "r", used_tools: [], conversation_id: "c9" }, error: null });
+    const { result } = renderHook(() => useNexoChat(), { wrapper: createWrapper() });
+
+    await act(async () => { await result.current.send("oi"); });
+    await waitFor(() => expect(result.current.conversationId).toBe("c9"));
+
+    act(() => { result.current.newConversation(); });
+    await waitFor(() => {
+      expect(result.current.conversationId).toBeNull();
+      expect(result.current.messages).toEqual([]);
+    });
   });
 
   it("kill-switch (disabled:true) não faz append da reply", async () => {

@@ -25,6 +25,7 @@ import React, { Suspense } from "react";
 
 const MercadoLivre       = React.lazy(() => import("./pages/MercadoLivre"));
 const MLEstoque          = React.lazy(() => import("./pages/mercadolivre/MLEstoque"));
+const NexoMemoria        = React.lazy(() => import("./pages/nexo/NexoMemoria"));
 const MLAnuncios         = React.lazy(() => import("./pages/mercadolivre/MLAnuncios"));
 const MLPedidos          = React.lazy(() => import("./pages/mercadolivre/MLPedidos"));
 const MLPublicidade      = React.lazy(() => import("./pages/mercadolivre/MLPublicidade"));
@@ -148,6 +149,7 @@ const App = () => (
                             <Route path="/compras" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro em Compras"><MLCompras /></ErrorBoundary></RoleRoute>} />
                             <Route path="/produtos-vendidos" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro em Produtos Vendidos"><MLProdutosVendidos /></ErrorBoundary></RoleRoute>} />
                             <Route path="/analise-precos" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro em Análise de Preços"><MLAnalisePrecos /></ErrorBoundary></RoleRoute>} />
+                            <Route path="/nexo-memoria" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na Memória do Nexo"><NexoMemoria /></ErrorBoundary></RoleRoute>} />
                             <Route path="/organizacao" element={<RoleRoute><OrgSettings /></RoleRoute>} />
                             <Route path="/usuarios" element={<Navigate to="/organizacao" replace />} />
                             <Route path="/monitoramento" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro no Monitoramento"><AdminMonitoring /></ErrorBoundary></RoleRoute>} />
