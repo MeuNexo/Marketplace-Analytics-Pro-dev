@@ -181,6 +181,19 @@ describe("nexo-chat system prompt", () => {
     }
   });
 
+  it("idioma: regra inviolável de PT-BR vem ANTES do raciocínio e proíbe frases em inglês", () => {
+    // Wesley 2026-07-29: o Consultor respondeu partes em inglês numa conversa iniciada em PT.
+    expect(PERSONA).toMatch(/IDIOMA \(inviolável\)/);
+    expect(PERSONA).toMatch(/português do Brasil/);
+    expect(PERSONA).toMatch(/NUNCA escreva frases, cabeçalhos ou marcadores em inglês/);
+    // a regra precisa aparecer antes de COMO VOCÊ RACIOCINA (peso no topo do prompt)
+    expect(PERSONA.indexOf("IDIOMA (inviolável)")).toBeLessThan(
+      PERSONA.indexOf("COMO VOCÊ RACIOCINA"),
+    );
+    // dado em inglês vindo de tool não pode arrastar a resposta para o inglês
+    expect(PERSONA).toMatch(/mesmo que o dado da tool.*venham em inglês/i);
+  });
+
   it("regressão: ordens/greps de 103/104 continuam válidos após finalização de 105", () => {
     const idxAnti = PERSONA.indexOf("REGRA ANTI-INVENÇÃO DE NÚMERO");
     const idxVerac = PERSONA.indexOf("VERACIDADE, FRESCURA E SEMÂNTICA");
