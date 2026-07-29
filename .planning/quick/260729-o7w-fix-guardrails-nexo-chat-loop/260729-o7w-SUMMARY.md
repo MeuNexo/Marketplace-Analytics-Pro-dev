@@ -45,16 +45,25 @@ dimensionamento dos guardrails do turno.
 - `npx vitest run` (suíte completa) → **716 testes verdes**, 49 arquivos
 - `npx tsc --noEmit` → **0 erros**
 
-## Pendência
+## Deploy — FEITO (2026-07-29 17:39 UTC)
 
-**Deploy NÃO executado.** `npx supabase functions deploy nexo-chat --project-ref
-ckcdevcxgvueywivefgx` falhou com "Access token not provided" — o CLI não tem credencial
-neste VPS (`~/.supabase` só tem telemetry.json, `SUPABASE_ACCESS_TOKEN` vazia) e o token
-que o Wesley usou em 07-28 estava marcado para rotação.
+`npx supabase functions deploy nexo-chat --project-ref ckcdevcxgvueywivefgx`
+(script size 147 kB) → **nexo-chat versão 8, ACTIVE**.
 
-Deploy via MCP `deploy_edge_function` foi descartado: exigiria reenviar os 5 fontes da EF
-(160 KB — `tools.ts` 73 KB + `playbooks.ts` 63 KB), com risco de corrupção por
-transcrição. O caminho correto é autenticar o CLI (`npx supabase login`, uma vez) e rodar
-o deploy do disco.
+Smoke em prod: POST sem JWT → **401**; OPTIONS → **200** (`verify_jwt=true` preservado).
 
-**O código em prod segue com os guardrails antigos até o deploy.**
+Notas de operação:
+- `npx supabase login` NÃO funciona dentro do Claude Code (shell non-TTY). O token foi
+  gravado em `/root/.supabase-token` (chmod 600) e é consumido via
+  `SUPABASE_ACCESS_TOKEN=$(cat /root/.supabase-token)` — evita repetir o segredo em
+  comandos e logs.
+- Deploy via MCP `deploy_edge_function` foi descartado: exigiria reenviar os 5 fontes da
+  EF (160 kB — `tools.ts` 73 kB + `playbooks.ts` 63 kB), com risco de corrupção por
+  transcrição. CLI do disco é o caminho.
+
+## Pendências
+
+- **Rotação do SUPABASE_ACCESS_TOKEN** — Wesley colou o token no chat (07-28 e 07-29) e
+  vai rotacionar. Ao rotacionar, atualizar `/root/.supabase-token`.
+- **Validação ao vivo:** Wesley refazer no chat a pergunta que falhou (cenário Pralana) e
+  conferir nos logs da EF o `finishReason` (esperado `STOP`, não `MAX_TOKENS`).

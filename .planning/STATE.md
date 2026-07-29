@@ -7,7 +7,7 @@ status: completed
 stopped_at: Phase 102 completa — ok visual do Wesley
 last_updated: "2026-07-28T17:59:09.632Z"
 last_activity: 2026-07-29
-last_activity_desc: "Quick 260729-o7w: fix guardrails nexo-chat (deploy pendente)"
+last_activity_desc: "Quick 260729-o7w: fix guardrails nexo-chat deployado em prod (v8)"
 progress:
   total_phases: 49
   completed_phases: 29
@@ -202,7 +202,7 @@ Next: **ok visual do Wesley em /compras** (trilha 62-68 toda em prod, nada a mer
 | 260702-kfo | Cores/legenda nítidas no gráfico de /analise-precos: tokens --chart-price/breakeven/mco (paleta validada CVD light+dark), legenda 5 itens, chips no tooltip, ticks do eixo MCO% violeta. AGUARDA validação visual Wesley EM PROD | 2026-07-02 | 86dd69d6 | [260702-kfo](./quick/260702-kfo-cores-legendas-grafico-precos/) |
 | 260627-1z0 | Reposição: alvo order-up-to = venda × (GREATEST(cobertura, lead+7) + safety) — corrige cobertura<lead que jogava compra no MOQ. Deployado prod via MCP; total compra 756→1053, 0 SKUs presos no piso. | 2026-06-27 | 5c0820ec | [260627-1z0](./quick/260627-1z0-fix-parametro-reposicao-alvo-order-up-to/) |
 | 260719-nov | sync-ads: preserva cache quando fetch de ML falha (não apaga+não repõe); process-sync-job: job de ads vai a "failed" (não "completed" falso) quando results tem erro. Deployado prod (v19/v17). Backfill revelou causa raiz real: endpoint `/advertising/advertisers/{id}/product_ads/items` e `/campaigns` retornam 404 no ML desde 15/07 (token válido, `/advertisers` funciona) — dado de ads de 15–19/07 seguem indisponíveis até resolver com o ML. | 2026-07-19 | fb1aa1d2 | [260719-nov](./quick/260719-nov-corrigir-bug-critico-no-sync-de-ads-ml-s/) |
-| 260729-o7w | nexo-chat: guardrails do turno redimensionados — maxOutputTokens 1200→8192, thinkingBudget −1→2048 fixo (thinking consumia o orçamento e o candidato voltava sem parts → fallback "Sem resposta." em pergunta estratégica), deadline 25s→75s, cap de tools 5→8, + log de finishReason/usageMetadata e teste de regressão. 122 testes na EF / 716 na suíte / tsc 0. **DEPLOY PENDENTE** (CLI sem SUPABASE_ACCESS_TOKEN neste VPS) | 2026-07-29 | f341a17d | [260729-o7w](./quick/260729-o7w-fix-guardrails-nexo-chat-loop/) |
+| 260729-o7w | nexo-chat: guardrails do turno redimensionados — maxOutputTokens 1200→8192, thinkingBudget −1→2048 fixo (thinking consumia o orçamento e o candidato voltava sem parts → fallback "Sem resposta." em pergunta estratégica), deadline 25s→75s, cap de tools 5→8, + log de finishReason/usageMetadata e teste de regressão. 122 testes na EF / 716 na suíte / tsc 0. **DEPLOYADA EM PROD (v8, 29/07 17:39)** — smoke 401/OPTIONS OK; aguarda Wesley refazer a pergunta no chat | 2026-07-29 | f341a17d | [260729-o7w](./quick/260729-o7w-fix-guardrails-nexo-chat-loop/) |
 | 260719-o6q | sync-ads: migrado para os endpoints novos de Product Ads do ML (`/advertising/{site_id}/advertisers/{id}/product_ads/ads/search` e `.../campaigns/search`) — o antigo `product_ads/items` foi descontinuado permanentemente pelo ML em 26/02/2026 (confirmado via MCP oficial `mcp.mercadolibre.com/mcp`). Deployado prod (v20). Backfill 15–19/07 rodou sem erro (~250-280 itens/dia). MLB7159819994: ads_spend real de R$1,44→R$235,60 no período; MCO com Ads real caiu de 12,64% (falso, sem dado) para **2,81%** (real) — confirma suspeita do Wesley. | 2026-07-19 | b6deb3fb | [260719-o6q](./quick/260719-o6q-migrar-sync-ads-para-os-novos-endpoints-/) |
 
 ### DRE mês-calendário (quick 260613-2p6, 2026-06-13)
