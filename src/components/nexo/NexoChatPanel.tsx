@@ -16,9 +16,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { ChatMarkdown } from "@/components/nexo/ChatMarkdown";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { useNexoChat, type ChatMsg } from "@/hooks/useNexoChat";
 import { useNexoMemory } from "@/hooks/useNexoMemory";
-import { useSpeechToText } from "@/hooks/useSpeechToText";
+import { useVoiceInput } from "@/hooks/useVoiceInput";
 
 interface NexoChatPanelProps {
   open: boolean;
@@ -41,6 +42,7 @@ export function NexoChatPanel({ open, onOpenChange }: NexoChatPanelProps) {
     messages, send, loading, conversations, openConversation, newConversation,
   } = useNexoChat();
   const { pending, approve, discard } = useNexoMemory();
+  const { currentOrg } = useOrganization();
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -49,17 +51,21 @@ export function NexoChatPanel({ open, onOpenChange }: NexoChatPanelProps) {
     if (open) bottomRef.current?.scrollIntoView({ block: "end" });
   }, [messages, loading, open]);
 
-  // ditado por voz — Web Speech API, custo zero, sem backend
-  const { supported: vozSuportada, listening, toggle: alternarDitado, stop: pararDitado } =
-    useSpeechToText({
-      onTranscript: setInput,
-      onError: (msg) => toast.error(msg),
-    });
+  // ditado por voz — grava e transcreve na EF transcribe-audio (Gemini).
+  // A Web Speech API do navegador foi abandonada: falhou no desktop (network — serviço
+  // de voz do Google bloqueado na rede) e no celular (sessão abria sem devolver texto).
+  const {
+    supported: vozSuportada, recording, transcribing, toggle: alternarDitado, stop: pararDitado,
+  } = useVoiceInput({
+    orgId: currentOrg?.id ?? null,
+    onTranscript: setInput,
+    onError: (msg) => toast.error(msg),
+  });
 
   const handleSend = async () => {
     const text = input.trim();
     if (!text || loading) return;
-    if (listening) pararDitado(); // não faz sentido seguir ouvindo depois de enviar
+    if (recording) pararDitado(); // não faz sentido seguir gravando depois de enviar
     setInput("");
     try {
       await send(text);
@@ -228,7 +234,11 @@ export function NexoChatPanel({ open, onOpenChange }: NexoChatPanelProps) {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={listening ? "Pode falar — estou ouvindo…" : "Pergunte ao Nexo…"}
+                placeholder={
+                  recording ? "Pode falar — estou gravando…"
+                  : transcribing ? "Transcrevendo o que você falou…"
+                  : "Pergunte ao Nexo…"
+                }
                 rows={1}
                 className="min-h-[40px] max-h-28 resize-none text-sm"
                 aria-label="Mensagem para o Nexo"
@@ -239,14 +249,25 @@ export function NexoChatPanel({ open, onOpenChange }: NexoChatPanelProps) {
                 <Button
                   type="button"
                   size="icon"
-                  variant={listening ? "destructive" : "outline"}
+                  variant={recording ? "destructive" : "outline"}
                   onClick={() => alternarDitado(input)}
-                  aria-pressed={listening}
-                  aria-label={listening ? "Parar de gravar" : "Ditar por voz"}
-                  title={listening ? "Parar de gravar" : "Ditar por voz"}
-                  className={cn("h-10 w-10 shrink-0", listening && "animate-pulse")}
+                  disabled={transcribing}
+                  aria-pressed={recording}
+                  aria-label={
+                    recording ? "Parar de gravar" : transcribing ? "Transcrevendo" : "Ditar por voz"
+                  }
+                  title={
+                    recording ? "Parar de gravar" : transcribing ? "Transcrevendo…" : "Ditar por voz"
+                  }
+                  className={cn("h-10 w-10 shrink-0", recording && "animate-pulse")}
                 >
-                  {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                  {transcribing ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : recording ? (
+                    <MicOff className="h-4 w-4" />
+                  ) : (
+                    <Mic className="h-4 w-4" />
+                  )}
                 </Button>
               )}
               <Button
