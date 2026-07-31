@@ -22,7 +22,7 @@ export interface MLClaimRow {
   data_abertura: string | null;
   data_fechamento: string | null;
   synced_at: string | null;
-  // Colunas de triagem "de quem é a vez" (Phase 90-01) — populadas por ml-webhook + sync-ml-claims.
+  // Colunas de triagem "de quem é a vez" (Phase 90-01) — populadas por sync-ml-claims.
   seller_action_required: boolean | null;
   pending_action_type: string | null; // "reply" | "return" | "refund" | "dispute" | null
   action_due_date: string | null;

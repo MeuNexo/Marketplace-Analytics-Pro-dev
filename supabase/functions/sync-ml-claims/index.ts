@@ -288,8 +288,8 @@ async function syncUser(
   }
 
   // T-90-01: triagem "de quem é a vez" — o search resumido NÃO traz
-  // `available_actions`, então buscamos o claim individual (dual-URL, mesmo
-  // par usado pelo ml-webhook) só para as claims ABERTAS. Fechadas mantêm os
+  // `available_actions`, então buscamos o claim individual (dual-URL) só
+  // para as claims ABERTAS. Fechadas mantêm os
   // defaults seller_action_required=false / null definidos acima — sem GET
   // extra (T-90-04: mantém a EF dentro do orçamento de wall-clock).
   for (const r of allRows) {
