@@ -24,7 +24,7 @@ function claimLabel(tipo: string | null): string {
  * reclamações/devoluções que pendem do vendedor (seller_action_required),
  * mesmo critério da aba "Pende você" em /devolucoes (Phase 90-03).
  * Mesmo escopo das telas (org + multi-loja).
- * Refetch a cada 45s → o sino reflete o webhook em quase-tempo-real.
+ * Refetch a cada 45s → o sino reflete o último ciclo de sync (cron).
  */
 export function useAtendimentoPendencias() {
   const { resolvedMLUserIds } = useMLStore();

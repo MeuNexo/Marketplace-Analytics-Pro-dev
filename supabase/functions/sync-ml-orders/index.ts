@@ -123,7 +123,10 @@ async function fetchOrdersPage(
     if (results.length < PAGE_SIZE || offset >= apiTotal) break;
   }
 
-  // If we hit the offset ceiling, split the window in two and recurse
+  // NOTA: esta busca janela por `order.date_created`. Cancelamentos que
+  // acontecem depois da captura NÃO chegam por aqui — ver reconcileCancelled().
+
+  // Se batemos no teto de offset, divide a janela em duas e recursa
   if (apiTotal > MAX_OFFSET - 50) {
     const fromMs = new Date(dateFrom).getTime();
     const toMs   = new Date(dateTo).getTime();
@@ -151,6 +154,79 @@ async function fetchOrdersPage(
   }
 
   return allOrders;
+}
+
+// ── Reconciliação de cancelamentos tardios ───────────────────────────────────
+// Pergunta ao ML quais pedidos da janela estão cancelados e corrige no banco os
+// que ainda constam com outro status. Necessário porque fetchOrdersPage janela
+// por `date_created`: um pedido cancelado depois da captura inicial nunca
+// reaparece e o status congela.
+//
+// Busca com `order.status=cancelled` em vez de varrer por `last_updated` — o
+// conjunto de cancelados é uma fração pequena do total, então isso custa poucas
+// páginas em vez de reprocessar milhares de pedidos inalterados.
+async function reconcileCancelled(
+  mlNumericId: number,
+  rangeStart: Date,
+  rangeEnd: Date,
+  accessToken: string,
+  supabaseAdmin: any,
+  organizationId: string | null,
+): Promise<number> {
+  if (!organizationId) return 0;
+
+  const PAGE_SIZE = 50;
+  const MAX_OFFSET = 1000;
+  const ids: string[] = [];
+  let offset = 0;
+
+  try {
+    while (offset < MAX_OFFSET) {
+      const url =
+        `/orders/search?seller=${mlNumericId}` +
+        `&order.date_created.from=${encodeURIComponent(rangeStart.toISOString())}` +
+        `&order.date_created.to=${encodeURIComponent(rangeEnd.toISOString())}` +
+        `&order.status=cancelled&sort=date_desc&limit=${PAGE_SIZE}&offset=${offset}`;
+
+      const data = await mlFetch(url, accessToken);
+      const results: any[] = data.results || [];
+      for (const o of results) ids.push(String(o.id));
+
+      const apiTotal = data.paging?.total || 0;
+      offset += results.length;
+      if (results.length < PAGE_SIZE || offset >= apiTotal) break;
+    }
+  } catch (err) {
+    // Reconciliação é complementar: se falhar, o sync principal já gravou os
+    // pedidos. Registra e segue — não derruba o job inteiro por causa dela.
+    console.error("reconcileCancelled: falha ao buscar cancelados no ML:", err);
+    return 0;
+  }
+
+  if (ids.length === 0) return 0;
+
+  // Corrige em lotes; só toca em quem está com status diferente, para que
+  // `updated` reflita cancelamentos que o sync tinha perdido de verdade.
+  let corrigidos = 0;
+  const LOTE = 200;
+  for (let i = 0; i < ids.length; i += LOTE) {
+    const lote = ids.slice(i, i + LOTE);
+    const { data, error } = await supabaseAdmin
+      .from("orders")
+      .update({ status: "cancelled" })
+      .eq("organization_id", organizationId)
+      .in("ml_order_id", lote)
+      .neq("status", "cancelled")
+      .select("ml_order_id");
+
+    if (error) {
+      console.error("reconcileCancelled: falha ao atualizar lote:", error.message);
+      continue;
+    }
+    corrigidos += (data ?? []).length;
+  }
+
+  return corrigidos;
 }
 
 // ── Batch-fetch shipment details from /shipments/{id} ────────────────────────
@@ -593,6 +669,29 @@ serve(async (req) => {
       }
       upserted = (batchCount as number) ?? records.length;
       console.log(`Batch upserted ${upserted}/${records.length} orders (cost preserved, 1 RPC)`);
+    }
+
+    // ── Reconciliação de cancelamentos tardios ────────────────────────────────
+    // A busca acima janela por `order.date_created`. Um pedido capturado como
+    // `paid` e cancelado DEPOIS nunca reaparece numa janela posterior — ele já
+    // não pertence a ela — e o status congela para sempre no que era na captura.
+    //
+    // Em 2026-07-31 isso somava 203 pedidos cancelados contados como pagos
+    // (R$ 63.243,96 de receita fantasma), confirmados um a um contra a API do ML.
+    //
+    // A correção pergunta ao ML especificamente pelos cancelados do período —
+    // conjunto pequeno (855 em sete meses) — em vez de reprocessar tudo por
+    // `last_updated`, que traria milhares de pedidos sem mudança de status.
+    const reconciliados = await reconcileCancelled(
+      mlNumericId,
+      rangeStart,
+      rangeEnd,
+      accessToken,
+      supabaseAdmin,
+      organizationId,
+    );
+    if (reconciliados > 0) {
+      console.log(`sync-ml-orders: ${reconciliados} cancelamentos tardios reconciliados`);
     }
 
     // ── Log to ml_sync_log ────────────────────────────────────────────────────

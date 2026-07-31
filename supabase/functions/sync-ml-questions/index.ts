@@ -181,8 +181,8 @@ async function syncUser(
     // Blindagem contra defasagem do /questions/search (o índice de busca do ML
     // segue listando como UNANSWERED perguntas já respondidas): 'ANSWERED' é terminal
     // e sempre sobrescreve; as demais só INSEREM (ignoreDuplicates) — nunca rebaixam
-    // uma pergunta já ANSWERED (ex.: corrigida em tempo real pelo webhook via GET
-    // individual, que é a fonte autoritativa). Dedup por question_id em cada grupo.
+    // uma pergunta já ANSWERED (corrigida via GET individual, que é a fonte
+    // autoritativa). Dedup por question_id em cada grupo.
     const dedup = (rows: Record<string, unknown>[]) =>
       Array.from(new Map(rows.map((r) => [r.question_id, r])).values());
     const answered = dedup(allRows.filter((r) => r.status === "ANSWERED"));

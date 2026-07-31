@@ -13,7 +13,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
-import { WebhookHealthBadge } from "@/components/mercadolivre/WebhookHealthBadge";
 import { ClaimDetailSheet } from "@/components/mercadolivre/ClaimDetailSheet";
 import { useMLStore } from "@/contexts/MLStoreContext";
 import { useMLClaims, type MLClaimRow } from "@/hooks/useMLClaims";
@@ -111,9 +110,7 @@ export default function MLDevolucoes() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <MLPageHeader title="Devoluções" lastUpdated={null}>
-          <WebhookHealthBadge />
-        </MLPageHeader>
+        <MLPageHeader title="Devoluções" lastUpdated={null} />
         <Button variant="outline" size="sm" disabled={isLoading} onClick={() => refetch()}>
           <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isLoading ? "animate-spin" : ""}`} />
           Atualizar
