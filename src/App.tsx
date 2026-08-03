@@ -49,6 +49,7 @@ const Integrations       = React.lazy(() => import("./pages/Integrations"));
 const AdminMonitoring    = React.lazy(() => import("./pages/AdminMonitoring"));
 const OrgSettings        = React.lazy(() => import("./pages/org/OrgSettings"));
 const AcceptInvite       = React.lazy(() => import("./pages/AcceptInvite"));
+const CreateOrganization = React.lazy(() => import("./pages/CreateOrganization"));
 const Login              = React.lazy(() => import("./pages/Login"));
 const ResetPassword      = React.lazy(() => import("./pages/ResetPassword"));
 const NotFound           = React.lazy(() => import("./pages/NotFound"));
@@ -121,6 +122,10 @@ const App = () => (
                         <Route path="/login" element={<Login />} />
                         <Route path="/reset-password" element={<ResetPassword />} />
                         <Route path="/aceitar-convite" element={<AcceptInvite />} />
+                        {/* Irmã de /login e /aceitar-convite, fora do ProtectedRoute: é para   */}
+                        {/* cá que o guarda redireciona quem está autenticado sem organização — */}
+                        {/* colocá-la dentro do bloco abaixo a tornaria inalcançável (SEC-09).   */}
+                        <Route path="/criar-organizacao" element={<CreateOrganization />} />
                         <Route element={<ProtectedRoute />}>
                           {/* Modo TV */}
                           <Route path="/tv" element={<TVRoleGuard><ErrorBoundary fallbackTitle="Erro no Modo TV"><TVModeVendas /></ErrorBoundary></TVRoleGuard>} />
