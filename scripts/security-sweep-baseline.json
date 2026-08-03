@@ -1,0 +1,62 @@
+{
+  "gerado_por": "scripts/security-sweep.sql",
+  "nota": "Achados que a varredura ao vivo ainda devolve e que NAO sao para consertar. is_org_member/get_org_role sao PROIBIDAS de revogar. check_quota e can_member_access_route NAO entram aqui: foram consertados no 209-01.",
+  "total_entradas": 11,
+  "entradas": [
+    {
+      "classe": "definer_sem_revoke",
+      "objeto": "public.is_org_member(uuid,uuid)",
+      "motivo": "PROIBIDO revogar: chamada de dentro das expressoes de policy RLS e roda com o privilegio de quem consulta; revogar EXECUTE de authenticated derruba as 143 policies do banco de uma vez."
+    },
+    {
+      "classe": "definer_sem_revoke",
+      "objeto": "public.get_org_role(uuid,uuid)",
+      "motivo": "PROIBIDO revogar: chamada de dentro das expressoes de policy RLS e roda com o privilegio de quem consulta; revogar EXECUTE de authenticated derruba as 143 policies do banco de uma vez."
+    },
+    {
+      "classe": "definer_sem_revoke",
+      "objeto": "public.claim_next_sync_job()",
+      "motivo": "Herdada, SECURITY DEFINER executavel por anon/authenticated. Devolve escalar e exige o chamador ja conhecer os identificadores => risco de ENUMERACAO, nao leitura de tabela. Nao urgente. Ver DEBT-08."
+    },
+    {
+      "classe": "definer_sem_revoke",
+      "objeto": "public.dispatch_inventory_jobs()",
+      "motivo": "Herdada, SECURITY DEFINER executavel por anon/authenticated. Devolve escalar e exige o chamador ja conhecer os identificadores => risco de ENUMERACAO, nao leitura de tabela. Nao urgente. Ver DEBT-08."
+    },
+    {
+      "classe": "definer_sem_revoke",
+      "objeto": "public.dispatch_orders_jobs()",
+      "motivo": "Herdada, SECURITY DEFINER executavel por anon/authenticated. Devolve escalar e exige o chamador ja conhecer os identificadores => risco de ENUMERACAO, nao leitura de tabela. Nao urgente. Ver DEBT-08."
+    },
+    {
+      "classe": "definer_sem_revoke",
+      "objeto": "public.dispatch_sales_jobs()",
+      "motivo": "Herdada, SECURITY DEFINER executavel por anon/authenticated. Devolve escalar e exige o chamador ja conhecer os identificadores => risco de ENUMERACAO, nao leitura de tabela. Nao urgente. Ver DEBT-08."
+    },
+    {
+      "classe": "definer_sem_revoke",
+      "objeto": "public.dispatch_sync_jobs()",
+      "motivo": "Herdada, SECURITY DEFINER executavel por anon/authenticated. Devolve escalar e exige o chamador ja conhecer os identificadores => risco de ENUMERACAO, nao leitura de tabela. Nao urgente. Ver DEBT-08."
+    },
+    {
+      "classe": "definer_sem_revoke",
+      "objeto": "public.get_user_role(uuid)",
+      "motivo": "Herdada, SECURITY DEFINER executavel por anon/authenticated. Devolve escalar e exige o chamador ja conhecer os identificadores => risco de ENUMERACAO, nao leitura de tabela. Nao urgente. Ver DEBT-08."
+    },
+    {
+      "classe": "definer_sem_revoke",
+      "objeto": "public.has_org_role(uuid,uuid,org_role)",
+      "motivo": "Herdada, SECURITY DEFINER executavel por anon/authenticated. Devolve escalar e exige o chamador ja conhecer os identificadores => risco de ENUMERACAO, nao leitura de tabela. Nao urgente. Ver DEBT-08."
+    },
+    {
+      "classe": "definer_sem_revoke",
+      "objeto": "public.has_role(uuid,app_role)",
+      "motivo": "Herdada, SECURITY DEFINER executavel por anon/authenticated. Devolve escalar e exige o chamador ja conhecer os identificadores => risco de ENUMERACAO, nao leitura de tabela. Nao urgente. Ver DEBT-08."
+    },
+    {
+      "classe": "rls_sem_policy",
+      "objeto": "cat_backfill_queue",
+      "motivo": "RLS ligada sem policy (modo de falha oposto: ilegivel ate para membro). Nao e defeito desta fase. Ver DEBT-08."
+    }
+  ]
+}
