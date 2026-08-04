@@ -15,9 +15,34 @@ interface MLMcoStripProps {
   loading?: boolean;
   /** Quando true (receita = 0 no período), mostra "—" em vez dos valores */
   empty?: boolean;
+  /**
+   * [Fase 210 / D-04] Origem do gasto de publicidade descontado do MCO:
+   * `"billing"` = fatura do Mercado Livre; `"cache"` = cache de publicidade.
+   * Opcional — quem não passar continua renderizando como antes.
+   */
+  adsSource?: "billing" | "cache";
+  /** Valor de publicidade efetivamente descontado no período, em R$ */
+  adsTotal?: number;
+  /** Último dia coberto pela fatura (YYYY-MM-DD); null quando não há fatura */
+  adsCoverageTo?: string | null;
 }
 
-export function MLMcoStrip({ mco, pct, label, loading = false, empty = false }: MLMcoStripProps) {
+/** "2026-07-15" → "15/07/2026". Sem `new Date()`, para não escorregar de fuso. */
+function formatIsoDate(iso: string): string {
+  const [y, m, d] = iso.slice(0, 10).split("-");
+  return y && m && d ? `${d}/${m}/${y}` : iso;
+}
+
+export function MLMcoStrip({
+  mco,
+  pct,
+  label,
+  loading = false,
+  empty = false,
+  adsSource,
+  adsTotal,
+  adsCoverageTo,
+}: MLMcoStripProps) {
   const [popoverOpen, setPopoverOpen] = useState(false);
 
   if (loading) {
@@ -51,8 +76,18 @@ export function MLMcoStrip({ mco, pct, label, loading = false, empty = false }: 
 
   const glossaryEntry = KPI_GLOSSARY.mco;
 
+  // [D-04] De onde veio o gasto de publicidade que o MCO acabou de descontar.
+  // Um número que muda de régua não pode mudar em silêncio.
+  const adsTotalBRL =
+    adsTotal != null
+      ? adsTotal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+      : null;
+
   return (
-    <div className="w-full flex items-center gap-2 flex-wrap py-2 px-1 text-sm">
+    <div
+      data-ads-source={adsSource ?? "unknown"}
+      className="w-full flex items-center gap-2 flex-wrap py-2 px-1 text-sm"
+    >
       {/* Marcador colorido por sinal */}
       <span className={cn("font-bold leading-none select-none", dotClass)} aria-hidden="true">
         ●
@@ -100,6 +135,18 @@ export function MLMcoStrip({ mco, pct, label, loading = false, empty = false }: 
           <p className="text-foreground">{glossaryEntry.definition}</p>
           {glossaryEntry.example && (
             <p className="mt-1 text-muted-foreground">{glossaryEntry.example}</p>
+          )}
+          {adsSource === "billing" && (
+            <p className="mt-2 border-t border-border/50 pt-2 text-muted-foreground">
+              Publicidade descontada: {adsTotalBRL ?? "—"} — fatura do Mercado Livre.
+              {adsCoverageTo ? ` Lançamentos até ${formatIsoDate(adsCoverageTo)}.` : ""}
+            </p>
+          )}
+          {adsSource === "cache" && (
+            <p className="mt-2 border-t border-border/50 pt-2 text-muted-foreground">
+              Publicidade descontada: {adsTotalBRL ?? "—"} — cache de publicidade.
+              A fatura do período ainda não foi sincronizada.
+            </p>
           )}
         </PopoverContent>
       </Popover>

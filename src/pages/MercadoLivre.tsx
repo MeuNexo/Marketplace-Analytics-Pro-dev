@@ -9,7 +9,8 @@ import { useSeller } from "@/contexts/SellerContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useMLAds } from "@/hooks/useMLAds";
-import { computeAdsSummary } from "@/hooks/useMLAds";
+import { useMLAdsBillingSpend } from "@/hooks/useMLAdsBillingSpend";
+import { resolveAdsSpend } from "@/lib/adsBillingSpend";
 import { useMLReputation } from "@/hooks/useMLReputation";
 import { useMLFilters, getFilterDates, todayUTC, getComparisonRanges } from "@/hooks/useMLFilters";
 import { useMLDailyQuery, useMLHourlyQuery, useMLProductsQuery, useMLUserQuery, useMLMonthlyDailyQuery, useInvalidateMLQueries, type DailyBreakdown, type HourlyBreakdown } from "@/hooks/useMLQueries";
@@ -159,9 +160,36 @@ export default function MercadoLivre() {
 
   const { reputation: realReputation } = useMLReputation();
   const { daily: adsDaily } = useMLAds({ dateFrom: adsChartFrom, dateTo: currentTo });
-  const adsSummary = useMemo(
-    () => computeAdsSummary(adsDaily.filter((d) => d.date >= currentFrom && d.date <= currentTo)),
-    [adsDaily, currentFrom, currentTo],
+
+  // ── Publicidade do MCO (Fase 210) ──────────────────────────────────────────
+  // O gasto de publicidade que entra no MCO é o que o Mercado Livre DE FATO
+  // cobrou (`ml_billing_daily`, tipos PADS+BPAD), não o que a API de Ads reporta
+  // no cache diário. Mesma janela do fetch de cache (`adsChartFrom` → `currentTo`)
+  // para as duas fontes cobrirem exatamente o mesmo intervalo — assim as
+  // filtragens por sub-janela abaixo continuam válidas nos dois ramos.
+  const adsBilling = useMLAdsBillingSpend(adsChartFrom, currentTo);
+  // ESTA é a ÚNICA decisão de fonte da página. Todo consumidor abaixo lê de
+  // `adsResolved` (fatura OU cache, nunca a soma). A única exceção declarada é
+  // `adsSpendMes`, do fallback estimado do DRE — ver comentário lá embaixo.
+  const adsResolved = useMemo(
+    () =>
+      resolveAdsSpend(adsBilling.data ?? null, {
+        daily: adsDaily.map((d) => ({ date: d.date, spend: d.spend })),
+        total: adsDaily.reduce((s, d) => s + d.spend, 0),
+      }),
+    [adsBilling.data, adsDaily],
+  );
+  // Total da janela do filtro, derivado da MESMA série resolvida. Arredondado a
+  // 2 casas como o `computeAdsSummary` legado fazia, para o KPI de custo
+  // operacional não exibir deriva de centavo de ponto flutuante.
+  const adsTotalPeriodo = useMemo(
+    () =>
+      Math.round(
+        adsResolved.daily
+          .filter((d) => d.date >= currentFrom && d.date <= currentTo)
+          .reduce((s, d) => s + d.spend, 0) * 100,
+      ) / 100,
+    [adsResolved, currentFrom, currentTo],
   );
 
   const { data: ordersSummary } = useMLOrders(currentFrom, currentTo);
@@ -176,7 +204,7 @@ export default function MercadoLivre() {
   const { data: kpiSummary, isLoading: kpiSummaryLoading } = useMLKPISummary(
     currentFrom,
     currentTo,
-    adsSummary.total_spend,
+    adsTotalPeriodo,
   );
 
   // Waterfall mensal — sempre mês corrente, independente do filtro de período
@@ -185,9 +213,11 @@ export default function MercadoLivre() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
   }, []);
   const monthlyTo = useMemo(() => format(new Date(), "yyyy-MM-dd"), []);
+  // Lucro Bruto do mês (GoalsCard) é a mesma conta do MCO com outra janela —
+  // por isso lê a MESMA série resolvida, não o cache cru.
   const monthlyAdsTotal = useMemo(
-    () => adsDaily.filter((d) => d.date >= monthlyFrom && d.date <= monthlyTo).reduce((s, d) => s + d.spend, 0),
-    [adsDaily, monthlyFrom, monthlyTo],
+    () => adsResolved.daily.filter((d) => d.date >= monthlyFrom && d.date <= monthlyTo).reduce((s, d) => s + d.spend, 0),
+    [adsResolved, monthlyFrom, monthlyTo],
   );
   const { data: monthlyCostWaterfall } = useMLCostWaterfall(monthlyFrom, monthlyTo);
 
@@ -395,7 +425,12 @@ export default function MercadoLivre() {
     }
   }, [monthClose]);
 
-  // Fallback estimado: ads do mês do filtro somado para linha de publicidade
+  // Fallback estimado: ads do mês do filtro somado para linha de publicidade.
+  // [Fase 210] Este ponto fica DE PROPÓSITO no cache de ads: ele só é lido no
+  // ramo estimado do DRE, alcançado exatamente quando não há fatura nenhuma no
+  // mês — trocá-lo pela fatura zeraria a linha "Campanhas de publicidade".
+  // Havendo fatura, o DRE já usa o grupo PADS de groupBillingCharges, então
+  // também não existe soma dupla.
   const adsSpendMes = useMemo(
     () => adsDaily.filter((d) => d.date >= billingMonthFrom && d.date <= billingMonthTo).reduce((s, d) => s + d.spend, 0),
     [adsDaily, billingMonthFrom, billingMonthTo],
@@ -471,11 +506,12 @@ export default function MercadoLivre() {
 
   // ── MCO do período — input montado a partir de valores já derivados (sem novo fetch) ──
   // platformCost = custo_plataforma (frete+comissão, SEM ads — confirmado em useMLKPISummary)
-  // ads somado UMA única vez via adsSummary.total_spend (anti-duplicação)
+  // ads somado UMA única vez via adsTotalPeriodo (anti-duplicação), já resolvido
+  // para uma origem só — fatura do ML ou cache de ads, nunca as duas (Fase 210)
   const mcoInput = useMemo(() => {
     const grossRevenue = kpiSummary?.gross_revenue ?? 0;
     const platformCost = kpiSummary?.custo_plataforma ?? 0; // frete+comissão, exclui ads
-    const ads = adsSummary.total_spend; // somado exatamente uma vez
+    const ads = adsTotalPeriodo; // somado exatamente uma vez
 
     // CMV: valor real do período quando disponível; fallback por % do waterfall mensal
     const monthlyPaidRevenue = monthlyCostWaterfall?.paid_revenue ?? 0;
@@ -495,7 +531,7 @@ export default function MercadoLivre() {
       : taxFallback;
 
     return { grossRevenue, cmv, platformCost, ads, tax };
-  }, [kpiSummary, adsSummary.total_spend, monthlyCostWaterfall]);
+  }, [kpiSummary, adsTotalPeriodo, monthlyCostWaterfall]);
 
   const { mco: mcoValue, pct: mcoPct } = useMemo(() => computeMco(mcoInput), [mcoInput]);
 
@@ -883,8 +919,11 @@ export default function MercadoLivre() {
               mco={mcoValue}
               pct={mcoPct}
               label={mcoLabel}
-              loading={kpiSummaryLoading || isRecalcing || effectiveLoading}
+              loading={kpiSummaryLoading || isRecalcing || effectiveLoading || adsBilling.isLoading}
               empty={mcoEmpty}
+              adsSource={adsResolved.source}
+              adsTotal={adsTotalPeriodo}
+              adsCoverageTo={adsResolved.coverageTo}
             />
           )}
 
@@ -911,7 +950,7 @@ export default function MercadoLivre() {
                 hasSyncProgress={!!syncProgress}
                 kpiSummary={kpiSummary}
                 kpiSummaryLoading={kpiSummaryLoading || isRecalcing}
-                adsTotalForPeriod={adsSummary.total_spend}
+                adsTotalForPeriod={adsTotalPeriodo}
               />
             );
             if (widget.id === "revenue_chart") return (
@@ -991,7 +1030,7 @@ export default function MercadoLivre() {
                 />
                 <CustoOperacionalChart
                   custoSeries={brandData?.custoSeries ?? []}
-                  adsDaily={adsDaily}
+                  adsDaily={adsResolved.daily}
                   dailyRevenue={dailyRevenue}
                   loading={brandLoading}
                 />
