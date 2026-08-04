@@ -21,7 +21,6 @@ class ResizeObserverMock {
   unobserve() {}
   disconnect() {}
 }
-// @ts-expect-error — polyfill de teste, jsdom não define este global
 global.ResizeObserver = ResizeObserverMock;
 
 /** Raiz renderizada da faixa — é ela que carrega `data-ads-source`. */
