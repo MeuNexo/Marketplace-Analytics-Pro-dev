@@ -459,7 +459,7 @@ estoque que a origem mandou ignorar (o caso do `Magazine Luiza Fullfilment`).
   - `export function proximaAcao(estado: EstadoCursor | null, agora: Date): Acao` onde `type Acao = {tipo: "iniciar_volta"} | {tipo: "seguir_estoque"; de: number} | {tipo: "fechar_volta"}`.
   - A Task 5 importa `proximaAcao`.
 
-- [ ] **Step 1: Escrever o teste falhando**
+- [x] **Step 1: Escrever o teste falhando**
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -517,12 +517,12 @@ describe("proximaAcao", () => {
 });
 ```
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `npx vitest run supabase/functions/sync-tiny-stock/cursor.test.ts`
 Expected: FAIL — `Failed to resolve import "./cursor"`.
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 ```ts
 export interface ItemFila {
@@ -561,17 +561,22 @@ export function proximaAcao(estado: EstadoCursor | null, _agora: Date): Acao {
 }
 ```
 
-- [ ] **Step 4: Rodar e ver passar**
+- [x] **Step 4: Rodar e ver passar**
 
 Run: `npx vitest run supabase/functions/sync-tiny-stock/cursor.test.ts`
-Expected: PASS, 7 testes.
+Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add supabase/functions/sync-tiny-stock/cursor.ts supabase/functions/sync-tiny-stock/cursor.test.ts
 git commit -m "feat(tiny): cursor retomavel que so reinicia apos fechar a volta"
 ```
+
+**Task 4 CONCLUIDA em 2026-08-04.** 12 testes verdes (o plano previa 7). Somados:
+volta aberta ha varios dias, indice alem do fim, volta fechada com indice no meio,
+indice negativo, e o teste que prova que a decisao **nao depende de `agora`** — mesma
+entrada devolve a mesma acao em 2026-08-05, 2026-08-06 e 2027-01-01.
 
 ---
 
