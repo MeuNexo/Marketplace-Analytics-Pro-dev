@@ -288,7 +288,7 @@ EF com service_role). Lint 13/13 verde; suite completa 958/958 verde.
 >    compra acontece. O módulo não mente sobre o dado — quem decide arredonda.
 > 3. `desconsiderar: true` segue descartado (medido em `Magazine Luiza Fullfilment`).
 
-- [ ] **Step 1: Escrever o teste falhando**
+- [x] **Step 1: Escrever o teste falhando**
 
 Fixtures copiados da resposta **real** medida na Task 1, não inventados.
 
@@ -351,12 +351,12 @@ describe("extrairDepositos", () => {
 });
 ```
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `npx vitest run supabase/functions/sync-tiny-stock/depositos.test.ts`
 Expected: FAIL — `Failed to resolve import "./depositos"`.
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 ```ts
 export interface SaldoDeposito {
@@ -424,17 +424,25 @@ export function extrairDepositos(resposta: unknown): SaldoDeposito[] {
 }
 ```
 
-- [ ] **Step 4: Rodar e ver passar**
+- [x] **Step 4: Rodar e ver passar**
 
 Run: `npx vitest run supabase/functions/sync-tiny-stock/depositos.test.ts`
-Expected: PASS, 7 testes.
+Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add supabase/functions/sync-tiny-stock/depositos.ts supabase/functions/sync-tiny-stock/depositos.test.ts
 git commit -m "feat(tiny): extracao pura de saldo por deposito"
 ```
+
+**Task 3 CONCLUIDA em 2026-08-04.** 11 testes verdes (o plano previa 7; foram somados
+casos de numero em string, deposito sem nome, e o abaixo).
+
+**Desvio deliberado do plano:** o fallback para o saldo de topo agora so vale quando a
+resposta **nao trouxe lista de depositos**. Se a lista veio e esvaziou no filtro de
+`desconsiderar`, o resultado e vazio de verdade — cair no topo somaria justamente o
+estoque que a origem mandou ignorar (o caso do `Magazine Luiza Fullfilment`).
 
 ---
 
