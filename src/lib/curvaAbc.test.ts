@@ -123,6 +123,20 @@ describe("classificarCurvaAbc", () => {
     expect(misto.itens.find((i) => i.id === "vende")?.curva).toBe("A");
   });
 
+  it("Test 7b: o item de maior receita é sempre curva A, inclusive quando sozinho responde por cem por cento", () => {
+    // Caso degenerado: com o corte por acumulado INCLUSIVO, quem responde por
+    // 100% da receita tem acumulado 100 e cairia na curva C.
+    const unico = classificarCurvaAbc([{ id: "dominante", receita: 5000 }]);
+    expect(unico.itens[0].cumPct).toBe(100);
+    expect(unico.itens[0].curva).toBe("A");
+
+    const concentrado = classificarCurvaAbc([
+      { id: "dominante", receita: 9900 },
+      { id: "resto", receita: 100 },
+    ]);
+    expect(concentrado.itens[0].curva).toBe("A");
+  });
+
   it("Test 8: o resumo soma contagem e receita por curva e fecha em cem por cento", () => {
     const r = classificarCurvaAbc([
       { id: "a", receita: 60 },
@@ -167,26 +181,33 @@ describe("classificarCurvaAbc", () => {
   // ─── O caso medido do CR-06 ──────────────────────────────────────────────
 
   it("Test 11 (CR-06): anúncio com receita vitalícia alta e receita do período zero sai da Curva A", () => {
-    // Carteira real em miniatura: `aposentado` vendeu muito ao longo de anos e
-    // não vende nada no período escolhido. `giro` é o contrário.
+    // Carteira em miniatura. `aposentado` acumulou receita ao longo de anos e
+    // não vende NADA no período escolhido. Sob a régua vitalícia ele está na
+    // Curva A por mérito do acumulado — não pela guarda do primeiro colocado,
+    // que aqui é outro item.
     const vitalicia = [
-      { id: "aposentado", receita: 90_000 },
-      { id: "giro", receita: 8_000 },
-      { id: "cauda", receita: 2_000 },
+      { id: "topo", receita: 45_000 },
+      { id: "aposentado", receita: 30_000 },
+      { id: "medio", receita: 15_000 },
+      { id: "cauda", receita: 7_000 },
+      { id: "resto", receita: 3_000 },
     ];
-    const periodo = [
-      { id: "aposentado", receita: 0 },
-      { id: "giro", receita: 8_000 },
-      { id: "cauda", receita: 2_000 },
-    ];
+    const periodo = vitalicia.map((i) =>
+      i.id === "aposentado" ? { ...i, receita: 0 } : i,
+    );
 
     const antes = classificarCurvaAbc(vitalicia);
     const depois = classificarCurvaAbc(periodo);
 
+    expect(antes.itens.find((i) => i.id === "aposentado")?.rank).toBe(2);
     expect(antes.itens.find((i) => i.id === "aposentado")?.curva).toBe("A");
+    expect(antes.resumo.A.count).toBe(2);
+
+    // Com a receita do período, o aposentado sai da Curva A e vai para o fim
     expect(depois.itens.find((i) => i.id === "aposentado")?.curva).toBe("C");
-    // e quem realmente gira no período assume a Curva A
-    expect(depois.itens.find((i) => i.id === "giro")?.curva).toBe("A");
+    expect(depois.itens.find((i) => i.id === "aposentado")?.rank).toBe(5);
+    // e quem realmente gira no período segue na Curva A
+    expect(depois.itens.find((i) => i.id === "topo")?.curva).toBe("A");
   });
 });
 
