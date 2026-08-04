@@ -36,6 +36,48 @@ import {
 } from "@/lib/adsBillingSpend";
 
 /**
+ * Lê as linhas cruas de publicidade da fatura no intervalo `[from, to]`.
+ *
+ * Extraída do hook abaixo na fase 211 por UMA razão: o hook do rateio por
+ * anúncio (`useAdsRateioAnuncio`) precisa EXATAMENTE desta leitura, e duplicá-la
+ * abriria caminho para as duas divergirem — o filtro, a régua de data e a
+ * paginação têm de ser os mesmos nos dois lugares. Comportamento inalterado em
+ * relação à fase 210.
+ */
+export async function fetchAdsBillingRows(
+  orgId: string,
+  mlUserIds: string[],
+  from: string,
+  to: string,
+): Promise<AdsBillingChargeRow[]> {
+  interface Row {
+    charge_date: string;
+    charge_type: string;
+    amount: number | string;
+  }
+
+  const rows: Row[] = [];
+  const PAGE = 1000;
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await supabase
+      .from("ml_billing_daily")
+      .select("charge_date, charge_type, amount")
+      .eq("organization_id", orgId)
+      .in("ml_user_id", mlUserIds)
+      .in("charge_type", [...ADS_BILLING_CHARGE_TYPES])
+      .gte("charge_date", from.slice(0, 10))
+      .lte("charge_date", to.slice(0, 10))
+      .range(offset, offset + PAGE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    rows.push(...(data as unknown as Row[]));
+    if (data.length < PAGE) break;
+  }
+
+  return rows as unknown as AdsBillingChargeRow[];
+}
+
+/**
  * Gasto de publicidade da fatura no intervalo `[from, to]` (datas YYYY-MM-DD).
  *
  * Devolve SEMPRE um `AdsBillingSpend` quando a query roda — inclusive sem
@@ -54,31 +96,9 @@ export function useMLAdsBillingSpend(from: string, to: string) {
     queryFn: async (): Promise<AdsBillingSpend | null> => {
       if (!orgId || resolvedMLUserIds.length === 0 || !from || !to) return null;
 
-      interface Row {
-        charge_date: string;
-        charge_type: string;
-        amount: number | string;
-      }
+      const rows = await fetchAdsBillingRows(orgId, resolvedMLUserIds, from, to);
 
-      const rows: Row[] = [];
-      const PAGE = 1000;
-      for (let offset = 0; ; offset += PAGE) {
-        const { data, error } = await supabase
-          .from("ml_billing_daily")
-          .select("charge_date, charge_type, amount")
-          .eq("organization_id", orgId)
-          .in("ml_user_id", resolvedMLUserIds)
-          .in("charge_type", [...ADS_BILLING_CHARGE_TYPES])
-          .gte("charge_date", from.slice(0, 10))
-          .lte("charge_date", to.slice(0, 10))
-          .range(offset, offset + PAGE - 1);
-        if (error) throw error;
-        if (!data || data.length === 0) break;
-        rows.push(...(data as unknown as Row[]));
-        if (data.length < PAGE) break;
-      }
-
-      return aggregateAdsBillingSpend(rows as unknown as AdsBillingChargeRow[]);
+      return aggregateAdsBillingSpend(rows);
     },
     enabled: !!orgId && resolvedMLUserIds.length > 0 && !!from && !!to,
     staleTime: 30 * 60 * 1000,
