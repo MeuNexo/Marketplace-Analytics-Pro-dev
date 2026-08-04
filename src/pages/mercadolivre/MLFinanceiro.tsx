@@ -41,6 +41,8 @@ import { useMLSync } from "@/hooks/useMLSync";
 import { useMLMarginAnalysis } from "@/hooks/useMLMarginAnalysis";
 import { useMLCostWaterfall } from "@/hooks/useMLCostWaterfall";
 import { useMLAds } from "@/hooks/useMLAds";
+import { useMLAdsBillingSpend } from "@/hooks/useMLAdsBillingSpend";
+import { resolveAdsSpend } from "@/lib/adsBillingSpend";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -172,11 +174,27 @@ export default function MLFinanceiro() {
   const kpiFrete      = waterfall?.total_frete     ?? 0;
   const kpiImpostos   = waterfall?.total_tax       ?? 0;
 
-  // ── Publicidade: total_spend do período (ml_ads_daily_cache)
-  const { daily: adsDaily, loading: adsLoading } = useMLAds({ dateFrom: currentFrom, dateTo: currentTo });
+  // ── Publicidade [Fase 210]: fonte RESOLVIDA do período — a fatura que o
+  // Mercado Livre efetivamente cobrou (`ml_billing_daily`, PADS+BPAD) e, como
+  // rede de proteção, o cache de ads (`ml_ads_daily_cache`) quando a fatura do
+  // período ainda não sincronizou. Nunca as duas somadas. É a MESMA régua da
+  // tela Vendas — o Lucro Bruto daqui é o MCO de lá com outro nome. O ramo de
+  // cache existe porque zerar publicidade inflaria o lucro em silêncio.
+  const { daily: adsDaily, loading: adsCacheLoading } = useMLAds({ dateFrom: currentFrom, dateTo: currentTo });
+  const adsBilling = useMLAdsBillingSpend(currentFrom, currentTo);
+  // Ponto ÚNICO de decisão de fonte desta tela.
+  const adsResolved = useMemo(
+    () =>
+      resolveAdsSpend(adsBilling.data ?? null, {
+        daily: adsDaily.map((d) => ({ date: d.date, spend: d.spend })),
+        total: adsDaily.reduce((s, d) => s + d.spend, 0),
+      }),
+    [adsBilling.data, adsDaily],
+  );
+  const adsLoading = adsCacheLoading || adsBilling.isLoading;
   const kpiPublicidade = useMemo(
-    () => Math.round(adsDaily.reduce((s, d) => s + d.spend, 0) * 100) / 100,
-    [adsDaily],
+    () => Math.round(adsResolved.total * 100) / 100,
+    [adsResolved],
   );
 
   // ── Lucro Bruto = Receita - CMV - Comissão - Frete - Impostos - Publicidade
@@ -238,9 +256,9 @@ export default function MLFinanceiro() {
   // ── Chart data (merge ads daily para publicidade por dia)
   const adsDailyByDate = useMemo(() => {
     const m = new Map<string, number>();
-    for (const d of adsDaily) m.set(d.date, (m.get(d.date) ?? 0) + d.spend);
+    for (const d of adsResolved.daily) m.set(d.date, (m.get(d.date) ?? 0) + d.spend);
     return m;
-  }, [adsDaily]);
+  }, [adsResolved]);
 
   const chartData = useMemo(
     () =>
@@ -399,6 +417,13 @@ export default function MLFinanceiro() {
         <KPICard
           title="Publicidade"
           value={adsLoading ? "..." : currFmt(kpiPublicidade)}
+          // [D-04] A origem do número fica visível no próprio card: quem lê o
+          // Lucro Bruto sabe qual régua de publicidade está valendo.
+          subtitle={
+            adsResolved.source === "billing"
+              ? "fatura do Mercado Livre"
+              : "cache de publicidade"
+          }
           icon={<Megaphone className="w-4 h-4" />}
           variant="minimal"
           size="compact"
