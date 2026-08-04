@@ -10,6 +10,22 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-04-reposicao-fonte-unica-design.md`
 
+> ## ⚠️ REVISADO em 2026-08-04 pela medição da Task 1
+>
+> A Task 1 foi executada contra a API do Tiny ao vivo e **reprovou o desenho original**.
+> Medição completa: `docs/superpowers/plans/tiny-shape-medicao.md`.
+>
+> | Achado | Efeito no plano |
+> |---|---|
+> | SKU vive na **variação** (~84% do catálogo), não no pai | Task 5 **nunca** filtra `tipoVariacao='P'`. Volume 771, ~14 min/volta |
+> | `depositos[]` e `saldo` vêm na **raiz**, sem envelope `estoque`; SKU chama-se `codigo` | Task 3 reescrita sobre a forma medida |
+> | **SKU duplicado** no Tiny (337 e −1 no mesmo SKU) | Tasks 2/5/7: chave por `tiny_id`; D-7 desempata na leitura |
+> | Existem saldos **negativos** | D-6: `GREATEST(disponivel, 0)` na Task 7 |
+> | `Centro de distribuição` guarda estoque real | **D-5 mantida pelo Wesley**; vira coluna informativa (ver D-5) |
+> | 12 requisições paralelas → **7× HTTP 429** | Serializar é requisito, não precaução |
+>
+> A Task 1 está **concluída**. A execução recomeça na Task 2.
+
 ## Global Constraints
 
 - **Organização de referência:** Pé Vermeio `7f615df7-7bac-45e5-8a93-827fb9ddeec7`, seller/`ml_user_id` `1639558873`. Nunca completar UUID por prefixo — sempre `SELECT id, name FROM organizations`.
@@ -17,7 +33,20 @@
 - **D-2:** o estoque Full vem **sempre** de `ml_inventory_cache.available_quantity`. O Full do Tiny nunca é somado.
 - **D-3:** compra desconta `estoque_full + estoque_cd + qtd_a_caminho`.
 - **D-4:** escopo da lista = giro nos últimos 365 dias **OU** estoque total > 0.
-- **D-5:** do Tiny conta **apenas o depósito CD Expedição** (nome exato medido na Task 1).
+- **D-5:** do Tiny conta **apenas o depósito `CD Expedição`** — string exata, com acento e
+  maiúsculas, medida na Task 1. **Mantida pelo Wesley em 04/08 depois da medição**, que
+  recomendava somar também `Centro de distribuição`. Consequência aceita e registrada em
+  `tiny-shape-medicao.md`: SKU com estoque só no outro depósito entra no cálculo como zero.
+  **Mitigação:** `Centro de distribuição` aparece como **coluna informativa**, fora do cálculo.
+- **D-6 (nova, 04/08):** o número que decide compra é **`disponivel` com piso em zero**
+  (`GREATEST(disponivel, 0)`) — desconta reservado, e negativo não é estoque. Medidos
+  `disponivel = -1` e `-20` no catálogo real.
+- **D-7 (nova, 04/08):** o mesmo SKU pode ter **mais de um `tiny_id`** (medido: 337 e −1 no
+  `K6CBS2345SORG3`). **Vence o registro de maior saldo.** Tabelas chaveadas por `tiny_id`;
+  o desempate acontece na leitura, na RPC.
+- **Catálogo é por variação:** **nunca filtrar `tipoVariacao = 'P'`.** ~84% do catálogo é
+  variação (`V`), e é nela que vive o SKU da operação. Existe também `tipoVariacao = 'N'`.
+  As variações vêm como itens de topo da listagem — não é preciso descer no pai.
 - **O núcleo de cálculo da RPC é INTOCÁVEL:** `ewma_sales`, `seasonal_index`, `best_rate_by_sku`, `sales_history_by_sku`, `lead_time_by_fornecedor`, `params`, `daily_qty_180d`, `window_sums_30d`, e a expressão de `compra` em `calc`. Mudança é só de alimentação.
 - **Lint de migration (`src/lib/migrationSecurityLint.ts`) é gate:** todo `CREATE TABLE` em `public` precisa de `ENABLE ROW LEVEL SECURITY` no mesmo conjunto de arquivos; toda função `SECURITY DEFINER` precisa de `REVOKE` citando o nome.
 - **Rate limit do Tiny:** ~60 req/min. Usar `RATE_MS = 1100` entre chamadas de detalhe e `PAGE_SLEEP_MS = 300` entre páginas de listagem — valores já em produção em `sync-tiny-costs`.
@@ -107,12 +136,11 @@ Criar `docs/superpowers/plans/tiny-shape-medicao.md` com: data/hora, as saídas 
 - Se `NIVEL_DO_SKU = pai`: seguir o plano sem alteração.
 - Se `NIVEL_DO_SKU = variacao`: **parar e reportar.** As Tasks 3 e 5 mudam (a varredura precisa descer nas variações, e `/estoque/{id}` pode ter que ser chamado por variação, o que muda o volume de requisições). Não improvisar — o desenho volta para revisão.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit** — feito em `1f649507`.
 
-```bash
-git add docs/superpowers/plans/tiny-shape-medicao.md
-git commit -m "docs: medicao da forma dos SKUs e depositos no Tiny"
-```
+**Resultado:** `NIVEL_DO_SKU = variacao`, `DEPOSITO_CD = 'CD Expedição'`.
+Veredito: o desenho voltou para revisao e o plano foi corrigido (ver caixa no topo).
+Task 1 **CONCLUIDA** em 2026-08-04.
 
 ---
 
@@ -125,10 +153,17 @@ git commit -m "docs: medicao da forma dos SKUs e depositos no Tiny"
 - Consumes: `DEPOSITO_CD` da Task 1 (só como comentário documental aqui; o filtro vive na Task 7).
 - Produces: tabelas `public.tiny_products`, `public.tiny_stock`, `public.tiny_sync_cursor`.
 
+> **REVISADO pela medição da Task 1** (`tiny-shape-medicao.md`, achado 4): o SKU **não é único**
+> no Tiny — `K6CBS2345SORG3` tem dois `tiny_id`, um com saldo 337 e outro com −1. As chaves
+> primárias passam a ser por **`tiny_id`**, preservando o dado bruto fiel; a regra de desempate
+> D-7 (**vence o de maior saldo**) é aplicada **na leitura**, na Task 7. Chavear por `sku` faria
+> a varredura gravar 337 ou −1 conforme a ordem.
+
 - [ ] **Step 1: Escrever a migration**
 
 ```sql
 -- Catálogo do Tiny: todo SKU, tenha ou não anúncio no ML.
+-- Chave por tiny_id: o mesmo SKU pode ter mais de um registro (medido).
 CREATE TABLE IF NOT EXISTS public.tiny_products (
   organization_id uuid        NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
   ml_user_id      text        NOT NULL,
@@ -136,22 +171,29 @@ CREATE TABLE IF NOT EXISTS public.tiny_products (
   sku             text        NOT NULL,
   nome            text,
   situacao        text,
+  tipo_variacao   text,        -- 'P' (pai), 'V' (variacao) ou 'N'. Medido: os 3 existem.
   synced_at       timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (organization_id, sku)
+  PRIMARY KEY (organization_id, tiny_id)
 );
 
 CREATE INDEX IF NOT EXISTS tiny_products_org_idx
   ON public.tiny_products (organization_id);
 
--- Estoque por depósito. Uma linha por (sku, depósito).
+-- Busca por SKU nao e mais pela PK: precisa de indice proprio.
+CREATE INDEX IF NOT EXISTS tiny_products_org_sku_idx
+  ON public.tiny_products (organization_id, sku);
+
+-- Estoque por depósito. Uma linha por (tiny_id, depósito).
 CREATE TABLE IF NOT EXISTS public.tiny_stock (
   organization_id uuid        NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
   ml_user_id      text        NOT NULL,
+  tiny_id         text        NOT NULL,
   sku             text        NOT NULL,
   deposito        text        NOT NULL,
-  saldo           numeric     NOT NULL DEFAULT 0,
+  saldo           numeric     NOT NULL DEFAULT 0,  -- saldo bruto, como veio
+  disponivel      numeric     NOT NULL DEFAULT 0,  -- D-6: e este que decide compra
   synced_at       timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (organization_id, sku, deposito)
+  PRIMARY KEY (organization_id, tiny_id, deposito)
 );
 
 CREATE INDEX IF NOT EXISTS tiny_stock_org_sku_idx
@@ -229,38 +271,60 @@ git commit -m "feat(tiny): tabelas de catalogo, estoque por deposito e cursor"
 - Test: `supabase/functions/sync-tiny-stock/depositos.test.ts`
 
 **Interfaces:**
-- Consumes: `DEPOSITO_CD` e o formato de resposta medidos na Task 1.
-- Produces: `export function extrairDepositos(resposta: unknown): SaldoDeposito[]` onde `interface SaldoDeposito { deposito: string; saldo: number }`. A Task 5 importa esta função.
+- Consumes: o formato de resposta **medido** na Task 1 (`tiny-shape-medicao.md`, achados 3 e 5).
+- Produces: `export function extrairDepositos(resposta: unknown): SaldoDeposito[]` onde `interface SaldoDeposito { deposito: string; saldo: number; disponivel: number }`. A Task 5 importa esta função.
+
+> **REVISADO pela medição da Task 1.** Três correções sobre o desenho original:
+> 1. **Achado 3:** `depositos[]` e `saldo` vêm na **raiz** da resposta, não sob um envelope
+>    `estoque`, e cada item do array **já é** o depósito — não há wrapper `{ deposito: {...} }`.
+>    O SKU, nesse endpoint, chama-se **`codigo`** (em `/produtos` chama-se `sku`).
+> 2. **Achado 5 + D-6:** existem saldos **negativos** (`disponivel: -1`, `-20`). O módulo devolve
+>    `saldo` e `disponivel` crus; **o piso em zero é aplicado na Task 7**, onde a decisão de
+>    compra acontece. O módulo não mente sobre o dado — quem decide arredonda.
+> 3. `desconsiderar: true` segue descartado (medido em `Magazine Luiza Fullfilment`).
 
 - [ ] **Step 1: Escrever o teste falhando**
+
+Fixtures copiados da resposta **real** medida na Task 1, não inventados.
 
 ```ts
 import { describe, it, expect } from "vitest";
 import { extrairDepositos } from "./depositos";
 
 describe("extrairDepositos", () => {
-  it("extrai um saldo por deposito", () => {
-    const r = { estoque: { saldo: 10, depositos: [
-      { deposito: { nome: "CD Expedição", saldo: 7, desconsiderar: false } },
-      { deposito: { nome: "Mercado Livre Fullfilment", saldo: 3, desconsiderar: false } },
-    ] } };
+  it("extrai saldo e disponivel por deposito, na forma medida do Tiny", () => {
+    // Resposta real de GET /estoque/807451772 (SKU 12011666PTO3360M), reduzida.
+    const r = { id: 807451772, codigo: "12011666PTO3360M", saldo: 33, disponivel: 11,
+      depositos: [
+        { id: 829490646, nome: "CD Expedição", desconsiderar: false, saldo: 0, disponivel: -1 },
+        { id: 790617378, nome: "Centro de distribuição", desconsiderar: false, saldo: 32, disponivel: 32 },
+      ] };
     expect(extrairDepositos(r)).toEqual([
-      { deposito: "CD Expedição", saldo: 7 },
-      { deposito: "Mercado Livre Fullfilment", saldo: 3 },
+      { deposito: "CD Expedição", saldo: 0, disponivel: -1 },
+      { deposito: "Centro de distribuição", saldo: 32, disponivel: 32 },
+    ]);
+  });
+
+  it("preserva negativo sem arredondar — o piso e da Task 7", () => {
+    const r = { saldo: -1, depositos: [
+      { nome: "Mercado Livre Fullfilment", desconsiderar: false, saldo: -1, disponivel: -20 },
+    ] };
+    expect(extrairDepositos(r)).toEqual([
+      { deposito: "Mercado Livre Fullfilment", saldo: -1, disponivel: -20 },
     ]);
   });
 
   it("descarta deposito marcado como desconsiderar", () => {
-    const r = { estoque: { saldo: 5, depositos: [
-      { deposito: { nome: "CD Expedição", saldo: 5, desconsiderar: false } },
-      { deposito: { nome: "Avaria", saldo: 9, desconsiderar: true } },
-    ] } };
-    expect(extrairDepositos(r)).toEqual([{ deposito: "CD Expedição", saldo: 5 }]);
+    const r = { saldo: 5, depositos: [
+      { nome: "CD Expedição", desconsiderar: false, saldo: 5, disponivel: 5 },
+      { nome: "Magazine Luiza Fullfilment", desconsiderar: true, saldo: 9, disponivel: 9 },
+    ] };
+    expect(extrairDepositos(r)).toEqual([{ deposito: "CD Expedição", saldo: 5, disponivel: 5 }]);
   });
 
   it("cai no saldo de topo quando nao ha depositos", () => {
-    const r = { estoque: { saldo: 4, depositos: [] } };
-    expect(extrairDepositos(r)).toEqual([{ deposito: "(sem deposito)", saldo: 4 }]);
+    const r = { saldo: 4, disponivel: 4, depositos: [] };
+    expect(extrairDepositos(r)).toEqual([{ deposito: "(sem deposito)", saldo: 4, disponivel: 4 }]);
   });
 
   it("devolve vazio para resposta malformada", () => {
@@ -269,15 +333,18 @@ describe("extrairDepositos", () => {
   });
 
   it("trata saldo ausente como zero e nao quebra", () => {
-    const r = { estoque: { depositos: [
-      { deposito: { nome: "CD Expedição", desconsiderar: false } },
+    const r = { depositos: [{ nome: "CD Expedição", desconsiderar: false }] };
+    expect(extrairDepositos(r)).toEqual([{ deposito: "CD Expedição", saldo: 0, disponivel: 0 }]);
+  });
+
+  it("ainda aceita o envelope antigo, por seguranca", () => {
+    const r = { estoque: { saldo: 7, depositos: [
+      { deposito: { nome: "CD Expedição", saldo: 7, disponivel: 7, desconsiderar: false } },
     ] } };
-    expect(extrairDepositos(r)).toEqual([{ deposito: "CD Expedição", saldo: 0 }]);
+    expect(extrairDepositos(r)).toEqual([{ deposito: "CD Expedição", saldo: 7, disponivel: 7 }]);
   });
 });
 ```
-
-> **Ajuste obrigatório:** se a Task 1 mediu um envelope diferente (por exemplo `depositos[]` sem o wrapper `deposito`), corrigir estes fixtures para a forma **medida** antes de implementar. O teste existe para casar com a realidade, não o contrário.
 
 - [ ] **Step 2: Rodar e ver falhar**
 
@@ -290,6 +357,7 @@ Expected: FAIL — `Failed to resolve import "./depositos"`.
 export interface SaldoDeposito {
   deposito: string;
   saldo: number;
+  disponivel: number;
 }
 
 const SEM_DEPOSITO = "(sem deposito)";
@@ -301,30 +369,51 @@ function num(v: unknown): number {
 
 /**
  * Normaliza a resposta de GET /estoque/{id} do Tiny em saldos por deposito.
+ *
+ * Forma medida em 2026-08-04 (docs/superpowers/plans/tiny-shape-medicao.md):
+ * `depositos[]` e `saldo` vivem na RAIZ da resposta, e cada item do array ja e o
+ * deposito. O envelope `estoque` e o wrapper `{ deposito: {...} }` sao aceitos
+ * por seguranca, caso a API varie entre versoes.
+ *
  * Depositos com `desconsiderar = true` sao descartados: nao sao vendaveis.
  * Sem depositos, usa o saldo de topo sob um rotulo unico.
+ *
+ * Valores negativos sao PRESERVADOS. O piso em zero (D-6) e responsabilidade de
+ * quem decide compra (Task 7), nao deste modulo.
  */
 export function extrairDepositos(resposta: unknown): SaldoDeposito[] {
   if (!resposta || typeof resposta !== "object") return [];
-  const estoque = (resposta as Record<string, unknown>).estoque;
-  if (!estoque || typeof estoque !== "object") return [];
 
-  const e = estoque as Record<string, unknown>;
-  const lista = Array.isArray(e.depositos) ? e.depositos : [];
+  const raiz = resposta as Record<string, unknown>;
+  // A raiz e a fonte medida; `estoque` e fallback para o envelope antigo.
+  const envelope = raiz.estoque && typeof raiz.estoque === "object"
+    ? (raiz.estoque as Record<string, unknown>)
+    : raiz;
+
+  const lista = Array.isArray(envelope.depositos) ? envelope.depositos : [];
 
   const saldos: SaldoDeposito[] = [];
   for (const item of lista) {
+    // Forma medida: o item JA e o deposito. Forma antiga: vem sob `.deposito`.
     const d = (item as Record<string, unknown>)?.deposito ?? item;
     if (!d || typeof d !== "object") continue;
     const dep = d as Record<string, unknown>;
     if (dep.desconsiderar === true) continue;
     const nome = typeof dep.nome === "string" ? dep.nome.trim() : "";
     if (!nome) continue;
-    saldos.push({ deposito: nome, saldo: num(dep.saldo) });
+    saldos.push({
+      deposito: nome,
+      saldo: num(dep.saldo),
+      disponivel: dep.disponivel === undefined ? num(dep.saldo) : num(dep.disponivel),
+    });
   }
 
-  if (saldos.length === 0 && e.saldo !== undefined) {
-    return [{ deposito: SEM_DEPOSITO, saldo: num(e.saldo) }];
+  if (saldos.length === 0 && envelope.saldo !== undefined) {
+    return [{
+      deposito: SEM_DEPOSITO,
+      saldo: num(envelope.saldo),
+      disponivel: envelope.disponivel === undefined ? num(envelope.saldo) : num(envelope.disponivel),
+    }];
   }
   return saldos;
 }
@@ -333,7 +422,7 @@ export function extrairDepositos(resposta: unknown): SaldoDeposito[] {
 - [ ] **Step 4: Rodar e ver passar**
 
 Run: `npx vitest run supabase/functions/sync-tiny-stock/depositos.test.ts`
-Expected: PASS, 5 testes.
+Expected: PASS, 7 testes.
 
 - [ ] **Step 5: Commit**
 
@@ -493,10 +582,17 @@ import { proximaAcao, type EstadoCursor, type ItemFila } from "./cursor.ts";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const TINY_API     = "https://api.tiny.com.br/public-api/v3";
+// MEDIDO 04/08: 12 requisicoes disparadas sem espacamento -> 7 responderam HTTP 429.
+// Serializar nao e precaucao, e requisito. Nao paralelizar.
 const RATE_MS        = 1100;  // ~60 req/min, igual ao sync-tiny-costs
 const PAGE_SLEEP_MS  = 300;
 const CAP_POR_CHAMADA   = 150;    // produtos de estoque por invocacao
 const ORCAMENTO_MS      = 90_000; // teto auto-imposto, abaixo do limite da EF
+
+// Dimensionamento medido: 771 produtos ativos (paginacao.total), ~84% variacoes.
+// A ~1,1 s por chamada de detalhe, o ORCAMENTO_MS corta em ~81 itens por invocacao
+// (antes do CAP_POR_CHAMADA, que nunca e atingido) => ~10 invocacoes por volta,
+// ~14 min de relogio. E por isso que o cursor da Task 4 precisa ser retomavel.
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -560,13 +656,17 @@ async function varrerCatalogo(token: string, orgId: string, mlUserId: string): P
         sku: String(it.sku ?? "").trim(),
         nome: (it.descricao ?? it.nome ?? null) as string | null,
         situacao: (it.situacao ?? null) as string | null,
+        // MEDIDO 04/08: ~84% do catalogo e 'V'. NUNCA filtrar por 'P' aqui —
+        // e na variacao que vive o SKU da operacao. 'N' tambem existe.
+        tipo_variacao: (it.tipoVariacao ?? null) as string | null,
         synced_at: new Date().toISOString(),
       }))
       .filter((l: { sku: string; tiny_id: string }) => l.sku !== "" && l.tiny_id !== "");
 
     if (linhas.length > 0) {
       const { error } = await sb.from("tiny_products")
-        .upsert(linhas, { onConflict: "organization_id,sku" });
+        // D-7: chave por tiny_id. O mesmo SKU tem mais de um registro no Tiny.
+        .upsert(linhas, { onConflict: "organization_id,tiny_id" });
       if (error) throw new Error(`upsert tiny_products: ${error.message}`);
       for (const l of linhas) fila.push({ tiny_id: l.tiny_id, sku: l.sku });
     }
@@ -595,10 +695,16 @@ async function varrerEstoque(
       if (saldos.length > 0) {
         const { error } = await sb.from("tiny_stock").upsert(
           saldos.map((s) => ({
-            organization_id: orgId, ml_user_id: mlUserId, sku: item.sku,
-            deposito: s.deposito, saldo: s.saldo, synced_at: new Date().toISOString(),
+            organization_id: orgId, ml_user_id: mlUserId,
+            tiny_id: item.tiny_id, sku: item.sku,
+            deposito: s.deposito,
+            saldo: s.saldo,
+            disponivel: s.disponivel,  // D-6: e este que decide compra
+            synced_at: new Date().toISOString(),
           })),
-          { onConflict: "organization_id,sku,deposito" },
+          // D-7: chave por tiny_id. Chavear por sku faria o registro de saldo -1
+          // sobrescrever o de 337 conforme a ordem da varredura (caso medido).
+          { onConflict: "organization_id,tiny_id,deposito" },
         );
         if (error) throw new Error(`upsert tiny_stock: ${error.message}`);
       }
@@ -800,7 +906,7 @@ git commit -m "test: baseline dos SKUs de reposicao antes da mudanca da RPC"
 
 **Interfaces:**
 - Consumes: `tiny_products`, `tiny_stock` (Task 2, populadas na Task 5); `DEPOSITO_CD` (Task 1).
-- Produces: `get_replenishment_by_sku` com 5 colunas novas no `RETURNS TABLE`: `estoque_full integer`, `estoque_cd integer`, `tem_anuncio_ativo boolean`, `origem_catalogo text`, `divergencia_full integer`.
+- Produces: `get_replenishment_by_sku` com **6** colunas novas no `RETURNS TABLE`: `estoque_full integer`, `estoque_cd integer`, `tem_anuncio_ativo boolean`, `origem_catalogo text`, `divergencia_full integer`, `estoque_centro integer` (esta ultima **informativa**, fora do calculo — ver D-5).
 
 - [ ] **Step 1: Partir da definição atual**
 
@@ -834,21 +940,39 @@ Substituir `inventory_by_sku` por três CTEs. O resto do corpo continua consumin
     WHERE i.organization_id = p_org_id AND i.status = 'active'
       AND (i.has_variations = FALSE OR jsonb_array_length(i.variations) = 0)
   ),
-  cd_by_sku AS MATERIALIZED (
-    -- D-5: apenas o deposito CD. O Full do Tiny e ignorado: vem do ML (D-2).
-    SELECT s.sku AS sku_code, SUM(s.saldo)::INTEGER AS estoque_cd
+  -- D-7: o mesmo SKU pode ter mais de um tiny_id (medido: 337 e -1 no mesmo SKU).
+  -- Vence o registro de MAIOR saldo. Sem isto, a soma misturaria os dois.
+  stock_dedup AS MATERIALIZED (
+    SELECT DISTINCT ON (s.sku, s.deposito)
+           s.sku, s.deposito, s.saldo, s.disponivel
     FROM tiny_stock s
     WHERE s.organization_id = p_org_id
-      AND s.deposito = '<DEPOSITO_CD_DA_TASK_1>'
-    GROUP BY s.sku
+    ORDER BY s.sku, s.deposito, s.saldo DESC, s.tiny_id
+  ),
+  cd_by_sku AS MATERIALIZED (
+    -- D-5: apenas o deposito CD Expedicao (string exata medida na Task 1).
+    -- O Full do Tiny e ignorado: vem do ML (D-2).
+    -- D-6: `disponivel` com piso em zero. Negativo nao e estoque.
+    SELECT d.sku AS sku_code, SUM(GREATEST(d.disponivel, 0))::INTEGER AS estoque_cd
+    FROM stock_dedup d
+    WHERE d.deposito = 'CD Expedição'
+    GROUP BY d.sku
+  ),
+  centro_by_sku AS MATERIALIZED (
+    -- INFORMATIVO. Fora do calculo por decisao do Wesley (D-5 mantida em 04/08).
+    -- A medicao mostrou 32 un aqui num SKU de 3o maior giro com 0 no CD Expedicao;
+    -- a coluna existe para que essa divergencia apareca na tela em vez de sumir.
+    SELECT d.sku AS sku_code, SUM(GREATEST(d.disponivel, 0))::INTEGER AS estoque_centro
+    FROM stock_dedup d
+    WHERE d.deposito = 'Centro de distribuição'
+    GROUP BY d.sku
   ),
   full_tiny_by_sku AS MATERIALIZED (
     -- So para exibir divergencia (secao 6 da spec). Nunca entra no calculo.
-    SELECT s.sku AS sku_code, SUM(s.saldo)::INTEGER AS full_tiny
-    FROM tiny_stock s
-    WHERE s.organization_id = p_org_id
-      AND s.deposito ILIKE '%fullfilment%'
-    GROUP BY s.sku
+    SELECT d.sku AS sku_code, SUM(d.saldo)::INTEGER AS full_tiny
+    FROM stock_dedup d
+    WHERE d.deposito ILIKE '%Mercado Livre%'
+    GROUP BY d.sku
   ),
   inventory_by_sku AS MATERIALIZED (
     SELECT m.item_id, m.title, m.brand, m.logistic_type, m.variation_id,
@@ -859,18 +983,29 @@ Substituir `inventory_by_sku` por três CTEs. O resto do corpo continua consumin
            TRUE AS tem_anuncio_ativo,
            'ml'::TEXT AS origem_catalogo,
            CASE WHEN ft.full_tiny IS NULL THEN NULL
-                ELSE ft.full_tiny - m.estoque_full END AS divergencia_full
+                ELSE ft.full_tiny - m.estoque_full END AS divergencia_full,
+           -- INFORMATIVO (D-5 mantida): fora de sku_stock, so para a tela mostrar.
+           COALESCE(ct.estoque_centro, 0) AS estoque_centro
     FROM ml_by_sku m
     LEFT JOIN cd_by_sku cd ON cd.sku_code = m.sku_code
     LEFT JOIN full_tiny_by_sku ft ON ft.sku_code = m.sku_code
+    LEFT JOIN centro_by_sku ct ON ct.sku_code = m.sku_code
     UNION ALL
     -- D-1: SKU que so existe no Tiny entra para SINALIZAR.
+    -- DISTINCT ON por sku: o catalogo tem SKU duplicado (D-7).
     SELECT NULL::TEXT, t.nome, NULL::TEXT, NULL::TEXT, NULL::TEXT, NULL::JSONB,
            t.sku, 0, COALESCE(cd.estoque_cd, 0), COALESCE(cd.estoque_cd, 0),
-           FALSE, 'tiny'::TEXT, NULL::INTEGER
-    FROM tiny_products t
+           FALSE, 'tiny'::TEXT, NULL::INTEGER,
+           COALESCE(ct.estoque_centro, 0)
+    FROM (
+      SELECT DISTINCT ON (tp.sku) tp.sku, tp.nome
+      FROM tiny_products tp
+      WHERE tp.organization_id = p_org_id
+      ORDER BY tp.sku, tp.tiny_id
+    ) t
     LEFT JOIN cd_by_sku cd ON cd.sku_code = t.sku
-    WHERE t.organization_id = p_org_id
+    LEFT JOIN centro_by_sku ct ON ct.sku_code = t.sku
+    WHERE TRUE
       AND NOT EXISTS (SELECT 1 FROM ml_by_sku m WHERE m.sku_code = t.sku)
   ),
 ```
@@ -884,7 +1019,7 @@ Substituir `inventory_by_sku` por três CTEs. O resto do corpo continua consumin
     SELECT inv.item_id, inv.variation_id, inv.title, inv.brand, inv.logistic_type,
            inv.attribute_combinations, inv.sku_code, inv.sku_stock,
            inv.estoque_full, inv.estoque_cd, inv.tem_anuncio_ativo,
-           inv.origem_catalogo, inv.divergencia_full,
+           inv.origem_catalogo, inv.divergencia_full, inv.estoque_centro,
            COALESCE(SUM(o.quantidade), 0)::NUMERIC AS total_qty
     FROM inventory_by_sku inv
     LEFT JOIN orders o
@@ -901,7 +1036,7 @@ Substituir `inventory_by_sku` por três CTEs. O resto do corpo continua consumin
     GROUP BY inv.item_id, inv.variation_id, inv.title, inv.brand, inv.logistic_type,
              inv.attribute_combinations, inv.sku_code, inv.sku_stock,
              inv.estoque_full, inv.estoque_cd, inv.tem_anuncio_ativo,
-             inv.origem_catalogo, inv.divergencia_full
+             inv.origem_catalogo, inv.divergencia_full, inv.estoque_centro
   ),
 ```
 
@@ -929,7 +1064,7 @@ Acrescentar ao final da lista de colunas, preservando a ordem existente:
 
 ```sql
     c.estoque_full, c.estoque_cd, c.tem_anuncio_ativo,
-    c.origem_catalogo, c.divergencia_full
+    c.origem_catalogo, c.divergencia_full, c.estoque_centro
 ```
 
 - [ ] **Step 6: Aplicar e conferir que não quebrou a assinatura**
@@ -1089,6 +1224,8 @@ Em `src/hooks/useReplenishmentBySku.ts`, acrescentar à interface `Replenishment
   tem_anuncio_ativo:  boolean;
   origem_catalogo:    "ml" | "tiny";
   divergencia_full:   number | null;
+  /** INFORMATIVO: saldo em 'Centro de distribuicao'. Fora do calculo por D-5. */
+  estoque_centro:     number;
 ```
 
 E no mapeamento (junto de `sku_stock: Number(r.sku_stock)`):
@@ -1099,6 +1236,7 @@ E no mapeamento (junto de `sku_stock: Number(r.sku_stock)`):
     tem_anuncio_ativo: Boolean(r.tem_anuncio_ativo),
     origem_catalogo:   (r.origem_catalogo === "tiny" ? "tiny" : "ml"),
     divergencia_full:  r.divergencia_full == null ? null : Number(r.divergencia_full),
+    estoque_centro:    Number(r.estoque_centro ?? 0),
 ```
 
 - [ ] **Step 4: Corrigir o agrupamento para SKU sem anúncio**

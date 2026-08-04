@@ -162,3 +162,28 @@ improvisar: o desenho volta para revisão antes de qualquer código.
    `saldo` 0. Para decidir compra, o mais conservador é `disponivel`, piso em 0.
 3. **SKU duplicado** — qual registro vence? Proposta: o de maior `saldo`, ou o `tipoVariacao`
    ≠ `N`. Precisa de regra explícita.
+
+---
+
+## Decisões do Wesley (2026-08-04, após esta medição)
+
+| # | Decisão | Efeito |
+|---|---|---|
+| **D-5 (mantida)** | **Só `CD Expedição`** conta como estoque próprio | Contraria a recomendação desta medição; ver ressalva abaixo |
+| **D-6 (nova)** | Usar **`disponivel` com piso em zero** (`greatest(disponivel, 0)`) | Desconta reservado; negativo não é estoque |
+| **D-7 (nova)** | SKU duplicado: vence o **registro de maior saldo** | O registro com `-1` nunca sobrescreve o de 337 |
+
+### ⚠️ Ressalva registrada sobre D-5
+
+A recomendação desta medição era somar `CD Expedição` + `Centro de distribuição`. O Wesley
+manteve **só `CD Expedição`** depois de ver os números. Consequência conhecida e aceita:
+
+> `12011666PTO3360M` — **3º maior giro de 90 dias (126 un)** — tem **32 unidades em
+> `Centro de distribuição` e 0 em `CD Expedição`**. Com D-5 mantida, ele entra no cálculo com
+> estoque próprio **zero** e a reposição vai sugerir recomprar unidades que existem no
+> armazém, **se** aquele saldo for estoque vivo.
+
+A régua está correta se `Centro de distribuição` for depósito legado, em esvaziamento, ou de
+outra operação. **Mitigação acordada:** a tela mostra o saldo de `Centro de distribuição` como
+**coluna informativa**, fora do cálculo de compra, para que a divergência apareça em vez de
+ficar silenciosa. Se essa coluna vier consistentemente com saldo relevante, D-5 volta à mesa.
