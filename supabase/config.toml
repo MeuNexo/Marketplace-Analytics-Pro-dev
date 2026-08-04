@@ -116,6 +116,11 @@ verify_jwt = false
 [functions.sync-tiny-payables]
 verify_jwt = false
 
+# sync-tiny-stock: varredura de catalogo e estoque por deposito do Tiny (Fase 214).
+# Guard interno requireServiceRole() — mesmo padrao das outras sync-tiny-*.
+[functions.sync-tiny-stock]
+verify_jwt = false
+
 # consultor-llm: camada LLM (Gemini) do Consultor v2 (Phase 53).
 # verify_jwt=false — auth dual interna: user JWT (is_org_member) OU smoke_token (vault).
 [functions.consultor-llm]
