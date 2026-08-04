@@ -65,3 +65,44 @@ base — 299 SKUs e 1.785 unidades — e não a de 86.
    `tem_anuncio_ativo = false` e `compra_sugerida = 0` (D-1).
 
 A tabela `public.gate_reposicao_baseline` fica no banco para a Task 8 consultar.
+
+
+---
+
+# RESULTADO FINAL — 2026-08-04 22:50 UTC
+
+Sync do Tiny **fechou a volta completa** (771/771, `volta_completa` preenchida) antes desta
+medicao. RPC v2 ja aplicada.
+
+| Medida | Baseline (v1) | v2 | |
+|---|---|---|---|
+| Linhas devolvidas | 299 | **775** | **2,6x** |
+| SKUs so-Tiny (sinalizam) | 0 | 476 | novos |
+| Unidades sugeridas | 1.785 | 1.678 | −107 |
+| Estoque `CD Expedição` visivel | 0 | **1.270** | antes invisivel |
+
+## As tres provas exigidas — todas PASSARAM
+
+| Prova | Exigido | Medido |
+|---|---|---|
+| Nenhum SKU do baseline sumiu | 0 | **0** ✅ |
+| Nenhum SKU so-Tiny com compra > 0 (D-1) | 0 | **0** ✅ |
+| Nenhuma compra caiu sem estoque de CD que explique | 0 | **0** ✅ |
+
+A queda de 107 unidades e **inteiramente** explicada: sao SKUs cujo estoque no CD Expedicao
+era invisivel para a v1 e agora e descontado da sugestao. Nenhuma linha caiu por ter sumido
+da lista-base.
+
+## ⚠️ O numero que o Wesley precisa olhar
+
+| Deposito | Unidades | Entra no calculo? |
+|---|---|---|
+| `CD Expedição` | 1.270 | **sim** (D-5) |
+| `Centro de distribuição` | **794** | **nao** (D-5) |
+
+**794 unidades — 38,5% do estoque proprio — ficam fora da conta de compra.** Na amostra de
+6 SKUs da Task 1 isso parecia ~11%; com o catalogo inteiro, e quase quatro vezes maior.
+
+Se esse saldo for estoque vivo, a reposicao vai sugerir recomprar boa parte dele. A coluna
+informativa `estoque_centro` existe para que isso apareca na tela. **D-5 merece revisao com
+este numero na mao.**

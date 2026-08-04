@@ -18,7 +18,8 @@ export interface AttributeCombination {
  * param_origem: 'sku' | 'marca' | 'global' — espelha a CTE params da RPC (CMP-05).
  */
 export interface ReplenishmentSkuRow {
-  item_id: string;
+  /** null quando o SKU so existe no Tiny (sem anuncio ML). Nunca a string "null". */
+  item_id: string | null;
   variation_id: string | null;
   title: string | null;
   brand: string | null;
@@ -27,7 +28,23 @@ export interface ReplenishmentSkuRow {
   /** Label legível das variações (ex: "Natural / G") — derivado de attribute_combinations */
   attribute_combinations_label: string;
   logistic_type: string | null;
+  /** Full (ML) + CD (Tiny). E a base de decisao de compra (D-3). */
   sku_stock: number;
+  /** Parte do sku_stock que vem do Full do ML (D-2). */
+  estoque_full: number;
+  /** Parte do sku_stock que vem do deposito CD Expedicao do Tiny (D-5). */
+  estoque_cd: number;
+  /**
+   * INFORMATIVO: saldo em 'Centro de distribuicao'. FORA do calculo por D-5.
+   * Existe para a divergencia aparecer na tela em vez de ficar silenciosa —
+   * medidas 794 unidades aqui em 2026-08-04, 38,5% do estoque proprio.
+   */
+  estoque_centro: number;
+  /** false => o item apenas SINALIZA; compra_sugerida e sempre 0 (D-1). */
+  tem_anuncio_ativo: boolean;
+  origem_catalogo: "ml" | "tiny";
+  /** Full do Tiny menos Full do ML. null quando o Tiny nao conhece o SKU. */
+  divergencia_full: number | null;
   venda_dia: number;
   cobertura_atual: number | null;
   ponto_reposicao: number;
@@ -70,7 +87,8 @@ export interface ReplenishmentSkuRow {
  * Exposta como `grouped` pelo hook.
  */
 export interface GroupedReplenishmentRow {
-  item_id: string;
+  /** null quando o grupo e um SKU so-Tiny, sem anuncio (ver chaveGrupo). */
+  item_id: string | null;
   title: string | null;
   brand: string | null;
   logistic_type: string | null;
@@ -120,7 +138,7 @@ function mapRow(r: Record<string, unknown>): ReplenishmentSkuRow {
   }
 
   return {
-    item_id:                      String(r.item_id),
+    item_id:                      r.item_id != null ? String(r.item_id) : null,
     variation_id:                 r.variation_id != null ? String(r.variation_id) : null,
     title:                        r.title != null ? String(r.title) : null,
     brand:                        r.brand != null ? String(r.brand) : null,
@@ -129,6 +147,12 @@ function mapRow(r: Record<string, unknown>): ReplenishmentSkuRow {
     attribute_combinations_label: deriveAttributeLabel(attrCombinations),
     logistic_type:                r.logistic_type != null ? String(r.logistic_type) : null,
     sku_stock:                    Number(r.sku_stock),
+    estoque_full:                 Number(r.estoque_full ?? 0),
+    estoque_cd:                   Number(r.estoque_cd ?? 0),
+    estoque_centro:               Number(r.estoque_centro ?? 0),
+    tem_anuncio_ativo:            Boolean(r.tem_anuncio_ativo),
+    origem_catalogo:              r.origem_catalogo === "tiny" ? "tiny" : "ml",
+    divergencia_full:             r.divergencia_full != null ? Number(r.divergencia_full) : null,
     venda_dia:                    Number(r.venda_dia),
     cobertura_atual:              r.cobertura_atual != null ? Number(r.cobertura_atual) : null,
     ponto_reposicao:              Number(r.ponto_reposicao),
@@ -160,14 +184,27 @@ function mapRow(r: Record<string, unknown>): ReplenishmentSkuRow {
   };
 }
 
-/** Agrupa linhas por item_id para o drill anúncio → variações */
+/**
+ * Chave de agrupamento do drill anuncio -> variacoes.
+ *
+ * SKU que so existe no Tiny tem `item_id = null`. Agrupar por `item_id` cru
+ * jogaria TODOS eles no mesmo balde e os 476 itens de "sinalizar" virariam UMA
+ * linha — a tela pareceria funcionar e estaria errada. Cai para o SKU quando
+ * nao ha anuncio.
+ */
+export function chaveGrupo(row: ReplenishmentSkuRow): string {
+  return row.item_id ?? `sku:${row.sku_code ?? ""}`;
+}
+
+/** Agrupa linhas por anúncio (ou por SKU, quando não há anúncio) */
 function groupByItem(rows: ReplenishmentSkuRow[]): GroupedReplenishmentRow[] {
   const map = new Map<string, GroupedReplenishmentRow>();
 
   for (const row of rows) {
-    const existing = map.get(row.item_id);
+    const chave = chaveGrupo(row);
+    const existing = map.get(chave);
     if (!existing) {
-      map.set(row.item_id, {
+      map.set(chave, {
         item_id:               row.item_id,
         title:                 row.title,
         brand:                 row.brand,
