@@ -53,4 +53,12 @@ COMMENT ON FUNCTION public.ads_cache_daily_totals(TEXT[], DATE, DATE) IS
   'Gasto diário de publicidade somado sobre todos os anúncios das lojas pedidas. Chave de rateio (denominador) do ads por anúncio — Fase 211, ADS-06. SECURITY INVOKER: a RLS de ml_ads_products_cache é a fronteira; não recebe organization_id de propósito.';
 
 -- Só `authenticated`: nunca `anon`. Sem DEFINER, não há privilégio a escalar.
+--
+-- O REVOKE não é decorativo: o Postgres concede EXECUTE a PUBLIC por padrão em
+-- toda função nova, e as default privileges do Supabase ainda concedem a `anon`.
+-- Sem estas duas linhas a RPC nasceria executável por visitante não autenticado.
+-- Como ela é SECURITY INVOKER, a RLS já devolveria conjunto vazio — mas deixar a
+-- superfície aberta contraria o critério da fase (T-211-25).
+REVOKE ALL ON FUNCTION public.ads_cache_daily_totals(TEXT[], DATE, DATE) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.ads_cache_daily_totals(TEXT[], DATE, DATE) FROM anon;
 GRANT EXECUTE ON FUNCTION public.ads_cache_daily_totals(TEXT[], DATE, DATE) TO authenticated;
