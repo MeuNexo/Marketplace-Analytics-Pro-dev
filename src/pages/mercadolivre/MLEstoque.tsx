@@ -67,8 +67,8 @@ function LogisticBadge({ type }: { type: string | null }) {
 const currencyFmt = (v: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 
-const currencyFmtShort = (v: number) =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+// `currencyFmtShort` foi removido no plano 213-08: os dois únicos usos eram os
+// KPIs de "Valor em Estoque" a preço de tabela, que saíram com a Task 1.
 
 const numFmt = (v: number) =>
   new Intl.NumberFormat("pt-BR").format(v);
@@ -584,208 +584,83 @@ function SubTabCurvaABC({ items }: Pick<RelatoriosProps, "items">) {
   );
 }
 
-function SubTabLogistica({ items }: Pick<RelatoriosProps, "items">) {
-  const { logisticData, shippingData, listingData, fulfillmentComparison } = useMemo(() => {
-    const logisticCounts: Record<string, number> = {};
-    let freeCount = 0;
-    const listingCounts: Record<string, number> = {};
-    let fulfillmentSold = 0, fulfillmentCount = 0, otherSold = 0, otherCount = 0;
+// Fase 213, Plano 08, Task 1 (RE-01, RE-03, RE-06): a sub-aba de Logística foi
+// removida por inteiro — as três distribuições (tipo de logística, frete grátis,
+// tipo de anúncio) eram contagem de catálogo que nunca cruzava com custo de
+// frete ou margem, e a comparação de média de vendas entre Full e os demais
+// usava `sold_quantity` (unidades VITALÍCIAS), confrontando anúncio Full recente
+// com anúncio antigo:
+// a conclusão era sobre idade do anúncio, não sobre logística. Nada foi apagado
+// no banco — `logistic_type`, `free_shipping` e `listing_type_id` seguem na
+// tabela do inventário, no filtro de logística e na coluna Frete.
 
-    items.forEach((item) => {
-      const lt = item.logistic_type ?? "not_specified";
-      logisticCounts[lt] = (logisticCounts[lt] ?? 0) + 1;
-      if (item.free_shipping) freeCount++;
-      const lt2 = item.listing_type_id ?? "unknown";
-      listingCounts[lt2] = (listingCounts[lt2] ?? 0) + 1;
-      if (lt === "fulfillment") { fulfillmentSold += item.sold_quantity; fulfillmentCount++; }
-      else { otherSold += item.sold_quantity; otherCount++; }
-    });
+/**
+ * Estoque por marca — a visão que responde "de quem eu preciso cobrar reposição".
+ *
+ * Fase 213, Plano 08, Task 1 (RE-01, RE-03): saíram os quatro contadores do topo
+ * e os dois rankings. O ranking de valor duplicava o Top 10 da sub-aba de Valor
+ * em Risco; o de unidades ranqueava quantidade sem cruzar com giro, e por isso
+ * não distinguia estoque saudável de encalhe. Sobrou a tabela agregada, que é a
+ * única leitura decisória por marca desta tela.
+ *
+ * Régua unificada (RE-03): o valor é capital A CUSTO (`estoqueCapital.ts`,
+ * plano 213-01), nunca preço × quantidade, e "vendidos" são as unidades DO
+ * PERÍODO vindas da cobertura corrigida (`useMLCoverage`), nunca
+ * `sold_quantity` vitalícia. É essa unificação que torna legítima a coexistência
+ * desta visão com a visão por marca de `/resultado`: decisões diferentes, mesma
+ * régua.
+ */
+function SubTabEstoqueMarca({ items, coverageMap, coveragePeriod, costs, costsBySku }: RelatoriosProps) {
+  const { brandData, totalUnits, totalValue, semCusto } = useMemo(() => {
+    const map = new Map<string, { skus: number; units: number; value: number; sold: number; skusSemCusto: number }>();
+    let skusSemCusto = 0;
 
-    const LOGISTIC_LABELS_FULL: Record<string, string> = {
-      fulfillment: "Full (Fulfillment)",
-      default: "Padrão",
-      drop_off: "Drop-off",
-      xd_drop_off: "XD Drop-off",
-      not_specified: "Não especificado",
-    };
-    const logisticColors = ["#6366f1", "#22c55e", "#f59e0b", "#f97316", "#94a3b8"];
-    const logisticData = Object.entries(logisticCounts).map(([k, v], i) => ({
-      name: LOGISTIC_LABELS_FULL[k] ?? k,
-      value: v,
-      color: logisticColors[i % logisticColors.length],
-    }));
-    const shippingData = [
-      { name: "Com Frete Grátis", value: freeCount, color: "#22c55e" },
-      { name: "Sem Frete Grátis", value: items.length - freeCount, color: "#94a3b8" },
-    ].filter((d) => d.value > 0);
-    const listingData = Object.entries(listingCounts).map(([k, v]) => ({ name: k, count: v })).sort((a, b) => b.count - a.count);
-    const fulfillmentComparison = [
-      { name: "Full (Fulfillment)", avg: fulfillmentCount > 0 ? fulfillmentSold / fulfillmentCount : 0 },
-      { name: "Outros", avg: otherCount > 0 ? otherSold / otherCount : 0 },
-    ];
-    return { logisticData, shippingData, listingData, fulfillmentComparison };
-  }, [items]);
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Tipo de Logística</CardTitle></CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie data={logisticData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3}>
-                  {logisticData.map((e, i) => <Cell key={i} fill={e.color} />)}
-                </Pie>
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Frete Grátis</CardTitle></CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie data={shippingData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3}>
-                  {shippingData.map((e, i) => <Cell key={i} fill={e.color} />)}
-                </Pie>
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Tipo de Anúncio</CardTitle></CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={listingData} margin={{ left: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                <Bar dataKey="count" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} name="Qtd" />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Média de Vendas: Full vs Outros</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={fulfillmentComparison} margin={{ left: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} formatter={(v: number) => [v.toFixed(1), "Média Vendidos"]} />
-                <Bar dataKey="avg" fill="#6366f1" radius={[4, 4, 0, 0]} name="Média Vendidos" />
-              </BarChart>
-            </ResponsiveContainer>
-            <p className="text-xs text-muted-foreground mt-2">
-              Produtos com logística Full (Fulfillment) tendem a ter maior visibilidade no ML.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-function SubTabEstoqueMarca({ items }: Pick<RelatoriosProps, "items">) {
-  const brandData = useMemo(() => {
-    const map = new Map<string, { skus: number; units: number; value: number; sold: number }>();
     for (const item of items) {
       const brand = item.brand || "Sem marca";
-      const prev = map.get(brand) ?? { skus: 0, units: 0, value: 0, sold: 0 };
+      const prev = map.get(brand) ?? { skus: 0, units: 0, value: 0, sold: 0, skusSemCusto: 0 };
+      // Custo ausente não recebe fallback a preço: fica fora do numerador em
+      // reais e é declarado na contagem — mesma disciplina de `estoqueCapital`.
+      const custo = custoDoItem(item.id, item.seller_custom_field, costs, costsBySku);
+      if (custo === null) skusSemCusto++;
       map.set(brand, {
         skus: prev.skus + 1,
         units: prev.units + item.available_quantity,
-        value: prev.value + item.price * item.available_quantity,
-        sold: prev.sold + item.sold_quantity,
+        value: prev.value + (custo != null ? custo * item.available_quantity : 0),
+        sold: prev.sold + (coverageMap.get(item.id)?.total_sold ?? 0),
+        skusSemCusto: prev.skusSemCusto + (custo === null ? 1 : 0),
       });
     }
-    return Array.from(map.entries())
+
+    const brandData = Array.from(map.entries())
       .map(([brand, d]) => ({ brand, ...d }))
       .sort((a, b) => b.units - a.units);
-  }, [items]);
 
-  const topUnits = brandData.slice(0, 10);
-  const topValue = [...brandData].sort((a, b) => b.value - a.value).slice(0, 10);
-
-  const totalUnits = brandData.reduce((s, b) => s + b.units, 0);
-  const totalValue = brandData.reduce((s, b) => s + b.value, 0);
-
-  const CHART_COLORS = [
-    "hsl(var(--primary))", "#6366f1", "#22c55e", "#f59e0b", "#f97316",
-    "#a855f7", "#14b8a6", "#ef4444", "#84cc16", "#0ea5e9",
-  ];
+    return {
+      brandData,
+      totalUnits: brandData.reduce((s, b) => s + b.units, 0),
+      totalValue: brandData.reduce((s, b) => s + b.value, 0),
+      semCusto: { skus: skusSemCusto, total: items.length },
+    };
+  }, [items, coverageMap, costs, costsBySku]);
 
   return (
     <div className="space-y-4">
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <KPICard title="Marcas" value={String(brandData.length)} variant="minimal" size="compact" icon={<Tag className="w-4 h-4" />} iconClassName="bg-primary/10 text-primary" />
-        <KPICard title="Total de SKUs" value={numFmt(items.length)} variant="minimal" size="compact" icon={<Boxes className="w-4 h-4" />} iconClassName="bg-accent/10 text-accent" />
-        <KPICard title="Unidades em Estoque" value={numFmt(totalUnits)} variant="minimal" size="compact" icon={<Package className="w-4 h-4" />} iconClassName="bg-success/10 text-success" />
-        <KPICard title="Valor em Estoque" value={currencyFmtShort(totalValue)} variant="minimal" size="compact" icon={<DollarSign className="w-4 h-4" />} iconClassName="bg-warning/10 text-warning" />
-      </div>
+      {semCusto.skus > 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 px-4 py-2.5 text-xs text-amber-700 dark:text-amber-300">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span>
+            <strong>{semCusto.skus}</strong> de {semCusto.total} SKUs sem custo cadastrado —
+            não entram na coluna de valor.
+          </span>
+        </div>
+      )}
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Top 10 por Unidades em Estoque</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={topUnits} layout="vertical" margin={{ left: 4, right: 16 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => numFmt(v)} />
-                <YAxis type="category" dataKey="brand" width={100} tick={{ fontSize: 10 }} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} formatter={(v: number) => [numFmt(v), "Unidades"]} />
-                <Bar dataKey="units" radius={[0, 4, 4, 0]}>
-                  {topUnits.map((_, i) => (
-                    <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Top 10 por Valor em Estoque</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={topValue} layout="vertical" margin={{ left: 4, right: 16 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} />
-                <YAxis type="category" dataKey="brand" width={100} tick={{ fontSize: 10 }} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} formatter={(v: number) => [currencyFmt(v), "Valor"]} />
-                <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                  {topValue.map((_, i) => (
-                    <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Full table */}
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Estoque por Marca</CardTitle>
+          <CardDescription className="text-xs">
+            Valor a custo (CMV × quantidade), não a preço de venda. Vendidos = unidades dos últimos {coveragePeriod} dias.
+          </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -795,9 +670,9 @@ function SubTabEstoqueMarca({ items }: Pick<RelatoriosProps, "items">) {
                 <TableHead className="text-xs text-right">SKUs</TableHead>
                 <TableHead className="text-xs text-right">Unidades</TableHead>
                 <TableHead className="text-xs text-right">% Estoque</TableHead>
-                <TableHead className="text-xs text-right">Valor</TableHead>
+                <TableHead className="text-xs text-right">Valor (a custo)</TableHead>
                 <TableHead className="text-xs text-right">% Valor</TableHead>
-                <TableHead className="text-xs text-right">Vendidos</TableHead>
+                <TableHead className="text-xs text-right">Vendidos ({coveragePeriod}d)</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -809,7 +684,14 @@ function SubTabEstoqueMarca({ items }: Pick<RelatoriosProps, "items">) {
                   <TableCell className="text-xs text-right tabular-nums text-muted-foreground">
                     {totalUnits > 0 ? ((b.units / totalUnits) * 100).toFixed(1) : "0.0"}%
                   </TableCell>
-                  <TableCell className="text-xs text-right tabular-nums">{currencyFmt(b.value)}</TableCell>
+                  <TableCell className="text-xs text-right tabular-nums">
+                    {currencyFmt(b.value)}
+                    {b.skusSemCusto > 0 && (
+                      <span className="text-[10px] text-muted-foreground ml-1">
+                        ({b.skusSemCusto} s/ custo)
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-xs text-right tabular-nums text-muted-foreground">
                     {totalValue > 0 ? ((b.value / totalValue) * 100).toFixed(1) : "0.0"}%
                   </TableCell>
@@ -832,13 +714,11 @@ function EstoqueRelatorios({ items, coverageMap, coveragePeriod, costs, costsByS
         <TabsTrigger value="marca" className="text-xs px-3 h-7 gap-1.5"><Tag className="w-3.5 h-3.5" />Por Marca</TabsTrigger>
         <TabsTrigger value="valor" className="text-xs px-3 h-7 gap-1.5"><DollarSign className="w-3.5 h-3.5" />Valor em Risco</TabsTrigger>
         <TabsTrigger value="abc" className="text-xs px-3 h-7 gap-1.5"><BarChart3 className="w-3.5 h-3.5" />Curva ABC</TabsTrigger>
-        <TabsTrigger value="logistica" className="text-xs px-3 h-7 gap-1.5"><Truck className="w-3.5 h-3.5" />Logística</TabsTrigger>
       </TabsList>
       <TabsContent value="cobertura"><SubTabCobertura items={items} coverageMap={coverageMap} coveragePeriod={coveragePeriod} /></TabsContent>
-      <TabsContent value="marca"><SubTabEstoqueMarca items={items} /></TabsContent>
+      <TabsContent value="marca"><SubTabEstoqueMarca items={items} coverageMap={coverageMap} coveragePeriod={coveragePeriod} costs={costs} costsBySku={costsBySku} /></TabsContent>
       <TabsContent value="valor"><SubTabValorRisco items={items} coverageMap={coverageMap} costs={costs} costsBySku={costsBySku} /></TabsContent>
       <TabsContent value="abc"><SubTabCurvaABC items={items} /></TabsContent>
-      <TabsContent value="logistica"><SubTabLogistica items={items} /></TabsContent>
     </Tabs>
   );
 }
@@ -993,8 +873,12 @@ export default function MLEstoque() {
   }, [items, search, brandFilter, coverageFilter, logisticFilter, sortBy, hideOutOfStock, coverageMap, highlightIds]);
 
   // KPI stats derived from filtered items so cards react to active filters
+  // Fase 213, Plano 08, Task 1 (RE-01): o acumulador de valor a preço saiu daqui.
+  // `preço × quantidade` é receita potencial, não capital — o número decisório é
+  // o capital A CUSTO segmentado por classe de cobertura, na sub-aba Valor em
+  // Risco (plano 213-01). A contagem de unidades fica: é fato físico, sem
+  // ambiguidade de régua.
   const filteredStats = useMemo(() => {
-    const totalStockValue = filteredItems.reduce((s, i) => s + i.price * i.available_quantity, 0);
     const totalUnits = filteredItems.reduce((s, i) => s + i.available_quantity, 0);
     let ruptura = 0, critico = 0, alerta = 0, ok = 0, sem_giro = 0, withDays = 0, sumDays = 0;
     for (const item of filteredItems) {
@@ -1007,7 +891,7 @@ export default function MLEstoque() {
       else if (cd.coverage_class === "sem_giro") sem_giro++;
       if (cd.coverage_days !== null && cd.coverage_days > 0) { withDays++; sumDays += cd.coverage_days; }
     }
-    return { totalStockValue, totalUnits, ruptura, critico, alerta, ok, sem_giro };
+    return { totalUnits, ruptura, critico, alerta, ok, sem_giro };
   }, [filteredItems, coverageMap]);
 
   const toggleExpand = (id: string) => {
@@ -1107,8 +991,7 @@ export default function MLEstoque() {
       {/* ═══════════════════ ABA ESTOQUE ═══════════════════ */}
       <TabsContent value="estoque" className="space-y-5 mt-0">
         {/* KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          <KPICard title="Valor em Estoque" value={currencyFmtShort(filteredStats.totalStockValue)} icon={<DollarSign className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-accent/10 text-accent" />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <KPICard
             title="Qtd. em Estoque"
             value={numFmt(filteredStats.totalUnits)}
@@ -1542,7 +1425,6 @@ export default function MLEstoque() {
             <div className="border-t border-border/60 bg-muted/20 px-6 py-2.5 flex items-center gap-8 text-xs text-muted-foreground">
               <span className="font-semibold text-foreground">{filteredItems.length} de {items.length} produtos</span>
               <span>Estoque: <strong className="text-foreground">{numFmt(filteredStats.totalUnits)} unid.</strong></span>
-              <span>Valor: <strong className="text-foreground">{currencyFmt(filteredStats.totalStockValue)}</strong></span>
             </div>
           </CardContent>
         </Card>
