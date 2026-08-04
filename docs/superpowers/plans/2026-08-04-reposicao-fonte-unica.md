@@ -159,7 +159,7 @@ Task 1 **CONCLUIDA** em 2026-08-04.
 > D-7 (**vence o de maior saldo**) é aplicada **na leitura**, na Task 7. Chavear por `sku` faria
 > a varredura gravar 337 ou −1 conforme a ordem.
 
-- [ ] **Step 1: Escrever a migration**
+- [x] **Step 1: Escrever a migration**
 
 ```sql
 -- Catálogo do Tiny: todo SKU, tenha ou não anúncio no ML.
@@ -233,16 +233,16 @@ CREATE POLICY "tiny_sync_cursor select"
 -- INSERT/UPDATE/DELETE: service_role apenas (a Edge Function escreve).
 ```
 
-- [ ] **Step 2: Rodar o lint de segurança de migration**
+- [x] **Step 2: Rodar o lint de segurança de migration**
 
 Run: `npx vitest run src/lib/migrationSecurityLint.test.ts`
 Expected: PASS. As três tabelas têm `ENABLE ROW LEVEL SECURITY` no mesmo arquivo; nenhuma função `SECURITY DEFINER` foi criada.
 
-- [ ] **Step 3: Aplicar no banco**
+- [x] **Step 3: Aplicar no banco**
 
 Aplicar via MCP Supabase `apply_migration` com o conteúdo do arquivo, nome `tiny_stock_tables`.
 
-- [ ] **Step 4: Conferir no banco**
+- [x] **Step 4: Conferir no banco**
 
 ```sql
 select c.relname, c.relrowsecurity as rls, count(p.polname) as politicas
@@ -255,12 +255,17 @@ group by 1,2 order by 1;
 
 Expected: três linhas, `rls = true`, `politicas = 1` em cada.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add supabase/migrations/20260805100000_tiny_stock_tables.sql
 git commit -m "feat(tiny): tabelas de catalogo, estoque por deposito e cursor"
 ```
+
+**Task 2 CONCLUIDA em 2026-08-04.** Arquivo real: `20260804220000_tiny_stock_tables.sql`.
+Aplicada via `apply_migration`. Conferido no banco: 3 tabelas, `rls = true`, 1 politica
+cada, todas `SELECT`/`authenticated` apenas — nenhuma policy de escrita (quem escreve e a
+EF com service_role). Lint 13/13 verde; suite completa 958/958 verde.
 
 ---
 
