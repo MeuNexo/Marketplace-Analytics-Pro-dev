@@ -7,13 +7,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useReplenishmentBySku } from "@/hooks/useReplenishmentBySku";
+import { useReplenishmentBySku, chaveGrupo } from "@/hooks/useReplenishmentBySku";
 import type { GroupedReplenishmentRow, ReplenishmentSkuRow } from "@/hooks/useReplenishmentBySku";
 import { ReplenishmentSkuFilters } from "@/components/mercadolivre/ReplenishmentSkuFilters";
 import type { FilterStatus, FilterCusto } from "@/components/mercadolivre/ReplenishmentSkuFilters";
 import { ReplenishmentSkuTable } from "@/components/mercadolivre/ReplenishmentSkuTable";
 import { ReplenishmentParamsDialog } from "@/components/mercadolivre/ReplenishmentParamsDialog";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
+import { ReplenishmentAvisos } from "@/components/mercadolivre/ReplenishmentAvisos";
+import { useTinyStockHealth } from "@/hooks/useTinyStockHealth";
 
 // ── Filter logic ──────────────────────────────────────────────────────────────
 
@@ -39,6 +41,9 @@ function applyFilters(
     result = result.filter((r) => r.status_esgotado === "revisar_esgotado");
   } else if (filterStatus === "descontinuar") {
     result = result.filter((r) => r.status_esgotado === "descontinuar");
+  } else if (filterStatus === "sinalizar") {
+    // D-1: item sem anuncio ML ativo nunca vira compra — so sinaliza.
+    result = result.filter((r) => !r.tem_anuncio_ativo);
   }
   if (filterCusto === "com") {
     result = result.filter((r) => !r.custo_ausente);
@@ -63,9 +68,12 @@ function regroupRows(rows: ReplenishmentSkuRow[]): GroupedReplenishmentRow[] {
   const map = new Map<string, GroupedReplenishmentRow>();
 
   for (const row of rows) {
-    const existing = map.get(row.item_id);
+    // Mesma regra do hook: SKU so-Tiny tem item_id null e todos cairiam no
+    // mesmo balde, virando UMA linha. Ver chaveGrupo em useReplenishmentBySku.
+    const chave = chaveGrupo(row);
+    const existing = map.get(chave);
     if (!existing) {
-      map.set(row.item_id, {
+      map.set(chave, {
         item_id:               row.item_id,
         title:                 row.title,
         brand:                 row.brand,
@@ -126,6 +134,7 @@ export default function MLCompras() {
   const [smartMode, setSmartMode] = useState(true);
 
   const { data, isLoading, error } = useReplenishmentBySku(30, 1.0, smartMode);
+  const { data: tinyHealth } = useTinyStockHealth();
 
   const [filterBrand,  setFilterBrand]  = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
@@ -158,6 +167,7 @@ export default function MLCompras() {
     descontinuar:    filteredRows.filter((r) => r.status_esgotado === "descontinuar").length,
     ok:              filteredRows.filter((r) => r.status_esgotado === "com_giro" && !r.gatilho_ativo && !r.sem_giro).length,
     semGiro:         filteredRows.filter((r) => r.sem_giro).length,
+    sinalizar:       filteredRows.filter((r) => !r.tem_anuncio_ativo).length,
   }), [filteredRows]);
 
   return (
@@ -219,13 +229,17 @@ export default function MLCompras() {
         </div>
       </div>
 
+      {/* ── Fase 214: frescor do estoque, saldo fora da conta e itens que so sinalizam ── */}
+      <ReplenishmentAvisos health={tinyHealth} rows={allRows} />
+
       {/* ── Nota: a sugestão já desconta o estoque a chegar (Phase 65) ── */}
       <Alert className="border-primary/30 bg-primary/5">
         <Truck className="h-4 w-4 text-primary" />
         <AlertDescription className="text-sm">
-          A sugestão de compra já <strong>desconta o estoque a chegar</strong> — as ordens de
-          compra abertas no Tiny (aguardando recebimento) aparecem na coluna{" "}
-          <strong>A caminho</strong> e reduzem a quantidade sugerida.
+          A sugestão de compra desconta <strong>três coisas</strong>: o estoque Full do
+          Mercado Livre, o saldo do depósito <strong>CD Expedição</strong> no Tiny, e o
+          <strong> estoque a chegar</strong> — ordens de compra abertas, na coluna{" "}
+          <strong>A caminho</strong>.
         </AlertDescription>
       </Alert>
 
