@@ -21,7 +21,10 @@ export const roleAccess: Record<string, OrgRole[]> = {
   "/metas": OPERATIONAL,
   "/precificacao": OPERATIONAL,
   "/compras": OPERATIONAL,
-  "/produtos-vendidos": OPERATIONAL,
+  // Fase 213: a antiga `/produtos-vendidos`. O endereço velho virou
+  // redirecionamento e, como `/precos-custos`, não tem entrada aqui — quem
+  // decide o acesso é o destino. Rota sem entrada é negada por omissão.
+  "/resultado": OPERATIONAL,
   "/analise-precos": OPERATIONAL,
   "/fluxo-de-caixa": OPERATIONAL,
   "/dre-caixa": OPERATIONAL,

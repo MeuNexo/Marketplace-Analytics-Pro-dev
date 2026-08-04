@@ -40,7 +40,7 @@ const MLConsultor        = React.lazy(() => import("./pages/mercadolivre/MLConsu
 const MLFluxoCaixa       = React.lazy(() => import("./pages/mercadolivre/MLFluxoCaixa"));
 const MLDreCaixa         = React.lazy(() => import("./pages/mercadolivre/MLDreCaixa"));
 const MLCompras          = React.lazy(() => import("./pages/mercadolivre/MLCompras"));
-const MLProdutosVendidos = React.lazy(() => import("./pages/mercadolivre/MLProdutosVendidos"));
+const MLResultado        = React.lazy(() => import("./pages/mercadolivre/MLResultado"));
 const MLAnalisePrecos    = React.lazy(() => import("./pages/mercadolivre/MLAnalisePrecos"));
 const TVModeVendas       = React.lazy(() => import("./pages/TVModeVendas"));
 const Sellers            = React.lazy(() => import("./pages/Sellers"));
@@ -152,7 +152,12 @@ const App = () => (
                             <Route path="/fluxo-de-caixa" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro no Fluxo de Caixa"><MLFluxoCaixa /></ErrorBoundary></RoleRoute>} />
                             <Route path="/dre-caixa" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na DRE Caixa"><MLDreCaixa /></ErrorBoundary></RoleRoute>} />
                             <Route path="/compras" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro em Compras"><MLCompras /></ErrorBoundary></RoleRoute>} />
-                            <Route path="/produtos-vendidos" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro em Produtos Vendidos"><MLProdutosVendidos /></ErrorBoundary></RoleRoute>} />
+                            <Route path="/resultado" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na página de Resultado"><MLResultado /></ErrorBoundary></RoleRoute>} />
+                            {/* Endereço antigo da mesma tela (fase 213): quem tinha    */}
+                            {/* /produtos-vendidos salvo continua chegando. Molde do    */}
+                            {/* redirecionamento de /precos-custos acima — o Navigate   */}
+                            {/* não renderiza conteúdo, e o destino é protegido.        */}
+                            <Route path="/produtos-vendidos" element={<Navigate to="/resultado" replace />} />
                             <Route path="/analise-precos" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro em Análise de Preços"><MLAnalisePrecos /></ErrorBoundary></RoleRoute>} />
                             <Route path="/nexo-memoria" element={<RoleRoute><ErrorBoundary fallbackTitle="Erro na Memória do Nexo"><NexoMemoria /></ErrorBoundary></RoleRoute>} />
                             <Route path="/organizacao" element={<RoleRoute><OrgSettings /></RoleRoute>} />
