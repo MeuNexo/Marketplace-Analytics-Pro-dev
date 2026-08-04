@@ -76,7 +76,11 @@ function NotConnected() {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function MLAnuncios() {
+// O nome da função bate com a rota que ela serve (`/publicidade`). Ela se
+// chamava `MLAnuncios` — o nome do arquivo vizinho, que serve `/anuncios` — e a
+// inversão era dupla: lá a função se chamava `MLProdutos`. Ver o comentário
+// equivalente em `MLAnuncios.tsx`.
+export default function MLPublicidadePage() {
   const isMobile = useIsMobile();
   const [campaignSearch, setCampaignSearch] = useState("");
   const [productSearch, setProductSearch]   = useState("");

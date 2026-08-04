@@ -555,7 +555,11 @@ function PriceDetailSheet({
   );
 }
 
-export default function MLProdutos() {
+// O nome da função bate com a rota que ela serve (`/anuncios`). Ela se chamava
+// `MLProdutos` — nome de uma tela que não existe — enquanto o arquivo vizinho
+// `MLPublicidade.tsx` exportava uma função chamada `MLAnuncios`. Duas telas
+// trocadas de nome fazem qualquer busca por nome de tela cair no arquivo errado.
+export default function MLAnunciosPage() {
   const { items, loading, hasToken, lastUpdated, refresh } = useMLInventory();
   const { selectedStore, stores, sellerId, resolvedMLUserIds, scopeKey } = useMLStore();
   const { currentOrg } = useOrganization();
