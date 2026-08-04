@@ -4,6 +4,9 @@ import { useMLStore } from "@/contexts/MLStoreContext";
 import { useMLCoverage, COVERAGE_PERIODS, COVERAGE_CLASS_LABELS, defaultThresholds } from "@/hooks/useMLCoverage";
 import type { CoveragePeriod, CoverageClass, CoverageData, CoverageThresholds } from "@/hooks/useMLCoverage";
 import type { ProductItem } from "@/contexts/MLInventoryContext";
+import { useMLProductCosts } from "@/hooks/useMLProductCosts";
+import type { ProductCost } from "@/hooks/useMLProductCosts";
+import { custoDoItem, agregarCapitalPorClasse } from "@/lib/estoqueCapital";
 import { CoverageAlerts } from "@/components/mercadolivre/CoverageAlerts";
 import { CoverageSettingsPopover } from "@/components/mercadolivre/CoverageSettingsPopover";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
@@ -121,6 +124,8 @@ interface RelatoriosProps {
   items: ProductItem[];
   coverageMap: Map<string, CoverageData>;
   coveragePeriod: CoveragePeriod;
+  costs: Map<string, ProductCost>;
+  costsBySku: Map<string, ProductCost>;
 }
 
 function SubTabCobertura({ items, coverageMap, coveragePeriod }: Pick<RelatoriosProps, "items" | "coverageMap" | "coveragePeriod">) {
@@ -371,41 +376,72 @@ function SubTabCobertura({ items, coverageMap, coveragePeriod }: Pick<Relatorios
   );
 }
 
-function SubTabValorRisco({ items, coverageMap }: Pick<RelatoriosProps, "items" | "coverageMap">) {
-  const { byClass, top10, capitalCards } = useMemo(() => {
-    const classMap: Record<CoverageClass, number> = { ruptura: 0, critico: 0, alerta: 0, ok: 0, sem_giro: 0 };
-    const withValor = items.map((item) => {
-      const valor = item.price * item.available_quantity;
-      const cd = coverageMap.get(item.id);
-      const cls: CoverageClass = cd?.coverage_class ?? "sem_giro";
-      classMap[cls] += valor;
-      return { item, valor, cls };
+function SubTabValorRisco({ items, coverageMap, costs, costsBySku }: Pick<RelatoriosProps, "items" | "coverageMap" | "costs" | "costsBySku">) {
+  // CR-05: capital imobilizado é CMV × quantidade, nunca preço × quantidade —
+  // ver `estoqueCapital.ts`. SKU sem custo cadastrado não recebe fallback e
+  // fica declarado, não desaparece nem é inventado.
+  const { byClass, top10, capitalCards, semCusto } = useMemo(() => {
+    const classePorItem = new Map<string, CoverageClass>();
+    items.forEach((item) => {
+      classePorItem.set(item.id, coverageMap.get(item.id)?.coverage_class ?? "sem_giro");
     });
-    const byClass = (Object.keys(classMap) as CoverageClass[]).map((cls) => ({
+
+    const agregado = agregarCapitalPorClasse(items, classePorItem, costs, costsBySku);
+
+    const byClass = (Object.keys(agregado.porClasse) as CoverageClass[]).map((cls) => ({
       name: COVERAGE_CLASS_LABELS[cls] ?? cls,
-      valor: classMap[cls],
+      valor: agregado.porClasse[cls],
       color: COVERAGE_COLORS[cls],
     }));
-    const top10 = [...withValor].sort((a, b) => b.valor - a.valor).slice(0, 10);
+
+    // Item sem custo entra com `valor: null` — nunca uma posição no ranking
+    // calculada a preço. `-1` como sentinela de ordenação joga esses itens
+    // para o fim, sem inventar um valor em reais para eles.
+    const comValor = items.map((item) => {
+      const custo = custoDoItem(item.id, item.seller_custom_field, costs, costsBySku);
+      const valor = custo != null ? custo * item.available_quantity : null;
+      const cls: CoverageClass = coverageMap.get(item.id)?.coverage_class ?? "sem_giro";
+      return { item, valor, cls };
+    });
+    const top10 = [...comValor].sort((a, b) => (b.valor ?? -1) - (a.valor ?? -1)).slice(0, 10);
+
     const capitalCards = {
-      risco: classMap.ruptura + classMap.critico,
-      parado: classMap.sem_giro,
-      saudavel: classMap.ok,
+      risco: agregado.risco,
+      parado: agregado.parado,
+      saudavel: agregado.saudavel,
     };
-    return { byClass, top10, capitalCards };
-  }, [items, coverageMap]);
+
+    const semCusto = {
+      skus: agregado.skusSemCusto,
+      unidades: agregado.unidadesSemCusto,
+      total: items.length,
+    };
+
+    return { byClass, top10, capitalCards, semCusto };
+  }, [items, coverageMap, costs, costsBySku]);
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <KPICard title="Capital em Ruptura/Crítico" value={currencyFmt(capitalCards.risco)} variant="minimal" size="compact" icon={<AlertTriangle className="w-4 h-4" />} iconClassName="bg-destructive/10 text-destructive" />
-        <KPICard title="Capital Parado (Sem Giro)" value={currencyFmt(capitalCards.parado)} variant="minimal" size="compact" icon={<Package className="w-4 h-4" />} iconClassName="bg-muted text-muted-foreground" />
-        <KPICard title="Capital Saudável" value={currencyFmt(capitalCards.saudavel)} variant="minimal" size="compact" icon={<CheckCircle2 className="w-4 h-4" />} iconClassName="bg-success/10 text-success" />
+        <KPICard title="Capital em Ruptura/Crítico (a custo)" value={currencyFmt(capitalCards.risco)} variant="minimal" size="compact" icon={<AlertTriangle className="w-4 h-4" />} iconClassName="bg-destructive/10 text-destructive" />
+        <KPICard title="Capital Parado — Sem Giro (a custo)" value={currencyFmt(capitalCards.parado)} variant="minimal" size="compact" icon={<Package className="w-4 h-4" />} iconClassName="bg-muted text-muted-foreground" />
+        <KPICard title="Capital Saudável (a custo)" value={currencyFmt(capitalCards.saudavel)} variant="minimal" size="compact" icon={<CheckCircle2 className="w-4 h-4" />} iconClassName="bg-success/10 text-success" />
       </div>
+
+      {semCusto.skus > 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 px-4 py-2.5 text-xs text-amber-700 dark:text-amber-300">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span>
+            <strong>{semCusto.skus}</strong> de {semCusto.total} SKUs sem custo cadastrado
+            ({numFmt(semCusto.unidades)} unidades) — não entram no valor em reais acima.
+          </span>
+        </div>
+      )}
 
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Capital por Classe de Cobertura</CardTitle>
+          <CardDescription className="text-xs">Valor a custo (CMV × quantidade), não a preço de venda</CardDescription>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={220}>
@@ -427,6 +463,7 @@ function SubTabValorRisco({ items, coverageMap }: Pick<RelatoriosProps, "items" 
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Top 10 por Valor em Estoque</CardTitle>
+          <CardDescription className="text-xs">Valor a custo (CMV × quantidade)</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -441,7 +478,11 @@ function SubTabValorRisco({ items, coverageMap }: Pick<RelatoriosProps, "items" 
               {top10.map(({ item, valor, cls }) => (
                 <TableRow key={item.id}>
                   <TableCell className="text-xs max-w-[240px] truncate">{item.title}</TableCell>
-                  <TableCell className="text-xs text-right font-medium">{currencyFmt(valor)}</TableCell>
+                  <TableCell className="text-xs text-right font-medium">
+                    {valor != null ? currencyFmt(valor) : (
+                      <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">Sem custo</Badge>
+                    )}
+                  </TableCell>
                   <TableCell><CoverageBadge cls={cls} /></TableCell>
                 </TableRow>
               ))}
@@ -783,7 +824,7 @@ function SubTabEstoqueMarca({ items }: Pick<RelatoriosProps, "items">) {
   );
 }
 
-function EstoqueRelatorios({ items, coverageMap, coveragePeriod }: RelatoriosProps) {
+function EstoqueRelatorios({ items, coverageMap, coveragePeriod, costs, costsBySku }: RelatoriosProps) {
   return (
     <Tabs defaultValue="cobertura">
       <TabsList className="mb-4 h-8 w-auto">
@@ -795,7 +836,7 @@ function EstoqueRelatorios({ items, coverageMap, coveragePeriod }: RelatoriosPro
       </TabsList>
       <TabsContent value="cobertura"><SubTabCobertura items={items} coverageMap={coverageMap} coveragePeriod={coveragePeriod} /></TabsContent>
       <TabsContent value="marca"><SubTabEstoqueMarca items={items} /></TabsContent>
-      <TabsContent value="valor"><SubTabValorRisco items={items} coverageMap={coverageMap} /></TabsContent>
+      <TabsContent value="valor"><SubTabValorRisco items={items} coverageMap={coverageMap} costs={costs} costsBySku={costsBySku} /></TabsContent>
       <TabsContent value="abc"><SubTabCurvaABC items={items} /></TabsContent>
       <TabsContent value="logistica"><SubTabLogistica items={items} /></TabsContent>
     </Tabs>
@@ -831,6 +872,10 @@ export default function MLEstoque() {
   const isMobile = useIsMobile();
   const { items, loading: isLoading, syncing, hasToken, lastUpdated, refresh, syncNow } = useMLInventory();
   const { resolvedMLUserIds } = useMLStore();
+  // Custos a nível de página: SubTabValorRisco (CR-05) precisa de CMV por item
+  // para agregar capital a custo. Lido uma vez aqui — a página já é a dona do
+  // estado de inventário — e repassado, em vez de uma segunda leitura da tabela.
+  const { costs, costsBySku } = useMLProductCosts();
   // hasToken: null = ainda carregando, false = sem token, true = conectado
   const isConnected = hasToken !== false;
   const [coveragePeriod, setCoveragePeriod] = useState<CoveragePeriod>(30);
@@ -1505,7 +1550,7 @@ export default function MLEstoque() {
 
       {/* ═══════════════════ ABA RELATÓRIOS ═══════════════════ */}
       <TabsContent value="relatorios" className="mt-0">
-        <EstoqueRelatorios items={items} coverageMap={coverageMap} coveragePeriod={coveragePeriod} />
+        <EstoqueRelatorios items={items} coverageMap={coverageMap} coveragePeriod={coveragePeriod} costs={costs} costsBySku={costsBySku} />
       </TabsContent>
 
     </Tabs>
