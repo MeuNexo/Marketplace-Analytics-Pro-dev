@@ -20,6 +20,7 @@ import {
 // e a sub-tabela de variações chamam os dois helpers abaixo, nunca aritmética
 // de margem inline. Ver o cabeçalho de anuncioMargens.ts para a régua completa.
 import { calcularMargensDoAnuncio, precoPromocionalAplicavel } from "@/lib/anuncioMargens";
+import { classificarCurvaAbc, calcularParticipacao } from "@/lib/curvaAbc";
 import { useMLPrecosCustos, type MLItemSuggestion } from "@/hooks/useMLPrecosCustos";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { Progress } from "@/components/ui/progress";
@@ -56,7 +57,11 @@ import {
   PieChart, Pie, Cell, ComposedChart, Line, Area, ReferenceLine, CartesianGrid, Legend,
 } from "recharts";
 
-const TOTAL_PERIOD = -1; // sentinel: no date filter → use ML API's sold_quantity
+// Sentinela do período "Total". Fase 213/CR-07: "Total" NÃO significa mais
+// "sem filtro de data, cai para o `sold_quantity` vitalício da API do ML".
+// Significa "desde a primeira venda registrada na base" — uma janela real,
+// resolvida em `primeiraVendaDate` e aplicada como qualquer outro período.
+const TOTAL_PERIOD = -1;
 
 // ─── Glossary tip helper ──────────────────────────────────────────────────────
 const tip = (key: keyof typeof KPI_GLOSSARY) => {
@@ -613,25 +618,76 @@ export default function MLProdutos() {
   const [pendingRange, setPendingRange] = useState<DateRange | null>(null);
   const [rankingRawData, setRankingRawData] = useState<{ item_id: string; qty_sold: number; revenue: number; ml_user_id: string | null; date: string | null }[]>([]);
 
+  // ── CR-07: o período "Total" é uma janela real ────────────────────────────
+  // Data da primeira venda registrada no escopo (org via RLS + loja resolvida).
+  // `undefined` = ainda resolvendo; `null` = a base não tem venda nenhuma aqui.
+  // É essa data que passa a delimitar o início do período "Total"; nunca mais
+  // se cai para `sold_quantity × price` (unidades de anos × preço de hoje).
+  const [primeiraVendaDate, setPrimeiraVendaDate] = useState<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    setPrimeiraVendaDate(undefined);
+    (async () => {
+      // Escopo idêntico ao da leitura paginada abaixo — mesma RLS, mesma loja.
+      // Nada vem de query string. `limit(1)` devolve uma linha só.
+      let query = supabase
+        .from("ml_product_daily_cache")
+        .select("date")
+        .order("date", { ascending: true })
+        .limit(1);
+      if (selectedStore !== "all") {
+        query = query.eq("ml_user_id", selectedStore);
+      } else if (sellerId) {
+        query = query.eq("seller_id", sellerId);
+      }
+      const { data } = await query;
+      if (cancelled) return;
+      setPrimeiraVendaDate(data && data.length > 0 && data[0].date ? data[0].date : null);
+    })();
+    return () => { cancelled = true; };
+  }, [user, selectedStore, sellerId]);
+
+  /**
+   * A janela do relatório — uma só, usada pela busca de vendas, pela coluna de
+   * margem e pelo rótulo da tela. `from`/`to` nulos significam janela ainda não
+   * resolvida ou base sem venda nenhuma: nesse caso a tela mostra zeros e diz
+   * que não houve venda, em vez de cair para o número vitalício.
+   */
+  const rankingWindow = useMemo((): { from: string | null; to: string | null; resolvida: boolean } => {
+    const today = format(new Date(), "yyyy-MM-dd");
+    if (rankingRange) {
+      return {
+        from: format(rankingRange.from, "yyyy-MM-dd"),
+        to:   format(rankingRange.to,   "yyyy-MM-dd"),
+        resolvida: true,
+      };
+    }
+    if (rankingPeriod === TOTAL_PERIOD) {
+      if (primeiraVendaDate === undefined) return { from: null, to: null, resolvida: false };
+      if (primeiraVendaDate === null)      return { from: null, to: null, resolvida: true };
+      return { from: primeiraVendaDate, to: today, resolvida: true };
+    }
+    if (rankingPeriod === 0) {
+      return { from: today, to: today, resolvida: true };
+    }
+    return {
+      from: format(subDays(new Date(), rankingPeriod), "yyyy-MM-dd"),
+      to:   today,
+      resolvida: true,
+    };
+  }, [rankingRange, rankingPeriod, primeiraVendaDate]);
+
   const fetchRankingSales = useCallback(async () => {
     if (!user) return;
-    // "Total" → no date filter; use sold_quantity from ML API (empty raw data = fallback)
-    if (!rankingRange && rankingPeriod === TOTAL_PERIOD) {
+    const fromDate = rankingWindow.from;
+    const toDate   = rankingWindow.to;
+    // Janela ainda não resolvida, ou base sem venda nenhuma: sem linhas — e sem
+    // fallback. Um período vazio tem de parecer vazio (CR-07).
+    if (!fromDate || !toDate) {
       setRankingRawData([]);
       return;
-    }
-    const today = format(new Date(), "yyyy-MM-dd");
-    let fromDate: string;
-    let toDate: string;
-    if (rankingRange) {
-      fromDate = format(rankingRange.from, "yyyy-MM-dd");
-      toDate   = format(rankingRange.to,   "yyyy-MM-dd");
-    } else if (rankingPeriod === 0) {
-      fromDate = today;
-      toDate   = today;
-    } else {
-      fromDate = format(subDays(new Date(), rankingPeriod), "yyyy-MM-dd");
-      toDate   = today;
     }
 
     // Paginate through all rows to bypass Supabase's 1 000-row default limit.
@@ -660,31 +716,22 @@ export default function MLProdutos() {
       pageFrom += PAGE;
     }
     setRankingRawData(allRows);
-  }, [user, rankingPeriod, rankingRange, selectedStore, sellerId]);
+  }, [user, rankingWindow, selectedStore, sellerId]);
 
   useEffect(() => { fetchRankingSales(); }, [fetchRankingSales]);
 
-  // ── Margem com Ads — range espelha exatamente o ranking ──────────────────
+  // ── Margem com Ads — a MESMA janela do relatório ─────────────────────────
+  // Fase 213/CR-07: aqui existia um recuo silencioso de 365 dias quando o
+  // período era "Total". A coluna de margem cobria um ano enquanto o resto da
+  // tela dizia "Todo o período". Com a janela resolvida de verdade, as duas
+  // passam a ser a mesma. Janela não resolvida → hoje/hoje (nenhuma linha).
   const { rankingFrom, rankingTo } = useMemo(() => {
     const today = format(new Date(), "yyyy-MM-dd");
-    if (rankingRange) {
-      return {
-        rankingFrom: format(rankingRange.from, "yyyy-MM-dd"),
-        rankingTo:   format(rankingRange.to,   "yyyy-MM-dd"),
-      };
-    }
-    if (rankingPeriod === 0) {
-      return { rankingFrom: today, rankingTo: today };
-    }
-    if (rankingPeriod === TOTAL_PERIOD) {
-      // "Total" sem filtro de data → usar 365 dias como fallback seguro
-      return { rankingFrom: format(subDays(new Date(), 365), "yyyy-MM-dd"), rankingTo: today };
-    }
     return {
-      rankingFrom: format(subDays(new Date(), rankingPeriod), "yyyy-MM-dd"),
-      rankingTo:   today,
+      rankingFrom: rankingWindow.from ?? today,
+      rankingTo:   rankingWindow.to   ?? today,
     };
-  }, [rankingRange, rankingPeriod]);
+  }, [rankingWindow]);
 
   const { data: marginWithAds } = useMLMarginWithAds(rankingFrom, rankingTo);
 
@@ -727,7 +774,12 @@ export default function MLProdutos() {
 
   const rankingLabel = rankingRange
     ? `${format(rankingRange.from, "dd/MM")} – ${format(rankingRange.to, "dd/MM")}`
-    : rankingPeriod === TOTAL_PERIOD ? "Todo o período"
+    : rankingPeriod === TOTAL_PERIOD
+      // CR-07: "Todo o período" agora tem começo declarado — a primeira venda
+      // registrada na base. Sem venda nenhuma, a tela diz isso.
+      ? primeiraVendaDate
+        ? `Todo o período (desde ${format(new Date(`${primeiraVendaDate}T12:00:00`), "dd/MM/yy")})`
+        : primeiraVendaDate === null ? "Todo o período (sem venda registrada)" : "Todo o período"
     : rankingPeriod === 0            ? "Hoje"
     : `Últimos ${rankingPeriod} dias`;
 
@@ -912,34 +964,25 @@ export default function MLProdutos() {
   }, [filtered]);
 
   // ─── Reports data ───────────────────────────────────────────────────────────
+  // CR-07: aqui existiam dois fallbacks para `sold_quantity × price` — unidades
+  // vendidas ao longo de ANOS multiplicadas pelo preço de HOJE — disparados por
+  // uma condição de TAMANHO DE MAPA, válida para o dataset inteiro. Um período
+  // genuinamente sem vendas fazia TODOS os itens voltarem em silêncio ao número
+  // vitalício: um período vazio parecia um período cheio. Os dois morreram. A
+  // ausência no mapa agora é zero, e zero é o que a tela mostra.
   const rankingAll = useMemo(() => {
-    const getSold = (id: string) =>
-      rankingSoldMap.size > 0 ? (rankingSoldMap.get(id) ?? 0) : items.find(i => i.id === id)?.sold_quantity ?? 0;
-    const getRev = (id: string, sold: number, price: number) =>
-      rankingRevenueMap.size > 0 ? (rankingRevenueMap.get(id) ?? 0) : sold * price;
-
-    const totalRev = items.reduce((s, i) => {
-      const sold = getSold(i.id);
-      return s + getRev(i.id, sold, i.price);
-    }, 0);
-
     return [...items]
-      .map((i) => {
-        const sold = getSold(i.id);
-        const rev = getRev(i.id, sold, i.price);
-        return {
-          id: i.id,
-          title: i.title,
-          thumbnail: i.thumbnail,
-          price: i.price,
-          sold,
-          revenue: rev,
-          stock: i.available_quantity,
-          share: totalRev > 0 ? (rev / totalRev) * 100 : 0,
-          brand: i.brand || "Sem marca",
-          _ml_user_id: i._ml_user_id,
-        };
-      })
+      .map((i) => ({
+        id: i.id,
+        title: i.title,
+        thumbnail: i.thumbnail,
+        price: i.price,
+        sold: rankingSoldMap.get(i.id) ?? 0,
+        revenue: rankingRevenueMap.get(i.id) ?? 0,
+        stock: i.available_quantity,
+        brand: i.brand || "Sem marca",
+        _ml_user_id: i._ml_user_id,
+      }))
       .sort((a, b) => b.sold - a.sold);
   }, [items, rankingSoldMap, rankingRevenueMap]);
 
@@ -953,8 +996,16 @@ export default function MLProdutos() {
       base = base.filter((r) => r.title.toLowerCase().includes(q) || r.id.toLowerCase().includes(q));
     }
 
+    // AV-06: a participação divide pela receita do conjunto FILTRADO — o mesmo
+    // conjunto que alimenta o KPI de Receita Total ao lado. Antes dividia pelo
+    // total de TODOS os itens, e com filtro de marca ativo a coluna não fechava
+    // em cem nem batia com o cartão.
+    const comShare = calcularParticipacao(
+      base.map((r) => ({ ...r, receita: r.revenue })),
+    ).map((r) => ({ ...r, share: r.participacao }));
+
     const [field, dir] = rankingSort.split("_");
-    return [...base].sort((a, b) => {
+    return [...comShare].sort((a, b) => {
       const aVal = field === "price" ? a.price
         : field === "sold"    ? a.sold
         : field === "revenue" ? a.revenue
@@ -971,6 +1022,14 @@ export default function MLProdutos() {
     });
   }, [rankingAll, rankingBrandFilter, rankingSearch, rankingSort]);
 
+  // CR-07: sinal explícito de que a janela do relatório foi resolvida e não
+  // trouxe venda nenhuma. Deriva da JANELA, não do tamanho de um mapa usado
+  // como gatilho de fallback — o fallback não existe mais.
+  const periodoSemVenda = rankingWindow.resolvida && rankingDeduped.length === 0;
+  const avisoPeriodoSemVenda = rankingWindow.from === null && rankingWindow.resolvida
+    ? "Nenhuma venda registrada na base para esta loja — não há período a exibir."
+    : `Nenhuma venda no período selecionado (${rankingLabel}). Os valores abaixo são zero porque não houve venda, não porque falta dado.`;
+
   const rankingKPIs = useMemo(() => {
     const totalUnits = rankingFiltered.reduce((s, r) => s + r.sold, 0);
     const totalRev = rankingFiltered.reduce((s, r) => s + r.revenue, 0);
@@ -978,18 +1037,14 @@ export default function MLProdutos() {
   }, [rankingFiltered]);
 
   const brandData = useMemo(() => {
-    const getSold = (id: string) =>
-      rankingSoldMap.size > 0 ? (rankingSoldMap.get(id) ?? 0) : items.find(i => i.id === id)?.sold_quantity ?? 0;
-
-    const getRev = (id: string, sold: number, price: number) =>
-      rankingRevenueMap.size > 0 ? (rankingRevenueMap.get(id) ?? 0) : sold * price;
+    // Mesma régua do ranking: receita do período, sem fallback vitalício (CR-07).
     const map = new Map<string, { revenue: number; qty: number; ads: number; stock: number }>();
     items.forEach((i) => {
       const brand = i.brand || "Sem marca";
-      const sold = getSold(i.id);
+      const sold = rankingSoldMap.get(i.id) ?? 0;
       const prev = map.get(brand) ?? { revenue: 0, qty: 0, ads: 0, stock: 0 };
       map.set(brand, {
-        revenue: prev.revenue + getRev(i.id, sold, i.price),
+        revenue: prev.revenue + (rankingRevenueMap.get(i.id) ?? 0),
         qty: prev.qty + sold,
         ads: prev.ads + 1,
         stock: prev.stock + i.available_quantity,
@@ -1021,31 +1076,43 @@ export default function MLProdutos() {
   }, [brandData]);
 
   // ─── ABC Curve data ──────────────────────────────────────────────────────────
-  const abcData = useMemo(() => {
-    const sorted = [...items]
-      .map((i) => ({ id: i.id, title: i.title, thumbnail: i.thumbnail, price: i.price, sold: i.sold_quantity, revenue: i.sold_quantity * i.price, stock: i.available_quantity, brand: i.brand || "Sem marca" }))
-      .sort((a, b) => b.revenue - a.revenue);
-    const totalRev = sorted.reduce((s, r) => s + r.revenue, 0);
-    let cumPct = 0;
-    return sorted.map((r, idx) => {
-      cumPct += totalRev > 0 ? (r.revenue / totalRev) * 100 : 0;
-      const curve = cumPct <= 80 ? "A" : cumPct <= 95 ? "B" : "C";
-      return { ...r, cumPct: Math.min(cumPct, 100), pct: totalRev > 0 ? (r.revenue / totalRev) * 100 : 0, curve, rank: idx + 1 };
-    });
-  }, [items]);
+  // CR-06: a curva ABC classificava por `sold_quantity × price` — unidades
+  // vendidas ao longo de ANOS multiplicadas pelo preço de HOJE — enquanto a
+  // coluna "Receita" do Ranking ao lado mostrava a receita do período. Duas
+  // colunas com o mesmo rótulo e números diferentes para o mesmo anúncio.
+  // Agora a entrada é `rankingRevenueMap`: exatamente a mesma fonte do Ranking,
+  // na janela que o seletor de período da tela definiu.
+  const abcResultado = useMemo(
+    () =>
+      classificarCurvaAbc(
+        items.map((i) => ({
+          id: i.id,
+          receita: rankingRevenueMap.get(i.id) ?? 0,
+          title: i.title,
+          thumbnail: i.thumbnail,
+          price: i.price,
+          sold: rankingSoldMap.get(i.id) ?? 0,
+          stock: i.available_quantity,
+          brand: i.brand || "Sem marca",
+        })),
+      ),
+    [items, rankingRevenueMap, rankingSoldMap],
+  );
 
-  const abcSummary = useMemo(() => {
-    const a = abcData.filter((d) => d.curve === "A");
-    const b = abcData.filter((d) => d.curve === "B");
-    const c = abcData.filter((d) => d.curve === "C");
-    const totalRev = abcData.reduce((s, d) => s + d.revenue, 0);
-    return {
-      A: { count: a.length, revenue: a.reduce((s, d) => s + d.revenue, 0), pct: totalRev > 0 ? (a.reduce((s, d) => s + d.revenue, 0) / totalRev) * 100 : 0 },
-      B: { count: b.length, revenue: b.reduce((s, d) => s + d.revenue, 0), pct: totalRev > 0 ? (b.reduce((s, d) => s + d.revenue, 0) / totalRev) * 100 : 0 },
-      C: { count: c.length, revenue: c.reduce((s, d) => s + d.revenue, 0), pct: totalRev > 0 ? (c.reduce((s, d) => s + d.revenue, 0) / totalRev) * 100 : 0 },
-      total: abcData.length,
-    };
-  }, [abcData]);
+  const abcData = useMemo(
+    () => abcResultado.itens.map((r) => ({ ...r, revenue: r.receita, curve: r.curva })),
+    [abcResultado],
+  );
+
+  const abcSummary = useMemo(
+    () => ({
+      A: abcResultado.resumo.A,
+      B: abcResultado.resumo.B,
+      C: abcResultado.resumo.C,
+      total: abcResultado.resumo.total,
+    }),
+    [abcResultado],
+  );
 
   const abcChartData = useMemo(() => {
     if (abcData.length === 0) return [];
@@ -1860,7 +1927,10 @@ export default function MLProdutos() {
               <TabsTrigger value="marca" className="text-xs px-3 h-7">Análise por Marca</TabsTrigger>
               <TabsTrigger value="abc" className="text-xs px-3 h-7">Curva ABC</TabsTrigger>
             </TabsList>
-            {(reportTab === "ranking" || reportTab === "marca") && (
+            {/* CR-06: a barra de período aparece nas TRÊS sub-abas. Ela era
+                escondida na Curva ABC porque a ABC rodava numa régua própria
+                (vitalícia) que o seletor não afetava. Agora afeta. */}
+            {(
               <div className="flex items-center gap-2 flex-wrap">
                 {/* Date / period selector */}
                 <Popover
@@ -2006,6 +2076,12 @@ export default function MLProdutos() {
 
           {/* ── Sub-aba Ranking ── */}
           <TabsContent value="ranking" className="mt-0 space-y-4">
+            {periodoSemVenda && (
+              <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/5 px-4 py-2.5 text-xs text-muted-foreground">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-px text-warning" />
+                <span>{avisoPeriodoSemVenda}</span>
+              </div>
+            )}
             {/* KPIs */}
             <div className="grid grid-cols-3 gap-3">
               <KPICard title="Unidades Vendidas" value={String(rankingKPIs.totalUnits)} icon={<TrendingUp className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-accent/10 text-accent" tooltip={tip("unidades_vendidas")} />
@@ -2240,6 +2316,12 @@ export default function MLProdutos() {
 
           {/* ── Sub-aba Curva ABC ── */}
           <TabsContent value="abc" className="mt-0 space-y-4">
+            {periodoSemVenda && (
+              <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/5 px-4 py-2.5 text-xs text-muted-foreground">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-px text-warning" />
+                <span>{avisoPeriodoSemVenda}</span>
+              </div>
+            )}
             {/* Summary KPIs */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <KPICard title="Total de Anúncios" value={String(abcSummary.total)} icon={<ShoppingBag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-accent/10 text-accent" tooltip="Total de anúncios ativos analisados na Curva ABC." />
@@ -2252,6 +2334,9 @@ export default function MLProdutos() {
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium">Curva ABC — Receita Acumulada</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Receita realizada no período selecionado ({rankingLabel}) — a mesma do Ranking de Anúncios.
+                </p>
               </CardHeader>
               <CardContent className="pb-4">
                 {abcChartData.length > 0 ? (
@@ -2352,7 +2437,7 @@ export default function MLProdutos() {
                 )}
                 {abcData.length > 0 && (
                   <div className="px-4 py-3 border-t text-xs text-muted-foreground">
-                    {abcData.length} anúncios · A: {abcSummary.A.count} · B: {abcSummary.B.count} · C: {abcSummary.C.count}
+                    {abcData.length} anúncios · {rankingLabel} · A: {abcSummary.A.count} · B: {abcSummary.B.count} · C: {abcSummary.C.count}
                   </div>
                 )}
               </CardContent>
