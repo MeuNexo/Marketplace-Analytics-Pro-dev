@@ -19,9 +19,37 @@
  * grupo que o MCO% agregado inclui anúncios sem custo, para a UI exibir um aviso.
  *
  * Phase: 83-produtos-vendidos-mco-redesign / Plan 01
+ *
+ * ── Fase 213, Plano 06 ──────────────────────────────────────────────────────
+ * O item ganhou três campos de decisão, sem que nada do que a fase 83 travou
+ * mudasse:
+ *
+ *  1. MCO PRÉ-ADS (R$ e %). As duas margens juntas são legítimas e respondem
+ *     perguntas diferentes: a pré-ads diz se o PRODUTO é bom, a pós-ads diz se
+ *     ele é bom depois do que se gastou para vendê-lo. Vem do `lucro` /
+ *     `lucro_pct` da RPC, que são pré-ads por definição e NÃO mudaram com o
+ *     rateio da fatura (fase 212 só reescreve `ads_spend` e o pós-ads).
+ *
+ *  2. BREAKEVEN DE ACOS = a margem operacional pré-ads em percentual. É a mesma
+ *     régua do CR-02 já adotada em `/publicidade` (`useMLAdsDerivedMetrics`):
+ *     "quanto de margem sobra antes da publicidade" É a definição de breakeven
+ *     de ACoS. Não recalculado a partir de preço e CMV — seria uma segunda
+ *     implementação do número que o CR-02 acabou de unificar.
+ *
+ *     Sem CMV o `lucro_pct` da RPC sai inflado (o custo entra como zero); usá-lo
+ *     trocaria um número errado por outro, então o pré-ads e o breakeven ficam
+ *     INDEFINIDOS — nunca zero. Mesma disciplina do `health`.
+ *
+ *  3. CURVA ABC do período, vinda do módulo puro `@/lib/curvaAbc` (Plano 04).
+ *     A curva é da CARTEIRA INTEIRA, calculada antes de filtrar por grupo: a
+ *     posição de um anúncio na concentração de receita da operação não pode
+ *     mudar porque o operador trocou o agrupamento de marca para categoria. Se
+ *     fosse calculada dentro do grupo, cada marca teria a própria Curva A e a
+ *     coluna perderia o sentido.
  */
 
 import { classifyMcoHealth, type McoHealth } from "@/lib/mcoHealth";
+import { classificarCurvaAbc, type CurvaAbc } from "@/lib/curvaAbc";
 
 // ─── Tipos públicos ───────────────────────────────────────────────────────────
 
@@ -42,6 +70,10 @@ export interface McoProductRow {
   frete: number;
   impostos: number;
   ads_spend: number;
+  /** Lucro operacional PRÉ-ads (R$) — o `lucro` da RPC, intocado pelo rateio. */
+  lucro: number;
+  /** Margem operacional PRÉ-ads (%); null quando a receita do período é zero. */
+  lucro_pct: number | null;
   lucro_pos_ads: number;
   lucro_pct_pos_ads: number | null;
   has_cmv: boolean;
@@ -81,6 +113,18 @@ export interface PvMcoItem {
   mcoReais: number;
   /** MCO% pós-ads (= lucro_pct_pos_ads); null quando receita=0. */
   mcoPct: number | null;
+  /** MCO em R$ PRÉ-ads (= lucro); null quando não há custo cadastrado. */
+  mcoPreAdsReais: number | null;
+  /** MCO% PRÉ-ads (= lucro_pct); null sem custo cadastrado ou sem receita. */
+  mcoPreAdsPct: number | null;
+  /**
+   * Breakeven de ACoS (%) — a margem de contribuição pré-ads. Acima dela, a
+   * publicidade daquele anúncio come toda a margem. Null sem custo ou sem
+   * receita: nunca zero (CR-02).
+   */
+  breakevenAcosPct: number | null;
+  /** Curva ABC do anúncio na receita do período da CARTEIRA INTEIRA (CR-06). */
+  curva: CurvaAbc;
   /** % Ads (ACoS) = ads_spend÷receita×100; null quando receita=0. */
   acosPct: number | null;
   /** Se o anúncio tem custo (custo_unit) conhecido no período. */
@@ -115,6 +159,30 @@ function groupKey(
 /** Saúde do anúncio: 'indefinido' quando has_cmv=false (custo ausente — nunca zerar/inventar). */
 function itemHealth(row: McoProductRow): McoHealth {
   return row.has_cmv ? classifyMcoHealth(row.lucro_pct_pos_ads) : "indefinido";
+}
+
+/** Duas casas — o mesmo arredondamento do breakeven de `/publicidade` (CR-02). */
+const round2 = (v: number) => Math.round(v * 100) / 100;
+
+// ─── Curva ABC da carteira ────────────────────────────────────────────────────
+
+/**
+ * Classifica a CARTEIRA INTEIRA em curvas A/B/C pela receita do período e
+ * devolve o mapa `item_id → curva`.
+ *
+ * O conjunto recebido é o mesmo que alimenta a tela ANTES de qualquer filtro de
+ * grupo. Produzido uma vez e anexado ao item na montagem: a curva de um anúncio
+ * é a posição dele na concentração de receita da operação, não do agrupamento
+ * escolhido na hora.
+ *
+ * Os cortes de 80% e 95% NÃO são reimplementados aqui — vêm de
+ * `classificarCurvaAbc` (Plano 04), que é a única fonte deles.
+ */
+export function curvasDaCarteira(rows: readonly McoProductRow[]): Map<string, CurvaAbc> {
+  const { itens } = classificarCurvaAbc(
+    rows.map((r) => ({ id: r.item_id, receita: r.receita })),
+  );
+  return new Map(itens.map((i) => [i.id, i.curva]));
 }
 
 // ─── Funções públicas ─────────────────────────────────────────────────────────
@@ -180,6 +248,9 @@ export function aggregateMcoItems(
   pvView: "marca" | "categoria",
   itemsMap: Map<string, { category_id?: string | null; title?: string; thumbnail?: string }>,
 ): PvMcoItem[] {
+  // A curva sai da carteira INTEIRA — antes do filtro de grupo, de propósito.
+  const curvas = curvasDaCarteira(rows);
+
   const filtered = rows.filter((r) => groupKey(r, pvView, itemsMap) === pvSelected);
 
   const totalRevenue = filtered.reduce((s, r) => s + r.receita, 0);
@@ -188,6 +259,10 @@ export function aggregateMcoItems(
     .map((row) => {
       const title = itemsMap.get(row.item_id)?.title ?? row.titulo ?? row.item_id;
 
+      // Sem CMV, o pré-ads da RPC está inflado (custo = zero): indefinido, não
+      // zero. Sem receita no período, o percentual já vem null da própria RPC.
+      const preAdsPct = row.has_cmv && row.lucro_pct != null ? row.lucro_pct : null;
+
       return {
         item_id: row.item_id,
         title,
@@ -195,6 +270,10 @@ export function aggregateMcoItems(
         revenue: row.receita,
         mcoReais: row.lucro_pos_ads,
         mcoPct: row.lucro_pct_pos_ads,
+        mcoPreAdsReais: row.has_cmv ? row.lucro : null,
+        mcoPreAdsPct: preAdsPct,
+        breakevenAcosPct: preAdsPct != null ? round2(preAdsPct) : null,
+        curva: curvas.get(row.item_id) ?? "C",
         acosPct: row.receita > 0 ? (row.ads_spend / row.receita) * 100 : null,
         hasCmv: row.has_cmv,
         health: itemHealth(row),
