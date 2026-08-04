@@ -19,6 +19,8 @@
 import { describe, it, expect } from "vitest";
 import { aggregateMcoGroups, aggregateMcoItems } from "./soldProductsMcoAgg";
 import type { McoProductRow } from "./soldProductsMcoAgg";
+import { ratearAdsDaCarteira } from "@/lib/adsRateio";
+import type { AdsBillingSpend } from "@/lib/adsBillingSpend";
 
 // ─── Dados de fixture ─────────────────────────────────────────────────────────
 
@@ -286,5 +288,115 @@ describe("aggregateMcoItems", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].item_id).toBe("MLB001");
+  });
+});
+
+// ============================================================================
+// Fase 212 — a agregação em cima da publicidade RATEADA
+//
+// Prova de ponta a ponta do caminho que a tela Produtos Vendidos percorre:
+// fatura do ML → `ratearAdsDaCarteira` → linhas de margem → `aggregateMcoItems`.
+// Os números são os medidos em produção (Pé Vermeio, MLB7060842760, 05/07 a
+// 04/08/2026): fatura PADS+BPAD 9.474,36 · cache do período 14.790,21 · cache
+// do anúncio 751,88 · receita 20.686,52 · lucro pré-ads 4.035,49 · 48 unidades.
+// ============================================================================
+
+describe("agregação com publicidade rateada da fatura (Fase 212)", () => {
+  const FATURA: AdsBillingSpend = {
+    daily: [{ date: "2026-07-05", spend: 9474.36 }],
+    total: 9474.36,
+    rowCount: 31,
+    coverageFrom: "2026-07-05",
+    coverageTo: "2026-08-04",
+  };
+
+  /** Reproduz o que `useMLMarginWithAds` faz: rateia e reescreve as linhas. */
+  function comRateio(
+    fatura: AdsBillingSpend | null,
+    brutas: Array<McoProductRow & { lucroPreAds: number }>,
+  ): McoProductRow[] {
+    const rateio = ratearAdsDaCarteira(
+      fatura,
+      brutas.map((r) => ({ itemId: r.item_id, cacheSpend: r.ads_spend })),
+    );
+    return brutas.map((r) => {
+      const ads = rateio.porItem.get(r.item_id) ?? 0;
+      const lucro = r.lucroPreAds - ads;
+      return {
+        ...r,
+        ads_spend: ads,
+        lucro_pos_ads: lucro,
+        lucro_pct_pos_ads: r.receita > 0 ? Math.round((lucro / r.receita) * 10000) / 100 : null,
+      };
+    });
+  }
+
+  const brutas = [
+    {
+      item_id: "MLB7060842760",
+      titulo: "Chapéu Pralana Arizona",
+      marca: "Pralana",
+      receita: 20686.52,
+      unidades: 48,
+      cmv: 0,
+      comissao: 0,
+      frete: 0,
+      impostos: 0,
+      ads_spend: 751.88, // cache — a CHAVE, nunca o valor exibido
+      lucroPreAds: 4035.49,
+      lucro_pos_ads: 0,
+      lucro_pct_pos_ads: null,
+      has_cmv: true,
+    },
+    {
+      // O resto da carteira, inclusive anúncios sem venda: é o denominador.
+      item_id: "MLB0000000001",
+      titulo: "Resto da carteira",
+      marca: "Pralana",
+      receita: 100000,
+      unidades: 500,
+      cmv: 0,
+      comissao: 0,
+      frete: 0,
+      impostos: 0,
+      ads_spend: 14790.21 - 751.88,
+      lucroPreAds: 20000,
+      lucro_pos_ads: 0,
+      lucro_pct_pos_ads: null,
+      has_cmv: true,
+    },
+  ];
+
+  it("o anúncio medido mostra 481,64 de Ads (e não os 751,88 do cache)", () => {
+    const rows = comRateio(FATURA, brutas);
+    const itens = aggregateMcoItems(rows, "Pralana", "marca", new Map());
+    const alvo = itens.find((i) => i.item_id === "MLB7060842760")!;
+
+    expect(alvo.adsSpend).toBe(481.64);
+    // %Ads exibido: 2,3% (era 3,6% na régua velha do cache)
+    expect(alvo.acosPct!.toFixed(1)).toBe("2.3");
+    // MCO% exibido: 17,2% (era 15,9% na régua velha do cache)
+    expect(alvo.mcoPct!.toFixed(1)).toBe("17.2");
+  });
+
+  it("o MCO% do grupo também sobe, porque o grupo soma o lucro pós-ads rateado", () => {
+    const rows = comRateio(FATURA, brutas);
+    const semRateio = brutas.map((r) => ({
+      ...r,
+      lucro_pos_ads: r.lucroPreAds - r.ads_spend,
+    })) as McoProductRow[];
+
+    const grupoRateado = aggregateMcoGroups(rows, "marca", new Map())[0];
+    const grupoCache = aggregateMcoGroups(semRateio, "marca", new Map())[0];
+
+    expect(grupoRateado.mcoPct!).toBeGreaterThan(grupoCache.mcoPct!);
+  });
+
+  it("sem fatura no período, a tela continua no cache — 751,88, sem zerar ads", () => {
+    const rows = comRateio(null, brutas);
+    const itens = aggregateMcoItems(rows, "Pralana", "marca", new Map());
+    const alvo = itens.find((i) => i.item_id === "MLB7060842760")!;
+
+    expect(alvo.adsSpend).toBe(751.88);
   });
 });
