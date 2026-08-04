@@ -29,7 +29,7 @@ import { MLPeriodPicker } from "@/components/mercadolivre/MLPeriodPicker";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { useMLAds, type AdsCampaign } from "@/hooks/useMLAds";
 import { useMLAdsDerivedMetrics, type EnrichedAdsProduct } from "@/hooks/useMLAdsDerivedMetrics";
-import { useMLMarginWithAds } from "@/hooks/useMLMarginWithAds";
+import { useMLMarginWithAds, type ProductMarginWithAds } from "@/hooks/useMLMarginWithAds";
 import { useMLFilters } from "@/hooks/useMLFilters";
 import { useMLInventory } from "@/contexts/MLInventoryContext";
 import { AdsOrigemNota } from "@/components/mercadolivre/AdsOrigemNota";
@@ -76,7 +76,7 @@ export default function MLAnuncios() {
   const isMobile = useIsMobile();
   const [campaignSearch, setCampaignSearch] = useState("");
   const [productSearch, setProductSearch]   = useState("");
-  const [productSort, setProductSort]       = useState<{ key: "spend" | "roas" | "clicks" | "attributed_orders" | "attributed_revenue" | "ctr" | "stock" | "acos" | "cvr" | "tacos"; dir: "asc" | "desc" }>({ key: "spend", dir: "desc" });
+  const [productSort, setProductSort]       = useState<{ key: "spend" | "roas" | "clicks" | "attributed_orders" | "attributed_revenue" | "ctr" | "stock" | "acos" | "cvr" | "spend_share_pct"; dir: "asc" | "desc" }>({ key: "spend", dir: "desc" });
   const [productPage, setProductPage]       = useState(1);
   const [productPageSize, setProductPageSize] = useState<number>(20);
   const [campaignSort, setCampaignSort]     = useState<{ key: "daily_budget" | "spend" | "ctr" | "roas"; dir: "asc" | "desc" } | null>(null);
@@ -121,13 +121,22 @@ export default function MLAnuncios() {
     return map;
   }, [margem]);
 
+  // Mapa por item_id da linha de margem INTEIRA (não só o valor pós-ads acima)
+  // — o hook de métricas derivadas usa `lucro_pct` (pré-ads) e `sku` dela para
+  // o breakeven de ACoS e o seller_sku, sem ler custo por conta própria (CR-02).
+  const marginByItem = useMemo(() => {
+    const map = new Map<string, ProductMarginWithAds>();
+    for (const r of margem?.rows ?? []) map.set(r.item_id, r);
+    return map;
+  }, [margem]);
+
   // ── Derived metrics hook ──
   const { enriched: enrichedProducts, global: globalDerived } = useMLAdsDerivedMetrics(
     products,
     summary.total_spend,
-    summary.total_attributed_revenue,
     currentFrom,
     currentTo,
+    marginByItem,
   );
 
   // ── Confirm handler ──
@@ -264,8 +273,8 @@ export default function MLAnuncios() {
       if (key === "cvr") {
         return ((a.cvr ?? 0) - (b.cvr ?? 0)) * mult;
       }
-      if (key === "tacos") {
-        return ((a.tacos ?? 0) - (b.tacos ?? 0)) * mult;
+      if (key === "spend_share_pct") {
+        return ((a.spend_share_pct ?? 0) - (b.spend_share_pct ?? 0)) * mult;
       }
       return ((a[key] ?? 0) - (b[key] ?? 0)) * mult;
     });
@@ -871,13 +880,17 @@ export default function MLAnuncios() {
                       <span className="inline-flex items-center gap-1">ACoS <SortIcon k="acos" /></span>
                     </th>
                     <th
-                      onClick={() => toggleSort("tacos")}
+                      onClick={() => toggleSort("spend_share_pct")}
                       className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
                     >
-                      <span className="inline-flex items-center gap-1">TACoS <SortIcon k="tacos" /></span>
+                      {/* Fase 213 (AV-10): gasto do produto ÷ receita da LOJA — não é
+                          TACoS (métrica global, KPI do topo). Nome e semáforo trocados. */}
+                      <span className="inline-flex items-center gap-1">Share Gasto <SortIcon k="spend_share_pct" /></span>
                     </th>
                     <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Mg. Pós-Ads</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Share Ads</th>
+                    {/* Rótulo distinto de "Share Gasto" acima — mesma régua (participação
+                        nos pedidos atribuídos a ads), evita duas colunas chamadas "share". */}
+                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Part. Pedidos</th>
                     <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">ACoS BE</th>
                     <th
                       onClick={() => toggleSort("stock")}
@@ -928,12 +941,10 @@ export default function MLAnuncios() {
                           </span>
                         ) : "—"}
                       </td>
-                      <td className="px-4 py-3 text-right text-xs tabular-nums">
-                        {p.tacos != null ? (
-                          <span className={p.tacos > 8 ? "text-red-500 font-semibold" : p.tacos < 4 ? "text-emerald-600" : "text-amber-600"}>
-                            {pctFmt(p.tacos)}
-                          </span>
-                        ) : "—"}
+                      <td className="px-4 py-3 text-right text-xs tabular-nums text-muted-foreground">
+                        {/* Sem semáforo: o corte de 8% é a régua do TACoS GLOBAL (KPI do
+                            topo), não faz sentido aplicada a um share por item (AV-10). */}
+                        {p.spend_share_pct != null ? pctFmt(p.spend_share_pct) : "—"}
                       </td>
                       <td className="px-4 py-3 text-right text-xs tabular-nums">
                         {(() => {

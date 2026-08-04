@@ -12,11 +12,14 @@ import { format, subDays, startOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import type { DateRange } from "react-day-picker";
 import {
-  getCommissionRate,
   getListingLabel,
   currencyFmt,
   mlListingUrl,
 } from "@/components/mercadolivre/anuncios/listingHelpers";
+// Fonte única da margem teórica do catálogo (CR-08) — os ramos mobile, desktop
+// e a sub-tabela de variações chamam os dois helpers abaixo, nunca aritmética
+// de margem inline. Ver o cabeçalho de anuncioMargens.ts para a régua completa.
+import { calcularMargensDoAnuncio, precoPromocionalAplicavel } from "@/lib/anuncioMargens";
 import { useMLPrecosCustos, type MLItemSuggestion } from "@/hooks/useMLPrecosCustos";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { Progress } from "@/components/ui/progress";
@@ -70,8 +73,10 @@ const RANKING_QUICK_RANGES = [
 ];
 
 // ─── Financial helpers ────────────────────────────────────────────────────────
-// getCommissionRate, getListingLabel, currencyFmt e mlListingUrl são importados
-// de @/components/mercadolivre/anuncios/listingHelpers (módulo compartilhado).
+// getListingLabel, currencyFmt e mlListingUrl são importados de
+// @/components/mercadolivre/anuncios/listingHelpers (módulo compartilhado).
+// A margem teórica (comissão, imposto, margem bruta/líquida) vem de
+// @/lib/anuncioMargens — ver calcularMargensDoAnuncio.
 
 type StatusFilter = "all" | "active" | "paused";
 type StockFilter = "all" | "in_stock" | "low" | "out";
@@ -1254,14 +1259,29 @@ export default function MLProdutos() {
               /* ── Mobile: stacked cards (D-06) ── */
               <div className="space-y-2 p-2">
                 {filtered.map((item) => {
-                  const productCost = costFor(item.id, item.seller_sku ?? null);
+                  // AV-05: o campo de SKU do item é seller_custom_field — seller_sku
+                  // não existe no tipo ProductItem e nunca resolvia custo vindo do Tiny.
+                  const sku = item.seller_custom_field || null;
+                  const productCost = costFor(item.id, sku);
                   const cost = productCost?.cost ?? null;
-                  const commRate = getCommissionRate(item.listing_type_id);
-                  const commission = item.price * commRate;
-                  const marginBruta = cost != null && item.price > 0
-                    ? ((item.price - cost) / item.price) * 100 : null;
-                  const marginLiq = cost != null && item.price > 0
-                    ? ((item.price - cost - commission) / item.price) * 100 : null;
+                  // Mesma resolução de alíquota e comissão real do ramo desktop, para
+                  // que os dois ramos recebam exatamente a mesma entrada (CR-08).
+                  const taxEntry = item._ml_user_id ? taxMap?.get(item._ml_user_id) : undefined;
+                  const effectiveTaxRate = taxEntry != null
+                    ? Math.max(0, taxEntry.effective_rate)
+                    : (productCost?.tax_rate ?? null);
+                  const commCached = commCache.get(item.id);
+                  const margens = calcularMargensDoAnuncio({
+                    precoTabela: item.price,
+                    precoPromocional: dealPriceCache.get(item.id) ?? null,
+                    usarPromocao: usePromoPrice,
+                    custo: cost,
+                    aliquotaEfetivaPct: effectiveTaxRate,
+                    comissaoRealPct: commCached?.pct ?? null,
+                    tipoAnuncio: item.listing_type_id,
+                  });
+                  const marginBruta = margens.margemBruta;
+                  const marginLiq = margens.margemLiquida;
                   const mads = marginByItem.get(item.id);
                   const mgOp = mads?.lucro_pct;
                   return (
@@ -1368,7 +1388,6 @@ export default function MLProdutos() {
                   </TableHeader>
                   <TableBody>
                     {filtered.map((item) => {
-                      const soldRevenue = item.sold_quantity * item.price;
                       const isExpanded = expandedRows.has(item.id);
                       const sku = item.seller_custom_field || null;
 
@@ -1456,14 +1475,17 @@ export default function MLProdutos() {
                                 ? Math.max(0, taxEntry.effective_rate)
                                 : (productCost?.tax_rate ?? null);
                               const commCached = commCache.get(item.id);
-                              const commRate = commCached ? commCached.pct / 100 : getCommissionRate(item.listing_type_id);
-                              const effectivePrice = usePromoPrice ? (dealPriceCache.get(item.id) ?? item.price) : item.price;
-                              const commission = commCached ? effectivePrice * (commCached.pct / 100) : effectivePrice * commRate;
-                              const taxAmount = effectiveTaxRate != null ? effectivePrice * (effectiveTaxRate / 100) : null;
-                              const marginBruta = cost != null && effectivePrice > 0
-                                ? ((effectivePrice - cost) / effectivePrice) * 100 : null;
-                              const marginLiq = cost != null && effectivePrice > 0
-                                ? ((effectivePrice - cost - commission - (taxAmount ?? 0)) / effectivePrice) * 100 : null;
+                              // Fonte única da margem teórica (CR-08) — ver src/lib/anuncioMargens.ts.
+                              const margens = calcularMargensDoAnuncio({
+                                precoTabela: item.price,
+                                precoPromocional: dealPriceCache.get(item.id) ?? null,
+                                usarPromocao: usePromoPrice,
+                                custo: cost,
+                                aliquotaEfetivaPct: effectiveTaxRate,
+                                comissaoRealPct: commCached?.pct ?? null,
+                                tipoAnuncio: item.listing_type_id,
+                              });
+                              const { comissaoValor: commission, impostoValor, margemBruta: marginBruta, margemLiquida: marginLiq } = margens;
                               const mgBrutaColor = marginBruta == null ? "" : marginBruta >= 50 ? "text-emerald-600" : marginBruta >= 30 ? "text-amber-600" : "text-red-600";
                               const mgLiqColor   = marginLiq   == null ? "" : marginLiq   >= 30 ? "text-emerald-600" : marginLiq   >= 10 ? "text-amber-600" : "text-red-600";
                               return (
@@ -1478,7 +1500,7 @@ export default function MLProdutos() {
                                   <TableCell className="text-right">
                                     {effectiveTaxRate != null ? (
                                       <span className="text-xs font-mono tabular-nums">
-                                        {currencyFmt(effectivePrice * (effectiveTaxRate / 100))}{" "}
+                                        {currencyFmt(impostoValor ?? 0)}{" "}
                                         ({(effectiveTaxRate).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%)
                                       </span>
                                     ) : (
@@ -1487,8 +1509,8 @@ export default function MLProdutos() {
                                   </TableCell>
                                   <TableCell className="text-right">
                                     <span className="text-xs text-destructive font-mono tabular-nums">−{currencyFmt(commission)}</span>
-                                    {commCached
-                                      ? <span className="text-[10px] text-muted-foreground ml-1">({commCached.pct.toFixed(1)}%)</span>
+                                    {margens.comissaoReal
+                                      ? <span className="text-[10px] text-muted-foreground ml-1">({margens.comissaoPct.toFixed(1)}%)</span>
                                       : <span className="text-[10px] text-muted-foreground ml-1 animate-pulse">…</span>}
                                   </TableCell>
                                   <TableCell className="text-right">
@@ -1658,22 +1680,42 @@ export default function MLProdutos() {
                                             <TableCell className="py-2 text-xs text-right">
                                               {(() => {
                                                 if (columnView === "financeiro" && usePromoPrice) {
-                                                  const promoP = dealPriceCache.get(item.id);
-                                                  const vPromo = promoP ?? v.price;
-                                                  if (promoP != null && promoP < v.price) {
+                                                  // AV-04: a promoção é publicada pelo anúncio, não pela
+                                                  // variação — só é legítima quando a variação parte do
+                                                  // mesmo preço de tabela do pai.
+                                                  const promoDoPai = dealPriceCache.get(item.id) ?? null;
+                                                  const promoAplicavel = precoPromocionalAplicavel(promoDoPai, item.price, v.price);
+                                                  if (promoAplicavel != null) {
                                                     return (
                                                       <div className="flex flex-col items-end gap-0.5">
                                                         <div className="flex items-center gap-1">
                                                           <Badge className="text-[9px] font-bold bg-orange-500/15 text-orange-600 hover:bg-orange-500/15 border-0 px-1.5 py-0 h-4 leading-none pointer-events-none">
-                                                            −{Math.round(((v.price - promoP) / v.price) * 100)}%
+                                                            −{Math.round(((v.price - promoAplicavel) / v.price) * 100)}%
                                                           </Badge>
-                                                          <span className="font-semibold tabular-nums">{currencyFmt(vPromo)}</span>
+                                                          <span className="font-semibold tabular-nums">{currencyFmt(promoAplicavel)}</span>
                                                         </div>
                                                         <span className="text-[10px] font-mono tabular-nums text-muted-foreground line-through">{currencyFmt(v.price)}</span>
                                                       </div>
                                                     );
                                                   }
-                                                  return <span>{currencyFmt(vPromo)}</span>;
+                                                  if (promoDoPai != null) {
+                                                    // O pai tem promoção ativa, mas esta variação tem preço
+                                                    // próprio diferente — aplicar o desconto do pai aqui seria
+                                                    // um percentual fabricado (o ML não informa a proporção).
+                                                    return (
+                                                      <Tooltip>
+                                                        <TooltipTrigger asChild>
+                                                          <span className="cursor-help underline decoration-dotted decoration-muted-foreground/50 underline-offset-2">
+                                                            {currencyFmt(v.price)}
+                                                          </span>
+                                                        </TooltipTrigger>
+                                                        <TooltipContent>
+                                                          <p className="text-xs max-w-[220px]">Promoção publicada pelo anúncio, não pela variação — esta variação tem preço próprio.</p>
+                                                        </TooltipContent>
+                                                      </Tooltip>
+                                                    );
+                                                  }
+                                                  return <span>{currencyFmt(v.price)}</span>;
                                                 }
                                                 return <span>{currencyFmt(v.price)}</span>;
                                               })()}
@@ -1691,12 +1733,24 @@ export default function MLProdutos() {
                                                 ? Math.max(0, taxEntryV.effective_rate)
                                                 : (productCost?.tax_rate ?? null);
                                               const commCachedV = commCache.get(item.id);
-                                              const commRateV = commCachedV ? commCachedV.pct / 100 : getCommissionRate(item.listing_type_id);
-                                              const effectivePriceV = usePromoPrice ? (dealPriceCache.get(item.id) ?? v.price) : v.price;
-                                              const commission = effectivePriceV * commRateV;
-                                              const taxAmount = effectiveTaxRate != null ? effectivePriceV * (effectiveTaxRate / 100) : null;
-                                              const marginBruta = cost != null && effectivePriceV > 0 ? ((effectivePriceV - cost) / effectivePriceV) * 100 : null;
-                                              const marginLiq   = cost != null && effectivePriceV > 0 ? ((effectivePriceV - cost - commission - (taxAmount ?? 0)) / effectivePriceV) * 100 : null;
+                                              // AV-04: a promoção é do anúncio pai; só é legítima para esta
+                                              // variação quando ela parte do mesmo preço de tabela do pai.
+                                              const promoAplicavelV = precoPromocionalAplicavel(
+                                                dealPriceCache.get(item.id) ?? null,
+                                                item.price,
+                                                v.price,
+                                              );
+                                              // Fonte única da margem teórica (CR-08) — ver src/lib/anuncioMargens.ts.
+                                              const margensV = calcularMargensDoAnuncio({
+                                                precoTabela: v.price,
+                                                precoPromocional: promoAplicavelV,
+                                                usarPromocao: usePromoPrice,
+                                                custo: cost,
+                                                aliquotaEfetivaPct: effectiveTaxRate,
+                                                comissaoRealPct: commCachedV?.pct ?? null,
+                                                tipoAnuncio: item.listing_type_id,
+                                              });
+                                              const { comissaoValor: commission, impostoValor, margemBruta: marginBruta, margemLiquida: marginLiq } = margensV;
                                               const mgBrutaColor = marginBruta == null ? "" : marginBruta >= 50 ? "text-emerald-600" : marginBruta >= 30 ? "text-amber-600" : "text-red-600";
                                               const mgLiqColor   = marginLiq   == null ? "" : marginLiq   >= 30 ? "text-emerald-600" : marginLiq   >= 10 ? "text-amber-600" : "text-red-600";
                                               return (
@@ -1705,7 +1759,7 @@ export default function MLProdutos() {
                                                   <TableCell className="py-2 text-right">
                                                     {effectiveTaxRate != null ? (
                                                       <span className="text-xs font-mono tabular-nums text-muted-foreground">
-                                                        {currencyFmt(effectivePriceV * (effectiveTaxRate / 100))}{" "}
+                                                        {currencyFmt(impostoValor ?? 0)}{" "}
                                                         ({(effectiveTaxRate).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%)
                                                       </span>
                                                     ) : (
@@ -1714,8 +1768,8 @@ export default function MLProdutos() {
                                                   </TableCell>
                                                   <TableCell className="py-2 text-right">
                                                     <span className="text-xs text-destructive font-mono tabular-nums">−{currencyFmt(commission)}</span>
-                                                    {commCachedV
-                                                      ? <span className="text-[10px] text-muted-foreground ml-1">({commCachedV.pct.toFixed(1)}%)</span>
+                                                    {margensV.comissaoReal
+                                                      ? <span className="text-[10px] text-muted-foreground ml-1">({margensV.comissaoPct.toFixed(1)}%)</span>
                                                       : <span className="text-[10px] text-muted-foreground ml-1 animate-pulse">…</span>}
                                                   </TableCell>
                                                   <TableCell className="py-2 text-right">
@@ -1727,9 +1781,14 @@ export default function MLProdutos() {
                                                 </>
                                               );
                                             })() : (() => {
-                                              const cachedDealPrice = dealPriceCache.get(item.id);
-                                              const priceSale = cachedDealPrice ?? v.price;
-                                              const hasDiscount = cachedDealPrice != null && priceSale < v.price;
+                                              // AV-04: mesma regra do ramo financeiro acima — a promoção do
+                                              // pai só se aplica quando a variação parte do mesmo preço de
+                                              // tabela; caso contrário, preço próprio sem selo fabricado.
+                                              const promoDoPai = dealPriceCache.get(item.id) ?? null;
+                                              const promoAplicavel = precoPromocionalAplicavel(promoDoPai, item.price, v.price);
+                                              const priceSale = promoAplicavel ?? v.price;
+                                              const hasDiscount = promoAplicavel != null;
+                                              const promoNaoAplicavel = promoDoPai != null && promoAplicavel == null;
                                               return (
                                                 <>
                                                   <TableCell className="py-2 text-right">
@@ -1740,7 +1799,20 @@ export default function MLProdutos() {
                                                             −{Math.round(((v.price - priceSale) / v.price) * 100)}%
                                                           </Badge>
                                                         )}
-                                                        <span className="text-xs font-semibold font-mono tabular-nums">{currencyFmt(priceSale)}</span>
+                                                        {promoNaoAplicavel ? (
+                                                          <Tooltip>
+                                                            <TooltipTrigger asChild>
+                                                              <span className="text-xs font-semibold font-mono tabular-nums cursor-help underline decoration-dotted decoration-muted-foreground/50 underline-offset-2">
+                                                                {currencyFmt(priceSale)}
+                                                              </span>
+                                                            </TooltipTrigger>
+                                                            <TooltipContent>
+                                                              <p className="text-xs max-w-[220px]">Promoção publicada pelo anúncio, não pela variação — esta variação tem preço próprio.</p>
+                                                            </TooltipContent>
+                                                          </Tooltip>
+                                                        ) : (
+                                                          <span className="text-xs font-semibold font-mono tabular-nums">{currencyFmt(priceSale)}</span>
+                                                        )}
                                                       </div>
                                                       {hasDiscount && (
                                                         <span className="text-[10px] font-mono tabular-nums text-muted-foreground line-through">{currencyFmt(v.price)}</span>
