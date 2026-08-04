@@ -4,10 +4,15 @@ import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SimuladorPrecificacao } from "@/components/mercadolivre/precificacao/SimuladorPrecificacao";
 import { AnaliseDashboard } from "@/components/mercadolivre/analise/AnaliseDashboard";
+// RE-05: a margem teórica do catálogo mudou de endereço. Ela vivia em
+// `/anuncios`, mas responde "se eu vender por X, quanto sobra" — pergunta de
+// precificação, não de operação de catálogo. Ver o cabeçalho do componente.
+import { MargemTeoricaCatalogo } from "@/components/mercadolivre/precificacao/MargemTeoricaCatalogo";
 
 const TABS = [
   { id: "simulador", label: "Simulador" },
   { id: "analise",   label: "Análise" },
+  { id: "margem",    label: "Margem Teórica" },
 ] as const;
 
 type TabId = typeof TABS[number]["id"];
@@ -42,6 +47,7 @@ export default function MLPrecificacao() {
         >
           {tab === "simulador" && <SimuladorPrecificacao />}
           {tab === "analise" && <AnaliseDashboard />}
+          {tab === "margem" && <MargemTeoricaCatalogo />}
         </motion.div>
       </AnimatePresence>
     </div>

@@ -1048,7 +1048,20 @@ export default function MLProdutos() {
         <Card>
           <div className="px-4 pt-4 pb-3">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <span className="text-sm font-medium text-foreground">Catálogo de Anúncios</span>
+              <div className="min-w-0">
+                <span className="text-sm font-medium text-foreground">Catálogo de Anúncios</span>
+                {/* RE-05: atalho para quem vinha usando as colunas de margem
+                    teórica que saíram desta tabela. */}
+                {columnView === "financeiro" && (
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Margem teórica (preço de tabela − custo − comissão − imposto) agora fica em{" "}
+                    <Link to="/precificacao" className="underline font-medium">
+                      Precificação → Margem Teórica
+                    </Link>
+                    . Aqui ficam as vendas reais.
+                  </p>
+                )}
+              </div>
               <div className="flex items-center gap-1.5 w-full sm:w-auto flex-wrap">
                 {/* Search */}
                 <div className="relative flex-1 min-w-[120px]">
@@ -1293,8 +1306,6 @@ export default function MLProdutos() {
                     comissaoRealPct: commCached?.pct ?? null,
                     tipoAnuncio: item.listing_type_id,
                   });
-                  const marginBruta = margens.margemBruta;
-                  const marginLiq = margens.margemLiquida;
                   const mads = marginByItem.get(item.id);
                   const mgOp = mads?.lucro_pct;
                   return (
@@ -1312,9 +1323,12 @@ export default function MLProdutos() {
                           ["Preço",   currencyFmt(item.price)],
                           ["Estoque", String(item.available_quantity)],
                           ...(columnView === "financeiro" ? [
-                            ["Mg. Bruta", marginBruta != null ? `${marginBruta.toFixed(1)}%` : "—"],
-                            ["Mg. Líq.",  marginLiq   != null ? `${marginLiq.toFixed(1)}%`   : "—"],
-                            ["Mg. Op.",   mgOp        != null ? `${mgOp.toFixed(1)}%`         : "—"],
+                            // RE-05: a margem TEÓRICA (bruta e líquida) saiu daqui
+                            // para /precificacao. O que fica é a margem das vendas
+                            // reais, que é o que permite agir sem sair da tela.
+                            ["Imposto",  margens.impostoValor != null ? currencyFmt(margens.impostoValor) : "—"],
+                            ["Comissão", `−${currencyFmt(margens.comissaoValor)}`],
+                            ["Mg. Op.",  mgOp != null ? `${mgOp.toFixed(1)}%` : "—"],
                           ] as [string, string][] : []),
                         ] as [string, string][]).map(([label, val]) => (
                           <div key={label}>
@@ -1358,8 +1372,11 @@ export default function MLProdutos() {
                             </Tooltip>
                           </TableHead>
                           <TableHead className="text-xs text-right w-28">Comissão ML</TableHead>
-                          <TableHead className="text-xs text-right w-28">Mg. Bruta</TableHead>
-                          <TableHead className="text-xs text-right w-28">Mg. Líq.</TableHead>
+                          {/* RE-05: as duas colunas de margem TEÓRICA (bruta e
+                              líquida, sobre preço de tabela) saíram daqui para
+                              /precificacao. Ficam Custo, Impostos e Comissão, que
+                              são contexto do cadastro e da conferência, e as duas
+                              colunas de vendas reais abaixo. */}
                           <TableHead className="text-xs text-right w-28">
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -1514,9 +1531,7 @@ export default function MLProdutos() {
                                 comissaoRealPct: commCached?.pct ?? null,
                                 tipoAnuncio: item.listing_type_id,
                               });
-                              const { comissaoValor: commission, impostoValor, margemBruta: marginBruta, margemLiquida: marginLiq } = margens;
-                              const mgBrutaColor = marginBruta == null ? "" : marginBruta >= 50 ? "text-emerald-600" : marginBruta >= 30 ? "text-amber-600" : "text-red-600";
-                              const mgLiqColor   = marginLiq   == null ? "" : marginLiq   >= 30 ? "text-emerald-600" : marginLiq   >= 10 ? "text-amber-600" : "text-red-600";
+                              const { comissaoValor: commission, impostoValor } = margens;
                               return (
                                 <>
                                   <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
@@ -1541,16 +1556,6 @@ export default function MLProdutos() {
                                     {margens.comissaoReal
                                       ? <span className="text-[10px] text-muted-foreground ml-1">({margens.comissaoPct.toFixed(1)}%)</span>
                                       : <span className="text-[10px] text-muted-foreground ml-1 animate-pulse">…</span>}
-                                  </TableCell>
-                                  <TableCell className="text-right">
-                                    {marginBruta != null
-                                      ? <span className={`text-xs font-bold tabular-nums ${mgBrutaColor}`}>{marginBruta.toFixed(1)}%</span>
-                                      : <span className="text-xs text-muted-foreground/40">—</span>}
-                                  </TableCell>
-                                  <TableCell className="text-right">
-                                    {marginLiq != null
-                                      ? <span className={`text-xs font-bold tabular-nums ${mgLiqColor}`}>{marginLiq.toFixed(1)}%</span>
-                                      : <span className="text-xs text-muted-foreground/40">—</span>}
                                   </TableCell>
                                   {/* Mg. Op. e Mg. Pós-Ads — dados reais de pedidos do período via RPC */}
                                   {(() => {
@@ -1671,7 +1676,11 @@ export default function MLProdutos() {
                           {/* Expanded variations sub-table */}
                           {item.has_variations && isExpanded && (
                             <TableRow key={`${item.id}-variations`}>
-                              <TableCell colSpan={columnView === "financeiro" ? 13 : 9} className="p-0 bg-muted/20 border-b">
+                              {/* Financeiro: 9 colunas (chevron, thumb, título, SKU,
+                                  preço, estoque, custo, impostos, comissão) + 2 de
+                                  vendas reais = 11. Preço: 9. As duas colunas de
+                                  margem teórica saíram — RE-05. */}
+                              <TableCell colSpan={columnView === "financeiro" ? 11 : 9} className="p-0 bg-muted/20 border-b">
                                 <div className="px-10 py-3">
                                   <Table>
                                     <TableHeader>
@@ -1685,8 +1694,6 @@ export default function MLProdutos() {
                                             <TableHead className="text-xs h-8 font-medium text-right">Custo</TableHead>
                                             <TableHead className="text-xs h-8 font-medium text-right">Impostos</TableHead>
                                             <TableHead className="text-xs h-8 font-medium text-right">Comissão ML</TableHead>
-                                            <TableHead className="text-xs h-8 font-medium text-right">Mg. Bruta</TableHead>
-                                            <TableHead className="text-xs h-8 font-medium text-right">Mg. Líq.</TableHead>
                                           </>
                                         ) : (
                                           <>
@@ -1779,9 +1786,7 @@ export default function MLProdutos() {
                                                 comissaoRealPct: commCachedV?.pct ?? null,
                                                 tipoAnuncio: item.listing_type_id,
                                               });
-                                              const { comissaoValor: commission, impostoValor, margemBruta: marginBruta, margemLiquida: marginLiq } = margensV;
-                                              const mgBrutaColor = marginBruta == null ? "" : marginBruta >= 50 ? "text-emerald-600" : marginBruta >= 30 ? "text-amber-600" : "text-red-600";
-                                              const mgLiqColor   = marginLiq   == null ? "" : marginLiq   >= 30 ? "text-emerald-600" : marginLiq   >= 10 ? "text-amber-600" : "text-red-600";
+                                              const { comissaoValor: commission, impostoValor } = margensV;
                                               return (
                                                 <>
                                                   <TableCell className="py-2 text-right text-xs text-muted-foreground italic">↑ item</TableCell>
@@ -1800,12 +1805,6 @@ export default function MLProdutos() {
                                                     {margensV.comissaoReal
                                                       ? <span className="text-[10px] text-muted-foreground ml-1">({margensV.comissaoPct.toFixed(1)}%)</span>
                                                       : <span className="text-[10px] text-muted-foreground ml-1 animate-pulse">…</span>}
-                                                  </TableCell>
-                                                  <TableCell className="py-2 text-right">
-                                                    {marginBruta != null ? <span className={`text-xs font-bold ${mgBrutaColor}`}>{marginBruta.toFixed(1)}%</span> : <span className="text-xs text-muted-foreground/40">—</span>}
-                                                  </TableCell>
-                                                  <TableCell className="py-2 text-right">
-                                                    {marginLiq != null ? <span className={`text-xs font-bold ${mgLiqColor}`}>{marginLiq.toFixed(1)}%</span> : <span className="text-xs text-muted-foreground/40">—</span>}
                                                   </TableCell>
                                                 </>
                                               );
