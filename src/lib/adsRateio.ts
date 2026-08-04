@@ -84,6 +84,123 @@ export function distribuirCentavos(totalCentavos: number, pesos: number[]): numb
   return fatias.map((v) => v * sinal);
 }
 
+// ─── Rateio da CARTEIRA (Fase 212) ───────────────────────────────────────────
+
+/** Um anúncio na carteira do período: o item e seu gasto no cache (a chave). */
+export interface RateioCarteiraEntrada {
+  itemId: string;
+  /** Gasto do anúncio no relatório de publicidade, somado no período (R$). */
+  cacheSpend: number;
+}
+
+/** Resultado do rateio de publicidade da CARTEIRA inteira do período. */
+export interface RateioCarteiraResult {
+  /** Publicidade rateada por `item_id`, em reais já arredondados. */
+  porItem: Map<string, number>;
+  /** Soma do que foi rateado (igual a `totalFatura` sempre que houve chave). */
+  totalRateado: number;
+  /** Total de publicidade da fatura no período (0 no ramo de cache). */
+  totalFatura: number;
+  /** Parte da fatura que nenhum anúncio pôde receber — período sem chave. */
+  naoRateado: number;
+  source: RateioAnuncioSource;
+}
+
+/**
+ * Rateia o gasto de publicidade da fatura entre TODOS os anúncios do período.
+ *
+ * É a mesma régua de `ratearAdsDoAnuncio` — a fatura manda no total, o cache
+ * manda na proporção, nunca se somam as duas — aplicada de uma vez à carteira
+ * inteira, e não a um anúncio só.
+ *
+ * **Por que aqui a chave é do PERÍODO e não do dia:** as telas de resultado
+ * (Produtos Vendidos, Catálogo de Anúncios, Margem) leem
+ * `get_margin_with_ads_by_product`, que já entrega o gasto do cache agregado no
+ * período por anúncio. Baixar a série diária de centenas de anúncios só para
+ * ratear dia a dia custaria dezenas de milhares de linhas no navegador sem
+ * mudar a decisão que a tela sustenta: no caso medido em produção a diferença
+ * entre as duas granularidades foi de R$ 3,75 em R$ 481,64 (0,8%), abaixo da
+ * casa decimal que a tela exibe. `ratearAdsDoAnuncio` (Análise de Preços, um
+ * anúncio por vez) continua no rateio diário, que é mais fino e cabe lá.
+ *
+ * Fechamento ao centavo (ADS-06): a distribuição é feita em centavos inteiros
+ * por `distribuirCentavos`, cuja invariante é a soma exata. Somar o rateado de
+ * todos os anúncios mais o não rateado devolve o total da fatura.
+ *
+ * Casos tratados:
+ * - **sem fatura no período** (`null` ou `rowCount` zero) → devolve o próprio
+ *   gasto do cache de cada anúncio com `source: "cache"`, pela mesma razão da
+ *   fase 210: zerar publicidade infla o MCO em silêncio, o que é pior do que
+ *   mostrar o número antigo com a origem rotulada na tela;
+ * - **nenhuma chave de rateio** (todos os pesos zero, ou carteira vazia) → a
+ *   fatura inteira vai para `naoRateado` e nenhum anúncio recebe nada. O valor
+ *   nunca é descartado em silêncio nem atribuído a um dono inventado;
+ * - **anúncio repetido** na entrada → os pesos somam e o item aparece uma vez;
+ * - **peso negativo ou não finito** conta como zero (peso não tem sinal).
+ */
+export function ratearAdsDaCarteira(
+  fatura: AdsBillingSpend | null | undefined,
+  itens: RateioCarteiraEntrada[],
+): RateioCarteiraResult {
+  // Soma pesos por item — entrada duplicada não vira dois donos do mesmo gasto
+  const pesosPorItem = new Map<string, number>();
+  for (const it of itens ?? []) {
+    if (!it || !it.itemId) continue;
+    const v = Number(it.cacheSpend);
+    const peso = Number.isFinite(v) && v > 0 ? v : 0;
+    pesosPorItem.set(it.itemId, (pesosPorItem.get(it.itemId) ?? 0) + peso);
+  }
+
+  const ids = [...pesosPorItem.keys()];
+  const pesos = ids.map((id) => pesosPorItem.get(id) ?? 0);
+
+  // ── Ramo de cache: sem fatura no período, o piso é o relatório de publicidade
+  if (fatura == null || fatura.rowCount === 0) {
+    const porItem = new Map<string, number>();
+    let soma = 0;
+    ids.forEach((id, i) => {
+      const v = round2(pesos[i]);
+      porItem.set(id, v);
+      soma += v;
+    });
+    return {
+      porItem,
+      totalRateado: round2(soma),
+      totalFatura: 0,
+      naoRateado: 0,
+      source: "cache",
+    };
+  }
+
+  // ── Ramo de rateio: a fatura manda no total, o cache manda na distribuição
+  const totalCentavos = emCentavos(fatura.total);
+  const temChave = pesos.some((p) => p > 0);
+
+  if (!temChave) {
+    // Período sem nenhuma chave — o valor da fatura fica declarado, não some
+    const porItem = new Map<string, number>(ids.map((id) => [id, 0]));
+    return {
+      porItem,
+      totalRateado: 0,
+      totalFatura: fatura.total,
+      naoRateado: round2(totalCentavos / 100),
+      source: "billing-rateio",
+    };
+  }
+
+  const fatias = distribuirCentavos(totalCentavos, pesos);
+  const porItem = new Map<string, number>();
+  ids.forEach((id, i) => porItem.set(id, fatias[i] / 100));
+
+  return {
+    porItem,
+    totalRateado: round2(fatias.reduce((a, b) => a + b, 0) / 100),
+    totalFatura: fatura.total,
+    naoRateado: 0,
+    source: "billing-rateio",
+  };
+}
+
 /** Entrada do rateio de publicidade de UM anúncio. */
 export interface RateioAnuncioInput {
   /** Fatura do período, no formato que `aggregateAdsBillingSpend` devolve. */
