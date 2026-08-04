@@ -33,6 +33,10 @@ import { useMLMarginWithAds, type ProductMarginWithAds } from "@/hooks/useMLMarg
 import { useMLFilters } from "@/hooks/useMLFilters";
 import { useMLInventory } from "@/contexts/MLInventoryContext";
 import { AdsOrigemNota } from "@/components/mercadolivre/AdsOrigemNota";
+// AV-03: a ausência de CMV é contada e declarada em agregado, em vez de virar um
+// traço solto célula a célula. Ver o cabeçalho de custoFaltante.ts.
+import { AvisoCustoFaltante } from "@/components/mercadolivre/AvisoCustoFaltante";
+import { contarSemCusto } from "@/lib/custoFaltante";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -279,6 +283,20 @@ export default function MLAnuncios() {
       return ((a[key] ?? 0) - (b[key] ?? 0)) * mult;
     });
   }, [enrichedProducts, productSearch, productDiagFilter, productSort, stockByItem]);
+
+  // ── AV-03: quantos dos patrocinados EXIBIDOS estão sem CMV ────────────────
+  // O conjunto é `sortedProducts` — o que a tabela mostra depois da busca e do
+  // filtro de diagnóstico —, não a carteira inteira. A fonte de "tem custo" é o
+  // `has_cmv` da linha de margem, exatamente o sinal que `marginMap` já usa para
+  // decidir entre exibir a margem e exibir o traço. Anúncio patrocinado sem
+  // linha de margem no período (gasto sem venda) também não tem CMV apurado.
+  const contagemCusto = useMemo(
+    () =>
+      contarSemCusto(
+        sortedProducts.map((p) => ({ temCusto: marginByItem.get(p.item_id)?.has_cmv === true })),
+      ),
+    [sortedProducts, marginByItem],
+  );
 
   const toggleSort = useCallback((key: typeof productSort.key) => {
     setProductSort((prev) =>
@@ -768,6 +786,16 @@ export default function MLAnuncios() {
       {margem && (
         <AdsOrigemNota source={margem.ads.source} naoRateado={margem.ads.naoRateado} />
       )}
+
+      {/* ── AV-03 — ausência de custo, em agregado ──
+          Numa conta sem custo, a coluna de margem e a de breakeven de ACoS ficam
+          ambas com traço. Antes disso a tela ficava muda; agora existe uma frase
+          dizendo por quê, com a contagem sobre os patrocinados exibidos. */}
+      <AvisoCustoFaltante
+        contagem={contagemCusto}
+        destinoCadastro="/precificacao"
+        substantivoPlural="anúncios patrocinados"
+      />
 
       {/* ── Top Products ── */}
       <Card>

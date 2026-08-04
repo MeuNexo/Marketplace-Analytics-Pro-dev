@@ -21,6 +21,13 @@ import {
 // de margem inline. Ver o cabeçalho de anuncioMargens.ts para a régua completa.
 import { calcularMargensDoAnuncio, precoPromocionalAplicavel } from "@/lib/anuncioMargens";
 import { classificarCurvaAbc, calcularParticipacao } from "@/lib/curvaAbc";
+// AV-03: a ausência de CMV é contada e declarada em agregado, em vez de virar
+// um traço solto célula a célula. Ver o cabeçalho de custoFaltante.ts.
+import { contarSemCusto } from "@/lib/custoFaltante";
+import { AvisoCustoFaltante } from "@/components/mercadolivre/AvisoCustoFaltante";
+// CR-09: a régua da publicidade desta tela é a fatura do ML rateada — a tela é
+// obrigada a dizer isso e a mostrar o que da fatura ficou sem dono.
+import { AdsOrigemNota } from "@/components/mercadolivre/AdsOrigemNota";
 import { useMLPrecosCustos, type MLItemSuggestion } from "@/hooks/useMLPrecosCustos";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { Progress } from "@/components/ui/progress";
@@ -742,6 +749,28 @@ export default function MLProdutos() {
     [marginWithAds],
   );
 
+  // ── CR-09: os metadados de publicidade deixam de ser descartados ───────────
+  // O hook devolve `{ rows, ads }` e esta tela só lia `.rows`, apesar de as
+  // colunas Mg. Pós-Ads consumirem a régua da fatura. `/produtos-vendidos` já
+  // declarava a origem; aqui a troca de régua acontecia escondida — e a parcela
+  // da fatura que não achou dono sumia sem ninguém saber que a soma das colunas
+  // não fecha com a fatura.
+  const adsMeta = marginWithAds?.ads ?? null;
+
+  /**
+   * O intervalo efetivo que as colunas Mg. Op. e Mg. Pós-Ads cobrem, em datas.
+   * É `rankingFrom`/`rankingTo` — a MESMA janela do relatório desde o plano
+   * 213-04. Uma coluna de margem ao lado de um seletor de período sem dizer que
+   * janela cobre é um convite ao engano, então o rótulo vai para o tooltip.
+   */
+  const janelaMargemLabel = useMemo(() => {
+    const fmt = (d: string) => {
+      const [y, m, dd] = d.split("-");
+      return `${dd}/${m}/${y}`;
+    };
+    return `${fmt(rankingFrom)} a ${fmt(rankingTo)}`;
+  }, [rankingFrom, rankingTo]);
+
   // Deduplicate raw rows by (ml_user_id, date, item_id) before aggregating.
   // Guard against duplicate rows that arise when multiple members of the same
   // org sync the same store on the same day (unique constraint was previously
@@ -890,6 +919,22 @@ export default function MLProdutos() {
         return a.title.localeCompare(b.title);
       });
   }, [items, search, statusFilter, stockFilter, sortBy, brandFilter, hideOutOfStock, logisticFilter, onlyDiscount, columnView, dealPriceCache, highlightIds]);
+
+  // ── AV-03: quantos dos anúncios EXIBIDOS estão sem CMV ────────────────────
+  // O conjunto é `filtered` — o que está na tela —, nunca o catálogo inteiro:
+  // um aviso que conta o catálogo enquanto a tela mostra um recorte é mais uma
+  // régua escondida. A fonte de "tem custo" é `costFor`, exatamente a mesma que
+  // alimenta `calcularMargensDoAnuncio` nas colunas de margem teórica (e, como
+  // lá, `custo != null` — custo zero é um custo válido, não uma ausência).
+  const contagemCusto = useMemo(
+    () =>
+      contarSemCusto(
+        filtered.map((item) => ({
+          temCusto: costFor(item.id, item.seller_custom_field || null)?.cost != null,
+        })),
+      ),
+    [filtered, costFor],
+  );
 
   // Lazy-fetch de preço real (current_price via suggestions API) para todos os itens
   // visíveis ao entrar na view "Preço" — cobre deal_ids E promoções do vendedor
@@ -1200,6 +1245,23 @@ export default function MLProdutos() {
           </div>
         )}
 
+        {/* ── AV-03 — ausência de custo, em agregado ──
+            Convive com o banner de regime tributário acima: um fala de imposto,
+            o outro de custo, e faltar qualquer um dos dois quebra a margem por
+            um motivo diferente. Só na visão Financeiro, que é onde as colunas de
+            margem aparecem. */}
+        {columnView === "financeiro" && (
+          <AvisoCustoFaltante contagem={contagemCusto} destinoCadastro="/precificacao" />
+        )}
+
+        {/* ── CR-09 — de onde veio o número de publicidade da coluna Mg. Pós-Ads ──
+            A régua desta coluna é a fatura do ML rateada por anúncio. A troca
+            nunca pode acontecer escondida, e a parcela da fatura sem chave de
+            rateio aparece aqui em vez de sumir. */}
+        {columnView === "financeiro" && adsMeta && (
+          <AdsOrigemNota source={adsMeta.source} naoRateado={adsMeta.naoRateado} />
+        )}
+
         {/* Filters + Table */}
         <Card>
           <div className="px-4 pt-4 pb-3">
@@ -1325,6 +1387,15 @@ export default function MLProdutos() {
             ) : isMobile ? (
               /* ── Mobile: stacked cards (D-06) ── */
               <div className="space-y-2 p-2">
+                {/* CR-09: o ramo mobile não tem cabeçalho de coluna onde pendurar
+                    o tooltip — a janela da Mg. Op. é declarada aqui, uma vez,
+                    para que os dois ramos digam a mesma coisa. */}
+                {columnView === "financeiro" && (
+                  <p className="text-[10px] text-muted-foreground px-1">
+                    Mg. Op. apurada sobre as vendas de{" "}
+                    <span className="tabular-nums">{janelaMargemLabel}</span>.
+                  </p>
+                )}
                 {filtered.map((item) => {
                   // AV-05: o campo de SKU do item é seller_custom_field — seller_sku
                   // não existe no tipo ProductItem e nunca resolvia custo vindo do Tiny.
@@ -1417,20 +1488,36 @@ export default function MLProdutos() {
                           <TableHead className="text-xs text-right w-28">
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <span className="cursor-help border-b border-dashed border-muted-foreground/40">Mg. Op.</span>
+                                <span className="cursor-help border-b border-dashed border-muted-foreground/40">
+                                  Mg. Op.
+                                  {/* CR-09: a janela que a coluna cobre, em datas. Sem
+                                      isso, uma coluna de margem ao lado de um seletor de
+                                      período é um convite ao engano. */}
+                                  <span className="block text-[9px] font-normal text-muted-foreground tabular-nums">
+                                    {janelaMargemLabel}
+                                  </span>
+                                </span>
                               </TooltipTrigger>
                               <TooltipContent className="text-xs max-w-[220px]">
-                                Margem com base nas vendas reais do período selecionado
+                                Margem com base nas vendas reais de {janelaMargemLabel} — a mesma
+                                janela do relatório de Ranking.
                               </TooltipContent>
                             </Tooltip>
                           </TableHead>
                           <TableHead className="text-xs text-right w-28">
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <span className="cursor-help border-b border-dashed border-muted-foreground/40">Mg. Pós-Ads</span>
+                                <span className="cursor-help border-b border-dashed border-muted-foreground/40">
+                                  Mg. Pós-Ads
+                                  <span className="block text-[9px] font-normal text-muted-foreground tabular-nums">
+                                    {janelaMargemLabel}
+                                  </span>
+                                </span>
                               </TooltipTrigger>
                               <TooltipContent className="text-xs max-w-[220px]">
-                                Margem após descontar o gasto de publicidade atribuído (vendas reais do período)
+                                Margem de {janelaMargemLabel} após descontar a publicidade do
+                                anúncio — na régua da fatura do Mercado Livre rateada, não do
+                                relatório de publicidade.
                               </TooltipContent>
                             </Tooltip>
                           </TableHead>
@@ -1920,6 +2007,13 @@ export default function MLProdutos() {
 
       {/* ═══════════════════ ABA RELATÓRIOS ═══════════════════ */}
       <TabsContent value="relatorios" className="space-y-5 mt-0">
+        {/* ── CR-09 — o segundo ponto onde a régua da fatura aparece na tela ──
+            O Ranking traz margem pós-ads por anúncio na mesma janela do
+            relatório. Declarar a origem aqui também, e não só no catálogo, é o
+            que impede que a aba herde o silêncio. */}
+        {adsMeta && (
+          <AdsOrigemNota source={adsMeta.source} naoRateado={adsMeta.naoRateado} />
+        )}
         <Tabs defaultValue="ranking" className="space-y-4" onValueChange={(v) => setReportTab(v)}>
           <div className="flex flex-col gap-3">
             <TabsList className="h-8">
