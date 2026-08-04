@@ -7,6 +7,7 @@ import type { ProductItem } from "@/contexts/MLInventoryContext";
 import { useMLProductCosts } from "@/hooks/useMLProductCosts";
 import type { ProductCost } from "@/hooks/useMLProductCosts";
 import { custoDoItem, agregarCapitalPorClasse } from "@/lib/estoqueCapital";
+import { classificarCurvaGiro } from "@/lib/curvaGiro";
 import { CoverageAlerts } from "@/components/mercadolivre/CoverageAlerts";
 import { CoverageSettingsPopover } from "@/components/mercadolivre/CoverageSettingsPopover";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
@@ -494,35 +495,46 @@ function SubTabValorRisco({ items, coverageMap, costs, costsBySku }: Pick<Relato
   );
 }
 
-function SubTabCurvaABC({ items }: Pick<RelatoriosProps, "items">) {
-  const { paretoData, summary, topA, counts } = useMemo(() => {
-    const sorted = [...items]
-      .map((item) => ({ item, revenue: item.sold_quantity * item.price }))
-      .sort((a, b) => b.revenue - a.revenue);
-    const totalRevenue = sorted.reduce((s, d) => s + d.revenue, 0);
-    let cumulative = 0;
-    const classified = sorted.map(({ item, revenue }) => {
-      cumulative += revenue;
-      const cumPct = totalRevenue > 0 ? (cumulative / totalRevenue) * 100 : 0;
-      const abc: "A" | "B" | "C" = cumPct <= 80 ? "A" : cumPct <= 95 ? "B" : "C";
-      return { item, revenue, cumPct, abc };
-    });
-    const paretoData = classified.slice(0, 20).map((d, i) => ({
+/**
+ * Curva de Giro — Fase 213, Plano 08, Task 2 (RE-04).
+ *
+ * Esta sub-aba MUDOU DE PERGUNTA. Antes classificava por
+ * `sold_quantity × price` — unidades vendidas ao longo de ANOS multiplicadas
+ * pelo preço de HOJE — e chamava-se "Curva ABC", o mesmo nome e a mesma conta
+ * da curva de `/anuncios`. Duas telas, um nome, réguas indistinguíveis.
+ *
+ * Agora classifica por GIRO em unidades por dia, vindas da cobertura corrigida
+ * do plano 213-01 (escopada por loja, paginada, dentro do período do seletor).
+ * A curva de RECEITA não foi apagada: mudou de endereço para `/resultado`, onde
+ * roda sobre receita real do período. Duas classificações com nomes e critérios
+ * distintos são duas ferramentas; duas com o mesmo nome eram um defeito.
+ */
+function SubTabCurvaGiro({ items, coverageMap, coveragePeriod }: Pick<RelatoriosProps, "items" | "coverageMap" | "coveragePeriod">) {
+  const { paretoData, summary, topA, resumo } = useMemo(() => {
+    const { itens, resumo } = classificarCurvaGiro(
+      items.map((item) => ({
+        id: item.id,
+        unidadesPorDia: coverageMap.get(item.id)?.avg_daily_sales ?? 0,
+        item,
+      })),
+    );
+
+    const paretoData = itens.slice(0, 20).map((d, i) => ({
       name: `#${i + 1}`,
-      receita: d.revenue,
+      giro: d.unidadesPorDia,
       cumulativo: parseFloat(d.cumPct.toFixed(1)),
-      abc: d.abc,
     }));
-    const topA = classified.filter((d) => d.abc === "A").slice(0, 5);
-    const counts = {
-      A: classified.filter((d) => d.abc === "A").length,
-      B: classified.filter((d) => d.abc === "B").length,
-      C: classified.filter((d) => d.abc === "C").length,
-    };
-    const aPct = items.length > 0 ? Math.round((counts.A / items.length) * 100) : 0;
-    const summary = `${aPct}% dos SKUs (Classe A) respondem por ~80% da receita`;
-    return { paretoData, summary, topA, counts };
-  }, [items]);
+
+    const topA = itens.filter((d) => d.prioridade === "A").slice(0, 5);
+
+    const aPct = items.length > 0 ? Math.round((resumo.A.count / items.length) * 100) : 0;
+    const summary =
+      resumo.giroTotal > 0
+        ? `${aPct}% dos SKUs (Prioridade A) respondem por ~80% do giro dos últimos ${coveragePeriod} dias`
+        : `Nenhum SKU girou nos últimos ${coveragePeriod} dias — não há prioridade de reposição a apontar`;
+
+    return { paretoData, summary, topA, resumo };
+  }, [items, coverageMap, coveragePeriod]);
 
   return (
     <div className="space-y-4">
@@ -530,49 +542,83 @@ function SubTabCurvaABC({ items }: Pick<RelatoriosProps, "items">) {
         <TrendingUp className="w-4 h-4 shrink-0" />
         <span>{summary}</span>
       </div>
-      <div className="grid grid-cols-3 gap-3">
-        <KPICard title="Classe A" value={String(counts.A)} variant="minimal" size="compact" icon={<TrendingUp className="w-4 h-4" />} iconClassName="bg-success/10 text-success" />
-        <KPICard title="Classe B" value={String(counts.B)} variant="minimal" size="compact" icon={<Activity className="w-4 h-4" />} iconClassName="bg-warning/10 text-warning" />
-        <KPICard title="Classe C" value={String(counts.C)} variant="minimal" size="compact" icon={<BarChart3 className="w-4 h-4" />} iconClassName="bg-destructive/10 text-destructive" />
+
+      {/* A régua, dita em uma linha — e o endereço da curva que saiu daqui. */}
+      <div className="flex items-start gap-2 rounded-lg border border-sky-200 bg-sky-50 dark:bg-sky-950/30 dark:border-sky-800 px-4 py-2.5 text-xs text-sky-800 dark:text-sky-300">
+        <BarChart3 className="w-4 h-4 shrink-0 mt-0.5" />
+        <span>
+          Esta curva classifica por <strong>giro</strong> — unidades por dia dos últimos{" "}
+          {coveragePeriod} dias — para priorizar reposição. A curva por{" "}
+          <strong>receita</strong> (onde o dinheiro entra) fica em{" "}
+          <Link to="/resultado" className="underline font-medium hover:text-sky-600">
+            Resultado
+          </Link>
+          .
+        </span>
       </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <KPICard title="Prioridade A — repor primeiro" value={String(resumo.A.count)} variant="minimal" size="compact" icon={<TrendingUp className="w-4 h-4" />} iconClassName="bg-success/10 text-success" />
+        <KPICard title="Prioridade B" value={String(resumo.B.count)} variant="minimal" size="compact" icon={<Activity className="w-4 h-4" />} iconClassName="bg-warning/10 text-warning" />
+        <KPICard title="Prioridade C — cauda e parados" value={String(resumo.C.count)} variant="minimal" size="compact" icon={<BarChart3 className="w-4 h-4" />} iconClassName="bg-destructive/10 text-destructive" />
+      </div>
+
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Curva de Pareto (Top 20 SKUs)</CardTitle>
+          <CardTitle className="text-sm">Curva de Giro (Top 20 SKUs)</CardTitle>
+          <CardDescription className="text-xs">
+            Unidades por dia — média dos últimos {coveragePeriod} dias
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={240}>
             <ComposedChart data={paretoData} margin={{ left: 8, right: 24 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-              <YAxis yAxisId="left" tick={{ fontSize: 10 }} tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} />
+              <YAxis yAxisId="left" tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}`} />
               <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}%`} />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-              <Bar yAxisId="left" dataKey="receita" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} name="Receita" />
+              <Tooltip
+                contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                formatter={(v: number, name: string) =>
+                  name === "Unid/dia" ? [v.toFixed(2), name] : [`${v}%`, name]
+                }
+              />
+              <Bar yAxisId="left" dataKey="giro" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} name="Unid/dia" />
               <Line yAxisId="right" type="monotone" dataKey="cumulativo" stroke="#f97316" dot={false} strokeWidth={2} name="Acumulado %" />
             </ComposedChart>
           </ResponsiveContainer>
         </CardContent>
       </Card>
+
       {topA.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Top Itens Classe A</CardTitle>
+            <CardTitle className="text-sm">Top Itens de Prioridade A</CardTitle>
+            <CardDescription className="text-xs">
+              Maior giro — são estes que faltam primeiro se a compra atrasar
+            </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="text-xs">Produto</TableHead>
-                  <TableHead className="text-xs text-right">Receita</TableHead>
+                  <TableHead className="text-xs text-right">Unid/dia</TableHead>
+                  <TableHead className="text-xs text-right">Estoque</TableHead>
                   <TableHead className="text-xs text-right">Acumulado</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {topA.map(({ item, revenue, cumPct }) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="text-xs max-w-[240px] truncate">{item.title}</TableCell>
-                    <TableCell className="text-xs text-right font-medium">{currencyFmt(revenue)}</TableCell>
-                    <TableCell className="text-xs text-right">{cumPct.toFixed(1)}%</TableCell>
+                {topA.map((d) => (
+                  <TableRow key={d.id}>
+                    <TableCell className="text-xs max-w-[240px] truncate">{d.item.title}</TableCell>
+                    <TableCell className="text-xs text-right font-medium tabular-nums">
+                      {d.unidadesPorDia.toFixed(2)}
+                    </TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">
+                      {numFmt(d.item.available_quantity)}
+                    </TableCell>
+                    <TableCell className="text-xs text-right tabular-nums">{d.cumPct.toFixed(1)}%</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -713,12 +759,12 @@ function EstoqueRelatorios({ items, coverageMap, coveragePeriod, costs, costsByS
         <TabsTrigger value="cobertura" className="text-xs px-3 h-7 gap-1.5"><Clock className="w-3.5 h-3.5" />Cobertura</TabsTrigger>
         <TabsTrigger value="marca" className="text-xs px-3 h-7 gap-1.5"><Tag className="w-3.5 h-3.5" />Por Marca</TabsTrigger>
         <TabsTrigger value="valor" className="text-xs px-3 h-7 gap-1.5"><DollarSign className="w-3.5 h-3.5" />Valor em Risco</TabsTrigger>
-        <TabsTrigger value="abc" className="text-xs px-3 h-7 gap-1.5"><BarChart3 className="w-3.5 h-3.5" />Curva ABC</TabsTrigger>
+        <TabsTrigger value="giro" className="text-xs px-3 h-7 gap-1.5"><BarChart3 className="w-3.5 h-3.5" />Curva de Giro</TabsTrigger>
       </TabsList>
       <TabsContent value="cobertura"><SubTabCobertura items={items} coverageMap={coverageMap} coveragePeriod={coveragePeriod} /></TabsContent>
       <TabsContent value="marca"><SubTabEstoqueMarca items={items} coverageMap={coverageMap} coveragePeriod={coveragePeriod} costs={costs} costsBySku={costsBySku} /></TabsContent>
       <TabsContent value="valor"><SubTabValorRisco items={items} coverageMap={coverageMap} costs={costs} costsBySku={costsBySku} /></TabsContent>
-      <TabsContent value="abc"><SubTabCurvaABC items={items} /></TabsContent>
+      <TabsContent value="giro"><SubTabCurvaGiro items={items} coverageMap={coverageMap} coveragePeriod={coveragePeriod} /></TabsContent>
     </Tabs>
   );
 }
