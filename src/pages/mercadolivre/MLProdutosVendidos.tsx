@@ -220,12 +220,16 @@ export default function MLProdutosVendidos() {
   }, [filters]);
 
   // ── Hook de dados — margem pós-ads por anúncio (fonte única) ───────────────
-  const { data: marginRows, isLoading } = useMLMarginWithAds(currentFrom, currentTo);
+  // Fase 212: a publicidade destas linhas é a fatura do ML rateada por anúncio,
+  // não mais o gasto do relatório de publicidade. `margem.ads` diz a origem.
+  const { data: margem, isLoading } = useMLMarginWithAds(currentFrom, currentTo);
 
-  // Produtos VENDIDOS: descarta linhas ads-only (unidades=0, gasto de ads sem venda)
+  // Produtos VENDIDOS: descarta linhas ads-only (unidades=0, gasto de ads sem venda).
+  // O rateio já foi feito no hook sobre a carteira INTEIRA — filtrar aqui não
+  // distorce a proporção de quem vendeu.
   const rows: McoProductRow[] = useMemo(
-    () => (marginRows ?? []).filter((r) => r.unidades > 0),
-    [marginRows],
+    () => (margem?.rows ?? []).filter((r) => r.unidades > 0),
+    [margem],
   );
 
   // ── Map item_id → inventory (thumbnail, category_id, title atual, estoque) ──

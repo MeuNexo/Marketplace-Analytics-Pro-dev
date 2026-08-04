@@ -683,8 +683,10 @@ export default function MLProdutos() {
 
   const { data: marginWithAds } = useMLMarginWithAds(rankingFrom, rankingTo);
 
+  // Fase 212: `ads_spend` destas linhas já vem na régua da fatura (rateada),
+  // não no gasto do relatório de publicidade.
   const marginByItem = useMemo(
-    () => new Map((marginWithAds ?? []).map((m) => [m.item_id, m])),
+    () => new Map((marginWithAds?.rows ?? []).map((m) => [m.item_id, m])),
     [marginWithAds],
   );
 
