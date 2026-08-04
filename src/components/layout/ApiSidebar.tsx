@@ -35,12 +35,13 @@ const apiSections: SidebarNavSection[] = [
         path: "/",
         noSelfLink: true,
         children: [
+          // Resultado no TOPO: é a tela que responde à primeira pergunta do
+          // negócio — em que eu ganho e em que eu perco dinheiro (Fase 213).
+          { icon: PackageSearch, label: "Resultado",   path: "/resultado"   },
           { icon: TrendingUp,  label: "Vendas",      path: "/"            },
           { icon: Lightbulb,   label: "Consultor",   path: "/consultor"   },
           { icon: Megaphone,   label: "Publicidade", path: "/publicidade" },
           { icon: Receipt,       label: "Margem",             path: "/financeiro"       },
-          { icon: PackageSearch, label: "Produtos Vendidos",  path: "/produtos-vendidos" },
-          { icon: BarChart2,     label: "Análise de Preços",  path: "/analise-precos"   },
         ],
       },
       {
@@ -50,6 +51,10 @@ const apiSections: SidebarNavSection[] = [
         noSelfLink: true,
         children: [
           { icon: ShoppingBag,   label: "Anúncios", path: "/anuncios" },
+          // Análise de Preços saiu de Dashboard: é ferramenta de operação de
+          // preço, não painel de resultado. Ao lado de Anúncios ela diz o que
+          // faz; ao lado de Publicidade não dizia nada (Fase 213).
+          { icon: BarChart2,     label: "Análise de Preços", path: "/analise-precos" },
           { icon: Package,       label: "Estoque",  path: "/estoque"  },
           { icon: ShoppingCart,  label: "Compras",  path: "/compras"  },
           { icon: ClipboardList, label: "Pedidos",  path: "/pedidos"  },

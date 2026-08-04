@@ -2,6 +2,7 @@ import {
   Target,
   ArrowLeft,
   Banknote,
+  BarChart2,
   Calculator,
   ClipboardList,
   FileBarChart,
@@ -12,12 +13,14 @@ import {
   Megaphone,
   MessageCircle,
   Package,
+  PackageSearch,
   PackageX,
   Plug,
   Receipt,
   Settings2,
   Handshake,
   ShoppingBag,
+  ShoppingCart,
   Star,
   TrendingUp,
   Users,
@@ -25,10 +28,16 @@ import {
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
+// Fase 213: este menu omitia Produtos Vendidos, Análise de Preços e Compras —
+// e era justamente o relatório mais correto do sistema que ficava inalcançável
+// no celular. Daqui em diante os grupos Dashboard e Operações listam o MESMO
+// conjunto de rotas do menu de desktop (`ApiSidebar.tsx`), com os mesmos
+// rótulos e a mesma ordem: rota nova entra nos dois ou não entra em nenhum.
 const sections = [
   {
     label: "Dashboard",
     items: [
+      { icon: PackageSearch, label: "Resultado",   path: "/resultado"   },
       { icon: TrendingUp,  label: "Vendas",      path: "/"            },
       { icon: Lightbulb,   label: "Consultor",   path: "/consultor"   },
       { icon: Megaphone,   label: "Publicidade", path: "/publicidade" },
@@ -39,7 +48,9 @@ const sections = [
     label: "Operações",
     items: [
       { icon: ShoppingBag,   label: "Anúncios",     path: "/anuncios"      },
+      { icon: BarChart2,     label: "Análise de Preços", path: "/analise-precos" },
       { icon: Package,       label: "Estoque",      path: "/estoque"       },
+      { icon: ShoppingCart,  label: "Compras",      path: "/compras"       },
       { icon: ClipboardList, label: "Pedidos",      path: "/pedidos"       },
       { icon: Calculator,    label: "Precificação", path: "/precificacao"  },
       { icon: Banknote,      label: "Fluxo de Caixa", path: "/fluxo-de-caixa" },
