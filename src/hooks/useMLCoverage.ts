@@ -1,7 +1,27 @@
+// ============================================================================
+// useMLCoverage — Fase 213, Plano 01, Task 1 (CR-03, CR-04)
+//
+// A leitura de `ml_product_daily_cache` não paginava e não filtrava por loja.
+// O PostgREST corta a resposta em 1000 linhas em silêncio: com centenas de
+// SKUs × 30 dias, o hook enxergava só os poucos dias mais recentes e mesmo
+// assim dividia a venda pelo período inteiro — venda média subestimada,
+// cobertura inflada, sem nenhum sinal de erro. Trocar de loja no seletor
+// também não mudava o denominador, porque nada filtrava por `ml_user_id`.
+//
+// O laço de `.range()` abaixo é o mesmo padrão de `fetchRankingSales` em
+// `MLAnuncios.tsx` — copiado, não reinventado. É a mesma classe de defeito
+// que originou as fases 210 e 211.
+// ============================================================================
+
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { format, subDays } from "date-fns";
+import { dedupeVendasDiarias, somarVendasPorItem, type VendaDiariaRow } from "@/lib/coberturaVendas";
+
+const PAGE = 1000;
+const MAX_ROWS = 50000;
 
 /** Number of days used both as the sales lookback window and coverage horizon */
 export type CoveragePeriod = 7 | 15 | 30;
@@ -75,28 +95,45 @@ function classifyDays(coverage_days: number, thresholds: CoverageThresholds): Co
 export function useMLCoverage(
   items: InventoryItem[],
   period: CoveragePeriod,
-  thresholds?: CoverageThresholds,
+  thresholds: CoverageThresholds | undefined,
+  mlUserIds: string[],
 ) {
   const { user } = useAuth();
-  const [rawData, setRawData] = useState<{ item_id: string; date: string; qty_sold: number }[]>([]);
+  const { currentOrg } = useOrganization();
+  const [rawData, setRawData] = useState<VendaDiariaRow[]>([]);
   const [fetching, setFetching] = useState(false);
 
   // Fetch last 30 days once — covers all period options (7 / 15 / 30)
   const fetchRaw = useCallback(async () => {
-    if (!user) return;
+    if (!user || !currentOrg || mlUserIds.length === 0) {
+      // Sem loja resolvida: devolver dado vazio em vez de ler a tabela inteira
+      // sem escopo — é justamente o CR-04.
+      setRawData([]);
+      return;
+    }
     setFetching(true);
     try {
       const from = format(subDays(new Date(), 30), "yyyy-MM-dd");
-      const { data, error } = await supabase
-        .from("ml_product_daily_cache")
-        .select("item_id, date, qty_sold")
-        .gte("date", from)
-        .order("date", { ascending: false });
-      if (!error && data) setRawData(data);
+      const allRows: VendaDiariaRow[] = [];
+      let pageFrom = 0;
+      while (pageFrom < MAX_ROWS) {
+        const { data, error } = await supabase
+          .from("ml_product_daily_cache")
+          .select("item_id, date, qty_sold, ml_user_id")
+          .gte("date", from)
+          .in("ml_user_id", mlUserIds)
+          .eq("organization_id", currentOrg.id)
+          .range(pageFrom, pageFrom + PAGE - 1);
+        if (error || !data || data.length === 0) break;
+        allRows.push(...data);
+        if (data.length < PAGE) break;
+        pageFrom += PAGE;
+      }
+      setRawData(allRows);
     } finally {
       setFetching(false);
     }
-  }, [user]);
+  }, [user, currentOrg, mlUserIds]);
 
   useEffect(() => { fetchRaw(); }, [fetchRaw]);
 
@@ -107,13 +144,10 @@ export function useMLCoverage(
     const cutoff = format(subDays(new Date(), period), "yyyy-MM-dd");
     const effectiveThresholds: CoverageThresholds = thresholds ?? defaultThresholds(period);
 
-    // Aggregate sold qty per item within the selected window
-    const soldByItem = new Map<string, number>();
-    for (const row of rawData) {
-      if (row.date >= cutoff) {
-        soldByItem.set(row.item_id, (soldByItem.get(row.item_id) ?? 0) + row.qty_sold);
-      }
-    }
+    // Deduplicar por (loja, dia, item) e somar dentro da janela selecionada —
+    // aritmética pura extraída para `coberturaVendas.ts`.
+    const deduped = dedupeVendasDiarias(rawData);
+    const soldByItem = somarVendasPorItem(deduped, cutoff);
 
     const map = new Map<string, CoverageData>();
 

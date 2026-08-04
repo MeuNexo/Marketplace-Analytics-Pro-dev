@@ -21,6 +21,10 @@ export const routeTitles: Record<string, { title: string; subtitle: string }> = 
   "/metas": { title: "Metas", subtitle: "Defina metas mensais por loja e acompanhe no card de Vendas" },
   "/consultor": { title: "Consultor", subtitle: "O que fazer agora — alertas e saúde do negócio" },
   "/precificacao": { title: "Precificação", subtitle: "Simulador e ferramentas para definir preço de venda" },
+  "/resultado": {
+    title: "Resultado",
+    subtitle: "Em que eu ganho e em que eu perco dinheiro?",
+  },
   "/fluxo-de-caixa": { title: "Fluxo de Caixa", subtitle: "Como meu dinheiro vai evoluir?" },
   "/dre-caixa": { title: "DRE Caixa", subtitle: "O que entrou no mês pagou as contas do mês?" },
   "/usuarios": { title: "Usuários", subtitle: "Gerencie usuários e permissões do sistema" },

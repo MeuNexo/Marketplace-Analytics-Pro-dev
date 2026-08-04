@@ -17,7 +17,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { aggregateMcoGroups, aggregateMcoItems } from "./soldProductsMcoAgg";
+import { aggregateMcoGroups, aggregateMcoItems, curvasDaCarteira } from "./soldProductsMcoAgg";
 import type { McoProductRow } from "./soldProductsMcoAgg";
 import { ratearAdsDaCarteira } from "@/lib/adsRateio";
 import type { AdsBillingSpend } from "@/lib/adsBillingSpend";
@@ -34,6 +34,8 @@ const makeRow = (overrides: Partial<McoProductRow> & { item_id: string }): McoPr
   frete: 0,
   impostos: 0,
   ads_spend: 0,
+  lucro: 0,
+  lucro_pct: null,
   lucro_pos_ads: 0,
   lucro_pct_pos_ads: null,
   has_cmv: true,
@@ -344,6 +346,8 @@ describe("agregação com publicidade rateada da fatura (Fase 212)", () => {
       impostos: 0,
       ads_spend: 751.88, // cache — a CHAVE, nunca o valor exibido
       lucroPreAds: 4035.49,
+      lucro: 4035.49,
+      lucro_pct: 19.51,
       lucro_pos_ads: 0,
       lucro_pct_pos_ads: null,
       has_cmv: true,
@@ -361,6 +365,8 @@ describe("agregação com publicidade rateada da fatura (Fase 212)", () => {
       impostos: 0,
       ads_spend: 14790.21 - 751.88,
       lucroPreAds: 20000,
+      lucro: 20000,
+      lucro_pct: 20,
       lucro_pos_ads: 0,
       lucro_pct_pos_ads: null,
       has_cmv: true,
@@ -398,5 +404,189 @@ describe("agregação com publicidade rateada da fatura (Fase 212)", () => {
     const alvo = itens.find((i) => i.item_id === "MLB7060842760")!;
 
     expect(alvo.adsSpend).toBe(751.88);
+  });
+});
+
+// ============================================================================
+// Fase 213, Plano 06 — MCO pré-ads, breakeven de ACoS e curva do período
+//
+// As duas margens juntas respondem perguntas diferentes: a pré-ads diz se o
+// PRODUTO é bom, a pós-ads diz se ele é bom depois do que se gastou para
+// vendê-lo. O breakeven de ACoS é a margem pré-ads — a mesma régua do CR-02 já
+// adotada em `/publicidade` (`useMLAdsDerivedMetrics`), sem segunda
+// implementação a partir de preço e CMV.
+//
+// A curva é da CARTEIRA, nunca do grupo: se cada marca tivesse a própria Curva
+// A, a coluna deixaria de significar "concentração de receita da operação".
+// ============================================================================
+
+describe("MCO pré-ads e breakeven de ACoS (Fase 213-06)", () => {
+  it("o item carrega o MCO pré-ads em reais e em percentual, vindos do lucro operacional", () => {
+    const rows: McoProductRow[] = [
+      makeRow({
+        item_id: "MLB001",
+        marca: "Marca A",
+        receita: 1000,
+        unidades: 10,
+        lucro: 250,
+        lucro_pct: 25,
+        ads_spend: 100,
+        lucro_pos_ads: 150,
+        lucro_pct_pos_ads: 15,
+      }),
+    ];
+    const [item] = aggregateMcoItems(rows, "Marca A", "marca", new Map());
+
+    expect(item.mcoPreAdsReais).toBe(250);
+    expect(item.mcoPreAdsPct).toBe(25);
+    // O pós-ads não muda: continua sendo o número principal da tela.
+    expect(item.mcoReais).toBe(150);
+    expect(item.mcoPct).toBe(15);
+  });
+
+  it("o breakeven de ACoS é a margem operacional pré-ads em percentual", () => {
+    const rows: McoProductRow[] = [
+      makeRow({
+        item_id: "MLB001",
+        marca: "Marca A",
+        receita: 1000,
+        unidades: 10,
+        lucro: 250,
+        lucro_pct: 25,
+        lucro_pos_ads: 150,
+        lucro_pct_pos_ads: 15,
+      }),
+    ];
+    const [item] = aggregateMcoItems(rows, "Marca A", "marca", new Map());
+
+    // Régua da contribuição (CR-02): 25%, nunca a margem bruta nem o pós-ads.
+    expect(item.breakevenAcosPct).toBe(25);
+    expect(item.breakevenAcosPct).not.toBe(item.mcoPct);
+  });
+
+  it("item sem custo cadastrado tem MCO pré-ads e breakeven indefinidos, nunca zero", () => {
+    const rows: McoProductRow[] = [
+      makeRow({
+        item_id: "MLB001",
+        marca: "Marca A",
+        receita: 1000,
+        unidades: 10,
+        // Sem CMV a RPC devolve lucro inflado (custo entra como zero) — usar
+        // esse número seria trocar um erro por outro.
+        lucro: 900,
+        lucro_pct: 90,
+        lucro_pos_ads: 900,
+        lucro_pct_pos_ads: 90,
+        has_cmv: false,
+      }),
+    ];
+    const [item] = aggregateMcoItems(rows, "Marca A", "marca", new Map());
+
+    expect(item.mcoPreAdsReais).toBeNull();
+    expect(item.mcoPreAdsPct).toBeNull();
+    expect(item.breakevenAcosPct).toBeNull();
+    expect(item.health).toBe("indefinido");
+  });
+
+  it("receita zero deixa o percentual pré-ads e o breakeven indefinidos", () => {
+    const rows: McoProductRow[] = [
+      makeRow({
+        item_id: "MLB001",
+        marca: "Marca A",
+        receita: 0,
+        unidades: 0,
+        lucro: -30,
+        lucro_pct: null,
+        lucro_pos_ads: -30,
+        lucro_pct_pos_ads: null,
+      }),
+    ];
+    const [item] = aggregateMcoItems(rows, "Marca A", "marca", new Map());
+
+    expect(item.mcoPreAdsPct).toBeNull();
+    expect(item.breakevenAcosPct).toBeNull();
+  });
+
+  it("arredonda o breakeven a duas casas, como `/publicidade` (CR-02)", () => {
+    const rows: McoProductRow[] = [
+      makeRow({
+        item_id: "MLB001",
+        marca: "Marca A",
+        receita: 300,
+        unidades: 3,
+        lucro: 40,
+        lucro_pct: 13.333333333,
+        lucro_pos_ads: 30,
+        lucro_pct_pos_ads: 10,
+      }),
+    ];
+    const [item] = aggregateMcoItems(rows, "Marca A", "marca", new Map());
+
+    expect(item.breakevenAcosPct).toBe(13.33);
+  });
+});
+
+describe("curva ABC do período na tabela de resultado (Fase 213-06, CR-06)", () => {
+  // Carteira: um anúncio domina a receita; os dois pequenos são cauda.
+  //   MLB_BIG  10.000  (Marca B, CAT_X)
+  //   MLB_A1      100  (Marca A, CAT_X)
+  //   MLB_A2       50  (Marca A, CAT_Y)
+  const carteira: McoProductRow[] = [
+    makeRow({ item_id: "MLB_BIG", marca: "Marca B", receita: 10000, unidades: 100, lucro: 2000, lucro_pct: 20, lucro_pos_ads: 1800, lucro_pct_pos_ads: 18 }),
+    makeRow({ item_id: "MLB_A1", marca: "Marca A", receita: 100, unidades: 1, lucro: 20, lucro_pct: 20, lucro_pos_ads: 18, lucro_pct_pos_ads: 18 }),
+    makeRow({ item_id: "MLB_A2", marca: "Marca A", receita: 50, unidades: 1, lucro: 10, lucro_pct: 20, lucro_pos_ads: 9, lucro_pct_pos_ads: 18 }),
+  ];
+
+  const mapaCategorias = buildItemsMap([
+    { id: "MLB_BIG", category_id: "CAT_X" },
+    { id: "MLB_A1", category_id: "CAT_X" },
+    { id: "MLB_A2", category_id: "CAT_Y" },
+  ]);
+
+  it("a curva é da carteira inteira, não do grupo selecionado", () => {
+    const itens = aggregateMcoItems(carteira, "Marca A", "marca", new Map());
+
+    // Dentro do grupo "Marca A", MLB_A1 seria o maior e viraria curva A. Na
+    // carteira ele é cauda: 98,5% da receita já foi acumulada pelo MLB_BIG.
+    expect(itens.find((i) => i.item_id === "MLB_A1")!.curva).toBe("C");
+    expect(itens.find((i) => i.item_id === "MLB_A2")!.curva).toBe("C");
+
+    // E o dominante da carteira é curva A no grupo dele.
+    const grupoB = aggregateMcoItems(carteira, "Marca B", "marca", new Map());
+    expect(grupoB[0].curva).toBe("A");
+  });
+
+  it("trocar de marca para categoria não muda a curva de um anúncio", () => {
+    const porMarca = aggregateMcoItems(carteira, "Marca A", "marca", new Map());
+    const porCategoria = aggregateMcoItems(carteira, "CAT_X", "categoria", mapaCategorias);
+
+    const a1Marca = porMarca.find((i) => i.item_id === "MLB_A1")!;
+    const a1Categoria = porCategoria.find((i) => i.item_id === "MLB_A1")!;
+
+    expect(a1Marca.curva).toBe(a1Categoria.curva);
+    expect(a1Marca.curva).toBe("C");
+  });
+
+  it("carteira com receita total zero não produz curva A para ninguém", () => {
+    const semReceita: McoProductRow[] = [
+      makeRow({ item_id: "MLB001", marca: "Marca A", receita: 0, unidades: 0 }),
+      makeRow({ item_id: "MLB002", marca: "Marca A", receita: 0, unidades: 0 }),
+    ];
+    const itens = aggregateMcoItems(semReceita, "Marca A", "marca", new Map());
+
+    expect(itens.every((i) => i.curva === "C")).toBe(true);
+  });
+
+  it("curvasDaCarteira devolve um mapa de anúncio para curva sobre todas as linhas", () => {
+    const mapa = curvasDaCarteira(carteira);
+
+    expect(mapa.size).toBe(3);
+    expect(mapa.get("MLB_BIG")).toBe("A");
+    expect(mapa.get("MLB_A1")).toBe("C");
+    expect(mapa.get("MLB_A2")).toBe("C");
+  });
+
+  it("curvasDaCarteira com carteira vazia devolve mapa vazio", () => {
+    expect(curvasDaCarteira([]).size).toBe(0);
   });
 });

@@ -29,9 +29,14 @@ import { MLPeriodPicker } from "@/components/mercadolivre/MLPeriodPicker";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { useMLAds, type AdsCampaign } from "@/hooks/useMLAds";
 import { useMLAdsDerivedMetrics, type EnrichedAdsProduct } from "@/hooks/useMLAdsDerivedMetrics";
-import { useMLProductMargins } from "@/hooks/useMLProductMargins";
+import { useMLMarginWithAds, type ProductMarginWithAds } from "@/hooks/useMLMarginWithAds";
 import { useMLFilters } from "@/hooks/useMLFilters";
 import { useMLInventory } from "@/contexts/MLInventoryContext";
+import { AdsOrigemNota } from "@/components/mercadolivre/AdsOrigemNota";
+// AV-03: a ausência de CMV é contada e declarada em agregado, em vez de virar um
+// traço solto célula a célula. Ver o cabeçalho de custoFaltante.ts.
+import { AvisoCustoFaltante } from "@/components/mercadolivre/AvisoCustoFaltante";
+import { contarSemCusto } from "@/lib/custoFaltante";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -71,11 +76,15 @@ function NotConnected() {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function MLAnuncios() {
+// O nome da função bate com a rota que ela serve (`/publicidade`). Ela se
+// chamava `MLAnuncios` — o nome do arquivo vizinho, que serve `/anuncios` — e a
+// inversão era dupla: lá a função se chamava `MLProdutos`. Ver o comentário
+// equivalente em `MLAnuncios.tsx`.
+export default function MLPublicidadePage() {
   const isMobile = useIsMobile();
   const [campaignSearch, setCampaignSearch] = useState("");
   const [productSearch, setProductSearch]   = useState("");
-  const [productSort, setProductSort]       = useState<{ key: "spend" | "roas" | "clicks" | "attributed_orders" | "attributed_revenue" | "ctr" | "stock" | "acos" | "cvr" | "tacos"; dir: "asc" | "desc" }>({ key: "spend", dir: "desc" });
+  const [productSort, setProductSort]       = useState<{ key: "spend" | "roas" | "clicks" | "attributed_orders" | "attributed_revenue" | "ctr" | "stock" | "acos" | "cvr" | "spend_share_pct"; dir: "asc" | "desc" }>({ key: "spend", dir: "desc" });
   const [productPage, setProductPage]       = useState(1);
   const [productPageSize, setProductPageSize] = useState<number>(20);
   const [campaignSort, setCampaignSort]     = useState<{ key: "daily_budget" | "spend" | "ctr" | "roas"; dir: "asc" | "desc" } | null>(null);
@@ -101,16 +110,41 @@ export default function MLAnuncios() {
     return map;
   }, [inventoryItems]);
 
-  // ── Margin per product (includes ads spend deduction) ──
-  const { data: marginMap } = useMLProductMargins(currentFrom, currentTo);
+  // ── Margem por anúncio — régua da fatura (Fase 213: CR-01) ──
+  // O hook antigo lia o `lucro_pct_pos_ads` CRU da RPC, calculado com o
+  // `ads_spend` do cache de publicidade. `useMLMarginWithAds` descarta esse campo
+  // e recalcula com a fatura do ML rateada — a mesma régua de `/anuncios` e
+  // `/produtos-vendidos`. É essa convergência que o CR-01 promete.
+  const { data: margem } = useMLMarginWithAds(currentFrom, currentTo);
+  const marginMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of margem?.rows ?? []) {
+      // Mesma disciplina do McoCell em /produtos-vendidos: sem custo cadastrado
+      // ou sem receita, a célula fica com o marcador de ausência — nunca uma
+      // margem positiva fictícia.
+      if (r.has_cmv && r.receita > 0 && r.lucro_pct_pos_ads != null) {
+        map.set(r.item_id, r.lucro_pct_pos_ads);
+      }
+    }
+    return map;
+  }, [margem]);
+
+  // Mapa por item_id da linha de margem INTEIRA (não só o valor pós-ads acima)
+  // — o hook de métricas derivadas usa `lucro_pct` (pré-ads) e `sku` dela para
+  // o breakeven de ACoS e o seller_sku, sem ler custo por conta própria (CR-02).
+  const marginByItem = useMemo(() => {
+    const map = new Map<string, ProductMarginWithAds>();
+    for (const r of margem?.rows ?? []) map.set(r.item_id, r);
+    return map;
+  }, [margem]);
 
   // ── Derived metrics hook ──
   const { enriched: enrichedProducts, global: globalDerived } = useMLAdsDerivedMetrics(
     products,
     summary.total_spend,
-    summary.total_attributed_revenue,
     currentFrom,
     currentTo,
+    marginByItem,
   );
 
   // ── Confirm handler ──
@@ -247,12 +281,26 @@ export default function MLAnuncios() {
       if (key === "cvr") {
         return ((a.cvr ?? 0) - (b.cvr ?? 0)) * mult;
       }
-      if (key === "tacos") {
-        return ((a.tacos ?? 0) - (b.tacos ?? 0)) * mult;
+      if (key === "spend_share_pct") {
+        return ((a.spend_share_pct ?? 0) - (b.spend_share_pct ?? 0)) * mult;
       }
       return ((a[key] ?? 0) - (b[key] ?? 0)) * mult;
     });
   }, [enrichedProducts, productSearch, productDiagFilter, productSort, stockByItem]);
+
+  // ── AV-03: quantos dos patrocinados EXIBIDOS estão sem CMV ────────────────
+  // O conjunto é `sortedProducts` — o que a tabela mostra depois da busca e do
+  // filtro de diagnóstico —, não a carteira inteira. A fonte de "tem custo" é o
+  // `has_cmv` da linha de margem, exatamente o sinal que `marginMap` já usa para
+  // decidir entre exibir a margem e exibir o traço. Anúncio patrocinado sem
+  // linha de margem no período (gasto sem venda) também não tem CMV apurado.
+  const contagemCusto = useMemo(
+    () =>
+      contarSemCusto(
+        sortedProducts.map((p) => ({ temCusto: marginByItem.get(p.item_id)?.has_cmv === true })),
+      ),
+    [sortedProducts, marginByItem],
+  );
 
   const toggleSort = useCallback((key: typeof productSort.key) => {
     setProductSort((prev) =>
@@ -735,6 +783,24 @@ export default function MLAnuncios() {
         </CardContent>
       </Card>
 
+      {/* ── Origem do número de publicidade da coluna de resultado (Fase 213) ──
+          ROAS/ACoS/CTR/CPC/gráfico/funil/campanhas continuam no cache — só a
+          coluna "Mg. Pós-Ads" abaixo mudou de fonte. A tela é obrigada a dizer
+          isso, senão duas réguas convivem na mesma tabela sem aviso. */}
+      {margem && (
+        <AdsOrigemNota source={margem.ads.source} naoRateado={margem.ads.naoRateado} />
+      )}
+
+      {/* ── AV-03 — ausência de custo, em agregado ──
+          Numa conta sem custo, a coluna de margem e a de breakeven de ACoS ficam
+          ambas com traço. Antes disso a tela ficava muda; agora existe uma frase
+          dizendo por quê, com a contagem sobre os patrocinados exibidos. */}
+      <AvisoCustoFaltante
+        contagem={contagemCusto}
+        destinoCadastro="/precificacao"
+        substantivoPlural="anúncios patrocinados"
+      />
+
       {/* ── Top Products ── */}
       <Card>
         <div className="px-4 pt-4 pb-3">
@@ -846,13 +912,17 @@ export default function MLAnuncios() {
                       <span className="inline-flex items-center gap-1">ACoS <SortIcon k="acos" /></span>
                     </th>
                     <th
-                      onClick={() => toggleSort("tacos")}
+                      onClick={() => toggleSort("spend_share_pct")}
                       className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
                     >
-                      <span className="inline-flex items-center gap-1">TACoS <SortIcon k="tacos" /></span>
+                      {/* Fase 213 (AV-10): gasto do produto ÷ receita da LOJA — não é
+                          TACoS (métrica global, KPI do topo). Nome e semáforo trocados. */}
+                      <span className="inline-flex items-center gap-1">Share Gasto <SortIcon k="spend_share_pct" /></span>
                     </th>
-                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Margem Líq.</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Share Ads</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Mg. Pós-Ads</th>
+                    {/* Rótulo distinto de "Share Gasto" acima — mesma régua (participação
+                        nos pedidos atribuídos a ads), evita duas colunas chamadas "share". */}
+                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Part. Pedidos</th>
                     <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">ACoS BE</th>
                     <th
                       onClick={() => toggleSort("stock")}
@@ -903,12 +973,10 @@ export default function MLAnuncios() {
                           </span>
                         ) : "—"}
                       </td>
-                      <td className="px-4 py-3 text-right text-xs tabular-nums">
-                        {p.tacos != null ? (
-                          <span className={p.tacos > 8 ? "text-red-500 font-semibold" : p.tacos < 4 ? "text-emerald-600" : "text-amber-600"}>
-                            {pctFmt(p.tacos)}
-                          </span>
-                        ) : "—"}
+                      <td className="px-4 py-3 text-right text-xs tabular-nums text-muted-foreground">
+                        {/* Sem semáforo: o corte de 8% é a régua do TACoS GLOBAL (KPI do
+                            topo), não faz sentido aplicada a um share por item (AV-10). */}
+                        {p.spend_share_pct != null ? pctFmt(p.spend_share_pct) : "—"}
                       </td>
                       <td className="px-4 py-3 text-right text-xs tabular-nums">
                         {(() => {

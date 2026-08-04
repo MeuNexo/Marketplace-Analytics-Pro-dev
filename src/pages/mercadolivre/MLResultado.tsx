@@ -1,11 +1,47 @@
+// ============================================================================
+// MLResultado — "em que eu ganho e em que eu perco dinheiro?" (Fase 213, 06)
+//
+// Esta tela é a antiga `/produtos-vendidos`, movida (não copiada) para que o
+// histórico do arquivo continue rastreável. Ela passa a ser a FONTE ÚNICA de
+// qualquer número de margem por produto: o mesmo ranking vivia em quatro
+// lugares com três réguas diferentes, e foi assim que a fase 213 nasceu.
+//
+// O que ela absorve:
+//   • `/produtos-vendidos` inteira — painel duplo, semáforo, tooltips;
+//   • a Curva ABC, que deixa de ser aba em duas telas e vira uma COLUNA de
+//     classificação sobre a receita real do período (CR-06);
+//   • o Ranking de giro de `/anuncios` (RE-02): a coluna "Unidades" ordenável
+//     É o ranking de giro do período, sem a coluna de receita vitalícia que o
+//     CR-06/CR-07 condenaram.
+//
+// A tela nasce declarando a própria régua: `AdsOrigemNota` (de onde vem a
+// publicidade) e `AvisoCustoFaltante` (quantos anúncios estão sem CMV) no topo,
+// obrigatórios, sobre o período INTEIRO — não sobre o grupo selecionado, porque
+// os dois avisos são sobre a confiabilidade da tela toda.
+//
+// As colunas novas aparecem nos DOIS layouts (tabela no desktop, cartões no
+// celular), inclusive o controle de ordenação: no celular a tabela não tem
+// cabeçalho para clicar, e sem o seletor o ranking de giro seria inalcançável
+// justamente onde ele já era invisível.
+// ============================================================================
+
 import { useMemo, useState, useCallback } from "react";
 import { ShoppingBag, ArrowUp, ArrowDown, ArrowUpDown, AlertCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { MLPeriodPicker } from "@/components/mercadolivre/MLPeriodPicker";
 import { AdsOrigemNota } from "@/components/mercadolivre/AdsOrigemNota";
+import { AvisoCustoFaltante } from "@/components/mercadolivre/AvisoCustoFaltante";
+import { contarSemCusto } from "@/lib/custoFaltante";
 import { useMLFilters } from "@/hooks/useMLFilters";
 import { useMLMarginWithAds } from "@/hooks/useMLMarginWithAds";
 import { useMLInventory } from "@/contexts/MLInventoryContext";
@@ -16,6 +52,7 @@ import {
   type PvMcoGroup,
   type PvMcoItem,
 } from "@/components/mercadolivre/anuncios/soldProductsMcoAgg";
+import type { CurvaAbc } from "@/lib/curvaAbc";
 import { classifyMcoHealth, mcoHealthRole, type McoHealth, type McoColorRole } from "@/lib/mcoHealth";
 import { KPI_GLOSSARY } from "@/lib/kpi-glossary";
 
@@ -39,17 +76,65 @@ const MCO_ROLE_CLASSES: Record<McoColorRole, { dot: string; text: string }> = {
 
 // ─── Ordenação ────────────────────────────────────────────────────────────────
 
-type SortKey = "qty" | "revenue" | "mcoPct" | "acosPct" | "estoque" | "share";
+type SortKey =
+  | "qty"
+  | "revenue"
+  | "mcoPreAdsPct"
+  | "mcoPct"
+  | "acosPct"
+  | "breakeven"
+  | "curva"
+  | "estoque"
+  | "share";
 type SortDir = "asc" | "desc";
 
 const COLUMN_LABEL: Record<SortKey, string> = {
-  qty: "Qtd",
+  qty: "Unidades",
   revenue: "Receita",
-  mcoPct: "MCO%",
+  mcoPreAdsPct: "MCO pré-ads",
+  mcoPct: "MCO pós-ads",
   acosPct: "% Ads",
+  breakeven: "Breakeven ACoS",
+  curva: "Curva",
   estoque: "Estoque",
   share: "% Grupo",
 };
+
+/**
+ * Ordem das colunas de decisão, a mesma nos dois layouts. Giro (unidades) e
+ * receita primeiro — "quanto vendeu" —, depois as duas margens lado a lado,
+ * o custo da publicidade, o teto dela e a posição na carteira.
+ */
+const DESKTOP_COLUMNS: SortKey[] = [
+  "qty",
+  "revenue",
+  "mcoPreAdsPct",
+  "mcoPct",
+  "acosPct",
+  "breakeven",
+  "curva",
+  "estoque",
+  "share",
+];
+
+/** Tooltip de cada coluna — a régua fica ao alcance do cursor, não no manual. */
+const COLUMN_TOOLTIP: Partial<Record<SortKey, string>> = {
+  qty: "Unidades vendidas no período selecionado. Ordenar por ela é o ranking de giro.",
+  revenue: "Receita realizada no período selecionado (nunca receita vitalícia).",
+  mcoPreAdsPct: "Margem de contribuição ANTES da publicidade — diz se o produto é bom.",
+  mcoPct: KPI_GLOSSARY.mco.definition,
+  acosPct: KPI_GLOSSARY.acos.definition,
+  breakeven:
+    "ACoS máximo antes de a publicidade comer toda a margem: é a própria margem pré-ads. %Ads acima dele derruba o MCO para o vermelho.",
+  curva:
+    "Concentração de receita do período na CARTEIRA inteira: A até 80% do acumulado, B até 95%, C o resto. Não muda ao trocar marca por categoria.",
+};
+
+/**
+ * Ordem de importância da curva: A vale mais que C, para que a ordenação
+ * padrão (desc, "maior primeiro") traga a Curva A ao topo.
+ */
+const CURVA_PESO: Record<CurvaAbc, number> = { A: 3, B: 2, C: 1 };
 
 function sortValue(item: PvMcoItem, key: SortKey, stock: number | null): number | null {
   switch (key) {
@@ -57,15 +142,59 @@ function sortValue(item: PvMcoItem, key: SortKey, stock: number | null): number 
       return item.qty;
     case "revenue":
       return item.revenue;
+    case "mcoPreAdsPct":
+      return item.mcoPreAdsPct;
     case "mcoPct":
       return item.mcoPct;
     case "acosPct":
       return item.acosPct;
+    case "breakeven":
+      return item.breakevenAcosPct;
+    case "curva":
+      return CURVA_PESO[item.curva];
     case "estoque":
       return stock;
     case "share":
       return item.shareOfGroup;
   }
+}
+
+// ─── Selo da Curva ABC ────────────────────────────────────────────────────────
+
+const CURVA_CLASSES: Record<CurvaAbc, string> = {
+  A: "bg-success/10 text-success border-success/30",
+  B: "bg-warning/10 text-warning border-warning/30",
+  C: "bg-muted text-muted-foreground border-border/60",
+};
+
+function CurvaBadge({ curva }: { curva: CurvaAbc }) {
+  return (
+    <span
+      className={`inline-flex items-center justify-center w-5 h-5 rounded border text-[10px] font-semibold ${CURVA_CLASSES[curva]}`}
+    >
+      {curva}
+    </span>
+  );
+}
+
+// ─── Célula de breakeven de ACoS ─────────────────────────────────────────────
+//
+// Sem custo cadastrado o breakeven é INDEFINIDO, não zero: mostrar zero
+// convidaria a ler "qualquer publicidade já é prejuízo", que é invenção.
+
+function BreakevenCell({ item }: { item: PvMcoItem }) {
+  if (item.breakevenAcosPct === null) {
+    return <span className="text-xs tabular-nums text-muted-foreground">—</span>;
+  }
+  // %Ads acima do breakeven = a publicidade daquele anúncio comeu toda a margem.
+  const estourou = item.acosPct !== null && item.acosPct > item.breakevenAcosPct;
+  return (
+    <span
+      className={`text-xs tabular-nums ${estourou ? "text-destructive font-semibold" : "text-muted-foreground"}`}
+    >
+      {item.breakevenAcosPct.toFixed(1)}%
+    </span>
+  );
 }
 
 // ─── Célula/badge de MCO% (semáforo + rótulo + tooltip de quebra de custos) ───
@@ -93,6 +222,44 @@ function McoCell({ item }: { item: PvMcoItem }) {
         <p>
           MCO {brl(item.mcoReais)} · Ads {brl(item.adsSpend)} · Comissão {brl(item.comissao)} · Frete{" "}
           {brl(item.frete)} · Imposto {brl(item.impostos)}
+        </p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+// ─── Célula de MCO% PRÉ-ads ──────────────────────────────────────────────────
+//
+// Fica ao lado do pós-ads de propósito: as duas juntas são a comparação que
+// responde "o produto é bom?" contra "ele é bom depois do que gastei para
+// vendê-lo?". A diferença entre as duas É o peso da publicidade.
+
+function PreAdsCell({ item }: { item: PvMcoItem }) {
+  if (item.mcoPreAdsPct === null) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="text-xs tabular-nums text-muted-foreground cursor-default">—</span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-xs max-w-[220px]">
+          Sem custo cadastrado — margem pré-ads indefinida (não é zero).
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="text-xs tabular-nums text-foreground cursor-default">
+          {pctFmt(item.mcoPreAdsPct)}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="text-xs max-w-[240px]">
+        <p>
+          Margem antes da publicidade
+          {item.mcoPreAdsReais !== null ? `: ${brl(item.mcoPreAdsReais)}` : ""}. Depois dos{" "}
+          {brl(item.adsSpend)} de ads, sobra {pctFmt(item.mcoPct)}.
         </p>
       </TooltipContent>
     </Tooltip>
@@ -165,6 +332,7 @@ function SortHead({
 }) {
   const isActive = currentKey === key;
   const label = COLUMN_LABEL[key];
+  const hint = tooltip ?? COLUMN_TOOLTIP[key];
 
   const content = (
     <span
@@ -178,11 +346,11 @@ function SortHead({
 
   return (
     <th className="py-2 text-right font-medium pr-4">
-      {tooltip ? (
+      {hint ? (
         <Tooltip>
           <TooltipTrigger asChild>{content}</TooltipTrigger>
-          <TooltipContent side="top" className="text-xs max-w-[220px]">
-            {tooltip}
+          <TooltipContent side="top" className="text-xs max-w-[240px]">
+            {hint}
           </TooltipContent>
         </Tooltip>
       ) : (
@@ -194,7 +362,7 @@ function SortHead({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function MLProdutosVendidos() {
+export default function MLResultado() {
   // ── Estado local ──────────────────────────────────────────────────────────
   const [pvView, setPvView] = useState<"marca" | "categoria">("marca");
   const [pvSelected, setPvSelected] = useState<string | null>(null);
@@ -267,6 +435,14 @@ export default function MLProdutosVendidos() {
     [rows, pvSelected, pvView, itemsMap],
   );
 
+  // ── Custo ausente: contagem sobre o PERÍODO INTEIRO, não sobre o grupo ─────
+  // O aviso é sobre a confiabilidade da tela toda: contar só o grupo aberto
+  // esconderia que a marca ao lado está 100% sem custo (AV-03).
+  const contagemCusto = useMemo(
+    () => contarSemCusto(rows.map((r) => ({ temCusto: r.has_cmv }))),
+    [rows],
+  );
+
   const selectedGroup = useMemo(
     () => (pvSelected !== null ? (pvGroups.find((g) => g.key === pvSelected) ?? null) : null),
     [pvGroups, pvSelected],
@@ -319,7 +495,7 @@ export default function MLProdutosVendidos() {
       {/* ── Sticky header ── */}
       <div className="sticky -top-4 md:-top-6 lg:-top-8 z-20 -mx-4 md:-mx-6 lg:-mx-8 -mt-4 md:-mt-6 lg:-mt-8 px-4 md:px-6 lg:px-8 pb-4 pt-4 bg-background/95 backdrop-blur-sm border-b border-border/40">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4 min-w-0">
-          <MLPageHeader title="Produtos Vendidos" />
+          <MLPageHeader title="Resultado" />
           <div className="flex items-center gap-2 flex-wrap">
             {/* Toggle marca/categoria */}
             <ToggleGroup
@@ -375,6 +551,13 @@ export default function MLProdutosVendidos() {
           valendo, e quanto da fatura do período ficou sem chave de rateio. */}
       {!isLoading && rows.length > 0 && margem && (
         <AdsOrigemNota source={margem.ads.source} naoRateado={margem.ads.naoRateado} />
+      )}
+
+      {/* ── Ausência de custo (Fase 213-05, AV-03) ──
+          Sem CMV não existe margem. A contagem é do período inteiro: é a tela
+          toda que fica indefinida, não a célula. */}
+      {!isLoading && rows.length > 0 && (
+        <AvisoCustoFaltante contagem={contagemCusto} destinoCadastro="/precificacao" />
       )}
 
       {/* ── Painel duplo ── */}
@@ -492,47 +675,15 @@ export default function MLProdutosVendidos() {
                       <thead>
                         <tr className="border-b border-border/40 text-xs text-muted-foreground">
                           <th className="py-2 text-left font-medium">Anúncio</th>
-                          <SortHead
-                            sortKey="qty"
-                            currentKey={sortKey}
-                            currentDir={sortDir}
-                            onSort={onSortClick}
-                          />
-                          <SortHead
-                            sortKey="revenue"
-                            currentKey={sortKey}
-                            currentDir={sortDir}
-                            onSort={onSortClick}
-                          />
-                          <SortHead
-                            sortKey="mcoPct"
-                            currentKey={sortKey}
-                            currentDir={sortDir}
-                            onSort={onSortClick}
-                            tooltip={KPI_GLOSSARY.mco.definition}
-                          />
-                          <SortHead
-                            sortKey="acosPct"
-                            currentKey={sortKey}
-                            currentDir={sortDir}
-                            onSort={onSortClick}
-                            tooltip={KPI_GLOSSARY.acos.definition}
-                          />
-                          <SortHead
-                            sortKey="estoque"
-                            currentKey={sortKey}
-                            currentDir={sortDir}
-                            onSort={onSortClick}
-                          />
-                          <th className="py-2 text-right font-medium">
-                            <span
-                              className="inline-flex items-center gap-1 justify-end cursor-pointer select-none group"
-                              onClick={() => onSortClick("share")}
-                            >
-                              % Grupo
-                              <SortIndicator active={sortKey === "share"} dir={sortDir} />
-                            </span>
-                          </th>
+                          {DESKTOP_COLUMNS.map((k) => (
+                            <SortHead
+                              key={k}
+                              sortKey={k}
+                              currentKey={sortKey}
+                              currentDir={sortDir}
+                              onSort={onSortClick}
+                            />
+                          ))}
                         </tr>
                       </thead>
                       <tbody>
@@ -567,10 +718,19 @@ export default function MLProdutosVendidos() {
                                 {brl(item.revenue)}
                               </td>
                               <td className="py-2.5 text-right pr-4">
+                                <PreAdsCell item={item} />
+                              </td>
+                              <td className="py-2.5 text-right pr-4">
                                 <McoCell item={item} />
                               </td>
                               <td className="py-2.5 text-right pr-4 text-xs tabular-nums text-muted-foreground">
                                 {pctFmt(item.acosPct)}
+                              </td>
+                              <td className="py-2.5 text-right pr-4">
+                                <BreakevenCell item={item} />
+                              </td>
+                              <td className="py-2.5 text-right pr-4">
+                                <CurvaBadge curva={item.curva} />
                               </td>
                               <td className="py-2.5 text-right pr-4 text-xs tabular-nums text-muted-foreground">
                                 {stock !== null ? intFmt(stock) : "—"}
@@ -583,6 +743,38 @@ export default function MLProdutosVendidos() {
                         })}
                       </tbody>
                     </table>
+                  </div>
+
+                  {/* ── Mobile: controle de ordenação ──
+                      O cartão não tem cabeçalho para clicar. Sem este seletor o
+                      ranking de giro (ordenar por Unidades) seria inalcançável
+                      justamente no celular, que é onde a tela já era invisível. */}
+                  <div className="lg:hidden flex items-center gap-2 mb-3">
+                    <span className="text-[11px] text-muted-foreground shrink-0">Ordenar por</span>
+                    <Select value={sortKey} onValueChange={(v) => onSortClick(v as SortKey)}>
+                      <SelectTrigger className="h-8 text-xs flex-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {DESKTOP_COLUMNS.map((k) => (
+                          <SelectItem key={k} value={k} className="text-xs">
+                            {COLUMN_LABEL[k]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <button
+                      type="button"
+                      onClick={() => setSortDir((d) => (d === "desc" ? "asc" : "desc"))}
+                      aria-label={sortDir === "desc" ? "Maior primeiro" : "Menor primeiro"}
+                      className="h-8 px-2 rounded-md border border-border/60 text-muted-foreground shrink-0"
+                    >
+                      {sortDir === "desc" ? (
+                        <ArrowDown className="w-3.5 h-3.5" />
+                      ) : (
+                        <ArrowUp className="w-3.5 h-3.5" />
+                      )}
+                    </button>
                   </div>
 
                   {/* ── Mobile: cards ── */}
@@ -609,9 +801,11 @@ export default function MLProdutosVendidos() {
                               <p className="text-[10px] text-muted-foreground mt-0.5">{item.item_id}</p>
                             </div>
                           </div>
+                          {/* As MESMAS colunas do desktop — precedente de layout
+                              duplo deste projeto: coluna nova entra nos dois. */}
                           <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
                             <div>
-                              <span className="text-muted-foreground">Qtd vendida</span>
+                              <span className="text-muted-foreground">Unidades</span>
                               <p className="font-medium tabular-nums">{intFmt(item.qty)}</p>
                             </div>
                             <div>
@@ -619,7 +813,13 @@ export default function MLProdutosVendidos() {
                               <p className="font-medium tabular-nums">{brl(item.revenue)}</p>
                             </div>
                             <div>
-                              <span className="text-muted-foreground">MCO%</span>
+                              <span className="text-muted-foreground">MCO pré-ads</span>
+                              <p className="font-medium tabular-nums">
+                                <PreAdsCell item={item} />
+                              </p>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">MCO pós-ads</span>
                               <p className="font-medium tabular-nums">
                                 <McoCell item={item} />
                               </p>
@@ -627,6 +827,18 @@ export default function MLProdutosVendidos() {
                             <div>
                               <span className="text-muted-foreground">% Ads</span>
                               <p className="font-medium tabular-nums">{pctFmt(item.acosPct)}</p>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Breakeven ACoS</span>
+                              <p className="font-medium tabular-nums">
+                                <BreakevenCell item={item} />
+                              </p>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Curva</span>
+                              <p className="font-medium tabular-nums">
+                                <CurvaBadge curva={item.curva} />
+                              </p>
                             </div>
                             <div>
                               <span className="text-muted-foreground">Estoque</span>
