@@ -9,7 +9,7 @@ import { ptBR } from "date-fns/locale";
 import {
   ClipboardList, DollarSign, TrendingDown, Package,
   Truck, RefreshCw, Plug, Search, ChevronDown, ChevronUp,
-  BarChart2, MapPin, Tag, TrendingUp, Calculator, AlertTriangle,
+  BarChart2, MapPin, TrendingUp, Calculator, AlertTriangle,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,6 +29,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { KPI_GLOSSARY } from "@/lib/kpi-glossary";
+import { avaliarConfiabilidadeMargem } from "@/lib/custoFaltante";
 import { supabase } from "@/integrations/supabase/client";
 
 // Helper: build tooltip string from glossary key
@@ -81,7 +82,14 @@ interface ProcessedOrder {
   net_revenue:     number;
   net_margin_pct:  number;
   commission_rate: number;
-  free_shipping:   boolean;
+  /**
+   * AV-07 — Fase 213, Plano 08. Este campo chamava-se `free_shipping` e valia
+   * `true` quando HÁ custo de frete: nome invertido em relação ao valor. Os
+   * usos sempre foram coerentes com o VALOR (mostram o frete descontado quando
+   * ele é verdadeiro), então a correção é de nome. Inverter o booleano trocaria
+   * um defeito de rótulo por um defeito de dado.
+   */
+  tem_custo_frete: boolean;
   comprador:       string;
   estado:          string | null;
   cost_total:      number | null;
@@ -142,11 +150,9 @@ const LISTING_LABELS: Record<ListingType, string> = {
   free:    "Grátis",
 };
 
-const LISTING_RATE: Record<ListingType, string> = {
-  classic: "~11%",
-  premium: "~16%",
-  free:    "0%",
-};
+// `LISTING_RATE` foi removido no plano 213-08: seu único consumidor era a
+// sub-aba de Tipo de Anúncio. As taxas de referência por tipo continuam
+// disponíveis em /precificacao, junto da margem que elas afetam.
 
 const CONFIRMED_STATUSES: OrderStatus[] = ["paid", "shipped", "delivered"];
 
@@ -180,137 +186,30 @@ function SortIcon({ sortKey, k, sortDir }: { sortKey: SortKey; k: SortKey; sortD
     : <ChevronUp   className="w-3 h-3 inline ml-0.5" />;
 }
 
-// ── Report: Top Produtos por Margem ──────────────────────────────────────────
+// ── Atalho: o ranking por margem mudou de endereço ───────────────────────────
+//
+// Fase 213, Plano 08, Task 3 (RE-01). "Top Produtos por Margem" vivia aqui com
+// uma régua própria — margem pré-ads, sobre pedidos, sem rateio de publicidade —
+// enquanto `/resultado` mostra o mesmo ranking pós-ads. Dois rankings de margem
+// por produto, no mesmo período, com o mesmo nome e números diferentes.
+// O ranking não foi apagado: passou a ter um dono só. Aqui fica o endereço.
 
-function SubTabTopProdutos({ orders }: { orders: ProcessedOrder[] }) {
-  const [sortBy, setSortBy] = useState<"net" | "gross" | "margin">("net");
-
-  const products = useMemo(() => {
-    const map = new Map<string, {
-      item_id: string; titulo: string;
-      orderIds: Set<string>; quantidade: number;
-      gross: number; net: number; commission: number; frete: number;
-      cost: number; tax: number;
-    }>();
-
-    for (const o of orders) {
-      if (o.status === "cancelled" || o.status === "returned") continue;
-      const key = o.item_id || o.titulo;
-      if (!map.has(key)) {
-        map.set(key, { item_id: o.item_id, titulo: o.titulo, orderIds: new Set(), quantidade: 0, gross: 0, net: 0, commission: 0, frete: 0, cost: 0, tax: 0 });
-      }
-      const p = map.get(key)!;
-      p.orderIds.add(o.id);
-      p.quantidade  += o.quantidade;
-      p.gross       += o.gross_revenue;
-      p.net         += o.net_revenue;
-      p.commission  += o.ml_commission;
-      p.frete       += o.shipping_cost;
-      p.cost        += o.cost_total ?? 0;
-      p.tax         += o.tax_total  ?? 0;
-    }
-
-    return Array.from(map.values())
-      .map(p => ({
-        ...p,
-        orders:          p.orderIds.size,
-        full_net:        p.net - p.cost,
-        margin_pct:      p.gross > 0 ? ((p.net - p.cost) / p.gross) * 100 : 0,
-        commission_rate: p.gross > 0 ? (p.commission  / p.gross) * 100 : 0,
-      }))
-      .sort((a, b) =>
-        sortBy === "gross"  ? b.gross      - a.gross :
-        sortBy === "margin" ? b.margin_pct - a.margin_pct :
-                              b.net        - a.net
-      )
-      .slice(0, 20);
-  }, [orders, sortBy]);
-
-  const maxNet = Math.max(...products.map(p => p.net), 1);
-
-  if (products.length === 0) return <EmptyReport />;
-
+function AtalhoResultado() {
   return (
-    <div className="space-y-4">
-      {/* Sort toggle */}
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground">Ordenar por:</span>
-        {([["net", "Líquido"], ["gross", "Bruto"], ["margin", "Margem"]] as const).map(([v, label]) => (
-          <Button
-            key={v}
-            size="sm"
-            variant={sortBy === v ? "default" : "outline"}
-            className="h-7 px-3 text-xs"
-            onClick={() => setSortBy(v)}
-          >{label}</Button>
-        ))}
-      </div>
-
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b border-border bg-muted/30">
-                <tr>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground w-8">#</th>
-                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-muted-foreground">Produto</th>
-                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground">Pedidos</th>
-                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground">Itens</th>
-                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground">Bruto</th>
-                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground">Comissão</th>
-                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground">Frete</th>
-                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground">Custo</th>
-                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground">Imposto</th>
-                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground">Líquido</th>
-                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-muted-foreground">Margem</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {products.map((p, i) => (
-                  <tr key={p.item_id || i} className="hover:bg-muted/20 transition-colors">
-                    <td className="px-4 py-3 text-xs text-muted-foreground font-mono">{i + 1}</td>
-                    <td className="px-3 py-3 max-w-[260px]">
-                      <p className="text-xs font-medium truncate">{p.titulo}</p>
-                      {/* Inline bar relative to max net revenue */}
-                      <div className="mt-1 h-1 rounded-full bg-muted overflow-hidden w-full">
-                        <div
-                          className="h-full rounded-full bg-emerald-500/60"
-                          style={{ width: `${Math.max((p.net / maxNet) * 100, 2)}%` }}
-                        />
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 text-right text-xs tabular-nums">{p.orders}</td>
-                    <td className="px-3 py-3 text-right text-xs tabular-nums text-muted-foreground">{p.quantidade}</td>
-                    <td className="px-3 py-3 text-right text-xs tabular-nums font-mono">{currFmt(p.gross)}</td>
-                    <td className="px-3 py-3 text-right text-xs tabular-nums text-destructive">
-                      −{currFmt(p.commission)}
-                      <span className="text-[10px] text-muted-foreground ml-1">({pctFmt(p.commission_rate)})</span>
-                    </td>
-                    <td className="px-3 py-3 text-right text-xs tabular-nums text-orange-600">
-                      {p.frete > 0 ? `−${currFmt(p.frete)}` : <span className="text-muted-foreground">—</span>}
-                    </td>
-                    <td className="px-3 py-3 text-right text-xs tabular-nums text-kpi-negative">
-                      {p.cost > 0 ? `−${currFmt(p.cost)}` : <span className="text-muted-foreground/60">—</span>}
-                    </td>
-                    <td className="px-3 py-3 text-right text-xs tabular-nums text-violet-600">
-                      {p.tax > 0 ? `−${currFmt(p.tax)}` : <span className="text-muted-foreground/60">—</span>}
-                    </td>
-                    <td className="px-3 py-3 text-right text-xs tabular-nums font-mono font-semibold">{currFmt(p.net)}</td>
-                    <td className="px-4 py-3 text-right">
-                      <span className={`text-sm font-bold ${marginColor(p.margin_pct)}`}>{pctFmt(p.margin_pct)}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="px-4 py-2.5 border-t text-xs text-muted-foreground">
-            {products.length} produtos · Líquido total:{" "}
-            <span className="font-semibold text-foreground">{currFmt(products.reduce((s, p) => s + p.net, 0))}</span>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+    <Card>
+      <CardContent className="py-8 flex flex-col items-center text-center gap-3">
+        <TrendingUp className="w-10 h-10 text-muted-foreground/40" />
+        <p className="text-sm font-medium">O ranking de produtos por margem agora vive em Resultado</p>
+        <p className="text-xs text-muted-foreground max-w-md">
+          Lá a margem é apurada <strong>depois da publicidade</strong>, com o rateio de ads por
+          anúncio — é a fonte única de margem por produto. Esta tela ficou com o que ela faz
+          melhor: conferir pedido a pedido.
+        </p>
+        <Button asChild size="sm" className="h-8 text-xs">
+          <Link to="/resultado">Abrir Resultado</Link>
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -450,172 +349,13 @@ function SubTabUF({ orders }: { orders: ProcessedOrder[] }) {
   );
 }
 
-// ── Report: Custo por Tipo de Anúncio ─────────────────────────────────────────
-
-const LISTING_COLORS: Record<ListingType, string> = {
-  classic: "#6366f1",
-  premium: "#f59e0b",
-  free:    "#22c55e",
-};
-
-function SubTabTipoAnuncio({ orders }: { orders: ProcessedOrder[] }) {
-  const byType = useMemo(() => {
-    const base = () => ({ orderIds: new Set<string>(), gross: 0, net: 0, commission: 0, frete: 0 });
-    const map: Record<ListingType, ReturnType<typeof base>> = {
-      classic: base(), premium: base(), free: base(),
-    };
-
-    for (const o of orders) {
-      if (o.status === "cancelled" || o.status === "returned") continue;
-      const t = map[o.listing_type];
-      if (!t) continue;
-      t.orderIds.add(o.id);
-      t.gross      += o.gross_revenue;
-      t.net        += o.net_revenue;
-      t.commission += o.ml_commission;
-      t.frete      += o.shipping_cost;
-      (t as any).cost = ((t as any).cost ?? 0) + (o.cost_total ?? 0);
-      (t as any).tax  = ((t as any).tax  ?? 0) + (o.tax_total  ?? 0);
-    }
-
-    return (["classic", "premium", "free"] as ListingType[]).map(type => {
-      const d = map[type];
-      const cost = (d as any).cost ?? 0;
-      const tax  = (d as any).tax  ?? 0;
-      return {
-        type,
-        label:           LISTING_LABELS[type],
-        rate_label:      LISTING_RATE[type],
-        orders:          d.orderIds.size,
-        gross:           d.gross,
-        net:             d.net,
-        commission:      d.commission,
-        frete:           d.frete,
-        cost,
-        tax,
-        margin_pct:      d.gross > 0 ? ((d.net - cost) / d.gross) * 100 : 0,
-        commission_rate: d.gross > 0 ? (d.commission / d.gross) * 100 : 0,
-        frete_rate:      d.gross > 0 ? (d.frete      / d.gross) * 100 : 0,
-        avg_ticket:      d.orderIds.size > 0 ? d.gross / d.orderIds.size : 0,
-      };
-    });
-  }, [orders]);
-
-  const totalGross = byType.reduce((s, t) => s + t.gross, 0);
-
-  const chartData = byType.map(t => ({
-    name:      t.label,
-    "Bruto":   Math.round(t.gross * 100) / 100,
-    "Líquido": Math.round(t.net   * 100) / 100,
-  }));
-
-  if (totalGross === 0) return <EmptyReport />;
-
-  return (
-    <div className="space-y-4">
-      {/* Comparison cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {byType.map(t => (
-          <Card key={t.type} style={{ borderColor: `${LISTING_COLORS[t.type]}40` }}>
-            <CardContent className="pt-4 pb-4">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="text-sm font-semibold">{t.label}</p>
-                  <p className="text-[10px] text-muted-foreground">Taxa padrão {t.rate_label}</p>
-                </div>
-                <span
-                  className="text-xs font-bold px-2 py-0.5 rounded-full"
-                  style={{ background: `${LISTING_COLORS[t.type]}20`, color: LISTING_COLORS[t.type] }}
-                >
-                  {t.orders} pedidos
-                </span>
-              </div>
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Receita bruta</span>
-                  <span className="font-mono font-semibold">{currFmt(t.gross)}</span>
-                </div>
-                <div className="flex justify-between text-destructive">
-                  <span>Comissão ML</span>
-                  <span className="font-mono">−{currFmt(t.commission)} <span className="text-muted-foreground">({pctFmt(t.commission_rate)})</span></span>
-                </div>
-                <div className="flex justify-between text-orange-600">
-                  <span>Frete</span>
-                  <span className="font-mono">
-                    {t.frete > 0 ? `−${currFmt(t.frete)} (${pctFmt(t.frete_rate)})` : <span className="text-muted-foreground">—</span>}
-                  </span>
-                </div>
-                <div className="flex justify-between text-kpi-negative">
-                  <span>Custo (CMV)</span>
-                  <span className="font-mono">
-                    {t.cost > 0 ? `−${currFmt(t.cost)}` : <span className="text-muted-foreground/60">—</span>}
-                  </span>
-                </div>
-                <div className="flex justify-between text-violet-600">
-                  <span>Impostos</span>
-                  <span className="font-mono">
-                    {t.tax > 0 ? `−${currFmt(t.tax)}` : <span className="text-muted-foreground/60">—</span>}
-                  </span>
-                </div>
-                <div className="flex justify-between pt-2 border-t border-border/60">
-                  <span className="font-medium">Receita líquida</span>
-                  <span className="font-mono font-semibold">{currFmt(t.net)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Margem líquida</span>
-                  <span className={`font-bold ${marginColor(t.margin_pct)}`}>{pctFmt(t.margin_pct)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Ticket médio</span>
-                  <span className="font-mono">{currFmt(t.avg_ticket)}</span>
-                </div>
-                {/* Revenue share bar */}
-                <div className="pt-1">
-                  <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
-                    <span>% da receita total</span>
-                    <span>{totalGross > 0 ? pctFmt((t.gross / totalGross) * 100) : "—"}</span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                    <div
-                      className="h-full rounded-full"
-                      style={{ width: `${totalGross > 0 ? (t.gross / totalGross) * 100 : 0}%`, background: LISTING_COLORS[t.type] }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* Grouped bar chart */}
-      <Card>
-        <div className="px-4 pt-4 pb-2">
-          <span className="text-sm font-medium">Bruto vs Líquido por tipo de anúncio</span>
-        </div>
-        <CardContent className="px-4 pb-4 pt-0">
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={chartData} margin={{ left: 8, right: 8, top: 8, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `R$${(v / 1000).toFixed(0)}k`} />
-              <RechartsTooltip
-                contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
-                formatter={(v: number) => [currFmt(v)]}
-              />
-              <Bar dataKey="Bruto"   fill="hsl(var(--accent))"  fillOpacity={0.6} radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Líquido" fill="hsl(var(--success))" fillOpacity={0.85} radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-          <div className="flex items-center justify-center gap-6 mt-1 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5"><span className="w-3 h-2 rounded-sm inline-block bg-accent/60" />Receita Bruta</span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-2 rounded-sm inline-block bg-success/85" />Receita Líquida</span>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
+// ── Fase 213, Plano 08, Task 3 (RE-06): a sub-aba de Tipo de Anúncio saiu ────
+//
+// Ela distribuía receita e comissão entre Clássico, Premium e Grátis. A escolha
+// do tipo de anúncio é por anúncio e não muda com a leitura de um agregado de
+// pedidos: sem cruzar com margem por anúncio, a distribuição não decide nada.
+// Nada foi apagado no banco — `listing_type` segue na tabela de pedidos, na
+// coluna Tipo, e a análise por tipo com margem vive em /anuncios.
 
 // ── Empty state for reports ───────────────────────────────────────────────────
 
@@ -634,15 +374,15 @@ function EmptyReport() {
 
 function PedidosRelatorios({ orders }: { orders: ProcessedOrder[] }) {
   return (
-    <Tabs defaultValue="produtos">
+    // A sub-aba Por Estado abre por padrão: é a única que decide algo que
+    // nenhuma outra tela decide — frete e expansão regional.
+    <Tabs defaultValue="uf">
       <TabsList className="mb-4 h-8 w-auto overflow-x-auto no-scrollbar">
-        <TabsTrigger value="produtos"  className="text-xs px-3 h-7 gap-1.5"><BarChart2 className="w-3.5 h-3.5" />Top Produtos</TabsTrigger>
         <TabsTrigger value="uf"        className="text-xs px-3 h-7 gap-1.5"><MapPin    className="w-3.5 h-3.5" />Por Estado</TabsTrigger>
-        <TabsTrigger value="tipo"      className="text-xs px-3 h-7 gap-1.5"><Tag       className="w-3.5 h-3.5" />Tipo de Anúncio</TabsTrigger>
+        <TabsTrigger value="produtos"  className="text-xs px-3 h-7 gap-1.5"><BarChart2 className="w-3.5 h-3.5" />Por Produto</TabsTrigger>
       </TabsList>
-      <TabsContent value="produtos"><SubTabTopProdutos orders={orders} /></TabsContent>
-      <TabsContent value="uf">      <SubTabUF          orders={orders} /></TabsContent>
-      <TabsContent value="tipo">    <SubTabTipoAnuncio orders={orders} /></TabsContent>
+      <TabsContent value="uf">      <SubTabUF orders={orders} /></TabsContent>
+      <TabsContent value="produtos"><AtalhoResultado /></TabsContent>
     </Tabs>
   );
 }
@@ -915,7 +655,8 @@ export default function MLPedidos() {
         ? (Number(r.receita_liquida ?? 0) / Number(r.receita_bruta)) * 100 : 0,
       commission_rate: Number(r.receita_bruta) > 0
         ? (Number(r.comissao ?? 0) / Number(r.receita_bruta)) * 100 : 0,
-      free_shipping:   (r.frete ?? 0) > 0,
+      // AV-07: o valor não muda — `frete > 0` significa que HÁ custo de frete.
+      tem_custo_frete: (r.frete ?? 0) > 0,
       comprador:       r.comprador ?? "—",
       estado:          r.estado ?? null,
       cost_total:      r.custo_unit != null ? Number(r.custo_unit) * r.quantidade : null,
@@ -979,6 +720,18 @@ export default function MLPedidos() {
       confirmed_total:  confirmed.length,
     };
   }, [orders]);
+
+  // ── AV-09: a margem agregada só é exibida se houver CMV suficiente ──────────
+  //
+  // O custo ausente é somado como ZERO no total: quanto MENOS custo cadastrado,
+  // MAIOR a margem exibida. Na organização Thales, sem nenhum CMV, a margem
+  // média é positiva por construção. Acima do limiar de `custoFaltante.ts` o
+  // percentual dá lugar a um marcador de ausência com a contagem explicada —
+  // nunca a um número positivo.
+  const confiabilidadeMargem = useMemo(
+    () => avaliarConfiabilidadeMargem(summary.missing_cost, summary.confirmed_total),
+    [summary.missing_cost, summary.confirmed_total],
+  );
 
   // ── Chart ────────────────────────────────────────────────────────────────────
   const chartData = useMemo(() => {
@@ -1177,15 +930,23 @@ export default function MLPedidos() {
                 tooltip={tip("receita_bruta")}
                 subtitle="Apenas pedidos confirmados"
               />
+              {/* AV-08: este número desconta comissão, frete, imposto e CMV —
+                  e NÃO desconta publicidade. Sem o rótulo, ele convive com o
+                  MCO pós-ads de /resultado no mesmo período, com o mesmo nome
+                  e réguas diferentes. */}
               <KPICard
-                title="Receita líquida"
+                title="Receita líquida (pré-ads)"
                 value={currFmt(summary.full_net_revenue)}
                 variant="minimal"
                 iconClassName="bg-success/10 text-success"
                 size="compact"
                 icon={<TrendingDown className="w-4 h-4" />}
                 tooltip={tip("receita_liquida")}
-                subtitle={`Comissão, frete, custo e imposto · ${pctFmt(summary.full_net_margin_pct)}`}
+                subtitle={
+                  confiabilidadeMargem.confiavel
+                    ? `Antes da publicidade · ${pctFmt(summary.full_net_margin_pct)}`
+                    : "Antes da publicidade · margem suprimida (sem CMV)"
+                }
               />
               <KPICard
                 title="Ticket médio"
@@ -1234,11 +995,34 @@ export default function MLPedidos() {
               </Card>
               <Card>
                 <CardContent className="pt-4 pb-4">
-                  <p className="text-xs text-muted-foreground font-medium">Margem líquida média</p>
-                  <p className={`text-2xl font-bold mt-1 ${marginColor(summary.full_net_margin_pct)}`}>
-                    {pctFmt(summary.full_net_margin_pct)}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">Bruto − Comissão − Frete − Custo − Imposto</p>
+                  <p className="text-xs text-muted-foreground font-medium">Margem líquida média (pré-ads)</p>
+                  {confiabilidadeMargem.confiavel ? (
+                    <>
+                      <p className={`text-2xl font-bold mt-1 ${marginColor(summary.full_net_margin_pct)}`}>
+                        {pctFmt(summary.full_net_margin_pct)}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Bruto − Comissão − Frete − Custo − Imposto, <strong>antes da publicidade</strong>.{" "}
+                        <Link to="/resultado" className="underline hover:no-underline">Ver pós-ads</Link>
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      {/* AV-09: marcador de ausência, nunca um número positivo. */}
+                      <p className="text-2xl font-bold mt-1 text-muted-foreground">—</p>
+                      <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                        {confiabilidadeMargem.total === 0
+                          ? "Sem pedidos confirmados no período."
+                          : <>
+                              {confiabilidadeMargem.semCusto} de {confiabilidadeMargem.total} pedidos
+                              sem custo ({pctFmt(confiabilidadeMargem.pctSemCusto ?? 0)}) — acima do
+                              limiar de {confiabilidadeMargem.limiarPct}%, a margem média seria ficção
+                              positiva.{" "}
+                              <Link to="/anuncios" className="underline hover:no-underline">Cadastrar custos</Link>
+                            </>}
+                      </p>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -1328,7 +1112,7 @@ export default function MLPedidos() {
                               ["Data",      order.date ? format(parseISO(order.date), "dd/MM/yy") : "—"],
                               ["Bruto",     currFmt(order.gross_revenue)],
                               ["Comissão",  `−${currFmt(order.ml_commission)}`],
-                              ["Frete",     order.free_shipping ? `−${currFmt(order.shipping_cost)}` : "—"],
+                              ["Frete",     order.tem_custo_frete ? `−${currFmt(order.shipping_cost)}` : "—"],
                               ["Líquido",   currFmt(order.net_revenue)],
                               ["M. Líquida", order.full_net_margin_pct != null ? pctFmt(order.full_net_margin_pct) : `${pctFmt(order.net_margin_pct)}*`],
                             ] as [string, string][]).map(([label, val]) => (
@@ -1414,7 +1198,7 @@ export default function MLPedidos() {
                                 <span className="text-[10px] text-muted-foreground ml-1">({pctFmt(order.commission_rate)})</span>
                               </td>
                               <td className="px-3 py-3 text-right text-xs">
-                                {order.free_shipping
+                                {order.tem_custo_frete
                                   ? <span className="text-orange-600 font-mono">−{currFmt(order.shipping_cost)}</span>
                                   : <span className="text-muted-foreground">—</span>
                                 }
