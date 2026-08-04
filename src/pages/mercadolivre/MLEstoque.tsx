@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMLInventory } from "@/contexts/MLInventoryContext";
+import { useMLStore } from "@/contexts/MLStoreContext";
 import { useMLCoverage, COVERAGE_PERIODS, COVERAGE_CLASS_LABELS, defaultThresholds } from "@/hooks/useMLCoverage";
 import type { CoveragePeriod, CoverageClass, CoverageData, CoverageThresholds } from "@/hooks/useMLCoverage";
 import type { ProductItem } from "@/contexts/MLInventoryContext";
@@ -829,6 +830,7 @@ function SortableHead({ label, sortAsc, sortDesc, current, onSort, className = "
 export default function MLEstoque() {
   const isMobile = useIsMobile();
   const { items, loading: isLoading, syncing, hasToken, lastUpdated, refresh, syncNow } = useMLInventory();
+  const { resolvedMLUserIds } = useMLStore();
   // hasToken: null = ainda carregando, false = sem token, true = conectado
   const isConnected = hasToken !== false;
   const [coveragePeriod, setCoveragePeriod] = useState<CoveragePeriod>(30);
@@ -873,7 +875,7 @@ export default function MLEstoque() {
     }
   }, [thresholds]);
 
-  const { coverageMap, stats } = useMLCoverage(items, coveragePeriod, thresholds);
+  const { coverageMap, stats } = useMLCoverage(items, coveragePeriod, thresholds, resolvedMLUserIds);
 
   // Filter / sort state
   const [search, setSearch] = useState("");
