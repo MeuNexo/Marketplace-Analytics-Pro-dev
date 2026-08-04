@@ -68,6 +68,26 @@ vi.mock("@/contexts/MLInventoryContext", () => ({
   useMLInventory: () => ({ items: [] as ProductItem[] }),
 }));
 
+// Fase 211: a publicidade do anúncio passou a vir do hook de rateio
+// (react-query + OrganizationContext). Aqui ele é mockado para manter estes
+// testes focados no card de MCO — o rateio em si é provado, ao centavo, em
+// src/lib/adsRateio.test.ts. Sem ads no período: o waterfall segue completo e o
+// comportamento verificado abaixo é o mesmo de antes da troca de fonte.
+vi.mock("@/hooks/useAdsRateioAnuncio", () => ({
+  useAdsRateioAnuncio: () => ({
+    data: {
+      daily: [] as { date: string; spend: number }[],
+      total: 0,
+      totalFatura: 0,
+      naoRateado: 0,
+      diasSemChave: [] as string[],
+      source: "billing-rateio" as const,
+    },
+    isLoading: false,
+    error: null,
+  }),
+}));
+
 const upsertMock = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("@/hooks/useMcoTargets", () => ({
@@ -106,7 +126,10 @@ describe("PrecoPraticadoReport — card Detalhamento de MCO", () => {
     expect(screen.getByText("(−) Frete")).toBeInTheDocument();
     expect(screen.getByText("(−) Impostos")).toBeInTheDocument();
     expect(screen.getByText("= Margem de Contribuição/un")).toBeInTheDocument();
-    expect(screen.getByText("(−) Ads")).toBeInTheDocument(); // incluirAds default ON
+    // Fase 211 (ADS-07): a linha é nomeada como custo POR VENDA — o ML não
+    // informa qual venda veio de clique pago, então o ads do anúncio é
+    // distribuído entre todas as vendas do período (TACoS por anúncio).
+    expect(screen.getByText("(−) Ads por venda")).toBeInTheDocument(); // incluirAds default ON
     expect(screen.getByText("= MCO/un")).toBeInTheDocument();
 
     // Meta MCO% + recomendação sempre visível (D-08)

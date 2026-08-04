@@ -36,7 +36,6 @@ import {
   computeWaterfallCard,
   percentDelta,
   pointDelta,
-  type AdsDailyRow,
   type McoSeriesPoint,
   type PrecoSeriesRow,
   type PriceKpis,
@@ -55,6 +54,7 @@ import {
 import { computeMcoRecommendation } from "@/lib/pricing/mcoRecommendation";
 import { classifyMcoHealth, mcoHealthRole, MCO_SAUDAVEL_PCT } from "@/lib/mcoHealth";
 import { useMcoTargets } from "@/hooks/useMcoTargets";
+import { useAdsRateioAnuncio } from "@/hooks/useAdsRateioAnuncio";
 import { parseNumber } from "@/lib/pricing/calculator";
 import {
   computeSimulatedWaterfall,
@@ -99,6 +99,10 @@ function bucketLabel(iso: string, g: Granularity): string {
   if (g === "month") return format(d, "MMM/yy", { locale: ptBR });
   return format(d, "dd/MM", { locale: ptBR });
 }
+
+// Identidade estável para o estado de carregamento do ads — um `[]` novo a cada
+// render invalidaria todos os useMemo que dependem de `adsDaily`.
+const EMPTY_ADS_DAILY: { date: string; spend: number }[] = [];
 
 const GRANULARITY_LABELS: Record<Granularity, string> = {
   day: "Diária", week: "Semanal", month: "Mensal",
@@ -357,9 +361,7 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
   const [incluirAds, setIncluirAds] = useState(true);
   const [rows, setRows] = useState<PrecoSeriesRow[] | null>(null);
   const [dailyRows, setDailyRows] = useState<PrecoSeriesRow[] | null>(null);
-  const [adsDaily, setAdsDaily] = useState<AdsDailyRow[]>([]);
   const [prevRows, setPrevRows] = useState<PrecoSeriesRow[] | null>(null);
-  const [prevAdsDaily, setPrevAdsDaily] = useState<AdsDailyRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingDaily, setLoadingDaily] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -511,53 +513,34 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
     return () => { cancelled = true; };
   }, [selectedId, mlUserIds, fromDate, toDate, selectedSku]);
 
-  // Spend diário de ads do item (ml_ads_products_cache — RLS org-first isola;
-  // cobertura ausente => array vazio => ads=0 silencioso). Não depende da
-  // granularidade: a bucketização é feita no util (evita refetch à toa).
-  // Busca o período atual e o anterior em paralelo (comparativo dos KPIs).
-  // Serve tanto a série temporal (rows) quanto o histograma (dailyRows).
-  useEffect(() => {
-    if (!selectedId) { setAdsDaily([]); setPrevAdsDaily([]); return; }
-    let cancelled = false;
-    const mapAds = (data: any): AdsDailyRow[] =>
-      (data ?? [])
-        .filter((r: any) => r.date != null)
-        .map((r: any) => ({ date: String(r.date), spend: Number(r.spend ?? 0) }));
-    const fetchWindow = (_from: string | null, _to: string | null) => {
-      let query = supabase
-        .from("ml_ads_products_cache")
-        .select("spend, date")
-        .eq("item_id", selectedId)
-        .range(0, 4999); // PostgREST trunca em 1000 sem range explícito
-      if (mlUserIds && mlUserIds.length > 0) query = query.in("ml_user_id", mlUserIds);
-      if (_from) query = query.gte("date", _from);
-      if (_to) query = query.lte("date", _to);
-      return query;
-    };
-    (async () => {
-      const prev = computePreviousWindow(fromDate, toDate);
-      const [curRes, prevRes] = await Promise.all([
-        fetchWindow(fromDate, toDate),
-        prev ? fetchWindow(prev.from, prev.to) : Promise.resolve({ data: null, error: null }),
-      ]);
-      if (cancelled) return;
-      if (curRes.error) {
-        console.warn("ml_ads_products_cache:", curRes.error.message);
-        setAdsDaily([]);
-      } else {
-        setAdsDaily(mapAds(curRes.data));
-      }
-      if (!prev) {
-        setPrevAdsDaily([]);
-      } else if (prevRes.error) {
-        console.warn("ml_ads_products_cache (período anterior):", prevRes.error.message);
-        setPrevAdsDaily([]);
-      } else {
-        setPrevAdsDaily(mapAds(prevRes.data));
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [selectedId, mlUserIds, fromDate, toDate]);
+  // Publicidade do anúncio — régua da Fase 211 (ADS-06): o total que o Mercado
+  // Livre COBROU na fatura, rateado por MLB pela proporção do relatório de
+  // publicidade. Quem lê as três séries e faz o rateio é o hook; aqui só se
+  // consome o resultado. Antes desta fase o componente lia o cache direto e
+  // exibia ~12% do gasto real como se fosse o gasto do anúncio.
+  //
+  // Não depende da granularidade: a bucketização é feita no util (evita refetch
+  // à toa). Serve tanto a série temporal (rows) quanto o histograma (dailyRows).
+  const prevWindow = useMemo(
+    () => computePreviousWindow(fromDate, toDate),
+    [fromDate, toDate],
+  );
+  const adsRateio = useAdsRateioAnuncio(selectedId, mlUserIds, fromDate, toDate);
+  const prevAdsRateio = useAdsRateioAnuncio(
+    selectedId,
+    mlUserIds,
+    prevWindow?.from ?? null,
+    prevWindow?.to ?? null,
+  );
+  // Array vazio como valor de carregamento — mesmo contrato que os utilitários
+  // puros já recebiam (`AdsDailyRow[]`), nenhuma fórmula muda.
+  const adsDaily = adsRateio.data?.daily ?? EMPTY_ADS_DAILY;
+  const prevAdsDaily = prevAdsRateio.data?.daily ?? EMPTY_ADS_DAILY;
+  /** De qual das duas réguas veio o número de publicidade da tela. */
+  const adsSource = adsRateio.data?.source ?? null;
+  /** Parte da fatura do período que nenhum anúncio pôde receber (sem chave de rateio). */
+  const adsNaoRateado = adsRateio.data?.naoRateado ?? 0;
+  const adsDiasSemChave = adsRateio.data?.diasSemChave.length ?? 0;
 
   // Série de MCO pronta para o gráfico temporal (util puro do 79-01).
   const serie = useMemo(
@@ -864,6 +847,32 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
         </div>
       </div>
 
+      {/* Origem do número de publicidade (Fase 211) — a troca de régua nunca
+          acontece escondida: a tela diz de onde veio o ads e quanto da fatura
+          do período ficou sem chave de rateio (T-211-28). */}
+      {incluirAds && adsSource != null && (
+        <p className="text-[10px] text-muted-foreground">
+          {adsSource === "billing-rateio" ? (
+            <>
+              Publicidade = fatura do Mercado Livre <strong className="font-medium">rateada por anúncio</strong>{" "}
+              pela proporção do relatório de publicidade.
+            </>
+          ) : (
+            <>
+              Publicidade = relatório de publicidade — a fatura do período ainda não foi sincronizada.
+            </>
+          )}
+          {adsNaoRateado !== 0 && (
+            <span className="text-warning">
+              {" "}
+              {brl(adsNaoRateado)} da fatura do período ficaram sem chave de rateio em{" "}
+              {intFmt(adsDiasSemChave)} dia{adsDiasSemChave === 1 ? "" : "s"} (sem gasto no relatório de
+              publicidade naqueles dias) — não entram no MCO deste anúncio.
+            </span>
+          )}
+        </p>
+      )}
+
       {/* Aviso do nível pai (Phase 82) — anúncio com variações e nenhuma
           selecionada: o número de cobertura do pai é uma média que esconde
           rupturas por variação. */}
@@ -1045,7 +1054,9 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                 Eixo X = faixas de preço · altura = {faixaMode === "unidades" ? "unidades vendidas" : "lucro (MCO R$) total"} na faixa ·
                 cor = margem (verde saudável / âmbar apertada / vermelho prejuízo, sempre com % no topo) ·
                 faixa vazia = preço não testado no período · barra "+R$X" agrega os preços mais altos (outliers) ·
-                Ads = relatório diário de publicidade (melhor esforço; ausente = 0) · imposto pelo regime configurado ·
+                Ads = fatura do Mercado Livre rateada por anúncio pela proporção do relatório de publicidade
+                (sem fatura sincronizada, o próprio relatório; dia sem chave de rateio fica declarado acima) ·
+                imposto pelo regime configurado ·
                 giro = unidades ÷ dias-com-venda naquele preço (velocidade real de venda) ·
                 cobertura = estoque de hoje do anúncio ÷ giro da faixa — cenário hipotético "a esse preço, quanto dura?" ·
                 cobertura em vermelho = risco de ruptura (menos de {COBERTURA_RISCO_DIAS} dias) ·
@@ -1189,7 +1200,7 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                     </div>
                     {incluirAds && (
                       <p className="flex justify-between gap-6">
-                        <span className="text-muted-foreground">(−) Ads</span>
+                        <span className="text-muted-foreground">(−) Ads por venda</span>
                         <SimField
                           value={simDraft.adsUnit}
                           min={0}
@@ -1224,7 +1235,7 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                         danger={waterfallCard.mcUnit < 0}
                       />
                     </div>
-                    {incluirAds && <Row k="(−) Ads" v={brl(waterfallCard.adsUnit)} />}
+                    {incluirAds && <Row k="(−) Ads por venda" v={brl(waterfallCard.adsUnit)} />}
                     <div className="border-t border-border pt-2">
                       <Row
                         k="= MCO/un"
@@ -1236,6 +1247,18 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                   </>
                 )}
               </div>
+
+              {/* Régua da linha de Ads (Fase 211, ADS-07/D-04) — o ML não diz
+                  qual venda veio de clique pago, então o custo é distribuído
+                  entre TODAS as vendas do anúncio no período (TACoS). */}
+              {incluirAds && (
+                <p className="mt-2 text-[10px] text-muted-foreground">
+                  Ads por venda = publicidade do anúncio no período ÷ unidades vendidas do anúncio no
+                  período{adsSource === "billing-rateio"
+                    ? " — publicidade vinda da fatura do Mercado Livre, rateada por anúncio pela proporção do relatório de publicidade."
+                    : "."}
+                </p>
+              )}
 
               {/* 3. Meta MCO% — inline-edit (D-05), pré-preenche custom se houver */}
               <div className="mt-3 border-t border-border pt-3">
@@ -1466,7 +1489,9 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
             {hasData && (
               <p className="mt-2 text-[10px] text-muted-foreground text-center">
                 Linha sólida = preço praticado · linha tracejada = break-even · colchão verde/vermelho = MCO por unidade ·
-                linha do eixo direito = MCO% · Ads = relatório diário de publicidade (melhor esforço; ausente = 0) ·
+                linha do eixo direito = MCO% ·
+                Ads = fatura do Mercado Livre rateada por anúncio pela proporção do relatório de publicidade
+                (sem fatura sincronizada, o próprio relatório) ·
                 imposto pelo regime configurado · granularidade {GRANULARITY_LABELS[granularity].toLowerCase()}
               </p>
             )}
