@@ -1,8 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { KPI_GLOSSARY } from "@/lib/kpi-glossary";
 import { EmptyState } from "@/components/ui/empty-state";
-import { STORE_BADGE_COLORS } from "@/config/storeColors";
 import { useMLInventory } from "@/contexts/MLInventoryContext";
 import type { ProductItem, ProductVariation } from "@/contexts/MLInventoryContext";
 import { useMLStore } from "@/contexts/MLStoreContext";
@@ -20,7 +18,6 @@ import {
 // e a sub-tabela de variações chamam os dois helpers abaixo, nunca aritmética
 // de margem inline. Ver o cabeçalho de anuncioMargens.ts para a régua completa.
 import { calcularMargensDoAnuncio, precoPromocionalAplicavel } from "@/lib/anuncioMargens";
-import { classificarCurvaAbc, calcularParticipacao } from "@/lib/curvaAbc";
 // AV-03: a ausência de CMV é contada e declarada em agregado, em vez de virar
 // um traço solto célula a célula. Ver o cabeçalho de custoFaltante.ts.
 import { contarSemCusto } from "@/lib/custoFaltante";
@@ -30,9 +27,8 @@ import { AvisoCustoFaltante } from "@/components/mercadolivre/AvisoCustoFaltante
 import { AdsOrigemNota } from "@/components/mercadolivre/AdsOrigemNota";
 import { useMLPrecosCustos, type MLItemSuggestion } from "@/hooks/useMLPrecosCustos";
 import { KPICard } from "@/components/dashboard/KPICard";
-import { Progress } from "@/components/ui/progress";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,12 +39,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
-  ShoppingBag, RefreshCw, Search, ExternalLink, Plug, DollarSign, Tag, TrendingUp, Package,
+  ShoppingBag, RefreshCw, Search, ExternalLink, Plug, Tag, TrendingUp, Package,
   ChevronDown, ChevronRight, Receipt, Truck, ArrowUpDown, ArrowUp, ArrowDown,
-  BookOpen, CalendarIcon, X, Check, Lightbulb, BarChart2, CheckCircle2, TrendingDown, AlertCircle, Download,
+  BookOpen, CalendarIcon, X, Check, Lightbulb, BarChart2, CheckCircle2, TrendingDown, AlertCircle,
   Pencil, Eye,
 } from "lucide-react";
-import * as XLSX from "xlsx";
 import { Link, useSearchParams } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
@@ -61,7 +56,7 @@ import { ImportacaoCustos } from "@/components/mercadolivre/anuncios/ImportacaoC
 import { ListingDetailModal } from "@/components/mercadolivre/anuncios/ListingDetailModal";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, ComposedChart, Line, Area, ReferenceLine, CartesianGrid, Legend,
+  Cell, ReferenceLine, CartesianGrid,
 } from "recharts";
 
 // Sentinela do período "Total". Fase 213/CR-07: "Total" NÃO significa mais
@@ -70,19 +65,25 @@ import {
 // resolvida em `primeiraVendaDate` e aplicada como qualquer outro período.
 const TOTAL_PERIOD = -1;
 
-// ─── Glossary tip helper ──────────────────────────────────────────────────────
-const tip = (key: keyof typeof KPI_GLOSSARY) => {
-  const e = KPI_GLOSSARY[key];
-  return e.example ? `${e.definition} ${e.example}` : e.definition;
-};
-
-const RANKING_QUICK_RANGES = [
+// Fase 213/plano 07: o seletor de período desta tela deixou de servir a uma aba
+// de relatórios (que saiu daqui para `/resultado`) e passou a servir APENAS às
+// duas colunas de vendas reais do catálogo — Mg. Op. e Mg. Pós-Ads. É por isso
+// que ele agora vive dentro da aba Catálogo, ao lado das colunas que governa.
+const VENDAS_QUICK_RANGES = [
   { label: "Total",   value: TOTAL_PERIOD },
   { label: "Hoje",    value: 0  },
   { label: "7 dias",  value: 7  },
   { label: "15 dias", value: 15 },
   { label: "30 dias", value: 30 },
 ];
+
+// A janela padrão das colunas de vendas reais. Escolha explícita, não herança:
+// o catálogo precisa responder "esse anúncio deu lucro no último mês?" na
+// primeira renderização, sem que o operador tenha de descobrir um seletor. O
+// que está proibido (CR-07) é a janela IMPLÍCITA — um recuo silencioso que a
+// tela não declara. Esta é declarada no rótulo do seletor e no cabeçalho das
+// duas colunas.
+const VENDAS_PERIODO_PADRAO = 30;
 
 // ─── Financial helpers ────────────────────────────────────────────────────────
 // getListingLabel, currencyFmt e mlListingUrl são importados de
@@ -579,10 +580,6 @@ export default function MLProdutos() {
   const [logisticFilter, setLogisticFilter] = useState<LogisticFilter>("all");
   const [onlyDiscount, setOnlyDiscount] = useState(false);
   const [usePromoPrice, setUsePromoPrice] = useState(false);
-  const [rankingBrandFilter, setRankingBrandFilter] = useState("all");
-  const [rankingSort, setRankingSort] = useState("revenue_desc");
-  const [rankingSearch, setRankingSearch] = useState("");
-  const [reportTab, setReportTab] = useState("ranking");
 
   // ── Price Sheet state ──────────────────────────────────────────────────────
   const [priceSheetOpen, setPriceSheetOpen] = useState(false);
@@ -610,20 +607,14 @@ export default function MLProdutos() {
   // Cache lazy: busca comissão real por produto via ML Listing Costs API ao entrar na view "Financeiro"
   const [commCache, setCommCache] = useState<Map<string, { pct: number; amount: number }>>(new Map());
 
-  const toggleRankingSort = (field: string) => {
-    setRankingSort((prev) =>
-      prev === `${field}_asc` ? `${field}_desc` : `${field}_asc`
-    );
-  };
-
-  // ── Ranking date filter ──────────────────────────────────────────────────────
+  // ── Seletor de período das colunas de vendas reais ───────────────────────────
+  // Serve exclusivamente a Mg. Op. e Mg. Pós-Ads. Ver VENDAS_QUICK_RANGES.
   const { user } = useAuth();
-  const [rankingPeriod, setRankingPeriod] = useState<number>(0);
-  const [rankingRange, setRankingRange] = useState<{ from: Date; to: Date } | null>(null);
-  const [rankingPopoverOpen, setRankingPopoverOpen] = useState(false);
-  const [pendingPeriod, setPendingPeriod] = useState<number | null>(TOTAL_PERIOD);
+  const [vendasPeriod, setVendasPeriod] = useState<number>(VENDAS_PERIODO_PADRAO);
+  const [vendasRange, setVendasRange] = useState<{ from: Date; to: Date } | null>(null);
+  const [vendasPopoverOpen, setVendasPopoverOpen] = useState(false);
+  const [pendingPeriod, setPendingPeriod] = useState<number | null>(VENDAS_PERIODO_PADRAO);
   const [pendingRange, setPendingRange] = useState<DateRange | null>(null);
-  const [rankingRawData, setRankingRawData] = useState<{ item_id: string; qty_sold: number; revenue: number; ml_user_id: string | null; date: string | null }[]>([]);
 
   // ── CR-07: o período "Total" é uma janela real ────────────────────────────
   // Data da primeira venda registrada no escopo (org via RLS + loja resolvida).
@@ -657,90 +648,49 @@ export default function MLProdutos() {
   }, [user, selectedStore, sellerId]);
 
   /**
-   * A janela do relatório — uma só, usada pela busca de vendas, pela coluna de
-   * margem e pelo rótulo da tela. `from`/`to` nulos significam janela ainda não
-   * resolvida ou base sem venda nenhuma: nesse caso a tela mostra zeros e diz
-   * que não houve venda, em vez de cair para o número vitalício.
+   * A janela das colunas de vendas reais — uma só, usada pelo hook de margem e
+   * pelo rótulo da tela. `from`/`to` nulos significam janela ainda não resolvida
+   * ou base sem venda nenhuma: nesse caso a tela mostra traços e diz que não
+   * houve venda, em vez de cair para o número vitalício.
    */
-  const rankingWindow = useMemo((): { from: string | null; to: string | null; resolvida: boolean } => {
+  const vendasWindow = useMemo((): { from: string | null; to: string | null; resolvida: boolean } => {
     const today = format(new Date(), "yyyy-MM-dd");
-    if (rankingRange) {
+    if (vendasRange) {
       return {
-        from: format(rankingRange.from, "yyyy-MM-dd"),
-        to:   format(rankingRange.to,   "yyyy-MM-dd"),
+        from: format(vendasRange.from, "yyyy-MM-dd"),
+        to:   format(vendasRange.to,   "yyyy-MM-dd"),
         resolvida: true,
       };
     }
-    if (rankingPeriod === TOTAL_PERIOD) {
+    if (vendasPeriod === TOTAL_PERIOD) {
       if (primeiraVendaDate === undefined) return { from: null, to: null, resolvida: false };
       if (primeiraVendaDate === null)      return { from: null, to: null, resolvida: true };
       return { from: primeiraVendaDate, to: today, resolvida: true };
     }
-    if (rankingPeriod === 0) {
+    if (vendasPeriod === 0) {
       return { from: today, to: today, resolvida: true };
     }
     return {
-      from: format(subDays(new Date(), rankingPeriod), "yyyy-MM-dd"),
+      from: format(subDays(new Date(), vendasPeriod), "yyyy-MM-dd"),
       to:   today,
       resolvida: true,
     };
-  }, [rankingRange, rankingPeriod, primeiraVendaDate]);
+  }, [vendasRange, vendasPeriod, primeiraVendaDate]);
 
-  const fetchRankingSales = useCallback(async () => {
-    if (!user) return;
-    const fromDate = rankingWindow.from;
-    const toDate   = rankingWindow.to;
-    // Janela ainda não resolvida, ou base sem venda nenhuma: sem linhas — e sem
-    // fallback. Um período vazio tem de parecer vazio (CR-07).
-    if (!fromDate || !toDate) {
-      setRankingRawData([]);
-      return;
-    }
-
-    // Paginate through all rows to bypass Supabase's 1 000-row default limit.
-    // Without this, sellers with many products × days get truncated results and
-    // individual items appear with artificially low sold counts.
-    const PAGE = 1000;
-    const MAX_ROWS = 50000;
-    const allRows: { item_id: string; qty_sold: number; revenue: number; ml_user_id: string | null; date: string | null }[] = [];
-    let pageFrom = 0;
-    while (pageFrom < MAX_ROWS) {
-      let query = supabase
-        .from("ml_product_daily_cache")
-        .select("item_id, qty_sold, revenue, ml_user_id, date")
-        .gte("date", fromDate)
-        .lte("date", toDate)
-        .range(pageFrom, pageFrom + PAGE - 1);
-      if (selectedStore !== "all") {
-        query = query.eq("ml_user_id", selectedStore);
-      } else if (sellerId) {
-        query = query.eq("seller_id", sellerId);
-      }
-      const { data } = await query;
-      if (!data || data.length === 0) break;
-      allRows.push(...data);
-      if (data.length < PAGE) break;
-      pageFrom += PAGE;
-    }
-    setRankingRawData(allRows);
-  }, [user, rankingWindow, selectedStore, sellerId]);
-
-  useEffect(() => { fetchRankingSales(); }, [fetchRankingSales]);
-
-  // ── Margem com Ads — a MESMA janela do relatório ─────────────────────────
+  // ── Margem com Ads — a janela declarada acima ────────────────────────────
   // Fase 213/CR-07: aqui existia um recuo silencioso de 365 dias quando o
   // período era "Total". A coluna de margem cobria um ano enquanto o resto da
   // tela dizia "Todo o período". Com a janela resolvida de verdade, as duas
   // passam a ser a mesma. Janela não resolvida → hoje/hoje (nenhuma linha).
-  const { rankingFrom, rankingTo } = useMemo(() => {
+  const { vendasFrom, vendasTo } = useMemo(() => {
     const today = format(new Date(), "yyyy-MM-dd");
     return {
-      rankingFrom: rankingWindow.from ?? today,
-      rankingTo:   rankingWindow.to   ?? today,
+      vendasFrom: vendasWindow.from ?? today,
+      vendasTo:   vendasWindow.to   ?? today,
     };
-  }, [rankingWindow]);
+  }, [vendasWindow]);
 
-  const { data: marginWithAds } = useMLMarginWithAds(rankingFrom, rankingTo);
+  const { data: marginWithAds } = useMLMarginWithAds(vendasFrom, vendasTo);
 
   // Fase 212: `ads_spend` destas linhas já vem na régua da fatura (rateada),
   // não no gasto do relatório de publicidade.
@@ -759,58 +709,29 @@ export default function MLProdutos() {
 
   /**
    * O intervalo efetivo que as colunas Mg. Op. e Mg. Pós-Ads cobrem, em datas.
-   * É `rankingFrom`/`rankingTo` — a MESMA janela do relatório desde o plano
-   * 213-04. Uma coluna de margem ao lado de um seletor de período sem dizer que
-   * janela cobre é um convite ao engano, então o rótulo vai para o tooltip.
+   * É `vendasFrom`/`vendasTo` — a MESMA janela do seletor ao lado da tabela.
+   * Uma coluna de margem ao lado de um seletor de período sem dizer que janela
+   * cobre é um convite ao engano, então o rótulo vai para o cabeçalho e para o
+   * tooltip.
    */
   const janelaMargemLabel = useMemo(() => {
     const fmt = (d: string) => {
       const [y, m, dd] = d.split("-");
       return `${dd}/${m}/${y}`;
     };
-    return `${fmt(rankingFrom)} a ${fmt(rankingTo)}`;
-  }, [rankingFrom, rankingTo]);
+    return `${fmt(vendasFrom)} a ${fmt(vendasTo)}`;
+  }, [vendasFrom, vendasTo]);
 
-  // Deduplicate raw rows by (ml_user_id, date, item_id) before aggregating.
-  // Guard against duplicate rows that arise when multiple members of the same
-  // org sync the same store on the same day (unique constraint was previously
-  // per-user, not per-org, so two rows could coexist with identical data).
-  const rankingDeduped = useMemo(() => {
-    const seen = new Set<string>();
-    return rankingRawData.filter((row) => {
-      const key = `${row.ml_user_id ?? ""}:${row.date ?? ""}:${row.item_id}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }, [rankingRawData]);
-
-  const rankingSoldMap = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const row of rankingDeduped) {
-      map.set(row.item_id, (map.get(row.item_id) ?? 0) + row.qty_sold);
-    }
-    return map;
-  }, [rankingDeduped]);
-
-  const rankingRevenueMap = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const row of rankingDeduped) {
-      map.set(row.item_id, (map.get(row.item_id) ?? 0) + (row.revenue ?? 0));
-    }
-    return map;
-  }, [rankingDeduped]);
-
-  const rankingLabel = rankingRange
-    ? `${format(rankingRange.from, "dd/MM")} – ${format(rankingRange.to, "dd/MM")}`
-    : rankingPeriod === TOTAL_PERIOD
+  const vendasLabel = vendasRange
+    ? `${format(vendasRange.from, "dd/MM")} – ${format(vendasRange.to, "dd/MM")}`
+    : vendasPeriod === TOTAL_PERIOD
       // CR-07: "Todo o período" agora tem começo declarado — a primeira venda
       // registrada na base. Sem venda nenhuma, a tela diz isso.
       ? primeiraVendaDate
         ? `Todo o período (desde ${format(new Date(`${primeiraVendaDate}T12:00:00`), "dd/MM/yy")})`
         : primeiraVendaDate === null ? "Todo o período (sem venda registrada)" : "Todo o período"
-    : rankingPeriod === 0            ? "Hoje"
-    : `Últimos ${rankingPeriod} dias`;
+    : vendasPeriod === 0            ? "Hoje"
+    : `Últimos ${vendasPeriod} dias`;
 
   const pendingLabel = pendingRange?.from
     ? pendingRange.to && pendingRange.to.getTime() !== pendingRange.from.getTime()
@@ -824,15 +745,15 @@ export default function MLProdutos() {
 
   const canConfirm = pendingRange?.from != null || pendingPeriod !== null;
 
-  const handleRankingConfirm = () => {
+  const handleVendasConfirm = () => {
     if (pendingRange?.from) {
-      setRankingRange({ from: pendingRange.from, to: pendingRange.to ?? pendingRange.from });
-      setRankingPeriod(0);
+      setVendasRange({ from: pendingRange.from, to: pendingRange.to ?? pendingRange.from });
+      setVendasPeriod(0);
     } else if (pendingPeriod !== null) {
-      setRankingPeriod(pendingPeriod);
-      setRankingRange(null);
+      setVendasPeriod(pendingPeriod);
+      setVendasRange(null);
     }
-    setRankingPopoverOpen(false);
+    setVendasPopoverOpen(false);
   };
 
   const handleOpenPriceSheet = useCallback(async (item: { id: string; title: string; thumbnail: string; price: number }) => {
@@ -1000,176 +921,20 @@ export default function MLProdutos() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredItemKey]);
 
-  // KPI stats derived from filtered items so cards react to active filters
-  const filteredKPIs = useMemo(() => {
-    const totalRevenuePotential = filtered.reduce((s, i) => s + i.price * i.available_quantity, 0);
-    const avgPrice = filtered.length > 0 ? filtered.reduce((s, i) => s + i.price, 0) / filtered.length : 0;
-    const totalSold = filtered.reduce((s, i) => s + i.sold_quantity, 0);
-    return { totalRevenuePotential, avgPrice, totalSold };
-  }, [filtered]);
-
-  // ─── Reports data ───────────────────────────────────────────────────────────
-  // CR-07: aqui existiam dois fallbacks para `sold_quantity × price` — unidades
-  // vendidas ao longo de ANOS multiplicadas pelo preço de HOJE — disparados por
-  // uma condição de TAMANHO DE MAPA, válida para o dataset inteiro. Um período
-  // genuinamente sem vendas fazia TODOS os itens voltarem em silêncio ao número
-  // vitalício: um período vazio parecia um período cheio. Os dois morreram. A
-  // ausência no mapa agora é zero, e zero é o que a tela mostra.
-  const rankingAll = useMemo(() => {
-    return [...items]
-      .map((i) => ({
-        id: i.id,
-        title: i.title,
-        thumbnail: i.thumbnail,
-        price: i.price,
-        sold: rankingSoldMap.get(i.id) ?? 0,
-        revenue: rankingRevenueMap.get(i.id) ?? 0,
-        stock: i.available_quantity,
-        brand: i.brand || "Sem marca",
-        _ml_user_id: i._ml_user_id,
-      }))
-      .sort((a, b) => b.sold - a.sold);
-  }, [items, rankingSoldMap, rankingRevenueMap]);
-
-  const rankingFiltered = useMemo(() => {
-    let base = rankingBrandFilter === "all"
-      ? rankingAll
-      : rankingAll.filter((r) => r.brand === rankingBrandFilter);
-
-    if (rankingSearch.trim()) {
-      const q = rankingSearch.trim().toLowerCase();
-      base = base.filter((r) => r.title.toLowerCase().includes(q) || r.id.toLowerCase().includes(q));
-    }
-
-    // AV-06: a participação divide pela receita do conjunto FILTRADO — o mesmo
-    // conjunto que alimenta o KPI de Receita Total ao lado. Antes dividia pelo
-    // total de TODOS os itens, e com filtro de marca ativo a coluna não fechava
-    // em cem nem batia com o cartão.
-    const comShare = calcularParticipacao(
-      base.map((r) => ({ ...r, receita: r.revenue })),
-    ).map((r) => ({ ...r, share: r.participacao }));
-
-    const [field, dir] = rankingSort.split("_");
-    return [...comShare].sort((a, b) => {
-      const aVal = field === "price" ? a.price
-        : field === "sold"    ? a.sold
-        : field === "revenue" ? a.revenue
-        : field === "stock"   ? a.stock
-        : field === "share"   ? a.share
-        : a.sold;
-      const bVal = field === "price" ? b.price
-        : field === "sold"    ? b.sold
-        : field === "revenue" ? b.revenue
-        : field === "stock"   ? b.stock
-        : field === "share"   ? b.share
-        : b.sold;
-      return dir === "asc" ? aVal - bVal : bVal - aVal;
-    });
-  }, [rankingAll, rankingBrandFilter, rankingSearch, rankingSort]);
-
-  // CR-07: sinal explícito de que a janela do relatório foi resolvida e não
-  // trouxe venda nenhuma. Deriva da JANELA, não do tamanho de um mapa usado
-  // como gatilho de fallback — o fallback não existe mais.
-  const periodoSemVenda = rankingWindow.resolvida && rankingDeduped.length === 0;
-  const avisoPeriodoSemVenda = rankingWindow.from === null && rankingWindow.resolvida
+  // CR-07: sinal explícito de que a janela das colunas de vendas reais foi
+  // resolvida e não trouxe venda nenhuma. Deriva da JANELA e do resultado do
+  // hook de margem — nunca de um gatilho de tamanho de coleção usado para cair
+  // no número vitalício; esse fallback não existe mais.
+  //
+  // Fase 213/plano 07: a fonte passou a ser `marginWithAds`. A busca paginada
+  // que alimentava este sinal existia só para as tabelas da aba Relatórios, que
+  // migrou para `/resultado`. `undefined` = ainda carregando: nesse estado a
+  // tela não afirma nada.
+  const periodoSemVenda =
+    vendasWindow.resolvida && marginWithAds != null && marginWithAds.rows.length === 0;
+  const avisoPeriodoSemVenda = vendasWindow.from === null && vendasWindow.resolvida
     ? "Nenhuma venda registrada na base para esta loja — não há período a exibir."
-    : `Nenhuma venda no período selecionado (${rankingLabel}). Os valores abaixo são zero porque não houve venda, não porque falta dado.`;
-
-  const rankingKPIs = useMemo(() => {
-    const totalUnits = rankingFiltered.reduce((s, r) => s + r.sold, 0);
-    const totalRev = rankingFiltered.reduce((s, r) => s + r.revenue, 0);
-    return { totalUnits, totalRev, avgTicket: totalUnits > 0 ? totalRev / totalUnits : 0 };
-  }, [rankingFiltered]);
-
-  const brandData = useMemo(() => {
-    // Mesma régua do ranking: receita do período, sem fallback vitalício (CR-07).
-    const map = new Map<string, { revenue: number; qty: number; ads: number; stock: number }>();
-    items.forEach((i) => {
-      const brand = i.brand || "Sem marca";
-      const sold = rankingSoldMap.get(i.id) ?? 0;
-      const prev = map.get(brand) ?? { revenue: 0, qty: 0, ads: 0, stock: 0 };
-      map.set(brand, {
-        revenue: prev.revenue + (rankingRevenueMap.get(i.id) ?? 0),
-        qty: prev.qty + sold,
-        ads: prev.ads + 1,
-        stock: prev.stock + i.available_quantity,
-      });
-    });
-    return Array.from(map.entries())
-      .map(([brand, d]) => ({ brand, ...d, avgTicket: d.qty > 0 ? d.revenue / d.qty : 0 }))
-      .sort((a, b) => b.revenue - a.revenue);
-  }, [items, rankingSoldMap, rankingRevenueMap]);
-
-  const maxBrandRevenue = brandData.length > 0 ? brandData[0].revenue : 1;
-
-  // Chart data for brand analysis
-  const CHART_COLORS = [
-    "hsl(var(--primary))", "hsl(var(--accent))", "hsl(25,95%,53%)", "hsl(270,70%,50%)",
-    "hsl(160,60%,45%)", "hsl(340,75%,55%)", "hsl(200,70%,50%)", "hsl(45,93%,47%)",
-    "hsl(120,40%,55%)", "hsl(0,65%,50%)",
-  ];
-
-  const brandBarData = useMemo(() =>
-    brandData.slice(0, 10).map((b) => ({ name: b.brand, revenue: b.revenue })),
-  [brandData]);
-
-  const brandPieData = useMemo(() => {
-    const top8 = brandData.slice(0, 8).map((b) => ({ name: b.brand, value: b.qty }));
-    const othersQty = brandData.slice(8).reduce((s, b) => s + b.qty, 0);
-    if (othersQty > 0) top8.push({ name: "Outros", value: othersQty });
-    return top8;
-  }, [brandData]);
-
-  // ─── ABC Curve data ──────────────────────────────────────────────────────────
-  // CR-06: a curva ABC classificava por `sold_quantity × price` — unidades
-  // vendidas ao longo de ANOS multiplicadas pelo preço de HOJE — enquanto a
-  // coluna "Receita" do Ranking ao lado mostrava a receita do período. Duas
-  // colunas com o mesmo rótulo e números diferentes para o mesmo anúncio.
-  // Agora a entrada é `rankingRevenueMap`: exatamente a mesma fonte do Ranking,
-  // na janela que o seletor de período da tela definiu.
-  const abcResultado = useMemo(
-    () =>
-      classificarCurvaAbc(
-        items.map((i) => ({
-          id: i.id,
-          receita: rankingRevenueMap.get(i.id) ?? 0,
-          title: i.title,
-          thumbnail: i.thumbnail,
-          price: i.price,
-          sold: rankingSoldMap.get(i.id) ?? 0,
-          stock: i.available_quantity,
-          brand: i.brand || "Sem marca",
-        })),
-      ),
-    [items, rankingRevenueMap, rankingSoldMap],
-  );
-
-  const abcData = useMemo(
-    () => abcResultado.itens.map((r) => ({ ...r, revenue: r.receita, curve: r.curva })),
-    [abcResultado],
-  );
-
-  const abcSummary = useMemo(
-    () => ({
-      A: abcResultado.resumo.A,
-      B: abcResultado.resumo.B,
-      C: abcResultado.resumo.C,
-      total: abcResultado.resumo.total,
-    }),
-    [abcResultado],
-  );
-
-  const abcChartData = useMemo(() => {
-    if (abcData.length === 0) return [];
-    const step = Math.max(1, Math.floor(abcData.length / 50));
-    return abcData.filter((_, idx) => idx % step === 0 || idx === abcData.length - 1).map((d) => ({
-      rank: d.rank,
-      pct: Number(d.pct.toFixed(2)),
-      cumPct: Number(d.cumPct.toFixed(2)),
-      title: d.title,
-      curve: d.curve,
-    }));
-  }, [abcData]);
+    : `Nenhuma venda no período selecionado (${vendasLabel}). As colunas Mg. Op. e Mg. Pós-Ads aparecem vazias porque não houve venda, não porque falta dado.`;
 
   if (hasToken === false) {
     return (
@@ -1194,9 +959,12 @@ export default function MLProdutos() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <MLPageHeader title="Anúncios" lastUpdated={lastUpdated} />
           <div className="flex items-center gap-3">
+            {/* RE-01: a aba Relatórios saiu daqui. As três visões que viviam
+                nela (ranking por anúncio, agregação por marca e classificação
+                de curva) foram absorvidas por `/resultado`. `/anuncios` é
+                catálogo operacional e cadastro de custo — nada mais. */}
             <TabsList className="h-8">
               <TabsTrigger value="catalogo"  className="text-xs px-3 h-7">Anúncios</TabsTrigger>
-              <TabsTrigger value="relatorios" className="text-xs px-3 h-7">Relatórios</TabsTrigger>
               <TabsTrigger value="custos"    className="text-xs px-3 h-7">Custos</TabsTrigger>
             </TabsList>
             <Button
@@ -1215,19 +983,25 @@ export default function MLProdutos() {
 
       {/* ═══════════════════ ABA CATÁLOGO ═══════════════════ */}
       <TabsContent value="catalogo" className="space-y-5 mt-0">
-        {/* KPIs */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* ── KPI do topo (RE-02, RE-04) ──
+            Sobrou um. Saíram três, sem substituto e de propósito:
+            · Ticket Médio era a média do preço de TABELA dos anúncios filtrados,
+              apresentada com o nome de uma métrica de venda — não havia venda
+              nenhuma nessa conta.
+            · Unidades Vendidas somava `sold_quantity`, o acumulado VITALÍCIO da
+              API do ML, sem janela temporal: um número que só cresce e não
+              destrava decisão.
+            · Receita Potencial era preço de hoje × estoque, respondendo "quanto
+              eu faturaria se vendesse todo o estoque a preço cheio" — pergunta
+              que ninguém faz, e o mesmo número já aparecia em outros lugares.
+            O contador de anúncios fica porque responde ao filtro que o usuário
+            acabou de aplicar. Receita e unidades REAIS, por período, vivem em
+            `/resultado`. */}
+        <div className="grid grid-cols-1 sm:max-w-[280px] gap-3">
           {loading && items.length === 0 ? (
-            Array.from({ length: 4 }).map((_, i) => (
-              <Card key={i}><CardContent className="p-6"><Skeleton className="h-16 w-full" /></CardContent></Card>
-            ))
+            <Card><CardContent className="p-6"><Skeleton className="h-16 w-full" /></CardContent></Card>
           ) : (
-            <>
-              <KPICard title="Total de Anúncios" value={String(filtered.length)} icon={<ShoppingBag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-accent/10 text-accent" tooltip="Quantidade de anúncios que correspondem ao filtro atual." />
-              <KPICard title="Ticket Médio" value={currencyFmt(filteredKPIs.avgPrice)} icon={<Tag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(25,95%,53%)]/10 text-[hsl(25,95%,53%)]" tooltip={tip("ticket_medio")} />
-              <KPICard title="Unidades Vendidas" value={String(filteredKPIs.totalSold)} icon={<TrendingUp className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(270,70%,50%)]/10 text-[hsl(270,70%,50%)]" tooltip={tip("unidades_vendidas")} />
-              <KPICard title="Receita Potencial" value={filteredKPIs.totalRevenuePotential.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0, maximumFractionDigits: 0 })} icon={<DollarSign className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-success/10 text-success" tooltip="Receita potencial dos anúncios filtrados com base no preço atual e estoque disponível." />
-            </>
+            <KPICard title="Total de Anúncios" value={String(filtered.length)} icon={<ShoppingBag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-accent/10 text-accent" tooltip="Quantidade de anúncios que correspondem ao filtro atual." />
           )}
         </div>
 
@@ -1260,6 +1034,14 @@ export default function MLProdutos() {
             rateio aparece aqui em vez de sumir. */}
         {columnView === "financeiro" && adsMeta && (
           <AdsOrigemNota source={adsMeta.source} naoRateado={adsMeta.naoRateado} />
+        )}
+
+        {/* CR-07: janela resolvida e sem venda nenhuma tem de PARECER vazia. */}
+        {columnView === "financeiro" && periodoSemVenda && (
+          <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/5 px-4 py-2.5 text-xs text-muted-foreground">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-px text-warning" />
+            <span>{avisoPeriodoSemVenda}</span>
+          </div>
         )}
 
         {/* Filters + Table */}
@@ -1328,6 +1110,99 @@ export default function MLProdutos() {
                     />
                     <span className="text-xs text-muted-foreground whitespace-nowrap">Preço promocional</span>
                   </label>
+                )}
+
+                {/* ── Período das colunas de vendas reais ──
+                    Herdeiro direto do seletor que vivia na aba Relatórios. Ele
+                    sempre governou Mg. Op. e Mg. Pós-Ads; o que mudou é que
+                    agora está ao lado das colunas que governa, em vez de numa
+                    aba diferente. Só aparece na visão Financeiro, que é a única
+                    onde essas colunas existem. */}
+                {columnView === "financeiro" && (
+                  <Popover
+                    open={vendasPopoverOpen}
+                    onOpenChange={(open) => {
+                      setVendasPopoverOpen(open);
+                      if (open) {
+                        setPendingRange(vendasRange ? { from: vendasRange.from, to: vendasRange.to } : null);
+                        setPendingPeriod(vendasRange ? null : vendasPeriod);
+                      } else {
+                        setPendingRange(null);
+                        setPendingPeriod(null);
+                      }
+                    }}
+                  >
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 gap-1.5 rounded-lg bg-muted/60 px-3 text-xs font-medium text-foreground hover:bg-muted/60 hover:text-foreground cursor-pointer"
+                      >
+                        <span className="text-muted-foreground">Vendas:</span>
+                        <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground" />
+                        {vendasLabel}
+                        <ChevronDown className="w-3 h-3 text-muted-foreground ml-0.5" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-3" align="start">
+                      <p className="text-[11px] text-muted-foreground mb-2 max-w-[260px]">
+                        Define a janela das colunas <strong>Mg. Op.</strong> e{" "}
+                        <strong>Mg. Pós-Ads</strong> — as duas que vêm de vendas reais.
+                        As demais colunas usam o preço de tabela de hoje.
+                      </p>
+                      <div className="flex gap-1 mb-3">
+                        {VENDAS_QUICK_RANGES.map((opt) => (
+                          <Button
+                            key={opt.value}
+                            variant={pendingPeriod === opt.value && !pendingRange ? "default" : "outline"}
+                            size="sm"
+                            className="h-7 px-3 text-xs"
+                            onClick={() => { setPendingPeriod(opt.value); setPendingRange(null); }}
+                          >
+                            {opt.label}
+                          </Button>
+                        ))}
+                      </div>
+                      <Calendar
+                        mode="range"
+                        selected={pendingRange ?? undefined}
+                        onSelect={(range) => {
+                          if (!range?.from) { setPendingRange(null); return; }
+                          const from = startOfDay(range.from);
+                          const to = range.to ? startOfDay(range.to) : from;
+                          setPendingRange({ from, to });
+                          setPendingPeriod(null);
+                        }}
+                        disabled={(date) => date > new Date()}
+                        numberOfMonths={isMobile ? 1 : 2}
+                        locale={ptBR}
+                        className="pointer-events-auto"
+                      />
+                      {pendingLabel && (
+                        <p className="text-xs text-center text-muted-foreground mt-2 mb-1">{pendingLabel}</p>
+                      )}
+                      <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs text-muted-foreground"
+                          onClick={() => { setPendingRange(null); setPendingPeriod(VENDAS_PERIODO_PADRAO); }}
+                        >
+                          <X className="w-3.5 h-3.5 mr-1" />
+                          Limpar
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs"
+                          disabled={!canConfirm}
+                          onClick={handleVendasConfirm}
+                        >
+                          <Check className="w-3.5 h-3.5 mr-1" />
+                          Confirmar
+                        </Button>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                 )}
 
                 {/* Column view toggle */}
@@ -2003,541 +1878,6 @@ export default function MLProdutos() {
             )}
           </CardContent>
         </Card>
-      </TabsContent>
-
-      {/* ═══════════════════ ABA RELATÓRIOS ═══════════════════ */}
-      <TabsContent value="relatorios" className="space-y-5 mt-0">
-        {/* ── CR-09 — o segundo ponto onde a régua da fatura aparece na tela ──
-            O Ranking traz margem pós-ads por anúncio na mesma janela do
-            relatório. Declarar a origem aqui também, e não só no catálogo, é o
-            que impede que a aba herde o silêncio. */}
-        {adsMeta && (
-          <AdsOrigemNota source={adsMeta.source} naoRateado={adsMeta.naoRateado} />
-        )}
-        <Tabs defaultValue="ranking" className="space-y-4" onValueChange={(v) => setReportTab(v)}>
-          <div className="flex flex-col gap-3">
-            <TabsList className="h-8">
-              <TabsTrigger value="ranking" className="text-xs px-3 h-7">Ranking de Anúncios</TabsTrigger>
-              <TabsTrigger value="marca" className="text-xs px-3 h-7">Análise por Marca</TabsTrigger>
-              <TabsTrigger value="abc" className="text-xs px-3 h-7">Curva ABC</TabsTrigger>
-            </TabsList>
-            {/* CR-06: a barra de período aparece nas TRÊS sub-abas. Ela era
-                escondida na Curva ABC porque a ABC rodava numa régua própria
-                (vitalícia) que o seletor não afetava. Agora afeta. */}
-            {(
-              <div className="flex items-center gap-2 flex-wrap">
-                {/* Date / period selector */}
-                <Popover
-                  open={rankingPopoverOpen}
-                  onOpenChange={(open) => {
-                    setRankingPopoverOpen(open);
-                    if (open) {
-                      setPendingRange(rankingRange ? { from: rankingRange.from, to: rankingRange.to } : null);
-                      setPendingPeriod(rankingRange ? null : rankingPeriod);
-                    } else {
-                      setPendingRange(null);
-                      setPendingPeriod(null);
-                    }
-                  }}
-                >
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 gap-1.5 rounded-lg bg-muted/60 px-3 text-xs font-medium text-foreground hover:bg-muted/60 hover:text-foreground cursor-pointer"
-                    >
-                      <span className="text-muted-foreground">Período:</span>
-                      <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground" />
-                      {rankingLabel}
-                      <ChevronDown className="w-3 h-3 text-muted-foreground ml-0.5" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-3" align="start">
-                    <div className="flex gap-1 mb-3">
-                      {RANKING_QUICK_RANGES.map((opt) => (
-                        <Button
-                          key={opt.value}
-                          variant={pendingPeriod === opt.value && !pendingRange ? "default" : "outline"}
-                          size="sm"
-                          className="h-7 px-3 text-xs"
-                          onClick={() => { setPendingPeriod(opt.value); setPendingRange(null); }}
-                        >
-                          {opt.label}
-                        </Button>
-                      ))}
-                    </div>
-                    <Calendar
-                      mode="range"
-                      selected={pendingRange ?? undefined}
-                      onSelect={(range) => {
-                        if (!range?.from) { setPendingRange(null); return; }
-                        const from = startOfDay(range.from);
-                        const to = range.to ? startOfDay(range.to) : from;
-                        setPendingRange({ from, to });
-                        setPendingPeriod(null);
-                      }}
-                      disabled={(date) => date > new Date()}
-                      numberOfMonths={isMobile ? 1 : 2}
-                      locale={ptBR}
-                      className="pointer-events-auto"
-                    />
-                    {pendingLabel && (
-                      <p className="text-xs text-center text-muted-foreground mt-2 mb-1">{pendingLabel}</p>
-                    )}
-                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-xs text-muted-foreground"
-                        onClick={() => { setPendingRange(null); setPendingPeriod(TOTAL_PERIOD); }}
-                      >
-                        <X className="w-3.5 h-3.5 mr-1" />
-                        Limpar
-                      </Button>
-                      <Button
-                        size="sm"
-                        className="h-7 text-xs"
-                        disabled={!canConfirm}
-                        onClick={handleRankingConfirm}
-                      >
-                        <Check className="w-3.5 h-3.5 mr-1" />
-                        Confirmar
-                      </Button>
-                    </div>
-                  </PopoverContent>
-                </Popover>
-                {reportTab === "ranking" && (
-                  <>
-                    <div className="w-px h-4 bg-border" />
-                    <div className="relative">
-                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                      <Input
-                        placeholder="Buscar..."
-                        value={rankingSearch}
-                        onChange={(e) => setRankingSearch(e.target.value)}
-                        className="w-48 h-8 text-xs pl-8 bg-secondary/50 border-0 focus-visible:ring-accent"
-                      />
-                    </div>
-                    <Select value={rankingBrandFilter} onValueChange={setRankingBrandFilter}>
-                      <SelectTrigger className="w-44 h-8 text-xs"><SelectValue placeholder="Filtrar por marca" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todas as marcas</SelectItem>
-                        {brands.map((b) => (
-                          <SelectItem key={b} value={b}>{b}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {rankingBrandFilter !== "all" && (
-                      <Button variant="ghost" size="sm" className="h-8 text-xs px-2" onClick={() => setRankingBrandFilter("all")}>✕</Button>
-                    )}
-                    <div className="w-px h-4 bg-border" />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        if (!rankingFiltered.length) return;
-                        const totalRev = rankingFiltered.reduce((s, r) => s + r.revenue, 0);
-                        const rows = rankingFiltered.map((r, i) => ({
-                          "#": i + 1,
-                          "Item ID": r.id,
-                          "Título": r.title,
-                          "Marca": r.brand,
-                          "Preço (R$)": Number((r.price ?? 0).toFixed(2)),
-                          "Qtd. Vendida": r.sold,
-                          "Receita (R$)": Number((r.revenue ?? 0).toFixed(2)),
-                          "% Participação": totalRev > 0 ? Number(((r.revenue / totalRev) * 100).toFixed(2)) : 0,
-                          "Estoque": r.stock ?? 0,
-                        }));
-                        const ws = XLSX.utils.json_to_sheet(rows);
-                        ws["!cols"] = [{ wch: 5 }, { wch: 16 }, { wch: 70 }, { wch: 18 }, { wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 10 }];
-                        const wb = XLSX.utils.book_new();
-                        XLSX.utils.book_append_sheet(wb, ws, "Ranking de Anúncios");
-                        const stamp = new Date().toISOString().slice(0, 10);
-                        XLSX.writeFile(wb, `ranking-anuncios-${stamp}.xlsx`);
-                      }}
-                      disabled={!rankingFiltered.length}
-                      className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted hover:text-muted-foreground"
-                      title="Exportar ranking para Excel"
-                    >
-                      <Download className={`w-3.5 h-3.5`} />
-                      Exportar
-                    </Button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* ── Sub-aba Ranking ── */}
-          <TabsContent value="ranking" className="mt-0 space-y-4">
-            {periodoSemVenda && (
-              <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/5 px-4 py-2.5 text-xs text-muted-foreground">
-                <AlertCircle className="w-4 h-4 shrink-0 mt-px text-warning" />
-                <span>{avisoPeriodoSemVenda}</span>
-              </div>
-            )}
-            {/* KPIs */}
-            <div className="grid grid-cols-3 gap-3">
-              <KPICard title="Unidades Vendidas" value={String(rankingKPIs.totalUnits)} icon={<TrendingUp className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-accent/10 text-accent" tooltip={tip("unidades_vendidas")} />
-              <KPICard title="Receita Total" value={currencyFmt(rankingKPIs.totalRev)} icon={<DollarSign className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-success/10 text-success" tooltip={tip("receita_total")} />
-              <KPICard title="Ticket Médio" value={currencyFmt(rankingKPIs.avgTicket)} icon={<Tag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(25,95%,53%)]/10 text-[hsl(25,95%,53%)]" tooltip={tip("ticket_medio")} />
-            </div>
-
-            <Card>
-              <CardContent className="p-0">
-                {loading && items.length === 0 ? (
-                  <div className="p-8 text-center text-muted-foreground">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2" />
-                    <p className="text-sm">Carregando...</p>
-                  </div>
-                ) : rankingFiltered.length === 0 ? (
-                  <div className="p-8 text-center text-muted-foreground">
-                    <Package className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">Nenhum dado disponível</p>
-                  </div>
-                ) : (
-                  <div className="max-h-[600px] overflow-auto">
-                    <Table className="min-w-[640px]">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-10 text-center text-xs">#</TableHead>
-                          <TableHead className="w-12"></TableHead>
-                          <TableHead className="text-xs">Anúncio</TableHead>
-                          <SortableHead label="Preço"    field="price"   current={rankingSort as SortBy} onSort={toggleRankingSort} className="text-right w-24" />
-                          <SortableHead label="Vendidos" field="sold"    current={rankingSort as SortBy} onSort={toggleRankingSort} className="text-right w-20" />
-                          <SortableHead label="Receita"  field="revenue" current={rankingSort as SortBy} onSort={toggleRankingSort} className="text-right w-28" />
-                          <SortableHead label="Estoque"  field="stock"   current={rankingSort as SortBy} onSort={toggleRankingSort} className="text-center w-20" />
-                          <SortableHead label="% Part."  field="share"   current={rankingSort as SortBy} onSort={toggleRankingSort} className="text-right w-20" />
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {rankingFiltered.map((r, idx) => (
-                          <TableRow key={r.id} className={idx === 0 ? "bg-[hsl(45,93%,47%)]/5" : idx === 1 ? "bg-[hsl(0,0%,66%)]/5" : idx === 2 ? "bg-[hsl(25,60%,50%)]/5" : ""}>
-                            <TableCell className="text-center text-sm font-bold">
-                              {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : idx + 1}
-                            </TableCell>
-                            <TableCell className="p-2">
-                              {r.thumbnail ? (
-                                <img src={r.thumbnail.replace("http://", "https://")} alt="" className="w-10 h-10 rounded object-cover" loading="lazy" />
-                              ) : (
-                                <div className="w-10 h-10 rounded bg-muted flex items-center justify-center"><Package className="w-4 h-4 text-muted-foreground" /></div>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <a href={mlListingUrl(r.id)} target="_blank" rel="noopener noreferrer" className="text-sm font-medium line-clamp-2 leading-tight hover:underline hover:text-primary transition-colors">
-                                {r.title} <ExternalLink className="w-3 h-3 inline mb-0.5 ml-0.5" />
-                              </a>
-                              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                                <p className="text-xs text-muted-foreground">{r.id}</p>
-                                {selectedStore === "all" && r._ml_user_id && (() => {
-                                  const storeIdx = stores.findIndex((s) => s.ml_user_id === r._ml_user_id);
-                                  const store = storeIdx >= 0 ? stores[storeIdx] : null;
-                                  const colorCls = STORE_BADGE_COLORS[storeIdx % STORE_BADGE_COLORS.length];
-                                  return store ? (
-                                    <Badge variant="outline" className={`text-[9px] leading-none ${colorCls} px-[4px] py-px`}>
-                                      {store.custom_name || store.nickname || store.ml_user_id}
-                                    </Badge>
-                                  ) : null;
-                                })()}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right text-sm">{currencyFmt(r.price)}</TableCell>
-                            <TableCell className="text-right text-sm font-semibold">{r.sold}</TableCell>
-                            <TableCell className="text-right text-sm font-semibold text-primary">{currencyFmt(r.revenue)}</TableCell>
-                            <TableCell className="text-center">
-                              <span className={`text-sm font-semibold ${r.stock === 0 ? "text-destructive" : ""}`}>{r.stock}</span>
-                            </TableCell>
-                            <TableCell className="text-right text-sm text-muted-foreground">{r.share.toFixed(1)}%</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-                {rankingFiltered.length > 0 && (
-                  <div className="px-4 py-3 border-t text-xs text-muted-foreground">
-                    {rankingFiltered.length} anúncios · {rankingLabel}
-                    {rankingBrandFilter !== "all" && ` · Marca: ${rankingBrandFilter}`}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* ── Sub-aba Análise por Marca ── */}
-          <TabsContent value="marca" className="mt-0 space-y-4">
-            {/* KPIs */}
-            {brandData.length > 0 && (() => {
-              const topRevenue = brandData[0];
-              const topTicket = [...brandData].filter((b) => b.qty > 0).sort((a, b) => b.avgTicket - a.avgTicket)[0];
-              const topAds = [...brandData].sort((a, b) => b.ads - a.ads)[0];
-              const topSold = [...brandData].sort((a, b) => b.qty - a.qty)[0];
-              return (
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                  <KPICard title="Maior Receita" value={topRevenue.brand} subtitle={currencyFmt(topRevenue.revenue)} icon={<DollarSign className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-success/10 text-success" tooltip={tip("receita_total")} />
-                  <KPICard title="Maior Ticket Médio" value={topTicket?.brand ?? "—"} subtitle={topTicket ? currencyFmt(topTicket.avgTicket) : "—"} icon={<Tag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(25,95%,53%)]/10 text-[hsl(25,95%,53%)]" tooltip={tip("ticket_medio")} />
-                  <KPICard title="Mais Vendida (un.)" value={topSold.brand} subtitle={`${topSold.qty} unidades`} icon={<TrendingUp className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-accent/10 text-accent" tooltip={tip("unidades_vendidas")} />
-                  <KPICard title="Mais Anúncios" value={topAds.brand} subtitle={`${topAds.ads} anúncios`} icon={<ShoppingBag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(270,70%,50%)]/10 text-[hsl(270,70%,50%)]" tooltip="Marca com maior número de anúncios ativos no catálogo." />
-                </div>
-              );
-            })()}
-            {/* Charts */}
-            {brandData.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium">Receita por Marca (Top 10)</CardTitle>
-                  </CardHeader>
-                  <CardContent className="pb-4">
-                    <ResponsiveContainer width="100%" height={280}>
-                      <BarChart layout="vertical" data={brandBarData} margin={{ left: 0, right: 16, top: 0, bottom: 0 }}>
-                        <XAxis type="number" hide />
-                        <YAxis dataKey="name" type="category" width={100} fontSize={11} tick={{ fill: "hsl(var(--muted-foreground))" }} />
-                        <RechartsTooltip
-                          formatter={(value: number) => [currencyFmt(value), "Receita"]}
-                          contentStyle={{ background: "hsl(var(--background))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
-                        />
-                        <Bar dataKey="revenue" radius={[0, 4, 4, 0]}>
-                          {brandBarData.map((_, idx) => (
-                            <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium">Distribuição de Vendas por Marca</CardTitle>
-                  </CardHeader>
-                  <CardContent className="pb-4">
-                    <ResponsiveContainer width="100%" height={280}>
-                      <PieChart>
-                        <Pie
-                          data={brandPieData}
-                          dataKey="value"
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={55}
-                          outerRadius={100}
-                          paddingAngle={2}
-                          label={!isMobile ? ({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%` : undefined}
-                          labelLine={!isMobile}
-                          fontSize={10}
-                        >
-                          {brandPieData.map((_, idx) => (
-                            <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
-                          ))}
-                        </Pie>
-                        <RechartsTooltip
-                          formatter={(value: number, name: string) => [value, name]}
-                          contentStyle={{ background: "hsl(var(--background))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
-                        />
-                        {isMobile && (
-                          <Legend
-                            iconSize={8}
-                            wrapperStyle={{ fontSize: 11 }}
-                          />
-                        )}
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
-
-            {/* Table */}
-            <Card>
-              <CardContent className="p-0">
-                {loading && items.length === 0 ? (
-                  <div className="p-8 text-center text-muted-foreground">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2" />
-                    <p className="text-sm">Carregando...</p>
-                  </div>
-                ) : brandData.length === 0 ? (
-                  <div className="p-8 text-center text-muted-foreground">
-                    <Package className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">Nenhum dado disponível</p>
-                  </div>
-                ) : (
-                  <div className="max-h-[600px] overflow-auto">
-                    <Table className="min-w-[500px]">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Marca</TableHead>
-                          <TableHead className="text-center w-20">Anúncios</TableHead>
-                          <TableHead className="text-right w-20">Vendidos</TableHead>
-                          <TableHead className="w-48">Receita</TableHead>
-                          <TableHead className="text-right w-24">TM</TableHead>
-                          <TableHead className="text-center w-20">Estoque</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {brandData.map((b) => {
-                          const pct = maxBrandRevenue > 0 ? (b.revenue / maxBrandRevenue) * 100 : 0;
-                          return (
-                            <TableRow key={b.brand}>
-                              <TableCell className="text-sm font-medium">{b.brand}</TableCell>
-                              <TableCell className="text-center text-sm">{b.ads}</TableCell>
-                              <TableCell className="text-right text-sm">{b.qty}</TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-2">
-                                  <div className="flex-1">
-                                    <Progress value={pct} className="h-2" />
-                                  </div>
-                                  <span className="text-xs font-semibold text-primary whitespace-nowrap">{currencyFmt(b.revenue)}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-right text-sm">{currencyFmt(b.avgTicket)}</TableCell>
-                              <TableCell className="text-center text-sm">{b.stock}</TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-                {brandData.length > 0 && (
-                  <div className="px-4 py-3 border-t text-xs text-muted-foreground">
-                    {brandData.length} marcas encontradas · {rankingLabel}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* ── Sub-aba Curva ABC ── */}
-          <TabsContent value="abc" className="mt-0 space-y-4">
-            {periodoSemVenda && (
-              <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/5 px-4 py-2.5 text-xs text-muted-foreground">
-                <AlertCircle className="w-4 h-4 shrink-0 mt-px text-warning" />
-                <span>{avisoPeriodoSemVenda}</span>
-              </div>
-            )}
-            {/* Summary KPIs */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <KPICard title="Total de Anúncios" value={String(abcSummary.total)} icon={<ShoppingBag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-accent/10 text-accent" tooltip="Total de anúncios ativos analisados na Curva ABC." />
-              <KPICard title="Curva A" value={String(abcSummary.A.count)} subtitle={`${abcSummary.A.pct.toFixed(1)}% · ${currencyFmt(abcSummary.A.revenue)}`} icon={<TrendingUp className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-success/10 text-success" tooltip="Anúncios de alta performance: respondem por ~80% da receita total (Curva A)." />
-              <KPICard title="Curva B" value={String(abcSummary.B.count)} subtitle={`${abcSummary.B.pct.toFixed(1)}% · ${currencyFmt(abcSummary.B.revenue)}`} icon={<Package className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(25,95%,53%)]/10 text-[hsl(25,95%,53%)]" tooltip="Anúncios de média performance: contribuem com ~15% da receita (Curva B)." />
-              <KPICard title="Curva C" value={String(abcSummary.C.count)} subtitle={`${abcSummary.C.pct.toFixed(1)}% · ${currencyFmt(abcSummary.C.revenue)}`} icon={<Tag className="w-4 h-4" />} variant="minimal" size="compact" iconClassName="bg-[hsl(270,70%,50%)]/10 text-[hsl(270,70%,50%)]" tooltip="Anúncios de baixa performance: respondem pelo restante (~5%) da receita (Curva C)." />
-            </div>
-
-            {/* ABC Chart */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium">Curva ABC — Receita Acumulada</CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  Receita realizada no período selecionado ({rankingLabel}) — a mesma do Ranking de Anúncios.
-                </p>
-              </CardHeader>
-              <CardContent className="pb-4">
-                {abcChartData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={280}>
-                    <ComposedChart data={abcChartData} margin={{ left: 0, right: 16, top: 8, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="abcAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
-                          <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0.02} />
-                        </linearGradient>
-                      </defs>
-                      <XAxis dataKey="rank" fontSize={11} tick={{ fill: "hsl(var(--muted-foreground))" }} label={{ value: "Anúncios (posição)", position: "insideBottom", offset: -2, fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
-                      <YAxis fontSize={11} tick={{ fill: "hsl(var(--muted-foreground))" }} domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} />
-                      <RechartsTooltip
-                        formatter={(value: number, name: string) => [`${value.toFixed(1)}%`, name === "cumPct" ? "Acumulado" : "Participação"]}
-                        labelFormatter={(label) => `Posição ${label}`}
-                        contentStyle={{ background: "hsl(var(--background))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
-                      />
-                      {/* Reference lines for 80% and 95% thresholds */}
-                      <Area type="monotone" dataKey="cumPct" fill="url(#abcAreaGrad)" stroke="none" />
-                      <Line type="monotone" dataKey="cumPct" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} name="cumPct" />
-                      <Line type="monotone" dataKey="pct" stroke="hsl(var(--accent))" strokeWidth={1.5} dot={false} name="pct" strokeDasharray="4 3" />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="h-[280px] flex items-center justify-center text-muted-foreground text-sm">Sem dados</div>
-                )}
-                <div className="flex items-center gap-6 mt-3 text-xs text-muted-foreground justify-center">
-                  <div className="flex items-center gap-1.5"><div className="w-3 h-0.5 bg-primary rounded" /> % Acumulado</div>
-                  <div className="flex items-center gap-1.5"><div className="w-3 h-0.5 bg-accent rounded" style={{ borderTop: "2px dashed" }} /> % Individual</div>
-                  <div className="flex items-center gap-1.5"><span className="text-emerald-600 font-semibold">A</span> até 80%</div>
-                  <div className="flex items-center gap-1.5"><span className="text-amber-600 font-semibold">B</span> 80–95%</div>
-                  <div className="flex items-center gap-1.5"><span className="text-red-600 font-semibold">C</span> 95–100%</div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* ABC Table */}
-            <Card>
-              <CardContent className="p-0">
-                {abcData.length === 0 ? (
-                  <div className="p-8 text-center text-muted-foreground">
-                    <Package className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">Nenhum dado disponível</p>
-                  </div>
-                ) : (
-                  <div className="max-h-[600px] overflow-auto">
-                    <Table className="min-w-[700px]">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-10 text-center">#</TableHead>
-                          <TableHead className="w-16 text-center">Curva</TableHead>
-                          <TableHead className="w-12"></TableHead>
-                          <TableHead>Anúncio</TableHead>
-                          <TableHead className="text-right w-24">Receita</TableHead>
-                          <TableHead className="text-right w-16">% Ind.</TableHead>
-                          <TableHead className="text-right w-20">% Acum.</TableHead>
-                          <TableHead className="text-right w-20">Vendidos</TableHead>
-                          <TableHead className="text-center w-20">Estoque</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {abcData.map((r) => (
-                          <TableRow key={r.id} className={r.curve === "A" ? "bg-emerald-500/5" : r.curve === "B" ? "bg-amber-500/5" : ""}>
-                            <TableCell className="text-center text-sm font-medium text-muted-foreground">{r.rank}</TableCell>
-                            <TableCell className="text-center">
-                              <Badge variant="outline" className={
-                                r.curve === "A" ? "border-emerald-500 text-emerald-600" :
-                                r.curve === "B" ? "border-amber-500 text-amber-600" :
-                                "border-destructive text-destructive"
-                              }>{r.curve}</Badge>
-                            </TableCell>
-                            <TableCell className="p-2">
-                              {r.thumbnail ? (
-                                <img src={r.thumbnail.replace("http://", "https://")} alt="" className="w-10 h-10 rounded object-cover" loading="lazy" />
-                              ) : (
-                                <div className="w-10 h-10 rounded bg-muted flex items-center justify-center"><Package className="w-4 h-4 text-muted-foreground" /></div>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <a href={mlListingUrl(r.id)} target="_blank" rel="noopener noreferrer" className="text-sm font-medium line-clamp-2 leading-tight hover:underline hover:text-primary transition-colors">
-                                {r.title} <ExternalLink className="w-3 h-3 inline mb-0.5 ml-0.5" />
-                              </a>
-                              <p className="text-xs text-muted-foreground mt-0.5">{r.brand} · {r.id}</p>
-                            </TableCell>
-                            <TableCell className="text-right text-sm font-semibold text-primary">{currencyFmt(r.revenue)}</TableCell>
-                            <TableCell className="text-right text-sm text-muted-foreground">{r.pct.toFixed(1)}%</TableCell>
-                            <TableCell className="text-right text-sm font-medium">{r.cumPct.toFixed(1)}%</TableCell>
-                            <TableCell className="text-right text-sm">{r.sold}</TableCell>
-                            <TableCell className="text-center">
-                              <span className={`text-sm font-semibold ${r.stock === 0 ? "text-destructive" : ""}`}>{r.stock}</span>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-                {abcData.length > 0 && (
-                  <div className="px-4 py-3 border-t text-xs text-muted-foreground">
-                    {abcData.length} anúncios · {rankingLabel} · A: {abcSummary.A.count} · B: {abcSummary.B.count} · C: {abcSummary.C.count}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
       </TabsContent>
 
       {/* ═══════════════════ ABA CUSTOS ═══════════════════ */}
