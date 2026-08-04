@@ -5,6 +5,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { MLPeriodPicker } from "@/components/mercadolivre/MLPeriodPicker";
+import { AdsOrigemNota } from "@/components/mercadolivre/AdsOrigemNota";
 import { useMLFilters } from "@/hooks/useMLFilters";
 import { useMLMarginWithAds } from "@/hooks/useMLMarginWithAds";
 import { useMLInventory } from "@/contexts/MLInventoryContext";
@@ -367,6 +368,13 @@ export default function MLProdutosVendidos() {
           <ShoppingBag className="w-10 h-10 opacity-30" />
           <p className="text-sm">Nenhum produto vendido no período.</p>
         </div>
+      )}
+
+      {/* ── Origem do número de publicidade (Fase 212) ──
+          A régua de ads mudou de fonte: a tela é obrigada a dizer qual está
+          valendo, e quanto da fatura do período ficou sem chave de rateio. */}
+      {!isLoading && rows.length > 0 && margem && (
+        <AdsOrigemNota source={margem.ads.source} naoRateado={margem.ads.naoRateado} />
       )}
 
       {/* ── Painel duplo ── */}
