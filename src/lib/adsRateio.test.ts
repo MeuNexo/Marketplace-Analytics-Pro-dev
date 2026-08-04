@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { describe, it, expect } from "vitest";
-import { distribuirCentavos, ratearAdsDoAnuncio } from "./adsRateio";
+import { distribuirCentavos, ratearAdsDaCarteira, ratearAdsDoAnuncio } from "./adsRateio";
 import type { AdsBillingSpend, AdsSpendDailyRow } from "./adsBillingSpend";
 import { computeWaterfallCard, type PrecoSeriesRow } from "./precoMcoSeries";
 
@@ -341,5 +341,127 @@ describe("custo de ads POR VENDA do anúncio (ADS-07 / D-04)", () => {
     });
 
     expect(card.adsUnit).toBe(0);
+  });
+});
+
+// ============================================================================
+// ratearAdsDaCarteira — Fase 212
+//
+// A mesma régua da fase 211, aplicada à CARTEIRA inteira de anúncios do período
+// (Produtos Vendidos, Catálogo de Anúncios, Margem): o total da fatura é a
+// verdade, o cache é só a proporção. Aqui a chave é o gasto do PERÍODO por
+// anúncio — que é o que a RPC `get_margin_with_ads_by_product` já devolve.
+// ============================================================================
+
+describe("ratearAdsDaCarteira", () => {
+  /** Fatura sintética só com o total (o rateio da carteira não usa a série diária). */
+  function faturaTotal(total: number, rowCount = 1): AdsBillingSpend {
+    return {
+      daily: [{ date: "2026-07-05", spend: total }],
+      total,
+      rowCount,
+      coverageFrom: "2026-07-05",
+      coverageTo: "2026-07-05",
+    };
+  }
+
+  it("reproduz o caso medido no banco: 751,88 de cache viram 481,64 rateados", () => {
+    // Pé Vermeio, MLB7060842760, 05/07 a 04/08/2026 — medido em produção:
+    // fatura PADS+BPAD 9.474,36 · cache do período 14.790,21 · item 751,88.
+    const r = ratearAdsDaCarteira(faturaTotal(9474.36), [
+      { itemId: "MLB7060842760", cacheSpend: 751.88 },
+      { itemId: "OUTROS", cacheSpend: 14790.21 - 751.88 },
+    ]);
+
+    expect(r.source).toBe("billing-rateio");
+    expect(r.porItem.get("MLB7060842760")).toBe(481.64);
+    expect(r.totalFatura).toBe(9474.36);
+    expect(r.naoRateado).toBe(0);
+  });
+
+  it("fecha ao centavo: a soma do rateado é exatamente o total da fatura", () => {
+    // Pesos propositalmente feios, para o maior resto ter trabalho.
+    const itens = [
+      { itemId: "A", cacheSpend: 33.33 },
+      { itemId: "B", cacheSpend: 33.33 },
+      { itemId: "C", cacheSpend: 33.34 },
+      { itemId: "D", cacheSpend: 0.01 },
+    ];
+    const r = ratearAdsDaCarteira(faturaTotal(1000.01), itens);
+
+    const soma = [...r.porItem.values()].reduce((s, v) => s + v, 0);
+    expect(Math.round(soma * 100)).toBe(Math.round(1000.01 * 100));
+    expect(r.totalRateado).toBe(1000.01);
+  });
+
+  it("nunca soma as duas fontes: o total é o da fatura, não fatura + cache", () => {
+    const r = ratearAdsDaCarteira(faturaTotal(100), [
+      { itemId: "A", cacheSpend: 40 },
+      { itemId: "B", cacheSpend: 10 },
+    ]);
+
+    const soma = [...r.porItem.values()].reduce((s, v) => s + v, 0);
+    expect(soma).toBe(100); // e não 150
+    expect(r.porItem.get("A")).toBe(80);
+    expect(r.porItem.get("B")).toBe(20);
+  });
+
+  it("sem fatura no período, cai para o cache com a origem rotulada", () => {
+    const itens = [
+      { itemId: "A", cacheSpend: 12.5 },
+      { itemId: "B", cacheSpend: 7.25 },
+    ];
+
+    for (const semFatura of [null, faturaTotal(0, 0)]) {
+      const r = ratearAdsDaCarteira(semFatura, itens);
+      expect(r.source).toBe("cache");
+      expect(r.porItem.get("A")).toBe(12.5);
+      expect(r.porItem.get("B")).toBe(7.25);
+      expect(r.totalFatura).toBe(0);
+      expect(r.naoRateado).toBe(0);
+    }
+  });
+
+  it("fatura sem chave de rateio nenhuma: declara o não rateado, não inventa dono", () => {
+    const r = ratearAdsDaCarteira(faturaTotal(250.75), [
+      { itemId: "A", cacheSpend: 0 },
+      { itemId: "B", cacheSpend: 0 },
+    ]);
+
+    expect(r.source).toBe("billing-rateio");
+    expect(r.porItem.get("A")).toBe(0);
+    expect(r.porItem.get("B")).toBe(0);
+    expect(r.naoRateado).toBe(250.75);
+    expect(r.totalRateado).toBe(0);
+  });
+
+  it("item repetido soma o peso uma vez só (defesa contra linha duplicada)", () => {
+    const r = ratearAdsDaCarteira(faturaTotal(90), [
+      { itemId: "A", cacheSpend: 10 },
+      { itemId: "A", cacheSpend: 10 },
+      { itemId: "B", cacheSpend: 10 },
+    ]);
+
+    expect(r.porItem.size).toBe(2);
+    expect(r.porItem.get("A")).toBe(60);
+    expect(r.porItem.get("B")).toBe(30);
+  });
+
+  it("peso negativo ou não finito conta como zero, nunca como crédito", () => {
+    const r = ratearAdsDaCarteira(faturaTotal(100), [
+      { itemId: "A", cacheSpend: -50 },
+      { itemId: "B", cacheSpend: Number.NaN },
+      { itemId: "C", cacheSpend: 10 },
+    ]);
+
+    expect(r.porItem.get("A")).toBe(0);
+    expect(r.porItem.get("B")).toBe(0);
+    expect(r.porItem.get("C")).toBe(100);
+  });
+
+  it("carteira vazia com fatura: tudo vira não rateado", () => {
+    const r = ratearAdsDaCarteira(faturaTotal(42.42), []);
+    expect(r.porItem.size).toBe(0);
+    expect(r.naoRateado).toBe(42.42);
   });
 });
