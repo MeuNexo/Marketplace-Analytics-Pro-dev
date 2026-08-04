@@ -887,7 +887,7 @@ git commit -m "feat(tiny): edge function de varredura de estoque por deposito"
 
 > **Esta task precisa rodar antes da Task 7.** Depois que a RPC mudar, o baseline é irrecuperável.
 
-- [ ] **Step 1: Materializar o baseline**
+- [x] **Step 1: Materializar o baseline**
 
 ```sql
 create table if not exists public.gate_reposicao_baseline as
@@ -897,7 +897,7 @@ from public.get_replenishment_by_sku(
   '7f615df7-7bac-45e5-8a93-827fb9ddeec7'::uuid, 30, 1.0, true);
 ```
 
-- [ ] **Step 2: Registrar o tamanho e a soma**
+- [x] **Step 2: Registrar o tamanho e a soma**
 
 ```sql
 select count(*) as linhas,
@@ -908,12 +908,20 @@ from public.gate_reposicao_baseline;
 
 Colar a saída bruta em `gate-86-skus.md`, com data/hora e os parâmetros usados.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add docs/superpowers/plans/gate-86-skus.md
 git commit -m "test: baseline dos SKUs de reposicao antes da mudanca da RPC"
 ```
+
+**Task 6 CONCLUIDA em 2026-08-04.** Baseline em `public.gate_reposicao_baseline`.
+
+⚠️ **O diagnostico de "86 de 681 SKUs (13%)" NAO se reproduz.** Medido ao vivo: a RPC
+devolve **299 SKUs**, contra **673** uteis no catalogo do Tiny — cobertura de **44,4%**,
+nao 13%. A tese da fase continua de pe com a magnitude corrigida: **374 SKUs (55,6%)
+seguem invisiveis**. O alvo da Task 8 e este baseline (299 SKUs, 1.785 unidades), nao o
+de 86. Detalhe em `gate-86-skus.md`.
 
 ---
 
