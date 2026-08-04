@@ -1,6 +1,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { aggregateMoves, type RawMove } from "./aggregate.ts";
+
+// EdgeRuntime é global no runtime Supabase Edge — sem import necessário.
+// Usado para o modo "daily" rodar em background (ver serve() abaixo) — evita o
+// caller (pg_net do cron, Pattern B) segurar a conexão pela duração inteira do
+// sync. Mesmo padrão de sync-mp-releases / sync-tiny-payables / sync-tiny-costs.
+declare const EdgeRuntime: { waitUntil: (p: Promise<unknown>) => void };
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -71,30 +78,44 @@ async function resolveInvoice(
   return { key: String(period.key), from, to };
 }
 
-// ── Paginação sequencial de /details (grupos ML + MP) ────────────────────────
-// Sequencial (com pequeno delay) para evitar a instabilidade de paginação por
-// offset sob concorrência. Valida a contagem coletada contra o `total` da API e
-// faz uma passada de reconciliação por offset deslocado quando há lacuna.
-interface RawMove {
-  detailId: number; date: string; type: string; label: string; amount: number; isBonus: boolean; saleDate: string | null;
-}
-
+// ── Paginação por cursor de /details (grupos ML + MP) ────────────────────────
+// 2026-07-03 (fix rate-limit): trocado de offset (PAGE=200 + passada de
+// reconciliação que dobrava as chamadas) para o cursor from_id/last_id
+// recomendado pela doc oficial do ML ("Best Practices for Consuming Billing
+// Reports APIs" — developers.mercadolibre.com.ar): offset é instável nesta
+// API (perde/repete itens entre chamadas) e o ML recomenda from_id+limit=1000
+// no lugar. Com limit=1000 uma fatura de 800+ movimentos cabe tipicamente em
+// 1 página só, eliminando o cenário que estourava o rate-limit no offset 800.
+// Dedup por detail_id continua como defesa (idempotente mesmo se a API
+// devolver overlap entre páginas).
 async function fetchGroupMoves(token: string, sellerId: string, key: string, group: string): Promise<RawMove[]> {
-  const PAGE = 200;
+  const PAGE = 1000; // limite recomendado pela doc do ML para paginação por from_id
   const byId = new Map<number, RawMove>();
-  const fetchPage = async (offset: number) => {
-    for (let attempt = 0; attempt < 4; attempt++) {
+  const fetchPage = async (fromId: number) => {
+    for (let attempt = 0; attempt < 5; attempt++) {
       const res = await fetch(
-        `${ML_API}/billing/integration/periods/key/${key}/group/${group}/details?document_type=BILL&limit=${PAGE}&offset=${offset}`,
+        `${ML_API}/billing/integration/periods/key/${key}/group/${group}/details?document_type=BILL&limit=${PAGE}&from_id=${fromId}&sort_by=ID&order_by=ASC`,
         { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, signal: AbortSignal.timeout(25_000) },
       );
-      if (res.status === 429 || res.status >= 500) { await sleep(800 * (attempt + 1)); continue; }
-      if (res.status === 404) return { total: 0, results: [] as any[] };
+      // Backoff mais longo que o anterior (800ms×4) — defesa adicional caso a
+      // API ainda rate-limite mesmo com muito menos chamadas por fatura.
+      if (res.status === 429 || res.status >= 500) { await sleep(1_500 * (attempt + 1)); continue; }
+      if (res.status === 404) return { results: [] as any[], lastId: null as number | null };
       if (!res.ok) throw new Error(`details ${group} ${res.status}`);
       const j = await res.json();
-      return { total: Number(j.total ?? 0), results: (j.results ?? []) as any[] };
+      const results = (j.results ?? []) as any[];
+      // last_id pode vir no topo ou aninhado em paging; fallback: detail_id do
+      // último item da página (defensivo — não depende só do shape exato da doc).
+      const lastId = j.last_id != null
+        ? Number(j.last_id)
+        : j.paging?.last_id != null
+        ? Number(j.paging.last_id)
+        : results.length > 0
+        ? Number(results[results.length - 1]?.charge_info?.detail_id) || null
+        : null;
+      return { results, lastId };
     }
-    throw new Error(`details ${group} offset ${offset}: rate-limited after retries`);
+    throw new Error(`details ${group} from_id ${fromId}: rate-limited after retries`);
   };
 
   const ingest = (results: any[]) => {
@@ -114,51 +135,40 @@ async function fetchGroupMoves(token: string, sellerId: string, key: string, gro
     }
   };
 
-  const first = await fetchPage(0);
-  const total = first.total;
-  ingest(first.results);
-  for (let off = PAGE; off < total; off += PAGE) {
-    const p = await fetchPage(off);
-    ingest(p.results);
-    await sleep(150);
-  }
-  // Reconciliação: se a paginação por offset perdeu itens (páginas parciais),
-  // refaz com offset deslocado +100 cobrindo a faixa. Dedup por detail_id.
-  if (total > 0 && byId.size < total * 0.999) {
-    for (let off = 100; off < total + 100; off += PAGE) {
-      const p = await fetchPage(off);
-      ingest(p.results);
-      await sleep(150);
+  let fromId = 0;
+  let guard = 0; // hard cap de páginas — nunca loopar infinitamente se a API repetir last_id
+  while (true) {
+    const page = await fetchPage(fromId);
+    ingest(page.results);
+    if (page.results.length === 0 || page.lastId == null || page.lastId === fromId) break;
+    fromId = page.lastId;
+    guard += 1;
+    if (guard > 50) { // 50 × 1000 = 50k movimentos, bem acima de qualquer fatura real
+      console.warn(`fetchGroupMoves ${group} key=${key}: guard de páginas atingido (50) — possível loop, abortando paginação`);
+      break;
     }
+    await sleep(250);
   }
   return [...byId.values()];
 }
 
-// Agrega uma fatura inteira (ML+MP) por (data de lançamento, tipo), aplicando a
-// regra de sinal e a janela de consumo (estornos de vendas fora da janela são
-// excluídos — o ML também não os inclui no total_amount da fatura).
+// Agrega uma fatura inteira (ML+MP) por (competência da venda, data de
+// lançamento, tipo) — trilha de COMPETÊNCIA (Phase 84). competence_date =
+// saleDate ?? charge_date; a exclusão `within` (janela de consumo da fatura)
+// foi REMOVIDA nesta trilha — estornos de vendas fora da janela agora contam
+// (sempre com sinal negativo). Núcleo puro de agregação vive em ./aggregate.ts
+// (testável no vitest sem os imports Deno/URL deste arquivo). `inv.from`/`inv.to`
+// não são mais usados aqui (mantidos na assinatura só por `inv.key`, usado por
+// fetchGroupMoves) — a trilha `fetchBillingPeriod`/`ml_billing_monthly` (visão
+// "igual à fatura ML") continua intacta e usa esses campos separadamente.
 async function aggregateInvoice(
   token: string, sellerId: string, inv: { key: string; from: string; to: string },
-): Promise<Array<{ charge_date: string; charge_type: string; charge_label: string; amount: number }>> {
-  const moves = [
+): Promise<Array<{ competence_date: string; charge_date: string; charge_type: string; charge_label: string; amount: number }>> {
+  const moves: RawMove[] = [
     ...(await fetchGroupMoves(token, sellerId, inv.key, "ML")),
     ...(await fetchGroupMoves(token, sellerId, inv.key, "MP")),
   ];
-  const within = (d: string | null) => d === null || (d >= inv.from && d <= inv.to);
-  const agg = new Map<string, { charge_date: string; charge_type: string; charge_label: string; amount: number }>();
-  for (const m of moves) {
-    if (!m.date || !m.type) continue;
-    let signed: number | null;
-    if (!m.isBonus) signed = m.amount;
-    else if (within(m.saleDate)) signed = -m.amount;
-    else signed = null; // estorno de venda fora da janela: ignorado
-    if (signed === null) continue;
-    const k = `${m.date}|${m.type}`;
-    const cur = agg.get(k);
-    if (cur) cur.amount += signed;
-    else agg.set(k, { charge_date: m.date, charge_type: m.type, charge_label: m.label, amount: signed });
-  }
-  return [...agg.values()].map((r) => ({ ...r, amount: Math.round(r.amount * 100) / 100 }));
+  return aggregateMoves(moves);
 }
 
 // ── Billing period fetch (modo monthly — summary agregado, comportamento legado) ─
@@ -195,12 +205,141 @@ async function fetchBillingPeriod(
   };
 }
 
+// ── Modo daily: agrega movimentos por dia de lançamento em ml_billing_daily ──
+// Sincroniza as DUAS faturas que tocam o mês-calendário pedido: a fatura do
+// próprio mês (key = period_month, cobre os dias 01–05) e a do mês seguinte
+// (key = period_month+1, cobre 06–fim). Full-resync idempotente por fatura.
+// Extraída para função própria (2026-07-03) para poder rodar tanto inline
+// (mode debug=1, usado para verificação síncrona) quanto em background via
+// EdgeRuntime.waitUntil (caminho padrão — ver serve()).
+async function runDailySync(
+  // deno-lint-ignore no-explicit-any
+  supabaseAdmin: any,
+  accessToken: string,
+  mlNumericId: string,
+  organizationId: string,
+  ml_user_id: string,
+  period_month: string,
+): Promise<{ synced: string[]; totalRows: number }> {
+  const [y, m] = period_month.split("-").map(Number);
+  const nextMonth = `${new Date(Date.UTC(y, m, 1)).getUTCFullYear()}-${String(new Date(Date.UTC(y, m, 1)).getUTCMonth() + 1).padStart(2, "0")}`;
+  const targets = [period_month, nextMonth]; // faturas que cobrem dias 01–05 e 06–fim do mês-calendário
+
+  let totalRows = 0;
+  const synced: string[] = [];
+  for (const pm of targets) {
+    const inv = await resolveInvoice(accessToken, mlNumericId, pm);
+    if (!inv) continue; // fatura ainda não existe (ex.: mês muito à frente)
+    const rows = await aggregateInvoice(accessToken, mlNumericId, inv);
+    // full-resync idempotente desta fatura
+    await supabaseAdmin.from("ml_billing_daily")
+      .delete().eq("organization_id", organizationId).eq("ml_user_id", ml_user_id).eq("source_invoice_key", inv.key);
+    if (rows.length > 0) {
+      const payload = rows.map((r) => ({ organization_id: organizationId, ml_user_id, competence_date: r.competence_date, charge_date: r.charge_date, charge_type: r.charge_type, charge_label: r.charge_label, amount: r.amount, source_invoice_key: inv.key }));
+      for (let i = 0; i < payload.length; i += 500) {
+        const { error } = await supabaseAdmin.from("ml_billing_daily").insert(payload.slice(i, i + 500));
+        if (error) throw new Error(`insert ml_billing_daily: ${error.message}`);
+      }
+    }
+    totalRows += rows.length;
+    synced.push(inv.key);
+  }
+  return { synced, totalRows };
+}
+
+// Sincroniza UMA fatura específica por key (Phase 84 — backfill resiliente).
+// Motivo: quando a API do ML está lenta, `runDailySync` (2 faturas por chamada)
+// estoura o teto de wall-clock da EF. Este caminho processa 1 fatura só,
+// cabendo no limite mesmo com ML devagar. Full-resync idempotente por fatura
+// (delete-by-source_invoice_key + insert). `from`/`to` não são usados na trilha
+// de competência (aggregateInvoice ignora), então bastam a key.
+async function syncSingleInvoice(
+  // deno-lint-ignore no-explicit-any
+  supabaseAdmin: any,
+  accessToken: string,
+  mlNumericId: string,
+  organizationId: string,
+  ml_user_id: string,
+  invoiceKey: string,
+): Promise<{ synced: string[]; totalRows: number }> {
+  const inv = { key: invoiceKey, from: "", to: "" };
+  const rows = await aggregateInvoice(accessToken, mlNumericId, inv);
+  await supabaseAdmin.from("ml_billing_daily")
+    .delete().eq("organization_id", organizationId).eq("ml_user_id", ml_user_id).eq("source_invoice_key", inv.key);
+  if (rows.length > 0) {
+    const payload = rows.map((r) => ({ organization_id: organizationId, ml_user_id, competence_date: r.competence_date, charge_date: r.charge_date, charge_type: r.charge_type, charge_label: r.charge_label, amount: r.amount, source_invoice_key: inv.key }));
+    for (let i = 0; i < payload.length; i += 500) {
+      const { error } = await supabaseAdmin.from("ml_billing_daily").insert(payload.slice(i, i + 500));
+      if (error) throw new Error(`insert ml_billing_daily: ${error.message}`);
+    }
+  }
+  return { synced: [inv.key], totalRows: rows.length };
+}
+
+/** Mês-calendário anterior ao corrente (YYYY-MM, UTC). Usado pelo cron (Layer 3):
+ *  ciclo de fatura ML é 06→05, então por volta do dia 6+ do mês corrente a
+ *  fatura do mês anterior já está disponível/fechada. */
+function previousCalendarMonth(): string {
+  const now = new Date();
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  d.setUTCMonth(d.getUTCMonth() - 1);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+// ── Fan-out multi-conta (cron/Layer 3): varre ml_tokens e roda runDailySync
+// para cada conta ativa. Só usado pelo caminho service-role sem ml_user_id no
+// body (ver serve()) — nunca exposto a chamadas de usuário comum.
+async function runAllAccountsDailySync(
+  // deno-lint-ignore no-explicit-any
+  supabaseAdmin: any,
+  periodMonthOverride?: string,
+): Promise<{ period_month: string; accounts: number; results: Array<{ ml_user_id: string; ok: boolean; rows?: number; error?: string }> }> {
+  const periodMonth = periodMonthOverride ?? previousCalendarMonth();
+  const { data: tokenRows, error } = await supabaseAdmin
+    .from("ml_tokens")
+    .select("ml_user_id, organization_id, access_token, updated_at")
+    .not("access_token", "is", null)
+    .not("organization_id", "is", null)
+    .order("updated_at", { ascending: false });
+  if (error) throw new Error(`ml_tokens fetch: ${error.message}`);
+
+  const seen = new Set<string>();
+  const results: Array<{ ml_user_id: string; ok: boolean; rows?: number; error?: string }> = [];
+  // deno-lint-ignore no-explicit-any
+  for (const row of (tokenRows ?? []) as any[]) {
+    const mlUserId = String(row.ml_user_id);
+    if (seen.has(mlUserId)) continue; // dedup — linhas mais recentes (updated_at desc) vêm primeiro
+    seen.add(mlUserId);
+    try {
+      const mlUser = await mlFetch("/users/me", row.access_token);
+      const mlNumericId = String(mlUser.id);
+      const { synced, totalRows } = await runDailySync(supabaseAdmin, row.access_token, mlNumericId, row.organization_id, mlUserId, periodMonth);
+      results.push({ ml_user_id: mlUserId, ok: true, rows: totalRows });
+      console.log(`sync-ml-billing cron: ml_user_id=${mlUserId} period=${periodMonth} invoices=${synced.join(",")} rows=${totalRows}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      results.push({ ml_user_id: mlUserId, ok: false, error: msg });
+      console.error(`sync-ml-billing cron: ml_user_id=${mlUserId} period=${periodMonth} failed:`, msg);
+    }
+  }
+  return { period_month: periodMonth, accounts: results.length, results };
+}
+
 // ── Body schema ────────────────────────────────────────────────────────────────
+// ml_user_id e period_month são opcionais SÓ para o fan-out do cron (mode=daily,
+// service-role, sem ml_user_id => varre todas as contas, ver serve()). Todo
+// outro caminho (frontend, monthly) continua exigindo ambos — validado
+// manualmente logo após o parse (zod não expressa bem esse "obrigatório
+// condicional" sem refinar a árvore toda).
 
 const BodySchema = z.object({
-  ml_user_id: z.string().min(1),
-  period_month: z.string().regex(/^\d{4}-\d{2}$/, "period_month must be YYYY-MM"),
+  ml_user_id: z.string().min(1).optional(),
+  period_month: z.string().regex(/^\d{4}-\d{2}$/, "period_month must be YYYY-MM").optional(),
   mode: z.enum(["monthly", "daily"]).optional().default("monthly"),
+  // Phase 84 — backfill resiliente: sincroniza SÓ esta fatura (1 por chamada,
+  // evita o timeout do par de 2 faturas quando o ML está lento). Só honrado no
+  // modo daily; exige ml_user_id + organização resolvida.
+  invoice_key: z.string().min(1).optional(),
 });
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -228,7 +367,29 @@ serve(async (req) => {
     if (!parsed.success) {
       return new Response(JSON.stringify({ error: "Invalid input", details: parsed.error.flatten().fieldErrors }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    const { ml_user_id, period_month, mode } = parsed.data;
+    const { ml_user_id, period_month, mode, invoice_key } = parsed.data;
+
+    // ── Fan-out multi-conta (Layer 3 — cron): mode=daily sem ml_user_id varre
+    // TODAS as contas ativas (ml_tokens). Só service-role pode disparar — nunca
+    // exposto a usuário comum (evitaria forçar sync de orgs alheias, mesmo sem
+    // vazar dados). period_month opcional: default = mês-calendário anterior.
+    if (mode === "daily" && !ml_user_id) {
+      if (!isServiceRole) {
+        return new Response(JSON.stringify({ error: "ml_user_id required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const bg = runAllAccountsDailySync(supabaseAdmin, period_month)
+        .then((r) => console.log(`sync-ml-billing cron done: period=${r.period_month} accounts=${r.accounts}`))
+        .catch((e: unknown) => console.error("sync-ml-billing cron failed:", e instanceof Error ? e.message : String(e)));
+      EdgeRuntime.waitUntil(bg);
+      return new Response(JSON.stringify({ success: true, mode: "daily", scope: "all-accounts", status: "enqueued" }), { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    if (!ml_user_id) {
+      return new Response(JSON.stringify({ error: "ml_user_id required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    if (!period_month) {
+      return new Response(JSON.stringify({ error: "period_month required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     // ME-04: ORDER BY updated_at DESC — determinístico em multi-tenant (token mais recente)
     const { data: tokenRow, error: tokenErr } = await supabaseAdmin
@@ -250,38 +411,39 @@ serve(async (req) => {
     const mlUser = await mlFetch("/users/me", accessToken);
     const mlNumericId = String(mlUser.id);
 
-    // ── Modo daily: agrega movimentos por dia de lançamento em ml_billing_daily ──
-    // Sincroniza as DUAS faturas que tocam o mês-calendário pedido: a fatura do
-    // próprio mês (key = period_month, cobre os dias 01–05) e a do mês seguinte
-    // (key = period_month+1, cobre 06–fim). Full-resync idempotente por fatura.
+    // ── Modo daily ─────────────────────────────────────────────────────────────
+    // 2026-07-03: por padrão roda em BACKGROUND (EdgeRuntime.waitUntil) — a fatura
+    // ML+MP × 2 meses pode envolver várias chamadas sequenciais à API do ML
+    // (paginação + backoff em caso de 429); rodar em background evita que o
+    // caller (pg_net do cron, Pattern B — ver Layer 3) segure a conexão HTTP
+    // pela duração inteira do sync. Mesmo padrão de sync-mp-releases/sync-tiny-*.
+    // ?debug=1 roda inline (síncrono) e devolve o resultado completo — usado
+    // para verificação manual (via net.http_post) sem precisar fazer polling.
     if (mode === "daily") {
       if (!organizationId) {
         return new Response(JSON.stringify({ success: true, daily: null, warning: "organization_id missing" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
-      const [y, m] = period_month.split("-").map(Number);
-      const nextMonth = `${new Date(Date.UTC(y, m, 1)).getUTCFullYear()}-${String(new Date(Date.UTC(y, m, 1)).getUTCMonth() + 1).padStart(2, "0")}`;
-      const targets = [period_month, nextMonth]; // faturas que cobrem dias 01–05 e 06–fim do mês-calendário
-
-      let totalRows = 0;
-      const synced: string[] = [];
-      for (const pm of targets) {
-        const inv = await resolveInvoice(accessToken, mlNumericId, pm);
-        if (!inv) continue; // fatura ainda não existe (ex.: mês muito à frente)
-        const rows = await aggregateInvoice(accessToken, mlNumericId, inv);
-        // full-resync idempotente desta fatura
-        await supabaseAdmin.from("ml_billing_daily")
-          .delete().eq("organization_id", organizationId).eq("ml_user_id", ml_user_id).eq("source_invoice_key", inv.key);
-        if (rows.length > 0) {
-          const payload = rows.map((r) => ({ organization_id: organizationId, ml_user_id, charge_date: r.charge_date, charge_type: r.charge_type, charge_label: r.charge_label, amount: r.amount, source_invoice_key: inv.key }));
-          for (let i = 0; i < payload.length; i += 500) {
-            const { error } = await supabaseAdmin.from("ml_billing_daily").insert(payload.slice(i, i + 500));
-            if (error) throw new Error(`insert ml_billing_daily: ${error.message}`);
-          }
-        }
-        totalRows += rows.length;
-        synced.push(inv.key);
+      // Phase 84 — backfill resiliente: se invoice_key vier no body, sincroniza
+      // SÓ aquela fatura (1 chamada ML, cabe no tempo mesmo com o ML lento).
+      const dailyRunner = () => invoice_key
+        ? syncSingleInvoice(supabaseAdmin, accessToken, mlNumericId, organizationId, ml_user_id, invoice_key)
+        : runDailySync(supabaseAdmin, accessToken, mlNumericId, organizationId, ml_user_id, period_month);
+      const isDebug = new URL(req.url).searchParams.get("debug") === "1";
+      if (isDebug) {
+        const { synced, totalRows } = await dailyRunner();
+        return new Response(JSON.stringify({ success: true, mode: "daily", period_month, invoices_synced: synced, rows: totalRows }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
-      return new Response(JSON.stringify({ success: true, mode: "daily", period_month, invoices_synced: synced, rows: totalRows }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const bg = dailyRunner()
+        .then(({ synced, totalRows }) => {
+          console.log(`sync-ml-billing daily done: ml_user_id=${ml_user_id} period=${period_month} invoices=${synced.join(",")} rows=${totalRows}`);
+        })
+        .catch((e: unknown) => {
+          // Pitfall: sem try/catch a exceção do background morre silenciosamente
+          // (sem log) quando chamada via EdgeRuntime.waitUntil.
+          console.error(`sync-ml-billing daily bg failed: ml_user_id=${ml_user_id} period=${period_month}:`, e instanceof Error ? e.message : String(e));
+        });
+      EdgeRuntime.waitUntil(bg);
+      return new Response(JSON.stringify({ success: true, mode: "daily", period_month, status: "enqueued" }), { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // ── Modo monthly (legado): summary agregado em ml_billing_monthly ────────────
