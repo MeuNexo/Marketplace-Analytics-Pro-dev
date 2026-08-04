@@ -29,9 +29,10 @@ import { MLPeriodPicker } from "@/components/mercadolivre/MLPeriodPicker";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { useMLAds, type AdsCampaign } from "@/hooks/useMLAds";
 import { useMLAdsDerivedMetrics, type EnrichedAdsProduct } from "@/hooks/useMLAdsDerivedMetrics";
-import { useMLProductMargins } from "@/hooks/useMLProductMargins";
+import { useMLMarginWithAds } from "@/hooks/useMLMarginWithAds";
 import { useMLFilters } from "@/hooks/useMLFilters";
 import { useMLInventory } from "@/contexts/MLInventoryContext";
+import { AdsOrigemNota } from "@/components/mercadolivre/AdsOrigemNota";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -101,8 +102,24 @@ export default function MLAnuncios() {
     return map;
   }, [inventoryItems]);
 
-  // ── Margin per product (includes ads spend deduction) ──
-  const { data: marginMap } = useMLProductMargins(currentFrom, currentTo);
+  // ── Margem por anúncio — régua da fatura (Fase 213: CR-01) ──
+  // O hook antigo lia o `lucro_pct_pos_ads` CRU da RPC, calculado com o
+  // `ads_spend` do cache de publicidade. `useMLMarginWithAds` descarta esse campo
+  // e recalcula com a fatura do ML rateada — a mesma régua de `/anuncios` e
+  // `/produtos-vendidos`. É essa convergência que o CR-01 promete.
+  const { data: margem } = useMLMarginWithAds(currentFrom, currentTo);
+  const marginMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of margem?.rows ?? []) {
+      // Mesma disciplina do McoCell em /produtos-vendidos: sem custo cadastrado
+      // ou sem receita, a célula fica com o marcador de ausência — nunca uma
+      // margem positiva fictícia.
+      if (r.has_cmv && r.receita > 0 && r.lucro_pct_pos_ads != null) {
+        map.set(r.item_id, r.lucro_pct_pos_ads);
+      }
+    }
+    return map;
+  }, [margem]);
 
   // ── Derived metrics hook ──
   const { enriched: enrichedProducts, global: globalDerived } = useMLAdsDerivedMetrics(
@@ -735,6 +752,14 @@ export default function MLAnuncios() {
         </CardContent>
       </Card>
 
+      {/* ── Origem do número de publicidade da coluna de resultado (Fase 213) ──
+          ROAS/ACoS/CTR/CPC/gráfico/funil/campanhas continuam no cache — só a
+          coluna "Mg. Pós-Ads" abaixo mudou de fonte. A tela é obrigada a dizer
+          isso, senão duas réguas convivem na mesma tabela sem aviso. */}
+      {margem && (
+        <AdsOrigemNota source={margem.ads.source} naoRateado={margem.ads.naoRateado} />
+      )}
+
       {/* ── Top Products ── */}
       <Card>
         <div className="px-4 pt-4 pb-3">
@@ -851,7 +876,7 @@ export default function MLAnuncios() {
                     >
                       <span className="inline-flex items-center gap-1">TACoS <SortIcon k="tacos" /></span>
                     </th>
-                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Margem Líq.</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Mg. Pós-Ads</th>
                     <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Share Ads</th>
                     <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">ACoS BE</th>
                     <th

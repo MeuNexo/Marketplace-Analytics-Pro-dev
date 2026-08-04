@@ -40,7 +40,7 @@ import { format, parseISO, startOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { MLSalesAnalytics } from "@/components/mercadolivre/MLSalesAnalytics";
 import { useDashboardLayout } from "@/hooks/useDashboardLayout";
-import { useMLProductMargins } from "@/hooks/useMLProductMargins";
+import { useMLMarginWithAds } from "@/hooks/useMLMarginWithAds";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { OnboardingBanner } from "@/components/onboarding/OnboardingBanner";
@@ -200,7 +200,20 @@ export default function MercadoLivre() {
     data: brandData,
     isLoading: brandLoading,
   } = useMLOrdersByBrand(currentFrom, currentTo);
-  const { data: marginMap } = useMLProductMargins(currentFrom, currentTo);
+  // Card "Top Anúncios" — régua da fatura (Fase 213: CR-01). Mesma migração de
+  // /publicidade: descarta o lucro_pct_pos_ads cru (calculado com o cache) e
+  // recalcula com a fatura rateada, para a home mostrar a mesma margem das
+  // demais telas de resultado.
+  const { data: margemVendas } = useMLMarginWithAds(currentFrom, currentTo);
+  const marginMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of margemVendas?.rows ?? []) {
+      if (r.has_cmv && r.receita > 0 && r.lucro_pct_pos_ads != null) {
+        map.set(r.item_id, r.lucro_pct_pos_ads);
+      }
+    }
+    return map;
+  }, [margemVendas]);
   const { data: kpiSummary, isLoading: kpiSummaryLoading } = useMLKPISummary(
     currentFrom,
     currentTo,
