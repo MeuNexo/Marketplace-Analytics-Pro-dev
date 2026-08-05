@@ -1,4 +1,4 @@
-import { AlertTriangle, Clock, PackageSearch } from "lucide-react";
+import { Clock, PackageSearch } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { TinyStockHealth } from "@/hooks/useTinyStockHealth";
 import type { ReplenishmentSkuRow } from "@/hooks/useReplenishmentBySku";
@@ -24,27 +24,17 @@ function textoIdade(horas: number | null): string {
 /**
  * Avisos da tela de Compras (Fase 214).
  *
- * Três coisas que a tela precisa dizer em voz alta, porque cada uma leva a
- * comprar errado se ficar calada:
+ * Duas coisas que a tela precisa dizer em voz alta, porque cada uma leva a
+ * comprar errado se ficar calada. O saldo de "Centro de distribuição" NÃO está
+ * entre elas: ficou fora do cálculo por decisão (D-5), então é régua e não
+ * anomalia — vive no tooltip da coluna Estoque, sem alarde.
  *
  * 1. FRESCOR — sugerir compra sobre estoque velho é pior que não sugerir.
- * 2. ESTOQUE FORA DA CONTA — o depósito `Centro de distribuição` não entra no
- *    cálculo por decisão de negócio (D-5). Se houver saldo relevante lá, a
- *    sugestão manda recomprar o que já existe. O número aparece aqui em vez de
- *    sumir.
- * 3. SEM ANÚNCIO — item sem anúncio ML ativo nunca vira compra (D-1); ele só
+ * 2. SEM ANÚNCIO — item sem anúncio ML ativo nunca vira compra (D-1); ele só
  *    sinaliza. Sem dizer isso, a lista parece ter itens "esquecidos".
  */
 export function ReplenishmentAvisos({ health, rows }: Props) {
-  const totalCentro = rows.reduce((acc, r) => acc + (r.estoque_centro ?? 0), 0);
-  const skusCentro  = rows.filter((r) => (r.estoque_centro ?? 0) > 0).length;
-  const totalCd     = rows.reduce((acc, r) => acc + (r.estoque_cd ?? 0), 0);
-  const semAnuncio  = rows.filter((r) => !r.tem_anuncio_ativo).length;
-
-  const pctFora =
-    totalCentro + totalCd > 0
-      ? Math.round((100 * totalCentro) / (totalCentro + totalCd))
-      : 0;
+  const semAnuncio = rows.filter((r) => !r.tem_anuncio_ativo).length;
 
   const horas = horasDesde(health?.volta_completa ?? null);
   const varreduraEmCurso =
@@ -75,24 +65,13 @@ export function ReplenishmentAvisos({ health, rows }: Props) {
         </p>
       )}
 
-      {/* 2. Estoque que existe mas NÃO entra na conta (D-5) */}
-      {totalCentro > 0 && (
-        <Alert>
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription className="text-xs">
-            <strong>
-              {totalCentro.toLocaleString("pt-BR")} unidades em “Centro de
-              distribuição” não entram no cálculo
-            </strong>{" "}
-            ({skusCentro} SKUs, {pctFora}% do estoque próprio). Por decisão de
-            configuração, só o depósito <em>CD Expedição</em> é descontado da
-            sugestão de compra. Se esse saldo for estoque vivo, parte do que a
-            lista manda comprar já está no armazém.
-          </AlertDescription>
-        </Alert>
-      )}
+      {/* 2. "Centro de distribuição" fica FORA da conta por decisão do Wesley
+             (D-5, reafirmada em 05/08 com os 794 un medidos na mão). O alarde
+             saiu: não é anomalia a ser investigada toda vez que a tela abre, é
+             régua escolhida. O número segue visível no tooltip da coluna
+             Estoque e na marca "+N*" da linha, para quem quiser conferir. */}
 
-      {/* 3. Itens que só sinalizam (D-1) */}
+      {/* 2. Itens que só sinalizam (D-1) */}
       {semAnuncio > 0 && (
         <Alert>
           <PackageSearch className="h-4 w-4" />
