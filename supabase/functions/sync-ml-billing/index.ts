@@ -286,6 +286,45 @@ function previousCalendarMonth(): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
+/**
+ * Fase 211 critério 5 — a falha passa a existir POR ESCRITO.
+ *
+ * Esta EF responde HTTP 202 {"success":true} ANTES de fazer o trabalho (o corpo
+ * roda em EdgeRuntime.waitUntil), e `resync_billing_daily_current_month()`
+ * dispara sem olhar a resposta. Sem isto aqui, uma conta falha por semanas e o
+ * sistema inteiro responde "sucesso" — foi o que aconteceu com a conta Thales,
+ * com ZERO dias de PADS e ninguém sabendo.
+ *
+ * `ultima_tentativa` sempre avança; `ultimo_sucesso` só na tentativa que deu
+ * certo. A distância entre as duas é o alarme.
+ *
+ * Nunca lança: observabilidade que derruba o sync que ela observa é pior que
+ * não ter observabilidade.
+ */
+// deno-lint-ignore no-explicit-any
+async function registrarEstado(
+  sb: any, organizationId: string, mlUserId: string, periodMonth: string,
+  ok: boolean, linhas: number, erro: string | null,
+): Promise<void> {
+  try {
+    const agora = new Date().toISOString();
+    // deno-lint-ignore no-explicit-any
+    const linha: Record<string, any> = {
+      organization_id: organizationId,
+      ml_user_id: mlUserId,
+      period_month: periodMonth,
+      ultima_tentativa: agora,
+      ok,
+      linhas,
+      erro: erro ? erro.slice(0, 500) : null,
+    };
+    if (ok) linha.ultimo_sucesso = agora;
+    await sb.from("ml_billing_sync_state").upsert(linha, { onConflict: "ml_user_id" });
+  } catch (e) {
+    console.error("registrarEstado falhou (nao derruba o sync):", e instanceof Error ? e.message : String(e));
+  }
+}
+
 // ── Fan-out multi-conta (cron/Layer 3): varre ml_tokens e roda runDailySync
 // para cada conta ativa. Só usado pelo caminho service-role sem ml_user_id no
 // body (ver serve()) — nunca exposto a chamadas de usuário comum.
@@ -303,7 +342,7 @@ async function runAllAccountsDailySync(
     .order("updated_at", { ascending: false });
   if (error) throw new Error(`ml_tokens fetch: ${error.message}`);
 
-  const seen = new Set<string>();
+const seen = new Set<string>();
   const results: Array<{ ml_user_id: string; ok: boolean; rows?: number; error?: string }> = [];
   // deno-lint-ignore no-explicit-any
   for (const row of (tokenRows ?? []) as any[]) {
@@ -316,10 +355,12 @@ async function runAllAccountsDailySync(
       const { synced, totalRows } = await runDailySync(supabaseAdmin, row.access_token, mlNumericId, row.organization_id, mlUserId, periodMonth);
       results.push({ ml_user_id: mlUserId, ok: true, rows: totalRows });
       console.log(`sync-ml-billing cron: ml_user_id=${mlUserId} period=${periodMonth} invoices=${synced.join(",")} rows=${totalRows}`);
+      await registrarEstado(supabaseAdmin, row.organization_id, mlUserId, periodMonth, true, totalRows, null);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       results.push({ ml_user_id: mlUserId, ok: false, error: msg });
       console.error(`sync-ml-billing cron: ml_user_id=${mlUserId} period=${periodMonth} failed:`, msg);
+      await registrarEstado(supabaseAdmin, row.organization_id, mlUserId, periodMonth, false, 0, msg);
     }
   }
   return { period_month: periodMonth, accounts: results.length, results };
