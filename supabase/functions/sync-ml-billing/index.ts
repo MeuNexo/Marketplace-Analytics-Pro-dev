@@ -339,6 +339,10 @@ async function runAllAccountsDailySync(
     .select("ml_user_id, organization_id, access_token, updated_at")
     .not("access_token", "is", null)
     .not("organization_id", "is", null)
+    // Interruptor central: conta fora de uso nao sincroniza, nao alarma e nao
+    // gasta chamada de API. Sem ele, a exclusao viraria um seller_id hardcoded
+    // espalhado por cada dispatcher — e o proximo dispatcher esqueceria.
+    .eq("sync_enabled", true)
     .order("updated_at", { ascending: false });
   if (error) throw new Error(`ml_tokens fetch: ${error.message}`);
 
