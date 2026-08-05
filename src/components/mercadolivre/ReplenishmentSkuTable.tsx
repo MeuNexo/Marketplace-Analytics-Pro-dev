@@ -130,6 +130,19 @@ function HeaderWithTip({ label, tip }: { label: string; tip: string }) {
 // ── Acao cell (variacao / SKU unico) ─────────────────────────────────────────
 
 function AcaoCell({ row }: { row: ReplenishmentSkuRow }) {
+  // Fase 214 / D-1: item sem anuncio ML ativo NUNCA vira compra. Vem antes de
+  // tudo porque a resposta "o que fazer com isto" e outra: nao e comprar, e
+  // decidir se o anuncio volta. Inclui os que pausaram sozinhos por ruptura.
+  if (!row.tem_anuncio_ativo) {
+    return (
+      <div className="flex flex-col gap-0.5">
+        <span className="text-[11px] text-muted-foreground">👁️ Só sinalizar</span>
+        <span className="text-[10px] text-muted-foreground/80">
+          sem anúncio ativo no ML
+        </span>
+      </div>
+    );
+  }
   // Phase 69 — esgotados são classificados PRIMEIRO (antes da lógica de giro normal)
   if (row.status_esgotado === "descontinuar") {
     return (
@@ -405,9 +418,35 @@ function VariationRow({ sku }: { sku: ReplenishmentSkuRow }) {
         </div>
       </TableCell>
 
-      {/* Estoque */}
+      {/* Estoque — Full (ML) + CD (Tiny), com o saldo fora da conta ao lado */}
       <TableCell className="text-xs text-right tabular-nums font-medium">
-        {sku.sku_stock}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="cursor-help border-b border-dotted border-muted-foreground/40">
+                {sku.sku_stock}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="text-xs">
+              <div>Full (ML): {sku.estoque_full}</div>
+              <div>CD Expedição (Tiny): {sku.estoque_cd}</div>
+              {sku.estoque_centro > 0 && (
+                <div className="mt-1 pt-1 border-t text-amber-600 dark:text-amber-500">
+                  Centro de distribuição: {sku.estoque_centro}
+                  <div className="opacity-80">fora do cálculo de compra</div>
+                </div>
+              )}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        {sku.estoque_centro > 0 && (
+          <span
+            className="ml-1 text-[10px] text-amber-600 dark:text-amber-500 font-normal"
+            title={`${sku.estoque_centro} un em "Centro de distribuição" — não entram na sugestão`}
+          >
+            +{sku.estoque_centro}*
+          </span>
+        )}
       </TableCell>
 
       {/* A caminho */}
@@ -620,7 +659,7 @@ export function ReplenishmentSkuTable({
             <TableHead className="text-xs text-right">
               <HeaderWithTip
                 label="Estoque"
-                tip="Unidades disponíveis hoje no ML"
+                tip="Full do Mercado Livre + depósito CD Expedição do Tiny. É esta soma que a sugestão de compra desconta. Passe o mouse no número para ver a composição."
               />
             </TableHead>
             <TableHead className="text-xs text-right">

@@ -43,6 +43,8 @@ import { AdsOrigemNota } from "@/components/mercadolivre/AdsOrigemNota";
 import { AvisoCustoFaltante } from "@/components/mercadolivre/AvisoCustoFaltante";
 import { contarSemCusto } from "@/lib/custoFaltante";
 import { useMLFilters } from "@/hooks/useMLFilters";
+import { useOrdersFreshness } from "@/hooks/useOrdersFreshness";
+import { AvisoFrescorPedidos } from "@/components/mercadolivre/AvisoFrescorPedidos";
 import { useMLMarginWithAds } from "@/hooks/useMLMarginWithAds";
 import { useMLInventory } from "@/contexts/MLInventoryContext";
 import {
@@ -393,6 +395,11 @@ export default function MLResultado() {
   // não mais o gasto do relatório de publicidade. `margem.ads` diz a origem.
   const { data: margem, isLoading } = useMLMarginWithAds(currentFrom, currentTo);
 
+  // Ate que horas o numero desta tela vale. Em 04/08 a operacao vendeu
+  // R$ 19.040 e a tela mostrou R$ 13-14 mil: o calculo estava certo, faltava
+  // metade dos pedidos. Dado incompleto sem aviso passa por completo.
+  const { data: frescorPedidos } = useOrdersFreshness();
+
   // Produtos VENDIDOS: descarta linhas ads-only (unidades=0, gasto de ads sem venda).
   // O rateio já foi feito no hook sobre a carteira INTEIRA — filtrar aqui não
   // distorce a proporção de quem vendeu.
@@ -531,6 +538,13 @@ export default function MLResultado() {
           </div>
         </div>
       </div>
+
+      {/* ── Frescor: ate que horas este numero vale ── */}
+      <AvisoFrescorPedidos
+        frescor={frescorPedidos}
+        dateFrom={currentFrom}
+        dateTo={currentTo}
+      />
 
       {/* ── Estados de carregamento / vazio ── */}
       {isLoading && (

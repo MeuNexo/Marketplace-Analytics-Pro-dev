@@ -17,7 +17,9 @@ export type FilterStatus =
   | "sem_giro"
   | "repor_esgotado"
   | "revisar_esgotado"
-  | "descontinuar";
+  | "descontinuar"
+  // Fase 214: itens que so SINALIZAM — sem anuncio ML ativo, compra sempre 0.
+  | "sinalizar";
 export type FilterCusto  = "all" | "com" | "sem";
 
 export interface ReplenishmentSkuFiltersProps {
@@ -92,6 +94,7 @@ export function ReplenishmentSkuFilters({
             <SelectItem value="repor_esgotado">🔴 Repor esgotado</SelectItem>
             <SelectItem value="revisar_esgotado">⚠️ Revisar parado</SelectItem>
             <SelectItem value="descontinuar">⚫ Descontinuar?</SelectItem>
+            <SelectItem value="sinalizar">👁️ Só sinalizar (sem anúncio)</SelectItem>
           </SelectContent>
         </Select>
       </div>

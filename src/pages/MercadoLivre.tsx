@@ -33,6 +33,8 @@ import { MLRevenueChart } from "@/components/mercadolivre/MLRevenueChart";
 import { MLCostCard } from "@/components/mercadolivre/MLCostCard";
 import { MLTopProducts } from "@/components/mercadolivre/MLTopProducts";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
+import { useOrdersFreshness } from "@/hooks/useOrdersFreshness";
+import { AvisoFrescorPedidos } from "@/components/mercadolivre/AvisoFrescorPedidos";
 import { GoalsCard } from "@/components/mercadolivre/GoalsCard";
 import type { ProductSalesRow } from "@/components/mercadolivre/TopSellingProducts";
 import { Plug, Info, Loader2, RefreshCw, Settings2, ChevronUp, ChevronDown, RotateCcw } from "lucide-react";
@@ -193,6 +195,7 @@ export default function MercadoLivre() {
   );
 
   const { data: ordersSummary } = useMLOrders(currentFrom, currentTo);
+  const { data: frescorPedidos } = useOrdersFreshness();
 
   const { data: costWaterfall, isLoading: costWaterfallLoading } = useMLCostWaterfall(currentFrom, currentTo);
 
@@ -899,6 +902,13 @@ export default function MercadoLivre() {
             </div>
           </div>
       </div>
+
+      {/* Ate que horas este numero vale (04/08: 19k reais vs 13-14k na tela) */}
+      <AvisoFrescorPedidos
+        frescor={frescorPedidos}
+        dateFrom={currentFrom}
+        dateTo={currentTo}
+      />
 
       <div className="space-y-5 animate-fade-in">
           {/* Banner de onboarding não-bloqueante (D-07): aparece quando onboarding

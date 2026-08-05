@@ -68,13 +68,9 @@ export const migrationSecurityBaseline: BaselineEntry[] = [
       "Herdado — sem parâmetros; despacha jobs de sincronização de inventário para " +
       "o pg_cron processar. Revogável mas não urgente; ver DEBT-08.",
   },
-  {
-    classe: "definer_sem_revoke",
-    objeto: "dispatch_orders_jobs",
-    motivo:
-      "Herdado — sem parâmetros; despacha jobs de sincronização de pedidos para o " +
-      "pg_cron processar. Revogável mas não urgente; ver DEBT-08.",
-  },
+  // dispatch_orders_jobs SAIU desta lista em 2026-08-05: ao corrigir o sync do
+  // dia corrente, a função ganhou REVOKE de PUBLIC/anon/authenticated e GRANT
+  // só para service_role. A dívida DEBT-08 deixou de existir para ela.
   {
     classe: "definer_sem_revoke",
     objeto: "dispatch_sales_jobs",

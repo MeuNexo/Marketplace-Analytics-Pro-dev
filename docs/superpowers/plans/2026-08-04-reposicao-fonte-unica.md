@@ -159,7 +159,7 @@ Task 1 **CONCLUIDA** em 2026-08-04.
 > D-7 (**vence o de maior saldo**) é aplicada **na leitura**, na Task 7. Chavear por `sku` faria
 > a varredura gravar 337 ou −1 conforme a ordem.
 
-- [ ] **Step 1: Escrever a migration**
+- [x] **Step 1: Escrever a migration**
 
 ```sql
 -- Catálogo do Tiny: todo SKU, tenha ou não anúncio no ML.
@@ -233,16 +233,16 @@ CREATE POLICY "tiny_sync_cursor select"
 -- INSERT/UPDATE/DELETE: service_role apenas (a Edge Function escreve).
 ```
 
-- [ ] **Step 2: Rodar o lint de segurança de migration**
+- [x] **Step 2: Rodar o lint de segurança de migration**
 
 Run: `npx vitest run src/lib/migrationSecurityLint.test.ts`
 Expected: PASS. As três tabelas têm `ENABLE ROW LEVEL SECURITY` no mesmo arquivo; nenhuma função `SECURITY DEFINER` foi criada.
 
-- [ ] **Step 3: Aplicar no banco**
+- [x] **Step 3: Aplicar no banco**
 
 Aplicar via MCP Supabase `apply_migration` com o conteúdo do arquivo, nome `tiny_stock_tables`.
 
-- [ ] **Step 4: Conferir no banco**
+- [x] **Step 4: Conferir no banco**
 
 ```sql
 select c.relname, c.relrowsecurity as rls, count(p.polname) as politicas
@@ -255,12 +255,17 @@ group by 1,2 order by 1;
 
 Expected: três linhas, `rls = true`, `politicas = 1` em cada.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add supabase/migrations/20260805100000_tiny_stock_tables.sql
 git commit -m "feat(tiny): tabelas de catalogo, estoque por deposito e cursor"
 ```
+
+**Task 2 CONCLUIDA em 2026-08-04.** Arquivo real: `20260804220000_tiny_stock_tables.sql`.
+Aplicada via `apply_migration`. Conferido no banco: 3 tabelas, `rls = true`, 1 politica
+cada, todas `SELECT`/`authenticated` apenas — nenhuma policy de escrita (quem escreve e a
+EF com service_role). Lint 13/13 verde; suite completa 958/958 verde.
 
 ---
 
@@ -283,7 +288,7 @@ git commit -m "feat(tiny): tabelas de catalogo, estoque por deposito e cursor"
 >    compra acontece. O módulo não mente sobre o dado — quem decide arredonda.
 > 3. `desconsiderar: true` segue descartado (medido em `Magazine Luiza Fullfilment`).
 
-- [ ] **Step 1: Escrever o teste falhando**
+- [x] **Step 1: Escrever o teste falhando**
 
 Fixtures copiados da resposta **real** medida na Task 1, não inventados.
 
@@ -346,12 +351,12 @@ describe("extrairDepositos", () => {
 });
 ```
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `npx vitest run supabase/functions/sync-tiny-stock/depositos.test.ts`
 Expected: FAIL — `Failed to resolve import "./depositos"`.
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 ```ts
 export interface SaldoDeposito {
@@ -419,17 +424,25 @@ export function extrairDepositos(resposta: unknown): SaldoDeposito[] {
 }
 ```
 
-- [ ] **Step 4: Rodar e ver passar**
+- [x] **Step 4: Rodar e ver passar**
 
 Run: `npx vitest run supabase/functions/sync-tiny-stock/depositos.test.ts`
-Expected: PASS, 7 testes.
+Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add supabase/functions/sync-tiny-stock/depositos.ts supabase/functions/sync-tiny-stock/depositos.test.ts
 git commit -m "feat(tiny): extracao pura de saldo por deposito"
 ```
+
+**Task 3 CONCLUIDA em 2026-08-04.** 11 testes verdes (o plano previa 7; foram somados
+casos de numero em string, deposito sem nome, e o abaixo).
+
+**Desvio deliberado do plano:** o fallback para o saldo de topo agora so vale quando a
+resposta **nao trouxe lista de depositos**. Se a lista veio e esvaziou no filtro de
+`desconsiderar`, o resultado e vazio de verdade — cair no topo somaria justamente o
+estoque que a origem mandou ignorar (o caso do `Magazine Luiza Fullfilment`).
 
 ---
 
@@ -446,7 +459,7 @@ git commit -m "feat(tiny): extracao pura de saldo por deposito"
   - `export function proximaAcao(estado: EstadoCursor | null, agora: Date): Acao` onde `type Acao = {tipo: "iniciar_volta"} | {tipo: "seguir_estoque"; de: number} | {tipo: "fechar_volta"}`.
   - A Task 5 importa `proximaAcao`.
 
-- [ ] **Step 1: Escrever o teste falhando**
+- [x] **Step 1: Escrever o teste falhando**
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -504,12 +517,12 @@ describe("proximaAcao", () => {
 });
 ```
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `npx vitest run supabase/functions/sync-tiny-stock/cursor.test.ts`
 Expected: FAIL — `Failed to resolve import "./cursor"`.
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 ```ts
 export interface ItemFila {
@@ -548,17 +561,22 @@ export function proximaAcao(estado: EstadoCursor | null, _agora: Date): Acao {
 }
 ```
 
-- [ ] **Step 4: Rodar e ver passar**
+- [x] **Step 4: Rodar e ver passar**
 
 Run: `npx vitest run supabase/functions/sync-tiny-stock/cursor.test.ts`
-Expected: PASS, 7 testes.
+Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add supabase/functions/sync-tiny-stock/cursor.ts supabase/functions/sync-tiny-stock/cursor.test.ts
 git commit -m "feat(tiny): cursor retomavel que so reinicia apos fechar a volta"
 ```
+
+**Task 4 CONCLUIDA em 2026-08-04.** 12 testes verdes (o plano previa 7). Somados:
+volta aberta ha varios dias, indice alem do fim, volta fechada com indice no meio,
+indice negativo, e o teste que prova que a decisao **nao depende de `agora`** — mesma
+entrada devolve a mesma acao em 2026-08-05, 2026-08-06 e 2027-01-01.
 
 ---
 
@@ -869,7 +887,7 @@ git commit -m "feat(tiny): edge function de varredura de estoque por deposito"
 
 > **Esta task precisa rodar antes da Task 7.** Depois que a RPC mudar, o baseline é irrecuperável.
 
-- [ ] **Step 1: Materializar o baseline**
+- [x] **Step 1: Materializar o baseline**
 
 ```sql
 create table if not exists public.gate_reposicao_baseline as
@@ -879,7 +897,7 @@ from public.get_replenishment_by_sku(
   '7f615df7-7bac-45e5-8a93-827fb9ddeec7'::uuid, 30, 1.0, true);
 ```
 
-- [ ] **Step 2: Registrar o tamanho e a soma**
+- [x] **Step 2: Registrar o tamanho e a soma**
 
 ```sql
 select count(*) as linhas,
@@ -890,12 +908,20 @@ from public.gate_reposicao_baseline;
 
 Colar a saída bruta em `gate-86-skus.md`, com data/hora e os parâmetros usados.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add docs/superpowers/plans/gate-86-skus.md
 git commit -m "test: baseline dos SKUs de reposicao antes da mudanca da RPC"
 ```
+
+**Task 6 CONCLUIDA em 2026-08-04.** Baseline em `public.gate_reposicao_baseline`.
+
+⚠️ **O diagnostico de "86 de 681 SKUs (13%)" NAO se reproduz.** Medido ao vivo: a RPC
+devolve **299 SKUs**, contra **673** uteis no catalogo do Tiny — cobertura de **44,4%**,
+nao 13%. A tese da fase continua de pe com a magnitude corrigida: **374 SKUs (55,6%)
+seguem invisiveis**. O alvo da Task 8 e este baseline (299 SKUs, 1.785 unidades), nao o
+de 86. Detalhe em `gate-86-skus.md`.
 
 ---
 
@@ -908,7 +934,7 @@ git commit -m "test: baseline dos SKUs de reposicao antes da mudanca da RPC"
 - Consumes: `tiny_products`, `tiny_stock` (Task 2, populadas na Task 5); `DEPOSITO_CD` (Task 1).
 - Produces: `get_replenishment_by_sku` com **6** colunas novas no `RETURNS TABLE`: `estoque_full integer`, `estoque_cd integer`, `tem_anuncio_ativo boolean`, `origem_catalogo text`, `divergencia_full integer`, `estoque_centro integer` (esta ultima **informativa**, fora do calculo — ver D-5).
 
-- [ ] **Step 1: Partir da definição atual**
+- [x] **Step 1: Partir da definição atual**
 
 ```sql
 select pg_get_functiondef(p.oid)
@@ -918,7 +944,7 @@ where n.nspname='public' and p.proname='get_replenishment_by_sku';
 
 Salvar a saída. A migration é essa definição com as alterações abaixo — **`CREATE OR REPLACE`, nunca `DROP`** (apaga a ACL).
 
-- [ ] **Step 2: Trocar a CTE base**
+- [x] **Step 2: Trocar a CTE base**
 
 Substituir `inventory_by_sku` por três CTEs. O resto do corpo continua consumindo `inventory_by_sku` com o mesmo nome e as mesmas colunas, **mais** as novas.
 
@@ -1010,7 +1036,7 @@ Substituir `inventory_by_sku` por três CTEs. O resto do corpo continua consumin
   ),
 ```
 
-- [ ] **Step 3: Fazer o join de vendas funcionar sem `item_id`**
+- [x] **Step 3: Fazer o join de vendas funcionar sem `item_id`**
 
 `row_sales` hoje casa `orders` por `item_id` + `variation_id`. SKU só-Tiny não tem `item_id`. Adicionar o caminho por SKU:
 
@@ -1042,7 +1068,7 @@ Substituir `inventory_by_sku` por três CTEs. O resto do corpo continua consumin
 
 Aplicar o mesmo predicado nas CTEs que também casam `orders` por item: `sales_history_by_sku` e `daily_qty_180d`.
 
-- [ ] **Step 4: Zerar a compra de quem não tem anúncio (D-1) e aplicar o escopo (D-4)**
+- [x] **Step 4: Zerar a compra de quem não tem anúncio (D-1) e aplicar o escopo (D-4)**
 
 Em `calc`, envolver a expressão existente de `compra` — **sem alterar a fórmula interna**:
 
@@ -1058,7 +1084,7 @@ E no `SELECT` final, aplicar D-4:
   WHERE (c.venda_base > 0 OR c.sku_stock > 0 OR c.dias_desde_ultima_venda <= 365)
 ```
 
-- [ ] **Step 5: Adicionar as colunas novas ao `RETURNS TABLE` e ao `SELECT` final**
+- [x] **Step 5: Adicionar as colunas novas ao `RETURNS TABLE` e ao `SELECT` final**
 
 Acrescentar ao final da lista de colunas, preservando a ordem existente:
 
@@ -1067,7 +1093,7 @@ Acrescentar ao final da lista de colunas, preservando a ordem existente:
     c.origem_catalogo, c.divergencia_full, c.estoque_centro
 ```
 
-- [ ] **Step 6: Aplicar e conferir que não quebrou a assinatura**
+- [x] **Step 6: Aplicar e conferir que não quebrou a assinatura**
 
 Aplicar via `apply_migration`. Depois:
 
@@ -1078,7 +1104,7 @@ select public.get_replenishment_by_sku(
 
 Expected: retorna sem erro.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add supabase/migrations/20260805110000_replenishment_v2.sql
@@ -1096,7 +1122,7 @@ git commit -m "feat(reposicao): catalogo unificado ML+Tiny e estoque Full+CD"
 - Consumes: `gate_reposicao_baseline` (Task 6), RPC v2 (Task 7).
 - Produces: veredito escrito. **Bloqueante:** diferença não explicada interrompe a entrega.
 
-- [ ] **Step 1: Comparar antes × depois**
+- [x] **Step 1: Comparar antes × depois**
 
 ```sql
 with novo as (
@@ -1114,7 +1140,7 @@ order by abs(coalesce(n.compra_sugerida,0) - coalesce(b.compra_sugerida,0)) desc
 
 Expected: **vazio**, ou apenas linhas em que `estoque_depois > estoque_antes` — a única diferença legítima é o CD sendo descontado (D-3).
 
-- [ ] **Step 2: Enumerar cada exceção, uma a uma**
+- [x] **Step 2: Enumerar cada exceção, uma a uma**
 
 Para cada linha do Step 1, confirmar que a diferença é exatamente o saldo de CD:
 
@@ -1126,7 +1152,7 @@ where organization_id = '7f615df7-7bac-45e5-8a93-827fb9ddeec7'
 
 **Diferença sem saldo de CD que a explique = regressão. Parar e reportar.**
 
-- [ ] **Step 3: Prova positiva — os SKUs que sumiam**
+- [x] **Step 3: Prova positiva — os SKUs que sumiam**
 
 ```sql
 select sku_code, tem_anuncio_ativo, origem_catalogo, compra_sugerida, sku_stock, venda_dia
@@ -1137,7 +1163,7 @@ where sku_code in ('101110PTO3360M','13011457PTO3360GG','K9PMCMS7000SOR3943');
 
 Expected: três linhas, `tem_anuncio_ativo = false`, `compra_sugerida = 0` (D-1: sinaliza, não compra).
 
-- [ ] **Step 4: Prova de completude**
+- [x] **Step 4: Prova de completude**
 
 ```sql
 select count(*) as linhas,
@@ -1149,7 +1175,7 @@ from public.get_replenishment_by_sku(
 
 Expected: `linhas` na faixa de 100–250 (D-4), contra 86 antes.
 
-- [ ] **Step 5: Escrever o veredito e limpar o baseline**
+- [x] **Step 5: Escrever o veredito e limpar o baseline**
 
 Registrar em `gate-86-skus.md` as saídas brutas dos Steps 1–4 e o veredito por prova. Depois:
 
@@ -1157,7 +1183,7 @@ Registrar em `gate-86-skus.md` as saídas brutas dos Steps 1–4 e o veredito po
 drop table if exists public.gate_reposicao_baseline;
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add docs/superpowers/plans/gate-86-skus.md
@@ -1186,7 +1212,7 @@ git commit -m "test: gate de nao-regressao verde e provas positivas da reposicao
 > quando é nulo. Sem isso, os itens de "sinalizar" colapsam numa linha e a
 > entrega parece funcionar mas está errada.
 
-- [ ] **Step 1: Agendar a varredura**
+- [x] **Step 1: Agendar a varredura**
 
 ```sql
 select cron.schedule(
@@ -1204,7 +1230,7 @@ select cron.schedule(
 
 > Uma volta são ~681 produtos ÷ 150 por invocação ≈ 5 invocações. A cada 10 min, fecha em ~50 min e fica ociosa até a próxima volta. Confirmar o nome do segredo no vault antes de aplicar — o padrão deste projeto é `service_role_key` (Pattern B).
 
-- [ ] **Step 2: Expor o frescor**
+- [x] **Step 2: Expor o frescor**
 
 ```sql
 create or replace view public.tiny_stock_health as
@@ -1214,7 +1240,7 @@ select organization_id, ml_user_id, volta_completa,
 from public.tiny_sync_cursor;
 ```
 
-- [ ] **Step 3: Estender o tipo do hook**
+- [x] **Step 3: Estender o tipo do hook**
 
 Em `src/hooks/useReplenishmentBySku.ts`, acrescentar à interface `ReplenishmentSkuRow`:
 
@@ -1239,7 +1265,7 @@ E no mapeamento (junto de `sku_stock: Number(r.sku_stock)`):
     estoque_centro:    Number(r.estoque_centro ?? 0),
 ```
 
-- [ ] **Step 4: Corrigir o agrupamento para SKU sem anúncio**
+- [x] **Step 4: Corrigir o agrupamento para SKU sem anúncio**
 
 Na função que monta `GroupedReplenishmentRow`, a chave de agrupamento passa a ser:
 
@@ -1250,7 +1276,7 @@ const chave = row.item_id ?? `sku:${row.sku_code}`;
 Aplicar em **todos** os pontos que hoje agrupam por `item_id`. Sem isso, todos os
 SKUs só-Tiny colapsam numa linha única (ver armadilha acima).
 
-- [ ] **Step 5: Escrever o teste do agrupamento**
+- [x] **Step 5: Escrever o teste do agrupamento**
 
 Criar em `src/hooks/useReplenishmentBySku.test.ts` (ou estender o existente):
 
@@ -1268,7 +1294,7 @@ it("nao colapsa SKUs sem item_id numa linha so", () => {
 Run: `npx vitest run src/hooks/useReplenishmentBySku.test.ts`
 Expected: FAIL antes do Step 4, PASS depois.
 
-- [ ] **Step 6: Aviso na tela**
+- [x] **Step 6: Aviso na tela**
 
 Em `src/pages/mercadolivre/MLCompras.tsx`, quando `desatualizado = true`:
 `"Estoque do CD desatualizado — última varredura completa em <data>."`
@@ -1280,7 +1306,7 @@ Em `src/components/mercadolivre/ReplenishmentSkuTable.tsx`, quando
 E separar visualmente os itens com `tem_anuncio_ativo = false` numa seção
 **"Esgotados sem anúncio — decidir reativar"**, sem coluna de compra (D-1).
 
-- [ ] **Step 7: Rodar a suíte e o lint**
+- [x] **Step 7: Rodar a suíte e o lint**
 
 Run: `npx vitest run`
 Expected: PASS, sem teste novo quebrado.
@@ -1288,7 +1314,7 @@ Expected: PASS, sem teste novo quebrado.
 Run: `npx tsc --noEmit 2>&1 | grep -c "error TS"`
 Expected: ≤ 191 (baseline). Não aumentar.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add supabase/migrations/20260805120000_tiny_stock_cron.sql src/
@@ -1315,3 +1341,36 @@ Depois da Task 9, abrir a tela de Reposição com a Pé Vermeio e confirmar:
 - **Ordem obrigatória:** Task 1 → 2 → 3 → 4 → 5 → **6 antes de 7** → 7 → 8 → 9.
 - Task 1 pode reprovar o desenho (§8 da spec). Se `NIVEL_DO_SKU = variacao`, parar e reportar.
 - Task 8 é bloqueante: diferença não explicada por saldo de CD interrompe a entrega.
+
+
+---
+
+## EXECUCAO — Fase 214 fechada em 2026-08-04
+
+| Task | Estado |
+|---|---|
+| 1 medicao | ✅ reprovou o desenho; plano corrigido antes de qualquer codigo |
+| 2 tabelas + RLS | ✅ 3 tabelas, RLS so SELECT/authenticated |
+| 3 extracao de depositos | ✅ 11 testes |
+| 4 cursor retomavel | ✅ 12 testes |
+| 5 EF `sync-tiny-stock` | ✅ publicada; guarda 401 provada; **volta completa 771/771** |
+| 6 baseline | ✅ 299 SKUs / 1.785 un |
+| 7 RPC v2 | ✅ aplicada; ACL restaurada |
+| 8 gate | ✅ **3/3 provas passaram** |
+| 9 cron + frescor | ✅ `tiny-stock-tick` a cada 10 min; view `tiny_stock_health` |
+
+**Resultado:** 299 -> **775 SKUs** na tela de Reposicao (2,6x). Suite **986 testes verdes**,
+`tsc` limpo, build ok.
+
+**Achados durante a execucao, todos corrigidos:**
+1. `params`/`sales_smart` casavam `item_id = item_id`; SKU so-Tiny tem `item_id NULL` e
+   `NULL = NULL` nao e verdadeiro — o INNER JOIN descartaria em silencio as linhas novas.
+2. `DROP`+`CREATE` fez o **`anon` APARECER na ACL**, onde nao estava (default privilege do
+   Supabase). REVOKE explicito, documentado na migration.
+3. `groupByItem` usava `String(r.item_id)`, que transforma `null` na string `"null"` — os
+   476 SKUs so-Tiny colapsariam numa linha. Corrigido com `chaveGrupo` + 5 testes.
+4. O extrator caia no saldo de topo quando a lista de depositos esvaziava no filtro, o que
+   somaria estoque marcado como `desconsiderar`.
+
+**⚠️ ABERTO: D-5.** 794 unidades (38,5% do estoque proprio) estao em `Centro de
+distribuição` e ficam fora do calculo. Ver `gate-86-skus.md`.
