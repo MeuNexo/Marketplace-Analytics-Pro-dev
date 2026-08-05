@@ -32,6 +32,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
+import { useOrdersFreshness } from "@/hooks/useOrdersFreshness";
+import { AvisoFrescorPedidos } from "@/components/mercadolivre/AvisoFrescorPedidos";
 import { MLPeriodPicker } from "@/components/mercadolivre/MLPeriodPicker";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { useMLStore } from "@/contexts/MLStoreContext";
@@ -168,6 +170,7 @@ export default function MLFinanceiro() {
 
   // ── KPI totais: usar useMLCostWaterfall (mesma fonte da página Vendas)
   const { data: waterfall, isLoading: waterfallLoading } = useMLCostWaterfall(currentFrom, currentTo);
+  const { data: frescorPedidos } = useOrdersFreshness();
   const kpiReceita    = waterfall?.paid_revenue    ?? 0;
   const kpiCmv        = waterfall?.cmv             ?? 0;
   const kpiComissao   = waterfall?.total_comissao  ?? 0;
@@ -366,6 +369,13 @@ export default function MLFinanceiro() {
           </div>
         </div>
       </div>
+
+      {/* Ate que horas este numero vale (04/08: 19k reais vs 13-14k na tela) */}
+      <AvisoFrescorPedidos
+        frescor={frescorPedidos}
+        dateFrom={currentFrom}
+        dateTo={currentTo}
+      />
 
       {/* ── KPI Row — 8 cards ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-4 lg:grid-cols-8 gap-3">
