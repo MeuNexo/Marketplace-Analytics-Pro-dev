@@ -42,13 +42,36 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function resolveInvoice(
   token: string, sellerId: string, periodMonth: string,
 ): Promise<{ key: string; from: string; to: string } | null> {
-  const resp = await fetch(
-    `${ML_API}/billing/integration/monthly/periods?seller_id=${sellerId}&group=ML&document_type=BILL`,
-    { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, signal: AbortSignal.timeout(15_000) },
-  );
+  // Fase 211 critério 2 — retry com backoff no 429.
+  //
+  // `fetchPage` (detalhes da fatura) já tinha backoff; ESTA chamada não tinha, e
+  // era justamente onde o rate limit batia: medido em 05/08 como
+  // `billing/periods failed: 429` nas duas contas ativas, reproduzido após 3
+  // minutos de descanso. Sem retry, uma recusa aqui derruba o sync inteiro da
+  // conta antes mesmo de saber qual fatura buscar.
+  //
+  // Respeita `Retry-After` quando o ML manda; senão cresce 2s, 4s, 6s, 8s. O
+  // teto de 5 tentativas mantém a invocação dentro do orçamento da Edge
+  // Function — insistir para sempre trocaria uma falha visível por um timeout
+  // mudo, que é pior.
+  let resp: Response | null = null;
+  for (let tentativa = 0; tentativa < 5; tentativa++) {
+    resp = await fetch(
+      `${ML_API}/billing/integration/monthly/periods?seller_id=${sellerId}&group=ML&document_type=BILL`,
+      { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, signal: AbortSignal.timeout(15_000) },
+    );
+    if (resp.status !== 429 && resp.status < 500) break;
+    const retryAfter = Number(resp.headers.get("retry-after") ?? 0);
+    const esperaMs = retryAfter > 0 ? retryAfter * 1_000 : 2_000 * (tentativa + 1);
+    console.warn(`billing/periods ${resp.status} (tentativa ${tentativa + 1}/5) — aguardando ${esperaMs}ms`);
+    await sleep(esperaMs);
+  }
+  if (!resp) throw new Error("billing/periods: nenhuma resposta");
   if (!resp.ok) {
     if (resp.status === 404) return null;
-    throw new Error(`billing/periods failed: ${resp.status}`);
+    // A mensagem diz que JÁ tentou — senão o próximo a ler o erro reimplementa
+    // o retry que já existe.
+    throw new Error(`billing/periods failed: ${resp.status} (apos 5 tentativas com backoff)`);
   }
   const list: any[] = (await resp.json()).results ?? [];
   // chave da fatura = consumo + 1 mês

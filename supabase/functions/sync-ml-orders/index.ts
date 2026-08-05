@@ -245,19 +245,33 @@ async function fetchShipmentDetails(
   orders: any[],
   accessToken: string,
   maxShipments = 500,
+  // Pedidos que JA tem frete e endereco no banco. Sincronizacao incremental:
+  // o cron do dia corrente roda de hora em hora, e sem isto cada rodada
+  // rebuscava o detalhe de TODOS os pedidos do dia — as 22h, um dia com 100
+  // pedidos custava 100 chamadas, sendo que 95 nao mudaram desde as 8h.
+  //
+  // Seguro porque frete e endereco de envio sao definidos na criacao do envio e
+  // nao mudam depois. Se um dia mudarem, o pedido volta a ser buscado assim que
+  // o backfill limpar o campo — a regra e "ja tenho o dado", nao "ja vi este id".
+  jaCompletos: Set<string> = new Set(),
 ): Promise<Map<number, ShipmentDetail>> {
   const detailMap = new Map<number, ShipmentDetail>();
 
   // Collect ALL unique shipment IDs
   const seen = new Set<number>();
   const ids: number[] = [];
+  let pulados = 0;
   for (const order of orders) {
+    if (jaCompletos.has(String(order.id))) { pulados++; continue; }
     const shipId = order.shipping?.id ? Number(order.shipping.id) : null;
     if (shipId && !seen.has(shipId)) {
       seen.add(shipId);
       ids.push(shipId);
       if (ids.length >= maxShipments) break;
     }
+  }
+  if (pulados > 0) {
+    console.log(`fetchShipmentDetails: ${pulados} pedido(s) pulado(s) — frete e endereco ja no banco`);
   }
 
   if (!ids.length) return detailMap;
@@ -591,7 +605,27 @@ serve(async (req) => {
     console.log(`sync-ml-orders: ${orders.length} unique orders`);
 
     // ── Fetch shipment details (cost + address) for all orders ───────────────
-    const shipmentMap = await fetchShipmentDetails(orders, accessToken);
+    // Sync incremental: descobre quais pedidos do lote JA tem frete e endereco
+    // gravados. So os que faltam vao para a API do ML.
+    const jaCompletos = new Set<string>();
+    if (organizationId && orders.length) {
+      const idsLote = orders.map((o: any) => String(o.id));
+      const { data: jaNoBanco, error: erroLookup } = await supabaseAdmin
+        .from("orders")
+        .select("ml_order_id")
+        .eq("organization_id", organizationId)
+        .in("ml_order_id", idsLote)
+        .not("frete", "is", null)
+        .not("estado", "is", null);
+      if (erroLookup) {
+        // Falha aqui NAO pode virar dado faltando: sem a lista, busca tudo,
+        // que e o comportamento antigo. Degrada para lento, nunca para errado.
+        console.warn("lookup de pedidos completos falhou; buscando todos:", erroLookup.message);
+      } else {
+        for (const r of (jaNoBanco ?? []) as any[]) jaCompletos.add(String(r.ml_order_id));
+      }
+    }
+    const shipmentMap = await fetchShipmentDetails(orders, accessToken, 500, jaCompletos);
 
     // ── Load tax config + product costs for this store ──────────────────────
     let taxConfig: any = null;
