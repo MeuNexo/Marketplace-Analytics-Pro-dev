@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { aggregateMoves, type RawMove } from "./aggregate.ts";
+import { datasAlvoDoSyncDiario, faturasQueCobrem } from "./periodos.ts";
 
 // EdgeRuntime é global no runtime Supabase Edge — sem import necessário.
 // Usado para o modo "daily" rodar em background (ver serve() abaixo) — evita o
@@ -54,26 +55,13 @@ async function continuarEmOutraInvocacao(body: Record<string, unknown>) {
   }
 }
 
-// ── Resolve a invoice key + janela de consumo a partir de /periods ───────────
-// Regra de domínio: fatura nomeada pelo mês de FECHAMENTO (consumo N → fatura N+1).
-// O ciclo de cobrança da conta NÃO é mês-calendário (ex.: 06→05); a janela real
-// vem de period.date_from/date_to. Para período OPEN o date_from vem anômalo
-// (placeholder antigo) → deriva de date_to − 1 mês + 1 dia.
-async function resolveInvoice(
-  token: string, sellerId: string, periodMonth: string,
-): Promise<{ key: string; from: string; to: string } | null> {
-  // Fase 211 critério 2 — retry com backoff no 429.
-  //
-  // `fetchPage` (detalhes da fatura) já tinha backoff; ESTA chamada não tinha, e
-  // era justamente onde o rate limit batia: medido em 05/08 como
-  // `billing/periods failed: 429` nas duas contas ativas, reproduzido após 3
-  // minutos de descanso. Sem retry, uma recusa aqui derruba o sync inteiro da
-  // conta antes mesmo de saber qual fatura buscar.
-  //
-  // Respeita `Retry-After` quando o ML manda; senão cresce 2s, 4s, 6s, 8s. O
-  // teto de 5 tentativas mantém a invocação dentro do orçamento da Edge
-  // Function — insistir para sempre trocaria uma falha visível por um timeout
-  // mudo, que é pior.
+// ── Faturas a partir de /periods ─────────────────────────────────────────────
+// A lista crua de períodos do ML, com o retry de 429 da Fase 211 critério 2.
+// Devolve `null` no 404 (conta sem faturamento). Extraída para função própria em
+// 2026-08-06 porque agora tem DOIS consumidores: a régua legada por mês
+// (`resolveInvoice`, ainda usada pelo modo monthly) e a régua nova por janela
+// (`resolveFaturasDoDia`, BILL-02).
+async function fetchPeriodos(token: string, sellerId: string): Promise<any[] | null> {
   let resp: Response | null = null;
   for (let tentativa = 0; tentativa < 5; tentativa++) {
     resp = await fetch(
@@ -93,7 +81,41 @@ async function resolveInvoice(
     // o retry que já existe.
     throw new Error(`billing/periods failed: ${resp.status} (apos 5 tentativas com backoff)`);
   }
-  const list: any[] = (await resp.json()).results ?? [];
+  return (await resp.json()).results ?? [];
+}
+
+/**
+ * BILL-02 — as faturas que COBREM hoje e o período fechado anterior, escolhidas
+ * pela janela `date_from ≤ data ≤ date_to` que o próprio ML informa, não
+ * derivadas do mês do calendário.
+ *
+ * Por que isto existe (medido em 2026-08-06): a conta do Junior tem ciclo de
+ * faturamento 16→15. Com a régua do mês, `period_month=2026-07` pedia as faturas
+ * `2026-08` e `2026-09` — e **nunca** a `2026-07-01`, a fechada anterior. A
+ * fatura de 2.086 movimentos dela nunca entrou no banco, e só entrou porque
+ * alguém digitou a chave na mão. O buraco se repetiria todo mês, em silêncio.
+ *
+ * Devolve lista vazia quando o ML não informa janela — aí quem chama cai no
+ * fallback da régua antiga, que é pior mas não é nada.
+ */
+async function resolveFaturasDoDia(
+  token: string, sellerId: string, hojeISO: string,
+): Promise<Array<{ key: string; from: string; to: string }>> {
+  const list = await fetchPeriodos(token, sellerId);
+  if (!list) return [];
+  return faturasQueCobrem(list, datasAlvoDoSyncDiario(hojeISO));
+}
+
+// Régua LEGADA, por mês do calendário: fatura nomeada pelo mês de FECHAMENTO
+// (consumo N → fatura N+1). Continua servindo o modo `monthly`
+// (`fetchBillingPeriod` → `ml_billing_monthly`) e o fallback do modo daily.
+// Para o sync diário quem manda agora é `resolveFaturasDoDia` (BILL-02) — esta
+// régua erra calada quando o ciclo da conta não começa perto do dia 1º.
+async function resolveInvoice(
+  token: string, sellerId: string, periodMonth: string,
+): Promise<{ key: string; from: string; to: string } | null> {
+  const list = await fetchPeriodos(token, sellerId);
+  if (list === null) return null;
   // chave da fatura = consumo + 1 mês
   const [py, pm] = periodMonth.split("-").map(Number);
   const invDate = new Date(Date.UTC(py, pm, 1));
@@ -363,9 +385,11 @@ async function fetchBillingPeriod(
 }
 
 // ── Modo daily: agrega movimentos por dia de lançamento em ml_billing_daily ──
-// Sincroniza as DUAS faturas que tocam o mês-calendário pedido: a fatura do
-// próprio mês (key = period_month, cobre os dias 01–05) e a do mês seguinte
-// (key = period_month+1, cobre 06–fim). Full-resync idempotente por fatura.
+// 2026-08-06 (BILL-02): sincroniza as faturas que COBREM hoje e o período
+// fechado anterior, escolhidas pela janela que o ML informa. Antes eram as duas
+// derivadas do mês-calendário, o que só acertava em ciclo que começa perto do
+// dia 1º. `period_month` continua no parâmetro como rótulo do estado e como
+// insumo do fallback. Full-resync idempotente por fatura.
 // Extraída para função própria (2026-07-03) para poder rodar tanto inline
 // (mode debug=1, usado para verificação síncrona) quanto em background via
 // EdgeRuntime.waitUntil (caminho padrão — ver serve()).
@@ -378,16 +402,32 @@ async function runDailySync(
   ml_user_id: string,
   period_month: string,
 ): Promise<{ synced: string[]; totalRows: number; pendentes: string[] }> {
-  const [y, m] = period_month.split("-").map(Number);
-  const nextMonth = `${new Date(Date.UTC(y, m, 1)).getUTCFullYear()}-${String(new Date(Date.UTC(y, m, 1)).getUTCMonth() + 1).padStart(2, "0")}`;
-  const targets = [period_month, nextMonth]; // faturas que cobrem dias 01–05 e 06–fim do mês-calendário
+  // BILL-02 — régua nova: pergunta ao ML quais faturas COBREM hoje e o período
+  // fechado anterior, em vez de derivar a chave do mês do calendário. A régua
+  // antiga funcionava por acidente num ciclo que começa perto do dia 1º e
+  // falhava calada num ciclo 16→15 (ver `periodos.ts` para a medição).
+  const hojeISO = new Date().toISOString().slice(0, 10);
+  let faturas = await resolveFaturasDoDia(accessToken, mlNumericId, hojeISO);
+
+  if (faturas.length === 0) {
+    // Fallback: o ML não informou janela para nenhum período. A régua antiga é
+    // pior, mas é melhor que não sincronizar nada — e o aviso fica no log para
+    // ninguém descobrir isso daqui a dois meses.
+    console.warn(
+      `sync-ml-billing: nenhuma fatura com janela cobrindo ${hojeISO} — caindo na regua antiga por mes-calendario (period_month=${period_month})`,
+    );
+    const [y, m] = period_month.split("-").map(Number);
+    const nextMonth = `${new Date(Date.UTC(y, m, 1)).getUTCFullYear()}-${String(new Date(Date.UTC(y, m, 1)).getUTCMonth() + 1).padStart(2, "0")}`;
+    for (const pm of [period_month, nextMonth]) {
+      const inv = await resolveInvoice(accessToken, mlNumericId, pm);
+      if (inv) faturas.push(inv);
+    }
+  }
 
   let totalRows = 0;
   const synced: string[] = [];
   const pendentes: string[] = [];
-  for (const pm of targets) {
-    const inv = await resolveInvoice(accessToken, mlNumericId, pm);
-    if (!inv) continue; // fatura ainda não existe (ex.: mês muito à frente)
+  for (const inv of faturas) {
     const r = await gravarFatura(supabaseAdmin, accessToken, mlNumericId, organizationId, ml_user_id, inv);
     if (r.complete) { totalRows += r.rows; synced.push(inv.key); } else { pendentes.push(inv.key); }
   }
