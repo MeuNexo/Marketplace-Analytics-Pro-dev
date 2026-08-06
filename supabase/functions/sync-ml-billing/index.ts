@@ -34,6 +34,26 @@ async function mlFetch(path: string, accessToken: string, timeoutMs = 15_000) {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Dispara a próxima rodada da MESMA fatura, que retoma do cursor persistido.
+// Fire-and-forget: se falhar, o cron do dia seguinte retoma do mesmo ponto —
+// nada é perdido, porque o progresso está no banco, não em memória.
+async function continuarEmOutraInvocacao(body: Record<string, unknown>) {
+  try {
+    await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/sync-ml-billing`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10_000),
+    });
+    console.log(`sync-ml-billing: continuacao disparada para ${JSON.stringify(body)}`);
+  } catch (e) {
+    console.error("sync-ml-billing: falha ao disparar continuacao:", e instanceof Error ? e.message : String(e));
+  }
+}
+
 // ── Resolve a invoice key + janela de consumo a partir de /periods ───────────
 // Regra de domínio: fatura nomeada pelo mês de FECHAMENTO (consumo N → fatura N+1).
 // O ciclo de cobrança da conta NÃO é mês-calendário (ex.: 06→05); a janela real
@@ -111,15 +131,40 @@ async function resolveInvoice(
 // 1 página só, eliminando o cenário que estourava o rate-limit no offset 800.
 // Dedup por detail_id continua como defesa (idempotente mesmo se a API
 // devolver overlap entre páginas).
-async function fetchGroupMoves(token: string, sellerId: string, key: string, group: string): Promise<RawMove[]> {
+// 2026-08-06: a paginação virou RETOMÁVEL. Antes, todas as páginas do grupo eram
+// buscadas dentro de uma invocação só; quando a fatura passou de 4 páginas de
+// 1000 movimentos (1,4 MB cada), o acumulado estourou o orçamento da EF. Cada
+// página isolada cabe folgadamente nos 25s — medido —, o problema era a soma.
+// Agora cada rodada gasta um orçamento de páginas, grava o insumo em
+// ml_billing_moves_stage (chave detail_id => reprocessar página não duplica) e
+// guarda onde parou em ml_billing_page_cursor. Sem isso, cada rodada recomeçava
+// da página 1 e a fatura NUNCA terminava, por mais que o cron rodasse.
+async function fetchGroupPaginas(
+  // deno-lint-ignore no-explicit-any
+  supabaseAdmin: any, token: string, sellerId: string, key: string, group: string,
+  organizationId: string, ml_user_id: string, orcamentoPaginas: number,
+): Promise<{ done: boolean; paginas: number }> {
   const PAGE = 1000; // limite recomendado pela doc do ML para paginação por from_id
-  const byId = new Map<number, RawMove>();
   const fetchPage = async (fromId: number) => {
+    let ultimoErro = "";
     for (let attempt = 0; attempt < 5; attempt++) {
-      const res = await fetch(
-        `${ML_API}/billing/integration/periods/key/${key}/group/${group}/details?document_type=BILL&limit=${PAGE}&from_id=${fromId}&sort_by=ID&order_by=ASC`,
-        { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, signal: AbortSignal.timeout(25_000) },
-      );
+      let res: Response;
+      try {
+        res = await fetch(
+          `${ML_API}/billing/integration/periods/key/${key}/group/${group}/details?document_type=BILL&limit=${PAGE}&from_id=${fromId}&sort_by=ID&order_by=ASC`,
+          { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, signal: AbortSignal.timeout(25_000) },
+        );
+      } catch (e) {
+        // 2026-08-06: ESTE era o buraco. `AbortSignal.timeout` lança exceção —
+        // não devolve status — então "Signal timed out." escapava do laço de
+        // retry abaixo, que só olhava 429/5xx, e derrubava a conta inteira sem
+        // nenhuma segunda tentativa. Medido: falha reproduzida na fatura
+        // 2026-08-01 nas duas contas, todo dia, desde 05/08.
+        ultimoErro = e instanceof Error ? e.message : String(e);
+        console.warn(`details ${group} from_id ${fromId}: ${ultimoErro} (tentativa ${attempt + 1}/5)`);
+        await sleep(1_500 * (attempt + 1));
+        continue;
+      }
       // Backoff mais longo que o anterior (800ms×4) — defesa adicional caso a
       // API ainda rate-limite mesmo com muito menos chamadas por fatura.
       if (res.status === 429 || res.status >= 500) { await sleep(1_500 * (attempt + 1)); continue; }
@@ -138,41 +183,73 @@ async function fetchGroupMoves(token: string, sellerId: string, key: string, gro
         : null;
       return { results, lastId };
     }
-    throw new Error(`details ${group} from_id ${fromId}: rate-limited after retries`);
+    throw new Error(
+      `details ${group} from_id ${fromId}: falhou apos 5 tentativas${ultimoErro ? ` (ultimo erro: ${ultimoErro})` : " (rate-limited)"}`,
+    );
   };
 
-  const ingest = (results: any[]) => {
+  // Grava a página no insumo. Chave (org, conta, fatura, detail_id) => se a
+  // mesma página for buscada de novo (retry, rodada repetida), o upsert
+  // sobrescreve em vez de somar duas vezes.
+  const gravarPagina = async (results: any[]) => {
+    const vistos = new Set<number>();
+    const linhas: Record<string, unknown>[] = [];
     for (const m of results) {
       const ci = m.charge_info ?? {};
       const id = Number(ci.detail_id);
-      if (!id || byId.has(id)) continue;
-      byId.set(id, {
-        detailId: id,
-        date: String(ci.creation_date_time ?? "").slice(0, 10),
-        type: String(ci.detail_sub_type ?? ""),
-        label: String(ci.transaction_detail ?? ""),
+      if (!id || vistos.has(id)) continue;
+      vistos.add(id);
+      const chargeDate = String(ci.creation_date_time ?? "").slice(0, 10);
+      linhas.push({
+        organization_id: organizationId, ml_user_id, invoice_key: key, detail_id: id,
+        charge_date: chargeDate || null,
+        charge_type: String(ci.detail_sub_type ?? ""),
+        charge_label: String(ci.transaction_detail ?? ""),
         amount: Number(ci.detail_amount ?? 0),
-        isBonus: String(ci.detail_type ?? "") === "BONUS",
-        saleDate: m.sales_info?.[0]?.sale_date_time ? String(m.sales_info[0].sale_date_time).slice(0, 10) : null,
+        is_bonus: String(ci.detail_type ?? "") === "BONUS",
+        sale_date: m.sales_info?.[0]?.sale_date_time ? String(m.sales_info[0].sale_date_time).slice(0, 10) : null,
       });
+    }
+    for (let i = 0; i < linhas.length; i += 500) {
+      const { error } = await supabaseAdmin.from("ml_billing_moves_stage")
+        .upsert(linhas.slice(i, i + 500), { onConflict: "organization_id,ml_user_id,invoice_key,detail_id" });
+      if (error) throw new Error(`upsert ml_billing_moves_stage: ${error.message}`);
     }
   };
 
-  let fromId = 0;
-  let guard = 0; // hard cap de páginas — nunca loopar infinitamente se a API repetir last_id
-  while (true) {
+  const { data: cur } = await supabaseAdmin.from("ml_billing_page_cursor")
+    .select("from_id, done, paginas")
+    .eq("organization_id", organizationId).eq("ml_user_id", ml_user_id)
+    .eq("invoice_key", key).eq("grp", group).maybeSingle();
+  if (cur?.done) return { done: true, paginas: 0 };
+
+  let fromId = Number(cur?.from_id ?? 0);
+  let guard = Number(cur?.paginas ?? 0); // hard cap de páginas — nunca loopar infinitamente se a API repetir last_id
+  let paginas = 0;
+  let done = false;
+
+  while (paginas < orcamentoPaginas) {
     const page = await fetchPage(fromId);
-    ingest(page.results);
-    if (page.results.length === 0 || page.lastId == null || page.lastId === fromId) break;
-    fromId = page.lastId;
+    await gravarPagina(page.results);
+    paginas += 1;
     guard += 1;
+    if (page.results.length === 0 || page.lastId == null || page.lastId === fromId) { done = true; break; }
+    fromId = page.lastId;
     if (guard > 50) { // 50 × 1000 = 50k movimentos, bem acima de qualquer fatura real
-      console.warn(`fetchGroupMoves ${group} key=${key}: guard de páginas atingido (50) — possível loop, abortando paginação`);
+      console.warn(`fetchGroupPaginas ${group} key=${key}: guard de páginas atingido (50) — encerrando paginação`);
+      done = true;
       break;
     }
     await sleep(250);
   }
-  return [...byId.values()];
+
+  const { error: curErr } = await supabaseAdmin.from("ml_billing_page_cursor").upsert({
+    organization_id: organizationId, ml_user_id, invoice_key: key, grp: group,
+    from_id: fromId, done, paginas: guard, updated_at: new Date().toISOString(),
+  }, { onConflict: "organization_id,ml_user_id,invoice_key,grp" });
+  if (curErr) throw new Error(`upsert ml_billing_page_cursor: ${curErr.message}`);
+
+  return { done, paginas };
 }
 
 // Agrega uma fatura inteira (ML+MP) por (competência da venda, data de
@@ -184,14 +261,71 @@ async function fetchGroupMoves(token: string, sellerId: string, key: string, gro
 // não são mais usados aqui (mantidos na assinatura só por `inv.key`, usado por
 // fetchGroupMoves) — a trilha `fetchBillingPeriod`/`ml_billing_monthly` (visão
 // "igual à fatura ML") continua intacta e usa esses campos separadamente.
+// Orçamento de páginas por INVOCAÇÃO (soma dos dois grupos). Medido em
+// 06/08/2026: 3 páginas isoladas passam; o acumulado da fatura inteira (>4
+// páginas × 1,4 MB) não. 2 deixa margem e converge em poucas rodadas.
+const PAGINAS_POR_RODADA = 2;
+
+// Devolve `complete: false` enquanto a fatura não terminou de paginar — e nesse
+// caso o chamador NÃO pode apagar nem reescrever ml_billing_daily, senão o dado
+// bom vira dado pela metade. Só agrega quando os dois grupos fecharam.
 async function aggregateInvoice(
-  token: string, sellerId: string, inv: { key: string; from: string; to: string },
-): Promise<Array<{ competence_date: string; charge_date: string; charge_type: string; charge_label: string; amount: number }>> {
-  const moves: RawMove[] = [
-    ...(await fetchGroupMoves(token, sellerId, inv.key, "ML")),
-    ...(await fetchGroupMoves(token, sellerId, inv.key, "MP")),
-  ];
-  return aggregateMoves(moves);
+  // deno-lint-ignore no-explicit-any
+  supabaseAdmin: any, token: string, sellerId: string,
+  inv: { key: string; from: string; to: string },
+  organizationId: string, ml_user_id: string,
+): Promise<{ complete: boolean; rows: Array<{ competence_date: string; charge_date: string; charge_type: string; charge_label: string; amount: number }> | null; paginas: number }> {
+  let orcamento = PAGINAS_POR_RODADA;
+  let paginasFeitas = 0;
+  for (const group of ["ML", "MP"]) {
+    if (orcamento <= 0) break;
+    const r = await fetchGroupPaginas(supabaseAdmin, token, sellerId, inv.key, group, organizationId, ml_user_id, orcamento);
+    orcamento -= r.paginas;
+    paginasFeitas += r.paginas;
+  }
+
+  const { data: cursores } = await supabaseAdmin.from("ml_billing_page_cursor")
+    .select("grp, done").eq("organization_id", organizationId)
+    .eq("ml_user_id", ml_user_id).eq("invoice_key", inv.key);
+  const fechado = (g: string) => (cursores ?? []).some((c: { grp: string; done: boolean }) => c.grp === g && c.done);
+  if (!fechado("ML") || !fechado("MP")) return { complete: false, rows: null, paginas: paginasFeitas };
+
+  // Lê o insumo de volta e agrega com a MESMA função pura de sempre — a régua de
+  // competência continua existindo num lugar só (aggregate.ts).
+  // PostgREST trunca em 1000: paginar com .range() é obrigatório aqui.
+  const moves: RawMove[] = [];
+  const PASSO = 1000;
+  for (let offset = 0; ; offset += PASSO) {
+    const { data, error } = await supabaseAdmin.from("ml_billing_moves_stage")
+      .select("detail_id, charge_date, charge_type, charge_label, amount, is_bonus, sale_date")
+      .eq("organization_id", organizationId).eq("ml_user_id", ml_user_id).eq("invoice_key", inv.key)
+      .order("detail_id", { ascending: true }).range(offset, offset + PASSO - 1);
+    if (error) throw new Error(`select ml_billing_moves_stage: ${error.message}`);
+    const lote = data ?? [];
+    for (const r of lote) {
+      moves.push({
+        detailId: Number(r.detail_id),
+        date: r.charge_date ?? "",
+        type: r.charge_type ?? "",
+        label: r.charge_label ?? "",
+        amount: Number(r.amount ?? 0),
+        isBonus: Boolean(r.is_bonus),
+        saleDate: r.sale_date ?? null,
+      });
+    }
+    if (lote.length < PASSO) break;
+  }
+  return { complete: true, rows: aggregateMoves(moves), paginas: paginasFeitas };
+}
+
+// Zera cursor + insumo de uma fatura, para que a próxima rodada a reconstrua do
+// zero. Chamado depois que ml_billing_daily recebeu o resultado agregado.
+// deno-lint-ignore no-explicit-any
+async function limparInsumo(supabaseAdmin: any, organizationId: string, ml_user_id: string, invoiceKey: string) {
+  await supabaseAdmin.from("ml_billing_moves_stage").delete()
+    .eq("organization_id", organizationId).eq("ml_user_id", ml_user_id).eq("invoice_key", invoiceKey);
+  await supabaseAdmin.from("ml_billing_page_cursor").delete()
+    .eq("organization_id", organizationId).eq("ml_user_id", ml_user_id).eq("invoice_key", invoiceKey);
 }
 
 // ── Billing period fetch (modo monthly — summary agregado, comportamento legado) ─
@@ -243,31 +377,48 @@ async function runDailySync(
   organizationId: string,
   ml_user_id: string,
   period_month: string,
-): Promise<{ synced: string[]; totalRows: number }> {
+): Promise<{ synced: string[]; totalRows: number; pendentes: string[] }> {
   const [y, m] = period_month.split("-").map(Number);
   const nextMonth = `${new Date(Date.UTC(y, m, 1)).getUTCFullYear()}-${String(new Date(Date.UTC(y, m, 1)).getUTCMonth() + 1).padStart(2, "0")}`;
   const targets = [period_month, nextMonth]; // faturas que cobrem dias 01–05 e 06–fim do mês-calendário
 
   let totalRows = 0;
   const synced: string[] = [];
+  const pendentes: string[] = [];
   for (const pm of targets) {
     const inv = await resolveInvoice(accessToken, mlNumericId, pm);
     if (!inv) continue; // fatura ainda não existe (ex.: mês muito à frente)
-    const rows = await aggregateInvoice(accessToken, mlNumericId, inv);
-    // full-resync idempotente desta fatura
-    await supabaseAdmin.from("ml_billing_daily")
-      .delete().eq("organization_id", organizationId).eq("ml_user_id", ml_user_id).eq("source_invoice_key", inv.key);
-    if (rows.length > 0) {
-      const payload = rows.map((r) => ({ organization_id: organizationId, ml_user_id, competence_date: r.competence_date, charge_date: r.charge_date, charge_type: r.charge_type, charge_label: r.charge_label, amount: r.amount, source_invoice_key: inv.key }));
-      for (let i = 0; i < payload.length; i += 500) {
-        const { error } = await supabaseAdmin.from("ml_billing_daily").insert(payload.slice(i, i + 500));
-        if (error) throw new Error(`insert ml_billing_daily: ${error.message}`);
-      }
-    }
-    totalRows += rows.length;
-    synced.push(inv.key);
+    const r = await gravarFatura(supabaseAdmin, accessToken, mlNumericId, organizationId, ml_user_id, inv);
+    if (r.complete) { totalRows += r.rows; synced.push(inv.key); } else { pendentes.push(inv.key); }
   }
-  return { synced, totalRows };
+  return { synced, totalRows, pendentes };
+}
+
+// Pagina o que couber no orçamento desta rodada e, SÓ quando a fatura fecha,
+// reescreve ml_billing_daily (full-resync idempotente por source_invoice_key).
+// Enquanto não fecha, não encosta em ml_billing_daily — o dado anterior, mesmo
+// velho, é melhor que um dado pela metade.
+async function gravarFatura(
+  // deno-lint-ignore no-explicit-any
+  supabaseAdmin: any, accessToken: string, mlNumericId: string,
+  organizationId: string, ml_user_id: string, inv: { key: string; from: string; to: string },
+): Promise<{ complete: boolean; rows: number; paginas: number }> {
+  const { complete, rows, paginas } = await aggregateInvoice(supabaseAdmin, accessToken, mlNumericId, inv, organizationId, ml_user_id);
+  if (!complete || !rows) {
+    console.log(`sync-ml-billing: fatura ${inv.key} ainda paginando (+${paginas} pagina(s) nesta rodada)`);
+    return { complete: false, rows: 0, paginas };
+  }
+  await supabaseAdmin.from("ml_billing_daily")
+    .delete().eq("organization_id", organizationId).eq("ml_user_id", ml_user_id).eq("source_invoice_key", inv.key);
+  if (rows.length > 0) {
+    const payload = rows.map((r) => ({ organization_id: organizationId, ml_user_id, competence_date: r.competence_date, charge_date: r.charge_date, charge_type: r.charge_type, charge_label: r.charge_label, amount: r.amount, source_invoice_key: inv.key }));
+    for (let i = 0; i < payload.length; i += 500) {
+      const { error } = await supabaseAdmin.from("ml_billing_daily").insert(payload.slice(i, i + 500));
+      if (error) throw new Error(`insert ml_billing_daily: ${error.message}`);
+    }
+  }
+  await limparInsumo(supabaseAdmin, organizationId, ml_user_id, inv.key);
+  return { complete: true, rows: rows.length, paginas };
 }
 
 // Sincroniza UMA fatura específica por key (Phase 84 — backfill resiliente).
@@ -284,19 +435,12 @@ async function syncSingleInvoice(
   organizationId: string,
   ml_user_id: string,
   invoiceKey: string,
-): Promise<{ synced: string[]; totalRows: number }> {
+): Promise<{ synced: string[]; totalRows: number; pendentes: string[] }> {
   const inv = { key: invoiceKey, from: "", to: "" };
-  const rows = await aggregateInvoice(accessToken, mlNumericId, inv);
-  await supabaseAdmin.from("ml_billing_daily")
-    .delete().eq("organization_id", organizationId).eq("ml_user_id", ml_user_id).eq("source_invoice_key", inv.key);
-  if (rows.length > 0) {
-    const payload = rows.map((r) => ({ organization_id: organizationId, ml_user_id, competence_date: r.competence_date, charge_date: r.charge_date, charge_type: r.charge_type, charge_label: r.charge_label, amount: r.amount, source_invoice_key: inv.key }));
-    for (let i = 0; i < payload.length; i += 500) {
-      const { error } = await supabaseAdmin.from("ml_billing_daily").insert(payload.slice(i, i + 500));
-      if (error) throw new Error(`insert ml_billing_daily: ${error.message}`);
-    }
-  }
-  return { synced: [inv.key], totalRows: rows.length };
+  const r = await gravarFatura(supabaseAdmin, accessToken, mlNumericId, organizationId, ml_user_id, inv);
+  return r.complete
+    ? { synced: [inv.key], totalRows: r.rows, pendentes: [] }
+    : { synced: [], totalRows: 0, pendentes: [inv.key] };
 }
 
 /** Mês-calendário anterior ao corrente (YYYY-MM, UTC). Usado pelo cron (Layer 3):
@@ -379,10 +523,18 @@ const seen = new Set<string>();
     try {
       const mlUser = await mlFetch("/users/me", row.access_token);
       const mlNumericId = String(mlUser.id);
-      const { synced, totalRows } = await runDailySync(supabaseAdmin, row.access_token, mlNumericId, row.organization_id, mlUserId, periodMonth);
+      const { synced, totalRows, pendentes } = await runDailySync(supabaseAdmin, row.access_token, mlNumericId, row.organization_id, mlUserId, periodMonth);
       results.push({ ml_user_id: mlUserId, ok: true, rows: totalRows });
-      console.log(`sync-ml-billing cron: ml_user_id=${mlUserId} period=${periodMonth} invoices=${synced.join(",")} rows=${totalRows}`);
-      await registrarEstado(supabaseAdmin, row.organization_id, mlUserId, periodMonth, true, totalRows, null);
+      console.log(`sync-ml-billing cron: ml_user_id=${mlUserId} period=${periodMonth} invoices=${synced.join(",")} rows=${totalRows} pendentes=${pendentes.join(",") || "-"}`);
+      // Fatura pendente NÃO é sucesso: gravar ok=true aqui esconderia uma fatura
+      // que nunca fecha, que foi exatamente como o dia 05/08 ficou pela metade
+      // por 32h sem ninguém ver.
+      await registrarEstado(
+        supabaseAdmin, row.organization_id, mlUserId, periodMonth,
+        pendentes.length === 0, totalRows,
+        pendentes.length === 0 ? null : `paginacao em andamento: ${pendentes.join(",")}`,
+      );
+      if (pendentes.length > 0) await continuarEmOutraInvocacao({ mode: "daily", ml_user_id: mlUserId, period_month: periodMonth, invoice_key: pendentes[0] });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       results.push({ ml_user_id: mlUserId, ok: false, error: msg });
@@ -498,12 +650,19 @@ serve(async (req) => {
         : runDailySync(supabaseAdmin, accessToken, mlNumericId, organizationId, ml_user_id, period_month);
       const isDebug = new URL(req.url).searchParams.get("debug") === "1";
       if (isDebug) {
-        const { synced, totalRows } = await dailyRunner();
-        return new Response(JSON.stringify({ success: true, mode: "daily", period_month, invoices_synced: synced, rows: totalRows }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        // Em debug (síncrono) NÃO há auto-continuação: quem chamou dirige o
+        // laço e vê fatura a fatura. `pendentes` diz o que falta paginar.
+        const { synced, totalRows, pendentes } = await dailyRunner();
+        return new Response(JSON.stringify({ success: true, mode: "daily", period_month, invoices_synced: synced, rows: totalRows, pendentes }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       const bg = dailyRunner()
-        .then(({ synced, totalRows }) => {
-          console.log(`sync-ml-billing daily done: ml_user_id=${ml_user_id} period=${period_month} invoices=${synced.join(",")} rows=${totalRows}`);
+        .then(async ({ synced, totalRows, pendentes }) => {
+          console.log(`sync-ml-billing daily done: ml_user_id=${ml_user_id} period=${period_month} invoices=${synced.join(",")} rows=${totalRows} pendentes=${pendentes.join(",") || "-"}`);
+          // Fatura que não coube no orçamento desta rodada continua NA PRÓXIMA
+          // invocação, de onde parou (cursor persistido). Sem isso ela ficaria
+          // esperando o cron do dia seguinte e nunca fechava. O teto de 50
+          // páginas por (fatura, grupo) no cursor é o que impede laço infinito.
+          if (pendentes.length > 0) await continuarEmOutraInvocacao({ mode: "daily", ml_user_id, period_month, invoice_key: pendentes[0] });
         })
         .catch((e: unknown) => {
           // Pitfall: sem try/catch a exceção do background morre silenciosamente
