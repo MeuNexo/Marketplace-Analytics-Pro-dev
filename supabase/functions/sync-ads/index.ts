@@ -8,6 +8,7 @@
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { normalizeMetrics, parseMetricsSummary, dedupeProductMetrics, type ItemMetricRow } from "./aggregate.ts";
 
 const SUPABASE_URL      = (Deno.env.get("SUPABASE_URL") ?? "").trim();
 const SERVICE_KEY       = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
@@ -103,30 +104,6 @@ async function getAccessToken(sb: any, mlUserId: string): Promise<string> {
   return data.access_token;
 }
 
-// ── Normalize nested metrics (same as ml-ads) ────────────────────────────────
-
-function metricsArrayToObject(value: unknown): Record<string, unknown> | null {
-  if (!Array.isArray(value)) return null;
-  const entries = value
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") return null;
-      const e = entry as Record<string, unknown>;
-      const key = String(e.key ?? e.name ?? e.metric ?? "").trim();
-      const val = e.value ?? e.amount ?? e.metric_value ?? e.total;
-      return key ? [key, val] as const : null;
-    })
-    .filter((x): x is readonly [string, unknown] => Boolean(x));
-  return entries.length > 0 ? Object.fromEntries(entries) : null;
-}
-
-function normalizeMetrics(item: Record<string, unknown>): Record<string, unknown> {
-  return metricsArrayToObject(item.metrics_summary)
-    ?? (item.metrics_summary && typeof item.metrics_summary === "object" && !Array.isArray(item.metrics_summary) ? item.metrics_summary as Record<string, unknown> : null)
-    ?? metricsArrayToObject(item.metrics)
-    ?? (item.metrics && typeof item.metrics === "object" && !Array.isArray(item.metrics) ? item.metrics as Record<string, unknown> : null)
-    ?? item;
-}
-
 // ── ML API fetch with retry ───────────────────────────────────────────────────
 
 async function mlGet(url: string, token: string): Promise<any> {
@@ -168,11 +145,16 @@ async function syncUser(
 
   const syncedAt = new Date().toISOString();
 
-  // dailyAgg: date → totals (derivado dos itens por produto)
+  // dailyAgg: date → totals. Fase 219: vem de metrics_summary (total oficial
+  // do ML), NUNCA mais somado a partir dos itens — ver summaryTotals abaixo.
   const dailyAgg = new Map<string, { impressions: number; clicks: number; spend: number; revenue: number; orders: number }>();
-  // itemDayAgg: "date|item_id" → per-product totals para dateFrom (dia do job)
-  type ItemMetrics = { title: string; thumbnail: string | null; impressions: number; clicks: number; spend: number; revenue: number; orders: number };
-  const itemDayAgg = new Map<string, ItemMetrics>();
+  // itemRows: linhas cruas por produto (uma por ocorrência na página), que
+  // dedupeProductMetrics agrega por (date|item_id) depois do laço.
+  const itemRows: ItemMetricRow[] = [];
+  // summaryTotals: total diário oficial, capturado uma vez (primeira página
+  // que trouxer metrics_summary) — o mesmo valor se repete em toda página da
+  // mesma consulta.
+  let summaryTotals: ReturnType<typeof parseMetricsSummary> = null;
 
   // Endpoint antigo: retorna métricas acumuladas do dia corrente por produto (sem filtro de data nas métricas).
   // Gravar tudo com date = dateFrom (o dia do job). Não iterar por dia — uma única chamada sem date params.
@@ -198,6 +180,9 @@ async function syncUser(
         console.log("sync-ads first response sample:", JSON.stringify(data).slice(0, 400));
         loggedFirstResult = true;
       }
+      if (summaryTotals === null && data?.metrics_summary) {
+        summaryTotals = parseMetricsSummary(data.metrics_summary);
+      }
       items = data?.results ?? data?.ads ?? data?.items ?? [];
       total = data?.paging?.total ?? items.length;
     } catch (e) {
@@ -215,15 +200,12 @@ async function syncUser(
       const ord = Number(m.units_quantity ?? m.direct_units_quantity ?? m.orders ?? 0);
       const itemId = (it as any).item_id ?? (it as any).ad_id ?? (it as any).id;
 
-      const d = dailyAgg.get(today) ?? { impressions: 0, clicks: 0, spend: 0, revenue: 0, orders: 0 };
-      d.impressions += p; d.clicks += cl; d.spend += sp; d.revenue += rev; d.orders += ord;
-      dailyAgg.set(today, d);
-
       if (itemId) {
-        const key = today + "|" + String(itemId);
-        const x   = itemDayAgg.get(key) ?? { title: it.title ?? "", thumbnail: it.thumbnail ?? null, impressions: 0, clicks: 0, spend: 0, revenue: 0, orders: 0 };
-        x.impressions += p; x.clicks += cl; x.spend += sp; x.revenue += rev; x.orders += ord;
-        itemDayAgg.set(key, x);
+        itemRows.push({
+          key: today + "|" + String(itemId),
+          title: it.title ?? "", thumbnail: it.thumbnail ?? null,
+          impressions: p, clicks: cl, spend: sp, revenue: rev, orders: ord,
+        });
       }
     }
     offset += items.length;
@@ -232,6 +214,23 @@ async function syncUser(
 
   if (fetchError) {
     throw new Error("sync-ads fetch items failed para ml_user_id=" + mlUserId + ": " + fetchError);
+  }
+
+  // Cache por produto: dedup por (date|item_id), sobrescrevendo em vez de
+  // somar — corrige a duplicação da API (Frente 1, Phase 219).
+  const itemDayAgg = dedupeProductMetrics(itemRows);
+
+  // Total diário: vem de summaryTotals (metrics_summary), nunca da soma dos
+  // itens. Ausência (API não devolveu o bloco em nenhuma página) fica FORA de
+  // dailyAgg — nunca uma linha com zero disfarçando "sem gasto" quando na
+  // verdade é "não sabemos".
+  if (summaryTotals !== null) {
+    dailyAgg.set(today, {
+      impressions: summaryTotals.impressions, clicks: summaryTotals.clicks,
+      spend: summaryTotals.spend, revenue: summaryTotals.revenue, orders: summaryTotals.orders,
+    });
+  } else {
+    console.warn("sync-ads ml_user_id=" + mlUserId + ": metrics_summary ausente na resposta, total diário indisponível");
   }
 
   // Limpa dados existentes do período para evitar stale spend de syncs anteriores.
