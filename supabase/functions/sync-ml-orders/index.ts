@@ -10,6 +10,7 @@ const corsHeaders = {
 
 const ML_API = "https://api.mercadolibre.com";
 const DAY_MS = 24 * 60 * 60 * 1000;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // ── UF → region (mirror of src/lib/tax/regions.ts) ───────────────────────────
 const UF_REGION: Record<string, "N" | "NE" | "CO" | "SE" | "S"> = {
@@ -81,17 +82,43 @@ const LISTING_TYPE_MAP: Record<string, string> = {
 
 // ── ML fetch helper (same pattern as mercado-libre-integration) ───────────────
 
+// 2026-08-06 (fix frete mudo): mesmo buraco corrigido em sync-ml-billing
+// (fetchPage, commit 80ad218b) — AbortSignal.timeout lanca excecao, nao
+// devolve status, entao escapava direto do `if (res.status === 429 ...)`
+// que existia antes e nunca fazia uma segunda tentativa. Agora o fetch fica
+// dentro de try/catch proprio, com ate 5 tentativas e backoff crescente
+// (1_500 * (tentativa + 1)) tanto na excecao quanto em 429/5xx. Erro de
+// cliente (4xx que nao seja 429, ou JSON invalido) lanca direto — nao se
+// resolve tentando de novo.
 async function mlFetch(path: string, accessToken: string, timeoutMs = 15_000) {
-  const res = await fetch(`${ML_API}${path}`, {
-    headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    console.error(`ML API error [${path}]:`, data);
-    throw new Error(data.message || `ML API error: ${res.status}`);
+  let ultimoErro = "";
+  for (let attempt = 0; attempt < 5; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch(`${ML_API}${path}`, {
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (e) {
+      ultimoErro = e instanceof Error ? e.message : String(e);
+      console.warn(`mlFetch ${path}: ${ultimoErro} (tentativa ${attempt + 1}/5)`);
+      await sleep(1_500 * (attempt + 1));
+      continue;
+    }
+    if (res.status === 429 || res.status >= 500) {
+      ultimoErro = `status ${res.status}`;
+      console.warn(`mlFetch ${path}: ${ultimoErro} (tentativa ${attempt + 1}/5)`);
+      await sleep(1_500 * (attempt + 1));
+      continue;
+    }
+    const data = await res.json();
+    if (!res.ok) {
+      console.error(`ML API error [${path}]:`, data);
+      throw new Error(data.message || `ML API error: ${res.status}`);
+    }
+    return data;
   }
-  return data;
+  throw new Error(`mlFetch ${path}: falhou apos 5 tentativas (ultimo erro: ${ultimoErro})`);
 }
 
 // ── Paginated order fetch with auto-split when total > 950 ────────────────────
@@ -254,7 +281,7 @@ async function fetchShipmentDetails(
   // nao mudam depois. Se um dia mudarem, o pedido volta a ser buscado assim que
   // o backfill limpar o campo — a regra e "ja tenho o dado", nao "ja vi este id".
   jaCompletos: Set<string> = new Set(),
-): Promise<Map<number, ShipmentDetail>> {
+): Promise<{ detailMap: Map<number, ShipmentDetail>; attempted: number; failed: number }> {
   const detailMap = new Map<number, ShipmentDetail>();
 
   // Collect ALL unique shipment IDs
@@ -274,9 +301,15 @@ async function fetchShipmentDetails(
     console.log(`fetchShipmentDetails: ${pulados} pedido(s) pulado(s) — frete e endereco ja no banco`);
   }
 
-  if (!ids.length) return detailMap;
+  if (!ids.length) return { detailMap, attempted: 0, failed: 0 };
   console.log(`Fetching ${ids.length} shipments for cost + address…`);
 
+  // 2026-08-06 (fix frete mudo, T-219-09): rejeicao de `Promise.allSettled`
+  // antes era descartada em silencio — nenhum log, nenhum contador. Agora
+  // toda rejeicao vira console.warn com o id do envio, e a funcao devolve
+  // quantos envios foram tentados e quantos falharam, para o chamador
+  // repassar na resposta do sync (shipments_total/shipments_failed).
+  let failed = 0;
   const CONCURRENCY = 10;
   for (let i = 0; i < ids.length; i += CONCURRENCY) {
     const batch = ids.slice(i, i + CONCURRENCY);
@@ -306,19 +339,25 @@ async function fetchShipmentDetails(
         return { id, cost: cost != null ? Number(cost) : null, estado, cidade };
       }),
     );
-    for (const r of results) {
+    for (let j = 0; j < results.length; j++) {
+      const r = results[j];
       if (r.status === "fulfilled") {
         detailMap.set(r.value.id, {
           cost:   r.value.cost != null && r.value.cost > 0 ? r.value.cost : null,
           estado: r.value.estado,
           cidade: r.value.cidade,
         });
+      } else if (r.status === "rejected") {
+        failed++;
+        const shipId = batch[j];
+        const motivo = r.reason instanceof Error ? r.reason.message : String(r.reason);
+        console.warn(`fetchShipmentDetails: envio ${shipId} rejeitado — ${motivo}`);
       }
     }
   }
 
-  console.log(`Shipment details resolved: ${detailMap.size} / ${ids.length}`);
-  return detailMap;
+  console.log(`Shipment details resolved: ${detailMap.size} / ${ids.length} (falhas: ${failed})`);
+  return { detailMap, attempted: ids.length, failed };
 }
 
 // ── Batch-fetch brand names from /items?ids=... ───────────────────────────────
@@ -625,7 +664,11 @@ serve(async (req) => {
         for (const r of (jaNoBanco ?? []) as any[]) jaCompletos.add(String(r.ml_order_id));
       }
     }
-    const shipmentMap = await fetchShipmentDetails(orders, accessToken, 500, jaCompletos);
+    const {
+      detailMap: shipmentMap,
+      attempted: shipmentsAttempted,
+      failed:    shipmentsFailed,
+    } = await fetchShipmentDetails(orders, accessToken, 500, jaCompletos);
 
     // ── Load tax config + product costs for this store ──────────────────────
     let taxConfig: any = null;
@@ -749,7 +792,14 @@ serve(async (req) => {
       );
 
     return new Response(
-      JSON.stringify({ success: true, orders_synced: upserted, date_from, date_to }),
+      JSON.stringify({
+        success: true,
+        orders_synced: upserted,
+        date_from,
+        date_to,
+        shipments_failed: shipmentsFailed,
+        shipments_total:  shipmentsAttempted,
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (err: unknown) {
