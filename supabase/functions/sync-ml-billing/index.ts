@@ -658,6 +658,16 @@ serve(async (req) => {
       const bg = dailyRunner()
         .then(async ({ synced, totalRows, pendentes }) => {
           console.log(`sync-ml-billing daily done: ml_user_id=${ml_user_id} period=${period_month} invoices=${synced.join(",")} rows=${totalRows} pendentes=${pendentes.join(",") || "-"}`);
+          // A continuação também grava estado. Sem isto o `ok` ficaria `false`
+          // para sempre: o fan-out do cron sempre termina com paginação em
+          // andamento (ele começa do zero), e quem de fato FECHA a fatura é
+          // esta cadeia. Alarme que grita sem motivo é tão ruim quanto alarme
+          // que não grita — vira ruído e o próximo de verdade passa batido.
+          await registrarEstado(
+            supabaseAdmin, organizationId, ml_user_id, period_month,
+            pendentes.length === 0, totalRows,
+            pendentes.length === 0 ? null : `paginacao em andamento: ${pendentes.join(",")}`,
+          );
           // Fatura que não coube no orçamento desta rodada continua NA PRÓXIMA
           // invocação, de onde parou (cursor persistido). Sem isso ela ficaria
           // esperando o cron do dia seguinte e nunca fechava. O teto de 50
