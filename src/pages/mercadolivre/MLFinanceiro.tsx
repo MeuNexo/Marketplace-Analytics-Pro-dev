@@ -177,12 +177,15 @@ export default function MLFinanceiro() {
   const kpiFrete      = waterfall?.total_frete     ?? 0;
   const kpiImpostos   = waterfall?.total_tax       ?? 0;
 
-  // ── Publicidade [Fase 210]: fonte RESOLVIDA do período — a fatura que o
-  // Mercado Livre efetivamente cobrou (`ml_billing_daily`, PADS+BPAD) e, como
-  // rede de proteção, o cache de ads (`ml_ads_daily_cache`) quando a fatura do
-  // período ainda não sincronizou. Nunca as duas somadas. É a MESMA régua da
-  // tela Vendas — o Lucro Bruto daqui é o MCO de lá com outro nome. O ramo de
-  // cache existe porque zerar publicidade inflaria o lucro em silêncio.
+  // ── Publicidade [Fase 210, prioridade invertida na Fase 219 — D-219-01]:
+  // fonte RESOLVIDA do período — o cache de ads (`ml_ads_daily_cache`), o
+  // PAINEL do Mercado Livre, consertado pela Fase 219 (ADS-08/ADS-09) e
+  // batendo ao centavo com o que o Wesley vê na tela do ML. Como rede de
+  // proteção, a fatura (`ml_billing_daily`, PADS+BPAD) entra quando o cache do
+  // período ainda não sincronizou — e continua sendo a fonte da DRE. Nunca as
+  // duas somadas. É a MESMA régua da tela Vendas — o Lucro Bruto daqui é o
+  // MCO de lá com outro nome. O ramo de fatura existe porque zerar
+  // publicidade inflaria o lucro em silêncio.
   const { daily: adsDaily, loading: adsCacheLoading } = useMLAds({ dateFrom: currentFrom, dateTo: currentTo });
   const adsBilling = useMLAdsBillingSpend(currentFrom, currentTo);
   // Ponto ÚNICO de decisão de fonte desta tela.

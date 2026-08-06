@@ -163,15 +163,17 @@ export default function MercadoLivre() {
   const { reputation: realReputation } = useMLReputation();
   const { daily: adsDaily } = useMLAds({ dateFrom: adsChartFrom, dateTo: currentTo });
 
-  // ── Publicidade do MCO (Fase 210) ──────────────────────────────────────────
-  // O gasto de publicidade que entra no MCO é o que o Mercado Livre DE FATO
-  // cobrou (`ml_billing_daily`, tipos PADS+BPAD), não o que a API de Ads reporta
-  // no cache diário. Mesma janela do fetch de cache (`adsChartFrom` → `currentTo`)
-  // para as duas fontes cobrirem exatamente o mesmo intervalo — assim as
-  // filtragens por sub-janela abaixo continuam válidas nos dois ramos.
+  // ── Publicidade do MCO (Fase 210, prioridade invertida na Fase 219 — D-219-01) ──
+  // O gasto de publicidade que entra no MCO é o que o PAINEL do Mercado Livre
+  // reporta (`ml_ads_daily_cache`, consertado pela Fase 219 — ver
+  // ADS-08/ADS-09), com a fatura (`ml_billing_daily`, tipos PADS+BPAD) como
+  // fallback quando o cache não tem dado no período — e como fonte da DRE.
+  // Mesma janela do fetch de cache (`adsChartFrom` → `currentTo`) para as duas
+  // fontes cobrirem exatamente o mesmo intervalo — assim as filtragens por
+  // sub-janela abaixo continuam válidas nos dois ramos.
   const adsBilling = useMLAdsBillingSpend(adsChartFrom, currentTo);
   // ESTA é a ÚNICA decisão de fonte da página. Todo consumidor abaixo lê de
-  // `adsResolved` (fatura OU cache, nunca a soma). A única exceção declarada é
+  // `adsResolved` (cache OU fatura, nunca a soma). A única exceção declarada é
   // `adsSpendMes`, do fallback estimado do DRE — ver comentário lá embaixo.
   const adsResolved = useMemo(
     () =>

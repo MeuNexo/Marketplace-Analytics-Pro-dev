@@ -1,17 +1,28 @@
 // ============================================================================
-// adsBillingSpend — Fase 210, Plano 01, Task 1
+// adsBillingSpend — Fase 210, Plano 01, Task 1 · invertido pela Fase 219,
+// Plano 02, Task 1 (D-219-01)
 //
-// Régua deste módulo: o gasto de publicidade que entra no MCO é o que o Mercado
-// Livre DE FATO cobrou, lido da fatura (`ml_billing_daily`), e não o que a API
-// de Ads reporta no cache diário (`ml_ads_daily_cache`).
+// Régua ATUAL (D-219-01, Wesley, 06/08/2026): "o ads deve vir do painel, e não
+// da fatura; a fatura serve para fechamento de DRE. Mas cálculo de publicidade
+// investida no dia, o painel é o correto por estar coerente com o gasto." O
+// gasto de publicidade que entra no MCO passa a ser o do cache diário
+// (`ml_ads_daily_cache`, corrigido pela Fase 219 — ver ADS-08/ADS-09), e a
+// fatura (`ml_billing_daily`) vira o FALLBACK quando o cache não tem dado no
+// período — além de continuar sendo a fonte da DRE.
 //
-// Medição de 2026-08-04 (org Wesley, seller 2359559427), mesmo período:
-//   cache de ads .............. R$   189,10
-//   fatura PADS+BPAD .......... R$ 1.987,47
-// Efeito no MCO: R$ 20.390,34 (13,31%) -> R$ 18.591,97 (12,14%).
-// O cache não é só menor — ele erra o formato (abril: 0,00 no cache contra
-// 532,94 cobrados). Por isso a fonte do MCO muda; as telas de Publicidade
-// continuam no cache, porque precisam de métrica por campanha/anúncio.
+// Por que essa régua não é a mesma da Fase 210: lá o cache tinha OUTRO bug —
+// somava linha a linha um retorno da API que repetia o mesmo item em várias
+// linhas idênticas (duplicação), inflando o gasto em ~1,4-1,5x. A 210 saiu do
+// cache para a fatura por causa dessa duplicação, não porque a fatura fosse
+// conceitualmente melhor para "publicidade investida no dia". A Fase 219
+// consertou a duplicação (total via `metrics_summary`, produto por produto
+// deduplicado por `item_id`) e provou, ao vivo, que o cache corrigido bate ao
+// centavo com o painel do ML (219-PROVA.md) — só então a prioridade foi
+// invertida de volta.
+//
+// Medição de 2026-08-05 (Pé Vermeio, seller 1639558873, 219-PROVA.md):
+//   cache ANTES do conserto (duplicado) ... R$ 277,01 (inflado 1,397×)
+//   cache DEPOIS do conserto ............... R$ 198,27 (painel: R$ 198,27 — diff R$ 0,00)
 //
 // Este módulo é PURO: só tipos e aritmética. Nenhuma leitura de banco, nenhum
 // componente de tela, nenhuma chamada de rede. Quem lê a tabela é o hook
@@ -130,27 +141,41 @@ export function aggregateAdsBillingSpend(rows: AdsBillingChargeRow[]): AdsBillin
 }
 
 /**
- * Escolhe a origem do gasto de publicidade — fatura OU cache, nunca as duas.
+ * Escolhe a origem do gasto de publicidade — cache OU fatura, nunca as duas
+ * (D-219-01: prioridade invertida da Fase 210).
  *
- * Regra única e exclusiva: havendo pelo menos uma linha de publicidade na
- * fatura do período (`rowCount > 0`), vale a fatura; caso contrário vale o
- * cache.
+ * Regra única e exclusiva: havendo pelo menos um dia de publicidade no cache
+ * do período (`cache.daily.length > 0`), vale o CACHE (o painel do ML,
+ * consertado pela Fase 219 — ADS-08/ADS-09); caso contrário, se a fatura do
+ * período tiver ao menos uma linha de publicidade (`rowCount > 0`), vale a
+ * FATURA como fallback; sem nenhuma das duas, o neutro.
  *
  * POR QUE nunca somar: as duas origens descrevem O MESMO gasto por réguas
- * diferentes (a fatura é o que o ML cobrou; o cache é o que a API de Ads
- * reporta). Combiná-las aritmeticamente contaria publicidade duas vezes dentro
- * do MCO — no caso medido daria R$ 2.176,57 em vez dos R$ 1.987,47 reais. Não
- * existe caminho de código aqui em que valores das duas origens se combinem.
+ * diferentes (o cache é o que o painel do ML reporta; a fatura é o que o ML
+ * de fato cobrou). Combiná-las aritmeticamente contaria publicidade duas vezes
+ * dentro do MCO. Não existe caminho de código aqui em que valores das duas
+ * origens se combinem (Test 12, anti-soma-dupla).
  *
- * POR QUE manter o ramo de cache: quando a fatura do período ainda não
+ * POR QUE manter o ramo de fatura: quando o cache do período ainda não
  * sincronizou, zerar ads inflaria o MCO em silêncio — o que é pior do que
- * exibir o número antigo. O cache é o piso; `source` denuncia qual régua está
- * valendo, para que a troca nunca aconteça escondida.
+ * cair para a fatura, que é a fonte de fechamento da DRE. `source` denuncia
+ * qual régua está valendo, para que a troca nunca aconteça escondida.
  */
 export function resolveAdsSpend(
   billing: AdsBillingSpend | null | undefined,
   cache: { daily: AdsSpendDailyRow[]; total: number },
 ): ResolvedAdsSpend {
+  if (cache.daily.length > 0) {
+    const datas = cache.daily.map((d) => d.date);
+    return {
+      daily: cache.daily,
+      total: cache.total,
+      source: "cache",
+      coverageFrom: datas.reduce((min, d) => (d < min ? d : min)),
+      coverageTo: datas.reduce((max, d) => (d > max ? d : max)),
+    };
+  }
+
   if (billing != null && billing.rowCount > 0) {
     return {
       daily: billing.daily,
@@ -162,8 +187,8 @@ export function resolveAdsSpend(
   }
 
   return {
-    daily: cache.daily,
-    total: cache.total,
+    daily: [],
+    total: 0,
     source: "cache",
     coverageFrom: null,
     coverageTo: null,

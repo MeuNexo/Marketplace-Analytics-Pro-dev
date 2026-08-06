@@ -150,12 +150,28 @@ describe("resolveAdsSpend", () => {
     coverageTo: "2026-07-31",
   };
   const cache = {
-    daily: [{ date: "2026-07-10", spend: 189.1 }],
-    total: 189.1,
+    daily: [
+      { date: "2026-07-09", spend: 100.5 },
+      { date: "2026-07-10", spend: 98.02 },
+    ],
+    total: 198.52,
   };
 
-  it("Test 9: com rowCount > 0 devolve os valores da fatura e source === 'billing'", () => {
+  it("Test 9 (D-219-01): cache com daily.length > 0 devolve os valores do CACHE e source === 'cache' — mesmo com fatura tendo rowCount > 0", () => {
     const result = resolveAdsSpend(fatura, cache);
+
+    expect(result.source).toBe("cache");
+    expect(result.total).toBe(198.52);
+    expect(result.daily).toEqual(cache.daily);
+    // coverageFrom/coverageTo vêm do MENOR/MAIOR date de cache.daily, não da fatura
+    expect(result.coverageFrom).toBe("2026-07-09");
+    expect(result.coverageTo).toBe("2026-07-10");
+  });
+
+  it("Test 10 (D-219-01): cache VAZIO e fatura com rowCount > 0 devolve os valores da FATURA e source === 'billing' — fallback simétrico", () => {
+    const cacheVazio = { daily: [], total: 0 };
+
+    const result = resolveAdsSpend(fatura, cacheVazio);
 
     expect(result.source).toBe("billing");
     expect(result.total).toBe(1987.47);
@@ -164,8 +180,9 @@ describe("resolveAdsSpend", () => {
     expect(result.coverageTo).toBe("2026-07-31");
   });
 
-  it("Test 10: com rowCount === 0 devolve o cache e source === 'cache' — ads NÃO fica zerado", () => {
-    const semLinhas = {
+  it("Test 11 (D-219-01): cache vazio e fatura null/rowCount === 0 devolve o objeto neutro com source === 'cache'", () => {
+    const cacheVazio = { daily: [], total: 0 };
+    const faturaSemLinhas = {
       daily: [],
       total: 0,
       rowCount: 0,
@@ -173,63 +190,79 @@ describe("resolveAdsSpend", () => {
       coverageTo: null,
     };
 
-    const result = resolveAdsSpend(semLinhas, cache);
+    const semFatura = resolveAdsSpend(null, cacheVazio);
+    expect(semFatura.source).toBe("cache");
+    expect(semFatura.total).toBe(0);
+    expect(semFatura.daily).toEqual([]);
+    expect(semFatura.coverageFrom).toBeNull();
+    expect(semFatura.coverageTo).toBeNull();
 
-    expect(result.source).toBe("cache");
-    expect(result.total).toBe(189.1);
-    expect(result.total).not.toBe(0);
-    expect(result.daily).toEqual(cache.daily);
-    expect(result.coverageFrom).toBeNull();
-    expect(result.coverageTo).toBeNull();
+    const undefinedFatura = resolveAdsSpend(undefined, cacheVazio);
+    expect(undefinedFatura.source).toBe("cache");
+    expect(undefinedFatura.total).toBe(0);
+
+    const rowCountZero = resolveAdsSpend(faturaSemLinhas, cacheVazio);
+    expect(rowCountZero.source).toBe("cache");
+    expect(rowCountZero.total).toBe(0);
   });
 
-  it("Test 11: argumento de fatura null (ou undefined) devolve o cache e source === 'cache'", () => {
-    expect(resolveAdsSpend(null, cache).source).toBe("cache");
-    expect(resolveAdsSpend(null, cache).total).toBe(189.1);
-    expect(resolveAdsSpend(undefined, cache).source).toBe("cache");
-    expect(resolveAdsSpend(undefined, cache).total).toBe(189.1);
-  });
-
-  it("Test 12: ANTI-SOMA-DUPLA — fatura 1987,47 + cache 189,10 resolve em 1987,47, nunca 2176,57", () => {
+  it("Test 12 (ANTI-SOMA-DUPLA): cache com dado e fatura com dado NUNCA somam — resultado é exatamente o total do cache, nunca cache.total + billing.total", () => {
     const result = resolveAdsSpend(fatura, cache);
 
-    expect(result.total).toBe(1987.47);
-    expect(result.total).not.toBe(2176.57);
-    expect(result.total).not.toBe(189.1);
+    expect(result.total).toBe(198.52);
+    expect(result.total).not.toBe(fatura.total + cache.total);
+    expect(result.total).not.toBe(1987.47);
     // A soma diária também não pode combinar as duas origens
     const somaDiaria = result.daily.reduce((acc, d) => acc + d.spend, 0);
-    expect(Math.round(somaDiaria * 100) / 100).toBe(1987.47);
+    expect(Math.round(somaDiaria * 100) / 100).toBe(198.52);
+  });
+
+  it("Test novo: quando source === 'cache', coverageFrom/coverageTo vêm de cache.daily, nunca null quando há dado", () => {
+    const cacheUmDia = { daily: [{ date: "2026-08-05", spend: 198.27 }], total: 198.27 };
+
+    const result = resolveAdsSpend(null, cacheUmDia);
+
+    expect(result.source).toBe("cache");
+    expect(result.coverageFrom).toBe("2026-08-05");
+    expect(result.coverageTo).toBe("2026-08-05");
   });
 });
 
-describe("efeito medido no MCO (org Wesley, 2026-08-04)", () => {
-  it("Test 13: trocar ads de 189,10 (cache) por 1.987,47 (fatura) derruba o MCO de 13,31% para 12,14%", () => {
+describe("efeito medido no MCO — cache ANTES do conserto da 219-01 (inflado) vs DEPOIS (bate com o painel)", () => {
+  it("Test 13 (D-219-01, 219-PROVA.md): reapontar para o cache ANTES do conserto (277,01, inflado 1,397x) seria pior que a fatura; DEPOIS (198,27) bate com o painel — prova por que a ordem 'conserta primeiro, reaponta depois' importa", () => {
+    // Números reais medidos em 219-PROVA.md (Pé Vermeio, 05/08/2026, conta 1639558873):
+    // cache ANTES do conserto (duplicado): R$ 277,01 — 1,397x inflado
+    // cache DEPOIS do conserto (metrics_summary + dedup): R$ 198,27 — bate ao centavo com o painel do ML
     const receita = 153197.08;
-    const adsCache = 189.1;
-    const adsBilling = 1987.47;
-    // Demais componentes do período, fixos: receita − MCO(cache) − ads(cache)
-    const demaisComponentes = receita - 20390.34 - adsCache;
+    const adsCacheAntes = 277.01;
+    const adsCacheDepois = 198.27;
+    // Demais componentes do período, fixos: receita − MCO(cache antes) − ads(cache antes)
+    const demaisComponentes = receita - 20390.34 - adsCacheAntes;
 
-    const comCache = computeMco({
+    const comCacheAntes = computeMco({
       grossRevenue: receita,
       cmv: demaisComponentes,
       platformCost: 0,
-      ads: adsCache,
+      ads: adsCacheAntes,
       tax: 0,
     });
-    const comBilling = computeMco({
+    const comCacheDepois = computeMco({
       grossRevenue: receita,
       cmv: demaisComponentes,
       platformCost: 0,
-      ads: adsBilling,
+      ads: adsCacheDepois,
       tax: 0,
     });
 
-    expect(comCache.mco).toBeCloseTo(20390.34, 2);
-    expect(comBilling.mco).toBeCloseTo(18591.97, 2);
-    expect((comCache.pct as number).toFixed(2)).toBe("13.31");
-    expect((comBilling.pct as number).toFixed(2)).toBe("12.14");
-    // Diferença medida: R$ 1.798,37 e 1,17 p.p.
-    expect(comCache.mco - comBilling.mco).toBeCloseTo(adsBilling - adsCache, 2);
+    // Reapontar para o cache ANTES do conserto teria dado um MCO MENOR (mais
+    // gasto de ads embutido) do que o real — pior do que ficar na fatura.
+    expect(comCacheAntes.mco).toBeCloseTo(20390.34, 2);
+    // Depois do conserto, o cache reflete o gasto real (menor), e o MCO sobe
+    // na exata diferença entre os dois números do cache.
+    expect(comCacheDepois.mco - comCacheAntes.mco).toBeCloseTo(
+      adsCacheAntes - adsCacheDepois,
+      2,
+    );
+    expect(comCacheDepois.mco).toBeGreaterThan(comCacheAntes.mco);
   });
 });
