@@ -13,6 +13,24 @@
 // para o total diário, product_ads/ads/search para a quebra por produto — ver
 // supabase/functions/sync-ads/aggregate.ts). Uma tabela que alimenta o MCO
 // precisa de escritor único, com a régua provada contra o painel do ML.
+//
+// Efeitos práticos desta mudança, registrados aqui e no SUMMARY do plano
+// 221-01:
+// - O botão de sincronizar da tela `/publicidade` (useMLAds.syncNow) passa a
+//   ser uma RELEITURA do cache, não mais um gatilho de sync. Isso não é perda
+//   de função: a sincronização em background já não refletia na mesma
+//   requisição (a resposta saía antes do `EdgeRuntime.waitUntil` terminar) —
+//   quem de fato alimenta as duas tabelas é o cron de `sync-ads`, 4x ao dia.
+// - `ml_ads_campaigns_cache` continua sendo escrito só pelo `sync-ads`, com
+//   métricas zeradas (é metadado: nome, status, orçamento — o endpoint de
+//   campanhas usado por `sync-ads` para metadado não pede `metrics_summary`).
+//   Isso já era o estado de hoje: `sync-ads` apaga e reescreve essa tabela a
+//   cada rodada e sempre venceria a disputa com `ml-ads`, mesmo antes desta
+//   fase.
+// - O contrato de resposta com `useMLAds` (`adsAvailable`, `daily`,
+//   `campaigns`, `products`, `syncing`) é preservado byte a byte; `syncing`
+//   passa a ser sempre `false` porque não há mais sync disparado por esta
+//   função.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
