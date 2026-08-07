@@ -14,13 +14,35 @@
 // própria resposta já traz `metrics_summary` com o total certo (bate ao
 // centavo com o painel do ML) e o código antigo o ignorava.
 //
-// Este módulo resolve as duas pontas:
+// Phase 221: o total diário passa a vir do `metrics_summary` de
+// `product_ads/campaigns/search` (é isso que o painel do ML mostra no card
+// Investimento), não mais de `product_ads/ads/search` — medido 06/08/2026:
+// campanhas respondeu 220,65 e anúncios respondeu 172,95 para o MESMO dia,
+// -27,6%. Nos dias assentados (D-3 ou mais) os dois convergem; só o dia
+// recém-fechado diverge, porque o ML consolida a métrica por anúncio com
+// atraso maior que por campanha.
+//
+// Consequência aceita, não defeito: a quebra por PRODUTO (`ml_ads_products_cache`)
+// continua vindo de `ads/search` — é o único endpoint com granularidade por
+// item. A partir desta fase, a soma por produto deixa de fechar com o total
+// diário nos dias recentes (medido 06/08: soma por produto ~172,95 contra o
+// total diário 220,65). A prova de autoconsistência da Fase 219 ("soma por
+// produto == total diário") passa a valer só para dias assentados.
+//
+// Este módulo resolve três pontas:
 // - `parseMetricsSummary`: normaliza o bloco `metrics_summary` da resposta e
 //   devolve o total diário correto — SEM somar itens.
 // - `dedupeProductMetrics`: agrega o array de linhas por produto por
 //   `item_id`, SOBRESCREVENDO em vez de somar (os duplicados observados são
 //   idênticos; sobrescrever é mais simples de explicar que manter o
 //   primeiro, e dá o mesmo resultado).
+// - `sumCampaignPages`/`buildDailyTotals` (Phase 221): somam o total diário
+//   sobre TODAS as páginas de campanhas, com guarda de cobertura contra
+//   `paging.total` — no endpoint de campanhas, `metrics_summary` resume só a
+//   PÁGINA (diferente do endpoint de anúncios, onde é global mesmo com
+//   limit=1); com limit=1 a 1ª de 6 campanhas devolveu 18,67 em vez dos
+//   220,65 reais. Um conjunto de páginas que não cobre `paging.total` nunca
+//   vira total diário.
 
 export interface ItemMetricRow {
   key: string; // `${date}|${itemId}`
@@ -127,4 +149,147 @@ export function dedupeProductMetrics(rows: ItemMetricRow[]): Map<string, ItemMet
     });
   }
   return map;
+}
+
+// ── Phase 221: total diário do endpoint de campanhas ──────────────────────────
+
+/**
+ * Métricas parciais por métrica: `null` significa "a API não devolveu esta
+ * chave" (ausência), nunca 0. Diferente de `SummaryTotals`, que assume que
+ * toda métrica sempre resolve — aqui o objetivo é justamente permitir que
+ * cada métrica falhe de forma independente, para nunca disfarçar ausência de
+ * zero (a mesma confusão que apagou o frete na Fase 219, em
+ * `batch_upsert_orders`).
+ */
+export interface PartialTotals {
+  impressions: number | null;
+  clicks: number | null;
+  spend: number | null;
+  revenue: number | null;
+  orders: number | null;
+}
+
+/**
+ * Uma página da resposta de `product_ads/campaigns/search`: o bloco de
+ * `metrics_summary` daquela página (resume SÓ a página, diferente do
+ * endpoint de anúncios) e quantas campanhas vieram nela.
+ */
+export interface CampaignPage {
+  metricsSummary: unknown;
+  campaigns: number;
+}
+
+/**
+ * Normaliza um bloco de métricas parcial, lendo os MESMOS aliases já usados
+ * por `parseMetricsSummary` (mesma normalização via `metricsArrayToObject`,
+ * para não criar uma segunda régua). Cada métrica ausente ou não-finita vira
+ * `null` em vez de 0 — ausência é "não sabemos", zero é "não gastou".
+ */
+export function parsePartialMetrics(raw: unknown): PartialTotals | null {
+  if (raw === null || raw === undefined) return null;
+
+  const m = metricsArrayToObject(raw)
+    ?? (typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : null);
+
+  if (!m || Object.keys(m).length === 0) return null;
+
+  const toNumberOrNull = (value: unknown): number | null => {
+    if (value === undefined || value === null) return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  return {
+    impressions: toNumberOrNull(m.prints ?? m.impressions),
+    clicks: toNumberOrNull(m.clicks),
+    spend: toNumberOrNull(m.cost ?? m.spend),
+    revenue: toNumberOrNull(m.total_amount ?? m.direct_amount ?? m.attributed_revenue),
+    orders: toNumberOrNull(m.units_quantity ?? m.direct_units_quantity ?? m.orders),
+  };
+}
+
+/**
+ * Soma o total diário sobre TODAS as páginas de campanhas, com guarda de
+ * cobertura sobre `pagingTotal`. Regras, nesta ordem:
+ * (a) lista vazia → `null`;
+ * (b) alguma página sem bloco reconhecível → `null`;
+ * (c) soma de `page.campaigns` MENOR que `pagingTotal` → `null` (cobertura
+ *     incompleta produziria um subtotal disfarçado de total — foi assim que
+ *     `limit=1` devolveu 18,67 contra os 220,65 reais);
+ * (d) `pagingTotal` <= 0 → `null`;
+ * (e) soma métrica a métrica; uma métrica `null` em QUALQUER página deixa o
+ *     resultado `null` naquela métrica — não dá para somar o que não se
+ *     conhece.
+ */
+export function sumCampaignPages(pages: CampaignPage[], pagingTotal: number): PartialTotals | null {
+  if (pages.length === 0) return null;
+  if (pagingTotal <= 0) return null;
+
+  const parsed: PartialTotals[] = [];
+  let campaignsCovered = 0;
+  for (const page of pages) {
+    const p = parsePartialMetrics(page.metricsSummary);
+    if (p === null) return null;
+    parsed.push(p);
+    campaignsCovered += page.campaigns;
+  }
+
+  if (campaignsCovered < pagingTotal) return null;
+
+  const sumField = (field: keyof PartialTotals): number | null => {
+    let total = 0;
+    for (const p of parsed) {
+      const v = p[field];
+      if (v === null) return null;
+      total += v;
+    }
+    return total;
+  };
+
+  return {
+    impressions: sumField("impressions"),
+    clicks: sumField("clicks"),
+    spend: sumField("spend"),
+    revenue: sumField("revenue"),
+    orders: sumField("orders"),
+  };
+}
+
+/**
+ * Compõe o total diário na régua do painel: custo/cliques/impressões SEMPRE
+ * das campanhas (as três métricas medidas divergentes entre os endpoints);
+ * receita/unidades das campanhas quando presentes, senão do resumo de
+ * anúncios (medidas idênticas nos dois endpoints em 06/08/2026: 4.873,06 e
+ * 14 — é essa medição que autoriza o fallback).
+ *
+ * `campanhas` nulo devolve `null` mesmo com `anuncios` preenchido — o custo
+ * do endpoint de anúncios é justamente o número errado que esta fase
+ * corrige, nunca um substituto aceitável.
+ */
+export function buildDailyTotals(
+  campanhas: PartialTotals | null,
+  anuncios: SummaryTotals | null,
+): { totals: SummaryTotals; source: "campaigns" | "campaigns+ads" } | null {
+  if (campanhas === null) return null;
+
+  const { spend, clicks, impressions } = campanhas;
+  if (spend === null || clicks === null || impressions === null) return null;
+
+  let revenue = campanhas.revenue;
+  let orders = campanhas.orders;
+  let source: "campaigns" | "campaigns+ads" = "campaigns";
+
+  if (revenue === null || orders === null) {
+    if (anuncios === null) return null;
+    if (revenue === null) revenue = anuncios.revenue;
+    if (orders === null) orders = anuncios.orders;
+    source = "campaigns+ads";
+  }
+
+  if (revenue === null || orders === null) return null;
+
+  return {
+    totals: { spend, clicks, impressions, revenue, orders },
+    source,
+  };
 }
