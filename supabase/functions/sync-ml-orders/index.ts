@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { computeOrderTaxRate } from "../_shared/orderTaxRate.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,54 +12,6 @@ const corsHeaders = {
 const ML_API = "https://api.mercadolibre.com";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-// ── UF → region (mirror of src/lib/tax/regions.ts) ───────────────────────────
-const UF_REGION: Record<string, "N" | "NE" | "CO" | "SE" | "S"> = {
-  AC:"N",AP:"N",AM:"N",PA:"N",RO:"N",RR:"N",TO:"N",
-  AL:"NE",BA:"NE",CE:"NE",MA:"NE",PB:"NE",PE:"NE",PI:"NE",RN:"NE",SE:"NE",
-  DF:"CO",GO:"CO",MT:"CO",MS:"CO",
-  ES:"SE",MG:"SE",RJ:"SE",SP:"SE",
-  PR:"S",RS:"S",SC:"S",
-};
-
-function isReducedInterstateDest(uf: string | null): boolean {
-  if (!uf) return false;
-  if (uf === "ES") return true;
-  const r = UF_REGION[uf];
-  return r === "N" || r === "NE" || r === "CO";
-}
-
-function computeOrderTaxRate(cfg: any, ufDest: string | null): number {
-  if (!cfg) return 0;
-  const c = (v: any) => Number(v ?? 0);
-  switch (cfg.regime) {
-    case "simples_nacional":
-      return Math.max(0, c(cfg.sn_aliquota_efetiva));
-    case "lucro_presumido":
-      return Math.max(0, c(cfg.lp_pis) + c(cfg.lp_cofins) + c(cfg.lp_irpj) + c(cfg.lp_csll));
-    case "lucro_real": {
-      const intra      = Number(cfg.lr_icms_aliquota_intra ?? cfg.lr_icms_debito ?? 0);
-      const interSulSE = Number(cfg.lr_icms_aliquota_inter_sul_sudeste ?? 12);
-      const interNNECO = Number(cfg.lr_icms_aliquota_inter_norte_nordeste ?? 7);
-      const orig = cfg.uf_origem ? String(cfg.uf_origem).toUpperCase() : null;
-      const dest = ufDest ? ufDest.toUpperCase() : null;
-
-      let icmsAliq: number;
-      if (orig === null) {
-        // Sem UF origem: aplica interestadual pela tabela ICMS por destino
-        icmsAliq = (dest && isReducedInterstateDest(dest)) ? interNNECO : interSulSE;
-      } else if (dest === null || orig === dest) {
-        icmsAliq = intra; // intraestadual
-      } else {
-        icmsAliq = isReducedInterstateDest(dest) ? interNNECO : interSulSE;
-      }
-
-      const baseFactor = 1 - icmsAliq / 100;
-      return Math.max(0, icmsAliq + baseFactor * (1.65 + 7.60));
-    }
-  }
-  return 0;
-}
 
 // Normalise ML listing_type_id → "classic" | "premium" | "free"
 // Current Brazil tiers (2024):
@@ -470,11 +423,22 @@ function expandOrder(
     // disfarçado. Sem cost_full cadastrado → null (o pedido entra sem cheio e o
     // gate do C6 o lista para o Wesley cadastrar no Tiny).
     const custoUnitCheio = (itemSku ? skuCostFullMap.get(itemSku) : null) ?? null;
-    const taxRate     = taxConfig ? computeOrderTaxRate(taxConfig, estado) : null;
+    const aliquota    = computeOrderTaxRate(taxConfig, estado);
+    const taxRate     = aliquota.rate;
     const taxAmount   = (taxRate != null && precoUnit != null)
       ? (precoUnit * quantidade * taxRate) / 100
       : null;
     const ufOrigem    = taxConfig?.uf_origem ?? null;
+    // receita_liquida precisa da mesma proteção que tax_rate/tax_amount: ela é
+    // recalculada como número real a cada rodada (preço×qtd−comissão−frete−
+    // imposto), e já tem COALESCE no upsert desde 12/06 — mas COALESCE não
+    // protege contra número errado, só contra ausência. Se o imposto virar
+    // null e receita_liquida continuasse sendo calculada com imposto valendo
+    // zero, ela seria gravada INFLADA pelo valor inteiro do imposto — um bug
+    // pior que o original. Quando NÃO existe config fiscal nenhuma (motivo
+    // "sem_config"), receita_liquida continua calculada como hoje: orgs sem
+    // regime cadastrado não podem regredir por causa desta fase.
+    const impostoDesconhecido = aliquota.motivo === "destino_desconhecido";
 
     return {
       ml_order_id:     String(order.id),
@@ -504,7 +468,7 @@ function expandOrder(
       tax_amount:      taxAmount,
       uf_origem:       ufOrigem,
       receita_bruta:   precoUnit != null ? precoUnit * quantidade : null,
-      receita_liquida: precoUnit != null
+      receita_liquida: (precoUnit != null && !impostoDesconhecido)
         ? precoUnit * quantidade
           - (item.sale_fee != null ? Number(item.sale_fee) : 0)
           - (frete ?? 0)
@@ -726,6 +690,13 @@ serve(async (req) => {
     const records = orders.flatMap((o) =>
       expandOrder(o, ml_user_id, effectiveSellerId, userId, organizationId, syncAt, shipmentMap, costMap, taxConfig, brandMap, skuCostMap, skuCostFullMap),
     );
+    // Visibilidade (Fase 220, TAX-01): silêncio foi o que deixou o bug do
+    // imposto viver quatro meses. Conta quantos itens ficaram com o imposto
+    // preservado (não recalculado) por destino desconhecido nesta rodada.
+    const impostoPreservado = records.filter((r) => r.tax_rate == null).length;
+    if (impostoPreservado > 0) {
+      console.log(`sync-ml-orders: ${impostoPreservado} itens com imposto preservado por destino desconhecido`);
+    }
 
     let upserted = 0;
     if (records.length > 0) {
@@ -799,6 +770,7 @@ serve(async (req) => {
         date_to,
         shipments_failed: shipmentsFailed,
         shipments_total:  shipmentsAttempted,
+        tax_preserved:    impostoPreservado,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

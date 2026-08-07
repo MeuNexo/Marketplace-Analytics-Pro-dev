@@ -1,53 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { computeOrderTaxRate } from "../_shared/orderTaxRate.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
 };
-
-// ── UF → region (mirror of src/lib/tax/regions.ts) ───────────────────────────
-const UF_REGION: Record<string, "N" | "NE" | "CO" | "SE" | "S"> = {
-  AC:"N",AP:"N",AM:"N",PA:"N",RO:"N",RR:"N",TO:"N",
-  AL:"NE",BA:"NE",CE:"NE",MA:"NE",PB:"NE",PE:"NE",PI:"NE",RN:"NE",SE:"NE",
-  DF:"CO",GO:"CO",MT:"CO",MS:"CO",
-  ES:"SE",MG:"SE",RJ:"SE",SP:"SE",
-  PR:"S",RS:"S",SC:"S",
-};
-
-function isReducedInterstateDest(uf: string | null): boolean {
-  if (!uf) return false;
-  if (uf === "ES") return true;
-  const r = UF_REGION[uf];
-  return r === "N" || r === "NE" || r === "CO";
-}
-
-function computeOrderTaxRate(cfg: any, ufDest: string | null): number {
-  if (!cfg) return 0;
-  const c = (v: any) => Number(v ?? 0);
-  switch (cfg.regime) {
-    case "simples_nacional":
-      return Math.max(0, c(cfg.sn_aliquota_efetiva));
-    case "lucro_presumido":
-      return Math.max(0, c(cfg.lp_pis) + c(cfg.lp_cofins) + c(cfg.lp_irpj) + c(cfg.lp_csll));
-    case "lucro_real": {
-      const intra = cfg.lr_icms_aliquota_intra ?? cfg.lr_icms_debito ?? 0;
-      const interSE = cfg.lr_icms_aliquota_inter_sul_sudeste ?? 12;
-      const interNNE = cfg.lr_icms_aliquota_inter_norte_nordeste ?? 7;
-      const orig = (cfg.uf_origem ?? "").toString().toUpperCase() || null;
-      const dest = ufDest ? ufDest.toUpperCase() : null;
-      let icms = Number(intra);
-      if (orig && dest && orig !== dest) {
-        icms = isReducedInterstateDest(dest) ? Number(interNNE) : Number(interSE);
-      }
-      // Formula: ICMS + (1 - ICMS%) × (PIS 1.65% + COFINS 7.60%)
-      const baseFactor = 1 - icms / 100;
-      return Math.max(0, icms + baseFactor * (1.65 + 7.60));
-    }
-  }
-  return 0;
-}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -146,7 +105,10 @@ serve(async (req) => {
         // Prioridade: seller_sku (Tiny) → item_id ML direto (legado)
         const cost = (o.sku ? costBySku.get(o.sku) : undefined) ?? costByItem.get(o.item_id) ?? null;
         const costFull = o.sku ? costFullBySku.get(o.sku) ?? null : null;
-        const taxRate = cfg ? computeOrderTaxRate(cfg, o.estado) : null;
+        // Fase 220 (TAX-01): mesma fórmula compartilhada de sync-ml-orders —
+        // segunda porta de entrada do mesmo bug fechada. O filtro only_missing
+        // continua como está: é decisão de desempenho, não alvo desta fase.
+        const taxRate = computeOrderTaxRate(cfg, o.estado).rate;
         const preco = Number(o.preco_unit ?? 0);
         const qty = Number(o.quantidade ?? 0);
         const taxAmount = (taxRate != null && preco) ? (preco * qty * taxRate) / 100 : null;

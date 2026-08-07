@@ -21,6 +21,7 @@ import {
   type ListingType, type ObjectiveMode, type PricingInput, type ExtraDeduction, type DeductionMode,
 } from "@/lib/pricing/calculator";
 import { computeOrderTaxRate } from "@/lib/tax/perOrder";
+import { calculateEffectiveRate } from "@/lib/tax";
 import { UF_LIST } from "@/lib/tax/regions";
 import { useMLPrecosCustos, type MLItemPrice } from "@/hooks/useMLPrecosCustos";
 import { useMLProductCosts } from "@/hooks/useMLProductCosts";
@@ -186,9 +187,17 @@ export function SimuladorPrecificacao() {
   }, [state.salePrice, state.logisticType, state.listingType, state.categoryId, connected, fetchCosts]);
 
   // ── Derived: tax rate from config or override ─────────────────────────────────
+  // Fase 220 (TAX-01): computeOrderTaxRate devolve rate:null quando o destino
+  // não é conhecido (nenhuma UF escolhida no simulador). Simulação PODE
+  // assumir um destino de pré-visualização — calculateEffectiveRate é essa
+  // alíquota de exibição "sem destino disponível" — mas GRAVAÇÃO no banco
+  // (sync-ml-orders/recalc-order-costs) não pode: lá, destino desconhecido
+  // preserva o imposto já gravado, nunca inventa um número.
   const autoTaxRate = useMemo(() => {
     if (!taxConfig) return 0;
-    return computeOrderTaxRate(taxConfig as any, state.ufDestino || null);
+    const { rate } = computeOrderTaxRate(taxConfig as any, state.ufDestino || null);
+    if (rate != null) return rate;
+    return calculateEffectiveRate(taxConfig as any);
   }, [taxConfig, state.ufDestino]);
 
   const taxPct = state.taxOverride
