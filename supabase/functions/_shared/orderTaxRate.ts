@@ -123,11 +123,14 @@ export function computeOrderTaxRate(
       };
 
     case "lucro_real": {
-      // TEMP (RED phase, Fase 220 TAX-01): reproduz o bug antigo de propósito
-      // — destino ausente colapsa com "destino é a origem" — para provar que
-      // os testes de destino desconhecido falham contra ele. Substituído
-      // pela guarda correta no commit GREEN.
+      // 4. Normaliza o destino uma vez; string vazia é tratada como ausência.
       const dest = String(ufDestino ?? "").trim().toUpperCase();
+
+      // Primeira guarda, antes de qualquer outra: destino ausente → null.
+      // Este é o conserto inteiro do TAX-01 em uma linha.
+      if (dest === "") {
+        return { rate: null, motivo: "destino_desconhecido" };
+      }
 
       const intra      = Number(config.lr_icms_aliquota_intra ?? config.lr_icms_debito ?? 0);
       const interSulSE = Number(config.lr_icms_aliquota_inter_sul_sudeste ?? 12);
@@ -139,12 +142,16 @@ export function computeOrderTaxRate(
       let motivo: MotivoAliquota;
 
       if (origRaw === "") {
+        // 5a. Sem UF origem na config: alíquota interestadual pela tabela do
+        // destino — comportamento idêntico ao de hoje para este caso.
         icmsAliq = isReducedInterstateDest(dest) ? interNNECO : interSulSE;
         motivo = "sem_uf_origem";
-      } else if (dest === "" || origRaw === dest) {
+      } else if (origRaw === dest) {
+        // 5b. Origem igual ao destino: intraestadual.
         icmsAliq = intra;
         motivo = "intraestadual";
       } else {
+        // 5c. Interestadual pela tabela do destino.
         icmsAliq = isReducedInterstateDest(dest) ? interNNECO : interSulSE;
         motivo = "interestadual";
       }
