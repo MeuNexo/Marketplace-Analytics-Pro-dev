@@ -438,11 +438,16 @@ serve(async (req) => {
       ? body.ml_user_ids.map((id: unknown) => String(id))
       : null;
 
-    // Busca todos os ml_user_ids com refresh_token (usuários ativos)
+    // Contas ativas: refresh_token presente E sync_enabled. O filtro por
+    // sync_enabled fecha, na própria função, a porta que o despacho deixava
+    // aberta — dispatch_ads_jobs varria TODO ml_tokens com access_token e vinha
+    // sincronizando a conta Thales (427063369, sync_enabled=false) 4x ao dia,
+    // fora de escopo por decisão do Wesley e a mais pesada da API.
     const { data: tokenRows, error: tokErr } = await sb
       .from("ml_tokens")
       .select("ml_user_id,user_id,organization_id,seller_id")
-      .not("refresh_token", "is", null);
+      .not("refresh_token", "is", null)
+      .eq("sync_enabled", true);
 
     if (tokErr) return json({ ok: false, error: tokErr.message }, 500);
     if (!tokenRows || tokenRows.length === 0) return json({ ok: true, msg: "no active users" });
