@@ -14,20 +14,26 @@
 // própria resposta já traz `metrics_summary` com o total certo (bate ao
 // centavo com o painel do ML) e o código antigo o ignorava.
 //
-// Phase 221: o total diário passa a vir do `metrics_summary` de
-// `product_ads/campaigns/search` (é isso que o painel do ML mostra no card
-// Investimento), não mais de `product_ads/ads/search` — medido 06/08/2026:
-// campanhas respondeu 220,65 e anúncios respondeu 172,95 para o MESMO dia,
-// -27,6%. Nos dias assentados (D-3 ou mais) os dois convergem; só o dia
-// recém-fechado diverge, porque o ML consolida a métrica por anúncio com
-// atraso maior que por campanha.
+// Phase 221 — a premissa original foi REFUTADA por medição, e o resultado é o
+// oposto do que a fase supunha. Detalhe em `221-REFUTACAO.md` (nexo-os).
 //
-// Consequência aceita, não defeito: a quebra por PRODUTO (`ml_ads_products_cache`)
-// continua vindo de `ads/search` — é o único endpoint com granularidade por
-// item. A partir desta fase, a soma por produto deixa de fechar com o total
-// diário nos dias recentes (medido 06/08: soma por produto ~172,95 contra o
-// total diário 220,65). A prova de autoconsistência da Fase 219 ("soma por
-// produto == total diário") passa a valer só para dias assentados.
+// A fase nasceu de uma divergência real: em 07/08/2026 às 13h14, para o dia
+// 06/08, `campaigns/search` respondeu 220,65 e `ads/search` respondeu 172,95
+// (-27,6%). O painel do ML mostrava 221, então parecia que `ads/search` estava
+// subcontando. Às 13h50 do mesmo dia, `campaigns/search` respondeu 172,95 —
+// idêntico ao de anúncios, dígito por dígito, inclusive prints subindo de
+// 61.694 para 61.793.
+//
+// Ou seja: o agregado de CAMPANHA publica um valor PROVISÓRIO mais alto
+// enquanto o dia consolida e depois assenta no valor do agregado de ANÚNCIO,
+// que já era o final. Não existe endpoint certo e endpoint errado — existe
+// número provisório e número assentado. `ads/search` sempre foi o assentado.
+//
+// Por isso `buildDailyTotals` dá precedência ao resumo de anúncios e usa o de
+// campanhas só como rede de segurança (quando o primeiro falta). O aparato de
+// paginação abaixo (`sumCampaignPages`) permanece porque é essa rede — e sua
+// guarda de cobertura continua necessária, já que no endpoint de campanhas o
+// `metrics_summary` resume só a PÁGINA.
 //
 // Este módulo resolve três pontas:
 // - `parseMetricsSummary`: normaliza o bloco `metrics_summary` da resposta e
