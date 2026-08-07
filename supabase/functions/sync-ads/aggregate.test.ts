@@ -239,8 +239,8 @@ describe("sumCampaignPages — total diário somado sobre TODAS as páginas, com
   });
 });
 
-describe("buildDailyTotals — composição campanhas + fallback de anúncios, nunca o custo errado (Phase 221)", () => {
-  it("caso real feliz: campanhas completas de 06/08 → totals das campanhas, source campaigns, nada vem do resumo de anúncios", () => {
+describe("buildDailyTotals — o resumo de anúncios (assentado) manda; campanhas é só rede de segurança (Fase 221, premissa invertida pela refutação de 07/08)", () => {
+  it("caso real de 06/08: os dois presentes → vence o de anúncios (172,95), NUNCA o provisório de campanhas (220,65)", () => {
     const campanhas: ReturnType<typeof parsePartialMetrics> = {
       spend: 220.65, clicks: 701, impressions: 61694, revenue: 4873.06, orders: 14,
     };
@@ -249,59 +249,49 @@ describe("buildDailyTotals — composição campanhas + fallback de anúncios, n
     };
     const result = buildDailyTotals(campanhas, anuncios);
     expect(result).toEqual({
-      totals: { spend: 220.65, clicks: 701, impressions: 61694, revenue: 4873.06, orders: 14 },
-      source: "campaigns",
+      totals: { spend: 172.95, clicks: 549, impressions: 61793, revenue: 4873.06, orders: 14 },
+      source: "ads",
     });
+    expect(result!.totals.spend).not.toBe(220.65);
   });
 
-  it("fallback permitido: campanhas sem total_amount/units_quantity + resumo de anúncios → revenue/orders vêm do resumo, spend/clicks/impressions das campanhas, nunca 172.95", () => {
-    const campanhas: ReturnType<typeof parsePartialMetrics> = {
-      spend: 220.65, clicks: 701, impressions: 61694, revenue: null, orders: null,
-    };
-    const anuncios: SummaryTotals = {
-      spend: 172.95, clicks: 549, impressions: 61793, revenue: 4873.06, orders: 14,
-    };
-    const result = buildDailyTotals(campanhas, anuncios);
-    expect(result).not.toBeNull();
-    expect(result!.totals.spend).toBe(220.65);
-    expect(result!.totals.clicks).toBe(701);
-    expect(result!.totals.impressions).toBe(61694);
-    expect(result!.totals.revenue).toBe(4873.06);
-    expect(result!.totals.orders).toBe(14);
-    expect(result!.source).toBe("campaigns+ads");
-    expect(result!.totals.spend).not.toBe(172.95);
-  });
-
-  it("a PROIBIÇÃO: campanhas null + resumo de anúncios presente → null, jamais cai de volta no custo do endpoint de anúncios", () => {
+  it("resumo de anúncios sozinho → usado direto, source ads", () => {
     const anuncios: SummaryTotals = {
       spend: 172.95, clicks: 549, impressions: 61793, revenue: 4873.06, orders: 14,
     };
     const result = buildDailyTotals(null, anuncios);
-    expect(result).toBeNull();
+    expect(result).toEqual({
+      totals: { spend: 172.95, clicks: 549, impressions: 61793, revenue: 4873.06, orders: 14 },
+      source: "ads",
+    });
   });
 
-  it("campanhas com spend mas sem clicks → null (as três métricas medidas divergentes só podem vir das campanhas)", () => {
+  it("rede de segurança: sem resumo de anúncios, campanhas completas entram com source campaigns — o dia não se perde, e o provisório fica rastreável", () => {
+    const campanhas: ReturnType<typeof parsePartialMetrics> = {
+      spend: 220.65, clicks: 701, impressions: 61694, revenue: 4873.06, orders: 14,
+    };
+    const result = buildDailyTotals(campanhas, null);
+    expect(result).not.toBeNull();
+    expect(result!.totals.spend).toBe(220.65);
+    expect(result!.source).toBe("campaigns");
+  });
+
+  it("nenhuma das duas fontes → null, a linha que já existe fica preservada", () => {
+    expect(buildDailyTotals(null, null)).toBeNull();
+  });
+
+  it("rede de segurança incompleta (campanhas sem clicks) → null, não grava total pela metade", () => {
     const campanhas: ReturnType<typeof parsePartialMetrics> = {
       spend: 220.65, clicks: null, impressions: 61694, revenue: 4873.06, orders: 14,
     };
-    const result = buildDailyTotals(campanhas, null);
-    expect(result).toBeNull();
+    expect(buildDailyTotals(campanhas, null)).toBeNull();
   });
 
-  it("campanhas com spend mas sem impressions → null", () => {
-    const campanhas: ReturnType<typeof parsePartialMetrics> = {
-      spend: 220.65, clicks: 701, impressions: null, revenue: 4873.06, orders: 14,
-    };
-    const result = buildDailyTotals(campanhas, null);
-    expect(result).toBeNull();
-  });
-
-  it("nem campanhas nem anúncios resolvem revenue/orders → null (linha de total com receita desconhecida não substitui a linha que já existe)", () => {
+  it("rede de segurança sem receita/unidades → null, receita desconhecida não substitui linha existente", () => {
     const campanhas: ReturnType<typeof parsePartialMetrics> = {
       spend: 220.65, clicks: 701, impressions: 61694, revenue: null, orders: null,
     };
-    const result = buildDailyTotals(campanhas, null);
-    expect(result).toBeNull();
+    expect(buildDailyTotals(campanhas, null)).toBeNull();
   });
 });
 

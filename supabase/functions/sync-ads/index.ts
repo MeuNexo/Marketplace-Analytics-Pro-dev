@@ -295,10 +295,16 @@ async function syncUser(
         throw new Error("sync-ads fetch items falhou para ml_user_id=" + mlUserId + " dia=" + dia + ": " + fetchError);
       }
 
-      // product_ads/campaigns/search: fonte do total diário na régua do
-      // painel (Phase 221). Exceção (dia fora de retenção, erro de rede)
-      // propaga para o catch do dia — falha segura, nada é apagado.
-      const campanhasDoDia = await fetchCampaignDayTotals(siteId, advertiserId, token, dia);
+      // product_ads/campaigns/search é REDE DE SEGURANÇA, não fonte primária
+      // (Fase 221, premissa invertida — ver 221-REFUTACAO.md). O agregado de
+      // campanha publica valor PROVISÓRIO mais alto no dia recente e depois
+      // assenta no valor do agregado de anúncio; medido em 07/08/2026, o mesmo
+      // dia 06/08 saiu de 220,65 para 172,95 em 36 minutos, virando exatamente
+      // o número de anúncios. Por isso só se paga essa chamada quando o resumo
+      // de anúncios não veio — evita custo de quota em toda rodada.
+      const campanhasDoDia = resumoAnuncios === null
+        ? await fetchCampaignDayTotals(siteId, advertiserId, token, dia)
+        : null;
 
       // Cache por produto: dedup por (date|item_id), sobrescrevendo em vez de
       // somar — corrige a duplicação da API (Frente 1, Phase 219).
@@ -328,10 +334,10 @@ async function syncUser(
       }
       totalItemsWritten += productRows.length;
 
-      // Total diário: só das campanhas (com fallback de receita/unidades do
-      // resumo de anúncios). null aqui significa "não sabemos o total do
-      // dia" — a linha antiga que já existia em ml_ads_daily_cache fica
-      // intocada, porque resolveAdsSpend (D-219-01) escolhe fonte por
+      // Total diário: o resumo de ANÚNCIOS manda (é o valor assentado);
+      // campanhas só entra se aquele faltar. null aqui significa "não sabemos
+      // o total do dia" — a linha antiga que já existia em ml_ads_daily_cache
+      // fica intocada, porque resolveAdsSpend (D-219-01) escolhe fonte por
       // PERÍODO: apagar sem gravar subtrairia esse dia do gasto em silêncio.
       const totalDoDia = buildDailyTotals(campanhasDoDia, resumoAnuncios);
       if (totalDoDia === null) {

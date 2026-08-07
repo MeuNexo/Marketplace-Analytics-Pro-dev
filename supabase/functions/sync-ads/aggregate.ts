@@ -256,40 +256,48 @@ export function sumCampaignPages(pages: CampaignPage[], pagingTotal: number): Pa
 }
 
 /**
- * Compõe o total diário na régua do painel: custo/cliques/impressões SEMPRE
- * das campanhas (as três métricas medidas divergentes entre os endpoints);
- * receita/unidades das campanhas quando presentes, senão do resumo de
- * anúncios (medidas idênticas nos dois endpoints em 06/08/2026: 4.873,06 e
- * 14 — é essa medição que autoriza o fallback).
+ * Compõe o total diário. O resumo de **anúncios** (`product_ads/ads/search`) é
+ * a fonte de verdade; o de **campanhas** é apenas rede de segurança.
  *
- * `campanhas` nulo devolve `null` mesmo com `anuncios` preenchido — o custo
- * do endpoint de anúncios é justamente o número errado que esta fase
- * corrige, nunca um substituto aceitável.
+ * ⚠️ Isto INVERTE a premissa original da Fase 221, que foi refutada por medição
+ * em 07/08/2026 e está registrada em `221-REFUTACAO.md`. O que se mediu:
+ *
+ *   13h14 — campanhas 220,65 / 701 cliques / 61.694 prints
+ *           anúncios  172,95 / 549 cliques / 61.793 prints
+ *   13h50 — campanhas 172,95 / 549 cliques / 61.793 prints  ← virou o de anúncios
+ *           anúncios  172,95 / 549 cliques / 61.793 prints
+ *
+ * O agregado de campanha não oscilou: foi SUBSTITUÍDO pelo de anúncio, dígito
+ * por dígito, inclusive prints subindo. Ou seja, campanha publica um valor
+ * PROVISÓRIO mais alto enquanto o dia consolida e depois assenta no valor de
+ * anúncio — que já era o final. Ler campanha no dia recente grava número
+ * instável e deixa o MCO pessimista até o ML assentar.
+ *
+ * Por isso: `anuncios` presente vence sempre. `campanhas` só entra quando o
+ * resumo de anúncios não veio, para o dia não se perder — e nesse caso o
+ * `source` sai como "campaigns" justamente para o valor provisório ser
+ * rastreável.
  */
 export function buildDailyTotals(
   campanhas: PartialTotals | null,
   anuncios: SummaryTotals | null,
-): { totals: SummaryTotals; source: "campaigns" | "campaigns+ads" } | null {
-  if (campanhas === null) return null;
-
-  const { spend, clicks, impressions } = campanhas;
-  if (spend === null || clicks === null || impressions === null) return null;
-
-  let revenue = campanhas.revenue;
-  let orders = campanhas.orders;
-  let source: "campaigns" | "campaigns+ads" = "campaigns";
-
-  if (revenue === null || orders === null) {
-    if (anuncios === null) return null;
-    if (revenue === null) revenue = anuncios.revenue;
-    if (orders === null) orders = anuncios.orders;
-    source = "campaigns+ads";
+): { totals: SummaryTotals; source: "ads" | "campaigns" } | null {
+  if (anuncios !== null) {
+    return { totals: anuncios, source: "ads" };
   }
 
-  if (revenue === null || orders === null) return null;
+  if (campanhas === null) return null;
+
+  const { spend, clicks, impressions, revenue, orders } = campanhas;
+  if (
+    spend === null || clicks === null || impressions === null ||
+    revenue === null || orders === null
+  ) {
+    return null;
+  }
 
   return {
     totals: { spend, clicks, impressions, revenue, orders },
-    source,
+    source: "campaigns",
   };
 }
