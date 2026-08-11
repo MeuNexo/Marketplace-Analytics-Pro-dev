@@ -21,11 +21,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { chaveGrupo } from "@/hooks/useReplenishmentBySku";
 import type {
   GroupedReplenishmentRow,
   ReplenishmentSkuRow,
 } from "@/hooks/useReplenishmentBySku";
 import { isDemandaEstimada } from "@/lib/analysis/replenishmentUtils";
+import { logger } from "@/lib/logger";
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -617,10 +619,20 @@ export function ReplenishmentSkuTable({
 }: ReplenishmentSkuTableProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
-  function toggle(itemId: string) {
+  function toggle(groupKey: string) {
+    // Guarda de execução: o projeto roda com `strictNullChecks: false`
+    // (tsconfig.json), então `tsc` NÃO acusa erro se um chamador voltar a
+    // passar `group.item_id` (string | null) cru aqui — foi exatamente
+    // essa lacuna que deixou compilar o bug original (key nula, ver
+    // .planning/debug/compras-grupos-key-nula.md). Esta checagem em
+    // runtime é a rede de segurança possível dentro dessa config.
+    if (!groupKey) {
+      logger.error("[ReplenishmentSkuTable] toggle() chamado com groupKey vazio — use chaveGrupo(group.skus[0]), nunca group.item_id cru");
+      return;
+    }
     setExpandedIds((prev) => {
       const next = new Set(prev);
-      next.has(itemId) ? next.delete(itemId) : next.add(itemId);
+      next.has(groupKey) ? next.delete(groupKey) : next.add(groupKey);
       return next;
     });
   }
@@ -698,14 +710,18 @@ export function ReplenishmentSkuTable({
         </TableHeader>
         <TableBody>
           {grouped.map((group) => {
-            const isExpanded = expandedIds.has(group.item_id);
+            // Identidade estável do grupo: `group.item_id` é null para os
+            // SKUs só-Tiny (sem anúncio) — usar cru como key/estado de expansão
+            // colide TODOS eles num único valor (ver useReplenishmentBySku.chaveGrupo).
+            const groupKey = chaveGrupo(group.skus[0]);
+            const isExpanded = expandedIds.has(groupKey);
             const hasManySkus = group.skus.length > 1;
 
             // Anúncio sem variação: linha única sem expand
             if (!hasManySkus) {
               const sku = group.skus[0];
               return (
-                <TableRow key={group.item_id} className="hover:bg-muted/30">
+                <TableRow key={groupKey} className="hover:bg-muted/30">
                   <TableCell className="text-xs">
                     <div className="flex items-start gap-1">
                       <span className="w-3.5 h-3.5 shrink-0 mt-0.5 block" />
@@ -758,18 +774,24 @@ export function ReplenishmentSkuTable({
 
             // Anúncio COM variações: linha mestre + linhas filha (Collapsible)
             return (
-              <Collapsible key={group.item_id} open={isExpanded} asChild>
+              <Collapsible key={groupKey} open={isExpanded} asChild>
                 <>
                   <MasterRow
                     group={group}
                     expanded={isExpanded}
-                    onToggle={() => toggle(group.item_id)}
+                    onToggle={() => toggle(groupKey)}
                   />
                   <CollapsibleContent asChild>
                     <>
-                      {group.skus.map((sku) => (
+                      {group.skus.map((sku, index) => (
                         <VariationRow
-                          key={sku.variation_id ?? sku.item_id}
+                          // Mesmo padrão de bug do groupKey acima, um nível
+                          // abaixo: `variation_id ?? item_id` cru colide em
+                          // `null` quando 2+ SKUs do MESMO grupo são só-Tiny
+                          // (sem anúncio nem variação ML). sku_code cai para
+                          // o índice na (rara) chance de também ser nulo —
+                          // ver .planning/debug/compras-grupos-key-nula.md.
+                          key={sku.variation_id ?? sku.sku_code ?? `${sku.item_id}::${index}`}
                           sku={sku}
                         />
                       ))}
