@@ -2,6 +2,13 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { computeOrderTaxRate } from "../_shared/orderTaxRate.ts";
+import {
+  extrairLogisticType,
+  ehFlex,
+  extrairBonusEnvio,
+  ratearPorReceita,
+  computeReceitaLiquida,
+} from "../_shared/flexOrder.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -216,9 +223,14 @@ async function reconcileCancelled(
 // /orders/search does NOT return receiver_address; it is only in /shipments/{id}.
 
 interface ShipmentDetail {
-  cost:   number | null;
-  estado: string | null;
-  cidade: string | null;
+  cost:         number | null;
+  estado:       string | null;
+  cidade:       string | null;
+  // Flex (Fase 222, FLEX-01/03): tipo logistico na raiz do MESMO payload
+  // (zero requisicao nova) e bonus de envio, que exige 1 requisicao a mais
+  // por envio self_service — nunca para os outros tipos (guarda ehFlex).
+  logisticType: string | null;
+  bonusEnvio:   number | null;
 }
 
 async function fetchShipmentDetails(
@@ -234,7 +246,16 @@ async function fetchShipmentDetails(
   // nao mudam depois. Se um dia mudarem, o pedido volta a ser buscado assim que
   // o backfill limpar o campo — a regra e "ja tenho o dado", nao "ja vi este id".
   jaCompletos: Set<string> = new Set(),
-): Promise<{ detailMap: Map<number, ShipmentDetail>; attempted: number; failed: number }> {
+): Promise<{
+  detailMap: Map<number, ShipmentDetail>;
+  attempted: number;
+  failed: number;
+  // Flex (Fase 222): silencio foi o que deixou o imposto errado viver quatro
+  // meses (Fase 220) — os tres contadores viajam ate a resposta do sync.
+  flexSelfService:   number;
+  flexBonusResolved: number;
+  flexBonusFailed:   number;
+}> {
   const detailMap = new Map<number, ShipmentDetail>();
 
   // Collect ALL unique shipment IDs
@@ -254,7 +275,9 @@ async function fetchShipmentDetails(
     console.log(`fetchShipmentDetails: ${pulados} pedido(s) pulado(s) — frete e endereco ja no banco`);
   }
 
-  if (!ids.length) return { detailMap, attempted: 0, failed: 0 };
+  if (!ids.length) {
+    return { detailMap, attempted: 0, failed: 0, flexSelfService: 0, flexBonusResolved: 0, flexBonusFailed: 0 };
+  }
   console.log(`Fetching ${ids.length} shipments for cost + address…`);
 
   // 2026-08-06 (fix frete mudo, T-219-09): rejeicao de `Promise.allSettled`
@@ -263,11 +286,17 @@ async function fetchShipmentDetails(
   // quantos envios foram tentados e quantos falharam, para o chamador
   // repassar na resposta do sync (shipments_total/shipments_failed).
   let failed = 0;
+  let flexSelfService = 0;
+  let flexBonusResolved = 0;
+  let flexBonusFailed = 0;
   const CONCURRENCY = 10;
   for (let i = 0; i < ids.length; i += CONCURRENCY) {
     const batch = ids.slice(i, i + CONCURRENCY);
     const results = await Promise.allSettled(
       batch.map(async (id) => {
+        // NAO usar o cabecalho de formato novo aqui: com ele logistic_type/
+        // mode/shipping_option voltam null (item 5 do Veredito,
+        // 222-ML-API.md) — armadilha medida, nunca "otimizar" isto.
         const s = await mlFetch(`/shipments/${id}`, accessToken, 8_000);
 
         // Seller-absorbed shipping cost — usa list_cost (mesmo que nexo-mcp)
@@ -289,12 +318,48 @@ async function fetchShipmentDetails(
           ? (typeof cityObj === "object" ? (cityObj?.name ?? null) : String(cityObj).trim() || null)
           : null;
 
-        return { id, cost: cost != null ? Number(cost) : null, estado, cidade };
+        // Flex (FLEX-01/03): logistic_type ja veio no MESMO payload acima —
+        // zero requisicao nova. O bonus exige 1 requisicao a mais, e SO
+        // acontece atras da guarda ehFlex — 2,6% dos pedidos na Pe Vermeio,
+        // 19,8% no Junior (222-ML-API.md). `frete IS NULL` NAO e sinonimo de
+        // Flex: ler o bonus de um envio que nao e self_service inventaria
+        // receita (achado medido, mesmo documento).
+        const logisticType = extrairLogisticType(s);
+        let bonusEnvio: number | null = null;
+        let bonusStatus: "nao_flex" | "resolvido" | "falho" = "nao_flex";
+        if (ehFlex(logisticType)) {
+          try {
+            const custos = await mlFetch(`/shipments/${id}/costs`, accessToken, 8_000);
+            bonusEnvio = extrairBonusEnvio(custos);
+            bonusStatus = "resolvido";
+          } catch (err) {
+            // Falha na chamada de custos NAO derruba o envio: tipo logistico,
+            // custo e endereco continuam sendo gravados. bonusEnvio fica
+            // null — nunca zero por falha de rede.
+            const motivo = err instanceof Error ? err.message : String(err);
+            console.warn(`fetchShipmentDetails: /shipments/${id}/costs falhou — ${motivo}`);
+            bonusStatus = "falho";
+          }
+        }
+
+        return {
+          id,
+          cost: cost != null ? Number(cost) : null,
+          estado,
+          cidade,
+          logisticType,
+          bonusEnvio,
+          bonusStatus,
+        };
       }),
     );
     for (let j = 0; j < results.length; j++) {
       const r = results[j];
       if (r.status === "fulfilled") {
+        if (r.value.bonusStatus !== "nao_flex") flexSelfService++;
+        if (r.value.bonusStatus === "resolvido") flexBonusResolved++;
+        if (r.value.bonusStatus === "falho") flexBonusFailed++;
+
         detailMap.set(r.value.id, {
           // 2026-08-11: o `> 0` daqui transformava frete ZERO em null e era a
           // causa dos pedidos "sem frete". Envio self_service (Mercado Envios
@@ -307,9 +372,11 @@ async function fetchShipmentDetails(
           // tinha UM unico frete = 0. A Pe Vermeio era imune por ser toda
           // fulfillment, onde o custo e sempre positivo.
           // `r.value.cost` ja e null quando o campo vem ausente da API.
-          cost:   r.value.cost,
-          estado: r.value.estado,
-          cidade: r.value.cidade,
+          cost:         r.value.cost,
+          estado:       r.value.estado,
+          cidade:       r.value.cidade,
+          logisticType: r.value.logisticType,
+          bonusEnvio:   r.value.bonusEnvio,
         });
       } else if (r.status === "rejected") {
         failed++;
@@ -320,8 +387,11 @@ async function fetchShipmentDetails(
     }
   }
 
-  console.log(`Shipment details resolved: ${detailMap.size} / ${ids.length} (falhas: ${failed})`);
-  return { detailMap, attempted: ids.length, failed };
+  console.log(
+    `Shipment details resolved: ${detailMap.size} / ${ids.length} (falhas: ${failed}); ` +
+    `Flex self_service: ${flexSelfService} (bonus resolvido: ${flexBonusResolved}, falho: ${flexBonusFailed})`,
+  );
+  return { detailMap, attempted: ids.length, failed, flexSelfService, flexBonusResolved, flexBonusFailed };
 }
 
 // ── Batch-fetch brand names from /items?ids=... ───────────────────────────────
@@ -408,7 +478,35 @@ function expandOrder(
   const estado  = detail?.estado ?? null;
   const cidade  = detail?.cidade ?? null;
 
-  return (order.order_items || []).map((item: any) => {
+  // Flex (Fase 222, FLEX-01/03): logistic_type e bonus_envio sao grandezas
+  // do ENVIO (uma resposta por pedido), nao do item. custo_entrega e
+  // parametro por LOJA (ml_tax_config.flex_custo_entrega), so aplicavel
+  // quando o envio e Flex — se a loja ainda nao informou o valor, fica null
+  // e o Flex segue com margem declaradamente inflada (nomeado, nao
+  // inventado — 222-CONTEXT.md, Deferred Ideas).
+  const logisticType   = detail?.logisticType ?? null;
+  const bonusEnvioPedido = detail?.bonusEnvio ?? null;
+  const custoEntregaPedido =
+    ehFlex(logisticType) && taxConfig?.flex_custo_entrega != null
+      ? Number(taxConfig.flex_custo_entrega)
+      : null;
+
+  const items = order.order_items || [];
+
+  // orders tem uma linha por ITEM; bonus e custo de entrega sao do ENVIO
+  // inteiro — ratearPorReceita divide entre as linhas na proporcao da
+  // receita bruta de cada uma, fechando ao centavo. (Dívida conhecida e
+  // anterior a esta fase: `frete`, alguns paragrafos abaixo, continua
+  // replicado por linha, sem rateio — os campos novos nao a herdam.)
+  const receitasPorItem = items.map((item: any) => {
+    const precoUnit  = item.unit_price != null ? Number(item.unit_price) : null;
+    const quantidade = Number(item.quantity || 0);
+    return precoUnit != null ? precoUnit * quantidade : 0;
+  });
+  const bonusRateado        = ratearPorReceita(bonusEnvioPedido, receitasPorItem);
+  const custoEntregaRateado = ratearPorReceita(custoEntregaPedido, receitasPorItem);
+
+  return items.map((item: any, idx: number) => {
     const prod           = item.item ?? {};
     // listing_type_id lives at the order_item level, NOT inside item.item
     const listingTypeRaw = item.listing_type_id ?? prod.listing_type_id ?? prod.listing_type ?? "";
@@ -450,6 +548,23 @@ function expandOrder(
     // "sem_config"), receita_liquida continua calculada como hoje: orgs sem
     // regime cadastrado não podem regredir por causa desta fase.
     const impostoDesconhecido = aliquota.motivo === "destino_desconhecido";
+    const receitaBruta = precoUnit != null ? precoUnit * quantidade : null;
+
+    // Flex: bônus e custo de entrega já rateados por linha de item (fora
+    // deste map). computeReceitaLiquida soma o bônus como receita própria e
+    // subtrai o custo de entrega como custo próprio — nunca o bônus como
+    // frete de sinal invertido (D-05).
+    const bonusEnvioItem   = bonusRateado[idx] ?? null;
+    const custoEntregaItem = custoEntregaRateado[idx] ?? null;
+    const { receitaLiquida } = computeReceitaLiquida({
+      receitaBruta,
+      comissao: item.sale_fee != null ? Number(item.sale_fee) : null,
+      frete,
+      bonusEnvio: bonusEnvioItem,
+      custoEntrega: custoEntregaItem,
+      taxAmount,
+      impostoDesconhecido,
+    });
 
     return {
       ml_order_id:     String(order.id),
@@ -478,14 +593,12 @@ function expandOrder(
       tax_rate:        taxRate,
       tax_amount:      taxAmount,
       uf_origem:       ufOrigem,
-      receita_bruta:   precoUnit != null ? precoUnit * quantidade : null,
-      receita_liquida: (precoUnit != null && !impostoDesconhecido)
-        ? precoUnit * quantidade
-          - (item.sale_fee != null ? Number(item.sale_fee) : 0)
-          - (frete ?? 0)
-          - (taxAmount ?? 0)
-        : null,
-      marca: brandMap.get(itemId) ?? null,
+      receita_bruta:   receitaBruta,
+      receita_liquida: receitaLiquida,
+      marca:           brandMap.get(itemId) ?? null,
+      logistic_type:   logisticType,
+      bonus_envio:     bonusEnvioItem,
+      custo_entrega:   custoEntregaItem,
     };
   });
 }
@@ -643,6 +756,9 @@ serve(async (req) => {
       detailMap: shipmentMap,
       attempted: shipmentsAttempted,
       failed:    shipmentsFailed,
+      flexSelfService,
+      flexBonusResolved,
+      flexBonusFailed,
     } = await fetchShipmentDetails(orders, accessToken, 500, jaCompletos);
 
     // ── Load tax config + product costs for this store ──────────────────────
@@ -782,6 +898,11 @@ serve(async (req) => {
         shipments_failed: shipmentsFailed,
         shipments_total:  shipmentsAttempted,
         tax_preserved:    impostoPreservado,
+        // Flex (Fase 222): silêncio aqui é o que deixou o imposto errado
+        // viver quatro meses (Fase 220) — nunca omitir estes três.
+        flex_self_service:  flexSelfService,
+        flex_bonus_resolved: flexBonusResolved,
+        flex_bonus_failed:   flexBonusFailed,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
