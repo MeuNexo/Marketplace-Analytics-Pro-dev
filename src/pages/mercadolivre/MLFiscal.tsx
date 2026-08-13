@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import {
   Dialog,
@@ -27,9 +28,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { UF_LIST } from "@/lib/tax/regions";
+import { UFS_BRASIL, listaUfParaBanco, normalizarCustoEntrega } from "@/lib/fiscalConfig";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -53,6 +56,13 @@ interface TaxConfig {
   lr_icms_aliquota_intra: number | null;
   lr_icms_aliquota_inter_sul_sudeste: number | null;
   lr_icms_aliquota_inter_norte_nordeste: number | null;
+  // ── Fase 222 — DIFAL e Flex (222-01) ────────────────────────────────────
+  /** Três estados: ausente = ainda não definido; [] = definido, nenhuma UF; siglas = definido. */
+  difal_ufs_recolhidas: string[] | null;
+  /** Mesma semântica de três estados de `difal_ufs_recolhidas`. */
+  difal_ufs_cobradas_pelo_ml: string[] | null;
+  /** Custo (R$) de uma entrega própria de Flex. Ausente = ainda não informado; 0 é uma decisão válida. */
+  flex_custo_entrega: number | null;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -396,6 +406,73 @@ function LucroRealForm({ initial, onSave, saving }: LRFormProps) {
   );
 }
 
+// ─── DifalUfSelector ────────────────────────────────────────────────────────
+//
+// Um bloco só para os três estados de uma lista de UF (D-02/D-07, FISC-04/
+// FISC-07): o interruptor "já defini" decide entre ausência (ainda não
+// definido) e lista definida; com o interruptor ligado, nenhuma UF marcada
+// grava lista vazia — "decidi que não há nenhuma", nunca a mesma coisa que
+// "ainda não decidi". `listaUfParaBanco` (src/lib/fiscalConfig.ts) é quem
+// garante essa distinção no valor que sobe para o pai.
+
+interface DifalUfSelectorProps {
+  titulo: string;
+  ajuda: string;
+  valor: string[] | null;
+  onChange: (novo: string[] | null) => void;
+  observacao?: string;
+}
+
+function DifalUfSelector({ titulo, ajuda, valor, onChange, observacao }: DifalUfSelectorProps) {
+  const definido = valor !== null;
+  const selecionadas = valor ?? [];
+
+  function handleToggleDefinido(checked: boolean) {
+    onChange(listaUfParaBanco(checked, selecionadas));
+  }
+
+  function handleToggleUf(uf: string, checked: boolean) {
+    const novaSelecao = checked ? [...selecionadas, uf] : selecionadas.filter((s) => s !== uf);
+    onChange(listaUfParaBanco(true, novaSelecao));
+  }
+
+  return (
+    <div className="rounded-md border border-border/60 p-3 space-y-2 bg-muted/30">
+      <div className="flex items-center justify-between gap-2">
+        <Label className="text-xs font-medium">{titulo}</Label>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-muted-foreground">Já defini</span>
+          <Switch checked={definido} onCheckedChange={handleToggleDefinido} />
+        </div>
+      </div>
+      <p className="text-[11px] text-muted-foreground leading-relaxed">{ajuda}</p>
+      {definido && (
+        <div className="grid grid-cols-4 sm:grid-cols-6 gap-x-2 gap-y-1.5 pt-1">
+          {UFS_BRASIL.map((uf) => (
+            <label key={uf} className="flex items-center gap-1.5 text-[11px] cursor-pointer">
+              <Checkbox
+                checked={selecionadas.includes(uf)}
+                onCheckedChange={(checked) => handleToggleUf(uf, checked === true)}
+              />
+              {uf}
+            </label>
+          ))}
+        </div>
+      )}
+      {definido && selecionadas.length === 0 && (
+        <p className="text-[11px] text-muted-foreground italic">
+          Definido: nenhuma UF selecionada.
+        </p>
+      )}
+      {observacao && (
+        <p className="text-[11px] text-muted-foreground leading-relaxed border-t border-border/40 pt-2">
+          {observacao}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function MLFiscal() {
@@ -438,6 +515,11 @@ export default function MLFiscal() {
   // UF origem state (shared across all regimes)
   const [ufOrigem, setUfOrigem] = useState<string>("");
 
+  // Fase 222 — DIFAL (só Lucro Real) e custo de entrega Flex (todos os regimes)
+  const [difalRecolhidas, setDifalRecolhidas] = useState<string[] | null>(null);
+  const [difalCobradas, setDifalCobradas] = useState<string[] | null>(null);
+  const [flexCustoInput, setFlexCustoInput] = useState<string>("");
+
   const currentConfig = configs.find((c) => c.ml_user_id === selectedStoreId);
 
   function openDialog(mlUserId: string) {
@@ -445,19 +527,37 @@ export default function MLFiscal() {
     const existing = configs.find((c) => c.ml_user_id === mlUserId);
     setSelectedTab(existing?.regime ?? "simples_nacional");
     setUfOrigem(existing?.uf_origem ?? "");
+    setDifalRecolhidas(existing?.difal_ufs_recolhidas ?? null);
+    setDifalCobradas(existing?.difal_ufs_cobradas_pelo_ml ?? null);
+    setFlexCustoInput(existing?.flex_custo_entrega != null ? String(existing.flex_custo_entrega) : "");
     setPendingFields(null);
     setConfirmOpen(false);
     setDialogOpen(true);
   }
 
+  // Campos que não pertencem a um regime específico: custo de entrega Flex
+  // vale para os três regimes; UF de origem e as duas listas de DIFAL só
+  // fazem sentido no Lucro Real, então saem null quando salvos de outro
+  // regime — mesma régua que uf_origem já seguia antes desta fase.
+  function extrasComuns(): Partial<TaxConfig> {
+    const isLucroReal = selectedTab === "lucro_real";
+    return {
+      flex_custo_entrega: normalizarCustoEntrega(flexCustoInput),
+      uf_origem: isLucroReal ? ufOrigem || null : null,
+      difal_ufs_recolhidas: isLucroReal ? difalRecolhidas : null,
+      difal_ufs_cobradas_pelo_ml: isLucroReal ? difalCobradas : null,
+    };
+  }
+
   function handleFormSave(fields: Partial<TaxConfig>) {
+    const merged = { ...fields, ...extrasComuns() };
     // If user switched to a different regime than what is stored, require confirmation
     if (currentConfig && currentConfig.regime !== selectedTab) {
-      setPendingFields(fields);
+      setPendingFields(merged);
       setConfirmOpen(true);
       return;
     }
-    void executeUpsert({ ...fields, uf_origem: selectedTab === "lucro_real" ? (ufOrigem || null) : null });
+    void executeUpsert(merged);
   }
 
   async function executeUpsert(fields: Partial<TaxConfig>) {
@@ -485,7 +585,7 @@ export default function MLFiscal() {
   }
 
   function handleConfirmedSave() {
-    if (pendingFields) void executeUpsert({ ...pendingFields, uf_origem: selectedTab === "lucro_real" ? (ufOrigem || null) : null });
+    if (pendingFields) void executeUpsert(pendingFields);
   }
 
   const selectedStore = stores.find((s) => s.ml_user_id === selectedStoreId);
@@ -570,6 +670,39 @@ export default function MLFiscal() {
             </DialogDescription>
           </DialogHeader>
 
+          {/* ── Entrega própria (Flex) — vale para os três regimes, FLEX-04 ── */}
+          <div className="rounded-md border border-border/60 p-3 space-y-2 bg-muted/30">
+            <Label className="text-xs font-medium flex items-center gap-1">
+              Entrega própria (Flex)
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Info className="w-3 h-3 cursor-help text-muted-foreground" />
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[260px] text-xs">
+                  Custo de uma entrega feita pela própria loja (Flex / self_service), em
+                  reais. Vale para os três regimes tributários.
+                </TooltipContent>
+              </Tooltip>
+            </Label>
+            <div className="relative max-w-[160px]">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                R$
+              </span>
+              <Input
+                type="text"
+                inputMode="decimal"
+                className="pl-9"
+                placeholder="0,00"
+                value={flexCustoInput}
+                onChange={(e) => setFlexCustoInput(e.target.value)}
+              />
+            </div>
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              Enquanto este campo estiver em branco, o MCO dos pedidos Flex fica inflado — o
+              custo da entrega não entra na conta.
+            </p>
+          </div>
+
           <Tabs value={selectedTab} onValueChange={(v) => setSelectedTab(v as Regime)}>
             <TabsList className="w-full grid grid-cols-3">
               <TabsTrigger value="simples_nacional" className="text-xs">
@@ -627,6 +760,24 @@ export default function MLFiscal() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* ── DIFAL — só Lucro Real, D-02/D-07, FISC-04/FISC-07 ── */}
+              <div className="space-y-3 pt-3">
+                <DifalUfSelector
+                  titulo="DIFAL — o que a loja recolhe"
+                  ajuda="Enquanto não definido, o cenário com DIFAL usa o valor devido integral, que é o teto conservador; definido como nenhuma, os dois cenários passam a coincidir."
+                  valor={difalRecolhidas}
+                  onChange={setDifalRecolhidas}
+                />
+                <DifalUfSelector
+                  titulo="DIFAL — o que o Mercado Livre já cobra"
+                  ajuda="Enquanto a lista não for definida, o valor cobrado pelo ML não é somado ao calculado em lugar nenhum — para não contar o mesmo imposto duas vezes."
+                  valor={difalCobradas}
+                  onChange={setDifalCobradas}
+                  observacao="Medido no cruzamento com a fatura (222-02): nenhuma UF se separou claramente da base de ~54% de dias com cobrança (variação 47,8%–64,0%, sem correlação estável com receita ou pedidos) — por isso a lista segue indefinida por padrão. É sugestão medida, não regra: ajuste aqui se um cruzamento futuro achar sinal mais claro."
+                />
+              </div>
+
               <LucroRealForm
                 initial={currentConfig?.regime === "lucro_real" ? currentConfig : undefined}
                 onSave={handleFormSave}
