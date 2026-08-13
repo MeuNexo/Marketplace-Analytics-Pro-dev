@@ -1,11 +1,13 @@
--- Flex + componentes fiscais: 12 colunas novas em orders, e a whitelist de
--- batch_upsert_orders passa a conhece-las (Fase 222, plano 222-04).
+-- Flex + componentes fiscais: 14 colunas novas em orders, e a whitelist de
+-- batch_upsert_orders passa a conhece-las (Fase 222, planos 222-04/222-03-R).
 --
--- (a) POR QUE 12 COLUNAS NUMA MIGRATION SO: reescrever a funcao de upsert
+-- (a) POR QUE 14 COLUNAS NUMA MIGRATION SO: reescrever a funcao de upsert
 -- duas vezes na mesma fase e risco sem beneficio -- cada reescrita e uma
 -- chance nova de a whitelist descartar um campo em silencio. As 12 colunas
 -- desta fase (Flex + fiscal) nascem juntas, na mesma entrega, com a mesma
--- guarda.
+-- guarda. As duas ultimas (credito_icms_frete, pis_cofins_debito_com_difal)
+-- entraram no retrabalho de 13/08, quando a planilha de precificacao virou a
+-- regua e a contadora confirmou o credito de ICMS sobre o frete (D-10).
 --
 -- (b) A ARMADILHA DA WHITELIST: batch_upsert_orders tem lista EXPLICITA de
 -- colunas no INSERT, na projecao do SELECT e no DO UPDATE SET. Um campo que
@@ -36,6 +38,10 @@ ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS icms_debito numeric;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS pis_cofins_debito numeric;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS credito_pc_comissao numeric;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS credito_pc_frete numeric;
+-- Credito de ICMS sobre o frete (D-10.2, confirmado pela contadora em 13/08).
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS credito_icms_frete numeric;
+-- PIS/COFINS do cenario COM DIFAL: base distinta (receita - ICMS - DIFAL, D-10.1).
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS pis_cofins_debito_com_difal numeric;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS difal_base numeric;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS difal_amount numeric;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS fcp_amount numeric;
@@ -49,16 +55,16 @@ COMMENT ON COLUMN public.orders.custo_entrega IS
   'Custo de entrega propria (Flex) copiado de ml_tax_config.flex_custo_entrega no momento do sync. NULL significa que o dono da conta ainda nao informou o valor -- o MCO deste pedido esta declaradamente inflado enquanto isso.';
 
 COMMENT ON COLUMN public.orders.difal_amount IS
-  'DIFAL DEVIDO pela regra (base dupla, LC 190/2022), nao necessariamente recolhido. Quem recolhe de fato e configuracao por loja (D-02, ml_tax_config.difal_ufs_recolhidas) -- este campo nunca decide sozinho se o DIFAL entra no MCO exibido.';
+  'DIFAL ESTIMADO pela regua (BASE SIMPLES: receita x percentual do destino -- D-08), nao necessariamente devido nem recolhido. Onde ha NF-e emitida, o valor que vale para a apuracao e o do documento fiscal, nao este (D-12). Quem recolhe de fato e configuracao por loja (D-02, ml_tax_config.difal_ufs_recolhidas) -- este campo nunca decide sozinho se o DIFAL entra no MCO exibido.';
 
 COMMENT ON COLUMN public.orders.difal_fonte IS
-  'Procedencia do DIFAL deste pedido (D-07): "cobrado_ml" quando ha lancamento CDIFAL correspondente na fatura (fato, mesma logica da Fase 210 com ads), "calculado" quando vem da regua (previsao), "nao_conciliado" quando ha CDIFAL na fatura sem pedido interestadual correspondente, ou NULL quando nao ha DIFAL a atribuir. O cobrado e o calculado NUNCA somam no mesmo pedido -- seria contagem dupla.';
+  'Procedencia do DIFAL deste pedido (D-07, ampliada por D-12). Ordem de verdade: documento fiscal > cobrado pelo ML > formula. "documento_fiscal" quando o valor veio da NF-e de venda emitida -- a UNICA fonte que a contadora reconhece como apuracao; ainda NAO e escrito por ninguem, fica reservado para a Fase 223 (ingestao da NF-e do Tiny). "cobrado_ml" quando ha lancamento CDIFAL correspondente na fatura (fato, mesma logica da Fase 210 com ads). "calculado" quando vem da regua (ESTIMATIVA). "nao_conciliado" quando ha CDIFAL na fatura sem pedido interestadual correspondente. NULL quando nao ha DIFAL a atribuir. Duas fontes NUNCA somam no mesmo pedido -- seria contagem dupla, e o campo unico torna isso inexprimivel.';
 
 COMMENT ON COLUMN public.orders.tax_versao IS
   'Regua fiscal que gravou esta linha: NULL ou 1 = regua anterior a Fase 222 (aliquota unica, sem credito de PIS/COFINS); 2 = regua desta fase (componentes + creditos + DIFAL). Marcador que mede o avanco do backfill e impede somar as duas reguas como se fossem a mesma coisa.';
 
 COMMENT ON COLUMN public.orders.tax_amount IS
-  'Soma dos componentes fiscais SEM DIFAL (ICMS debito + PIS/COFINS debito - creditos de comissao e frete). O cenario COM DIFAL e composto por CIMA deste valor (tax_amount + difal_amount + fcp_amount), nunca por subtracao -- Pitfall 3 do 222-RESEARCH.md.';
+  'Soma dos componentes fiscais SEM DIFAL: ICMS debito + PIS/COFINS debito (base receita - ICMS) menos os TRES creditos (PIS/COFINS sobre comissao pos-rebate, PIS/COFINS sobre frete liquido de ICMS, e ICMS sobre frete -- D-10). O cenario COM DIFAL e composto por CIMA, nunca por subtracao (Pitfall 3 do 222-RESEARCH.md), e usa OUTRA base de PIS/COFINS (receita - ICMS - DIFAL, ver pis_cofins_debito_com_difal): tax_amount + difal_amount NAO reproduz o cenario com DIFAL sozinho.';
 
 -- Índice parcial para a view de saude do 222-05 nao varrer orders inteira ao
 -- medir cobertura de Flex por organizacao.
@@ -84,8 +90,9 @@ CREATE INDEX IF NOT EXISTS idx_orders_org_logistic_type
 --     passageira nao pode apagar dado bom -- e a licao da Fase 219
 --     (frete/estado/cidade), reaplicada aqui aos campos novos que tambem
 --     dependem de rede.
---   - os nove campos fiscais restantes (icms_debito, pis_cofins_debito,
---     credito_pc_comissao, credito_pc_frete, difal_base, difal_amount,
+--   - os onze campos fiscais restantes (icms_debito, pis_cofins_debito,
+--     credito_pc_comissao, credito_pc_frete, credito_icms_frete,
+--     pis_cofins_debito_com_difal, difal_base, difal_amount,
 --     fcp_amount, difal_fonte, tax_versao) recebem atribuicao DIRETA: sao
 --     derivados deterministicos do que ja esta na linha (nao dependem de
 --     rede), e COALESCE aqui congelaria o valor da regua antiga para
@@ -111,7 +118,8 @@ BEGIN
     synced_at, custo_unit, custo_unit_cheio, tax_rate, tax_amount,
     uf_origem, receita_bruta, receita_liquida, marca,
     logistic_type, bonus_envio, custo_entrega,
-    icms_debito, pis_cofins_debito, credito_pc_comissao, credito_pc_frete,
+    icms_debito, pis_cofins_debito, pis_cofins_debito_com_difal,
+    credito_pc_comissao, credito_pc_frete, credito_icms_frete,
     difal_base, difal_amount, fcp_amount, difal_fonte, tax_versao
   )
   SELECT
@@ -151,6 +159,8 @@ BEGIN
     NULLIF(r->>'pis_cofins_debito', '')::numeric,
     NULLIF(r->>'credito_pc_comissao', '')::numeric,
     NULLIF(r->>'credito_pc_frete', '')::numeric,
+    NULLIF(r->>'credito_icms_frete', '')::numeric,
+    NULLIF(r->>'pis_cofins_debito_com_difal', '')::numeric,
     NULLIF(r->>'difal_base', '')::numeric,
     NULLIF(r->>'difal_amount', '')::numeric,
     NULLIF(r->>'fcp_amount', '')::numeric,
@@ -196,6 +206,8 @@ BEGIN
     pis_cofins_debito      = EXCLUDED.pis_cofins_debito,
     credito_pc_comissao    = EXCLUDED.credito_pc_comissao,
     credito_pc_frete       = EXCLUDED.credito_pc_frete,
+    credito_icms_frete     = EXCLUDED.credito_icms_frete,
+    pis_cofins_debito_com_difal = EXCLUDED.pis_cofins_debito_com_difal,
     difal_base             = EXCLUDED.difal_base,
     difal_amount           = EXCLUDED.difal_amount,
     fcp_amount             = EXCLUDED.fcp_amount,
@@ -220,7 +232,8 @@ declare
   v_src   text;
   v_cols  text[] := array[
     'logistic_type', 'bonus_envio', 'custo_entrega',
-    'icms_debito', 'pis_cofins_debito', 'credito_pc_comissao', 'credito_pc_frete',
+    'icms_debito', 'pis_cofins_debito', 'pis_cofins_debito_com_difal',
+    'credito_pc_comissao', 'credito_pc_frete', 'credito_icms_frete',
     'difal_base', 'difal_amount', 'fcp_amount', 'difal_fonte', 'tax_versao'
   ];
   v_coalesces text[] := array[

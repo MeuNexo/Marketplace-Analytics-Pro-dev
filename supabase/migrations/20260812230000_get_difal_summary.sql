@@ -77,6 +77,7 @@ RETURNS TABLE (
   difal_recolhido_pela_loja       NUMERIC,
   difal_cobrado_ml                NUMERIC,
   difal_previsto_nas_ufs_cobradas NUMERIC,
+  reducao_pc_por_difal            NUMERIC,
   pedidos_com_difal               BIGINT,
   pedidos_difal_indefinido        BIGINT,
   pedidos_nao_conciliados         BIGINT,
@@ -102,6 +103,8 @@ AS $$
       o.difal_amount,
       o.fcp_amount,
       o.difal_fonte,
+      o.pis_cofins_debito,
+      o.pis_cofins_debito_com_difal,
       o.estado,
       o.uf_origem,
       c.difal_ufs_recolhidas
@@ -148,6 +151,22 @@ AS $$
         FILTER (WHERE p.difal_fonte = 'cobrado_ml'),
       0
     )                                                                      AS difal_previsto_nas_ufs_cobradas,
+    -- [222-07-R / D-10.1] Quanto o PIS/COFINS DIMINUI por causa do DIFAL.
+    -- A base do PIS/COFINS no cenario COM DIFAL e (receita - ICMS - DIFAL),
+    -- entao entrar com o DIFAL nao custa o DIFAL cheio: custa o DIFAL menos
+    -- este valor. Sem este campo, quem soma difal_amount por cima de
+    -- tax_amount SUPERESTIMA o imposto -- medido no caso-prova: R$ 3,85 por
+    -- pedido, imposto maior e MCO menor que o real.
+    -- Positivo por construcao (a base com DIFAL e sempre menor); COALESCE
+    -- protege as linhas que a regua nova ainda nao gravou.
+    COALESCE(
+      SUM(COALESCE(p.pis_cofins_debito, 0) - COALESCE(p.pis_cofins_debito_com_difal, 0))
+        FILTER (
+          WHERE p.difal_fonte IN ('calculado', 'nao_conciliado')
+            AND p.pis_cofins_debito_com_difal IS NOT NULL
+        ),
+      0
+    )                                                                      AS reducao_pc_por_difal,
     count(*) FILTER (WHERE p.difal_amount IS NOT NULL)                    AS pedidos_com_difal,
     count(*) FILTER (
       WHERE p.difal_amount IS NULL

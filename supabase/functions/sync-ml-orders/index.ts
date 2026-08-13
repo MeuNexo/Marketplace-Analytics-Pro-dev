@@ -631,6 +631,8 @@ function expandOrder(
       pis_cofins_debito:   breakdown.pisCofinsDebito,
       credito_pc_comissao: breakdown.creditoPcComissao,
       credito_pc_frete:    breakdown.creditoPcFrete,
+      credito_icms_frete:  breakdown.creditoIcmsFrete,
+      pis_cofins_debito_com_difal: breakdown.pisCofinsDebitoComDifal,
       difal_base:          breakdown.difalBase,
       difal_amount:        breakdown.difalAmount,
       fcp_amount:          breakdown.fcpAmount,

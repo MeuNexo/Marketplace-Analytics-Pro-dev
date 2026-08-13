@@ -2,15 +2,19 @@ import { describe, it, expect } from "vitest";
 import { computeMco, type McoInput } from "./mco";
 import { computeMcoCenarios, resolveDifalCenario, type DifalSummaryInput } from "./mcoCenarios";
 
-// Caso-prova (222-CONTEXT.md, conferido à mão pelo Wesley):
+// Caso-prova (222-CONTEXT.md), na régua D-08/D-10 de 13/08/2026:
 // pedido 2000017711929314, SP→MG, sem ads.
-// semDifal 84,20 (12,15%) · comDifal 33,49 (4,83%) · DIFAL 50,71.
+// semDifal 87,55 (12,63%) · comDifal 49,81 (7,19%) · DIFAL 41,58.
+//
+// O DIFAL soma 41,58 de débito MAS reduz a base do PIS/COFINS em 41,58,
+// devolvendo 3,85 de imposto (D-10.1) — o efeito líquido no imposto é 37,74,
+// não 41,58. É essa diferença que `reducao_pc_por_difal` carrega.
 const casoProvaBase: McoInput = {
   grossRevenue: 692.99,
   cmv: 369.0,
   platformCost: 110.44, // comissão 79,69 + frete 30,75
   ads: 0,
-  tax: 129.35, // imposto SEM DIFAL (ICMS + PIS/COFINS - créditos)
+  tax: 126.0, // imposto SEM DIFAL (ICMS + PIS/COFINS - os três créditos)
 };
 
 function difalSummary(overrides: Partial<DifalSummaryInput>): DifalSummaryInput {
@@ -32,19 +36,67 @@ describe("computeMcoCenarios", () => {
     expect(result.semDifal).toEqual(computeMco(base));
   });
 
-  it("caso-prova: semDifal 84,20 (12,15%) e comDifal 33,49 (4,83%)", () => {
+  it("caso-prova na régua D-08/D-10: semDifal 87,55 (12,63%) e comDifal 49,81 (7,19%)", () => {
     const difal = difalSummary({
-      difal_calculado: 50.71,
+      difal_calculado: 41.58,
+      // D-10.1: o DIFAL devolve 9,25% dele mesmo em PIS/COFINS.
+      reducao_pc_por_difal: 3.85,
       regua_cobranca_configurada: false,
     });
     const result = computeMcoCenarios({ base: casoProvaBase, difal });
 
-    expect(result.semDifal.mco).toBeCloseTo(84.2, 2);
-    expect(result.semDifal.pct).toBeCloseTo(12.15, 1);
+    expect(result.semDifal.mco).toBeCloseTo(87.55, 1);
+    expect(result.semDifal.pct).toBeCloseTo(12.63, 1);
     expect(result.comDifal).not.toBeNull();
-    expect(result.comDifal!.mco).toBeCloseTo(33.49, 2);
-    expect(result.comDifal!.pct).toBeCloseTo(4.83, 1);
-    expect(result.difalAplicado).toBeCloseTo(50.71, 2);
+    expect(result.comDifal!.mco).toBeCloseTo(49.81, 1);
+    expect(result.comDifal!.pct).toBeCloseTo(7.19, 1);
+    // Efeito LÍQUIDO do DIFAL no imposto — não o DIFAL cheio.
+    expect(result.difalAplicado).toBeCloseTo(37.73, 1);
+  });
+
+  it("D-10.1: sem reducao_pc_por_difal o imposto sairia MAIOR — a redução não é opcional na conta", () => {
+    const comReducao = computeMcoCenarios({
+      base: casoProvaBase,
+      difal: difalSummary({
+        difal_calculado: 41.58,
+        reducao_pc_por_difal: 3.85,
+        regua_cobranca_configurada: false,
+      }),
+    });
+    const semReducao = computeMcoCenarios({
+      base: casoProvaBase,
+      difal: difalSummary({ difal_calculado: 41.58, regua_cobranca_configurada: false }),
+    });
+
+    expect(semReducao.difalAplicado).toBeCloseTo(41.58, 2);
+    expect(comReducao.difalAplicado!).toBeLessThan(semReducao.difalAplicado!);
+    // O MCO exibido sem a redução seria menor que o real — o erro que D-10.1 fecha.
+    expect(comReducao.comDifal!.mco).toBeGreaterThan(semReducao.comDifal!.mco);
+    expect(comReducao.comDifal!.mco - semReducao.comDifal!.mco).toBeCloseTo(3.85, 2);
+  });
+
+  it("campo ausente (RPC antiga) se comporta como zero — não quebra, só volta ao número anterior", () => {
+    const r = computeMcoCenarios({
+      base: casoProvaBase,
+      difal: difalSummary({ difal_calculado: 41.58, regua_cobranca_configurada: false }),
+    });
+    expect(r.difalAplicado).toBeCloseTo(41.58, 2);
+  });
+
+  it("a redução entra RATEADA quando só parte do calculado é recolhida", () => {
+    const r = computeMcoCenarios({
+      base: casoProvaBase,
+      difal: difalSummary({
+        difal_calculado: 100,
+        difal_recolhido_pela_loja: 25, // um quarto
+        difal_cobrado_ml: 10,
+        reducao_pc_por_difal: 8,
+        regua_cobranca_configurada: true,
+        regua_recolhimento_configurada: true,
+      }),
+    });
+    // 10 (cobrado) + 25 (recolhido) − 8 × 0,25 = 33
+    expect(r.difalAplicado).toBeCloseTo(33, 6);
   });
 
   it('procedência "calculado_nao_conciliado" quando a régua de cobrança não está configurada', () => {

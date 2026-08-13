@@ -43,7 +43,7 @@ import { useMLSync } from "@/hooks/useMLSync";
 import { useMLMarginAnalysis } from "@/hooks/useMLMarginAnalysis";
 import { useMLCostWaterfall } from "@/hooks/useMLCostWaterfall";
 import { useMLDifalSummary } from "@/hooks/useMLDifalSummary";
-import { resolveDifalCenario } from "@/lib/mcoCenarios";
+import { resolveDifalCenario, DIFAL_ESTIMATIVA_LABEL } from "@/lib/mcoCenarios";
 import { useMLAds } from "@/hooks/useMLAds";
 import { useMLAdsBillingSpend } from "@/hooks/useMLAdsBillingSpend";
 import { resolveAdsSpend } from "@/lib/adsBillingSpend";
@@ -443,12 +443,16 @@ export default function MLFinanceiro() {
           // [Fase 222/222-07] Subtítulo ganha o cenário com DIFAL (D-02) —
           // nunca some no lugar de zero: "não carregou" quando indisponível,
           // e a contagem de pedidos fora da conta quando houver.
+          // [222-07-R/D-12] O número é ESTIMADO pela régua, não apurado pela
+          // nota — a palavra vai junto do valor, não num rodapé qualquer.
           subtitle={
             difalSummaryLoading
               ? undefined
               : difalCenario.procedencia === "indisponivel"
               ? "com DIFAL: não carregou"
-              : `com DIFAL: ${currFmt(kpiImpostosComDifal ?? kpiImpostos)}${
+              : `com DIFAL (${DIFAL_ESTIMATIVA_LABEL}): ${currFmt(
+                  kpiImpostosComDifal ?? kpiImpostos
+                )}${
                   difalCenario.pedidosIndefinidos > 0
                     ? ` · ${difalCenario.pedidosIndefinidos} pedido(s) fora da conta`
                     : ""

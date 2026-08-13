@@ -53,7 +53,11 @@ import { ConsultorCard } from "@/components/mercadolivre/ConsultorCard";
 import { ConsultorLLMSummary } from "@/components/mercadolivre/ConsultorLLMSummary";
 import { useConsultorInsights } from "@/hooks/useConsultorInsights";
 import { MLMcoStrip } from "@/components/mercadolivre/MLMcoStrip";
-import { computeMcoCenarios } from "@/lib/mcoCenarios";
+import {
+  computeMcoCenarios,
+  DIFAL_ESTIMATIVA_AJUDA,
+  DIFAL_ESTIMATIVA_LABEL,
+} from "@/lib/mcoCenarios";
 import { useDreOperational } from "@/hooks/useDreOperational";
 import { useCancelledRevenue } from "@/hooks/useCancelledRevenue";
 import { buildDreCascade } from "@/lib/dreCascade";
@@ -976,7 +980,7 @@ export default function MercadoLivre() {
                     <span>DIFAL não carregou — cenário com DIFAL indisponível no momento.</span>
                   ) : (
                     <>
-                      <span>
+                      <span title={DIFAL_ESTIMATIVA_AJUDA}>
                         MCO com DIFAL:{" "}
                         <span className="font-semibold text-foreground tabular-nums">
                           {mcoCenarios.comDifal != null
@@ -989,6 +993,10 @@ export default function MercadoLivre() {
                             ({mcoCenarios.comDifal.pct.toFixed(1)}%)
                           </span>
                         )}
+                        {/* [Fase 222/D-12] O DIFAL desta régua é estimado, não
+                            apurado pela nota — a tela nunca pode afirmar mais
+                            que isso. */}
+                        <span className="ml-1">({DIFAL_ESTIMATIVA_LABEL})</span>
                       </span>
                       {mcoCenarios.procedencia === "calculado_nao_conciliado" && (
                         <span>

@@ -763,6 +763,25 @@ export default function MLFiscal() {
 
               {/* ── DIFAL — só Lucro Real, D-02/D-07, FISC-04/FISC-07 ── */}
               <div className="space-y-3 pt-3">
+                {/* [222-06-R/D-08+D-12] A régua e o seu limite ficam na tela de
+                    configuração, não só no código: quem decide as listas abaixo
+                    precisa saber que o número resultante é estimado. */}
+                <div className="rounded-md border border-border/60 bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
+                  <p>
+                    <span className="font-medium text-foreground">
+                      Como o DIFAL é calculado aqui:
+                    </span>{" "}
+                    percentual por estado de destino aplicado sobre o valor da venda
+                    (base simples), conforme a planilha de precificação da empresa.
+                  </p>
+                  <p>
+                    O resultado é uma{" "}
+                    <span className="font-medium text-foreground">estimativa</span>. Onde
+                    houver NF-e emitida, o valor que vale para a apuração é o do documento
+                    fiscal — a régua serve para decidir preço e acompanhar margem, não
+                    substitui a nota.
+                  </p>
+                </div>
                 <DifalUfSelector
                   titulo="DIFAL — o que a loja recolhe"
                   ajuda="Enquanto não definido, o cenário com DIFAL usa o valor devido integral, que é o teto conservador; definido como nenhuma, os dois cenários passam a coincidir."

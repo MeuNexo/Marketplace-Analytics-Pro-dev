@@ -55,6 +55,10 @@ export function useMLDifalSummary(from: string, to: string) {
         difal_recolhido_pela_loja: Number(row.difal_recolhido_pela_loja) || 0,
         difal_cobrado_ml: Number(row.difal_cobrado_ml) || 0,
         difal_previsto_nas_ufs_cobradas: Number(row.difal_previsto_nas_ufs_cobradas) || 0,
+        // [222-07-R / D-10.1] Redução de PIS/COFINS causada pelo DIFAL. `|| 0`
+        // cobre tanto a RPC antiga (campo ausente) quanto o valor zero — aqui
+        // os dois significam a mesma coisa para a conta: nada a descontar.
+        reducao_pc_por_difal: Number(row.reducao_pc_por_difal) || 0,
         pedidos_com_difal: Number(row.pedidos_com_difal) || 0,
         pedidos_difal_indefinido: Number(row.pedidos_difal_indefinido) || 0,
         pedidos_nao_conciliados: Number(row.pedidos_nao_conciliados) || 0,

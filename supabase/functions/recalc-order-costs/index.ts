@@ -177,6 +177,8 @@ serve(async (req) => {
         if (breakdown.pisCofinsDebito != null) patch.pis_cofins_debito = breakdown.pisCofinsDebito;
         if (breakdown.creditoPcComissao != null) patch.credito_pc_comissao = breakdown.creditoPcComissao;
         if (breakdown.creditoPcFrete != null) patch.credito_pc_frete = breakdown.creditoPcFrete;
+        if (breakdown.creditoIcmsFrete != null) patch.credito_icms_frete = breakdown.creditoIcmsFrete;
+        if (breakdown.pisCofinsDebitoComDifal != null) patch.pis_cofins_debito_com_difal = breakdown.pisCofinsDebitoComDifal;
         if (breakdown.difalBase != null) patch.difal_base = breakdown.difalBase;
         if (breakdown.difalAmount != null) patch.difal_amount = breakdown.difalAmount;
         if (breakdown.fcpAmount != null) patch.fcp_amount = breakdown.fcpAmount;
