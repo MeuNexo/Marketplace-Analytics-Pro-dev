@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { computeOrderTaxRate } from "../_shared/orderTaxRate.ts";
+import { computeOrderTax, type TabelaAliquotasInternas } from "../_shared/orderTaxRate.ts";
+import { montarTabelaAliquotas } from "../_shared/tabelaUf.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -50,6 +51,27 @@ serve(async (req) => {
     const taxByStore = new Map<string, any>();
     for (const c of taxConfigs ?? []) taxByStore.set(c.ml_user_id, c);
 
+    // ── Tabela de alíquota interna + FCP por UF (Fase 222, TAX-01/02) ────────
+    // UMA leitura por rodada — nunca uma por pedido dentro do laço abaixo.
+    // date_to é "a data do lote", mesma referência de vigência do sync. Se a
+    // chamada falhar, segue com tabela vazia — o DIFAL sai ausente (nunca
+    // zero) e a view de saúde do 222-05 mostra; abortar o recálculo inteiro
+    // por causa do DIFAL seria pior que a ausência.
+    let tabelaUf: TabelaAliquotasInternas = {};
+    {
+      const { data: linhasUf, error: erroUf } = await supabase.rpc(
+        "aliquota_interna_vigente",
+        { p_data: date_to },
+      );
+      if (erroUf) {
+        console.warn(
+          `recalc-order-costs: aliquota_interna_vigente falhou (${erroUf.message}) — seguindo com tabela de UF vazia`,
+        );
+      } else {
+        tabelaUf = montarTabelaAliquotas(linhasUf ?? []);
+      }
+    }
+
     // Load product costs: indexa por seller_sku (formato Tiny) E por item_id (formato ML, legado)
     const { data: costs } = await supabase
       .from("ml_product_costs")
@@ -72,7 +94,7 @@ serve(async (req) => {
     // Pull orders in window
     let query = supabase
       .from("orders")
-      .select("id, ml_order_id, ml_user_id, item_id, sku, quantidade, preco_unit, estado, custo_unit, custo_unit_cheio, tax_rate, tax_amount, uf_origem")
+      .select("id, ml_order_id, ml_user_id, item_id, sku, quantidade, preco_unit, comissao, frete, receita_bruta, estado, custo_unit, custo_unit_cheio, tax_rate, tax_amount, uf_origem, tax_versao")
       .in("ml_user_id", ml_user_ids)
       .gte("data_pedido", date_from)
       .lte("data_pedido", date_to);
@@ -86,7 +108,13 @@ serve(async (req) => {
       // via sync, então o predicado antigo já dava "nada faltando" e o cheio
       // ficava NULL para sempre. É a causa raiz dos 32,9% de cobertura em julho
       // (contra 94,9% do médio).
-      query = query.or("custo_unit.is.null,custo_unit_cheio.is.null,tax_amount.is.null");
+      //
+      // Fase 222 (222-05): `tax_versao.is.null,tax_versao.lt.2` entra pelo
+      // MESMO motivo, sobre o mesmo padrão — sem isto, um pedido já com
+      // tax_amount preenchido pela régua ANTIGA (alíquota única, sem
+      // créditos) nunca reentraria neste SELECT, e a cobertura da régua nova
+      // congelaria exatamente como congelou a do custo cheio na Fase 96-07.
+      query = query.or("custo_unit.is.null,custo_unit_cheio.is.null,tax_amount.is.null,tax_versao.is.null,tax_versao.lt.2");
     }
     const { data: ordersData, error: oerr } = await query;
     if (oerr) throw oerr;
@@ -101,17 +129,32 @@ serve(async (req) => {
     for (let i = 0; i < rows.length; i += CHUNK) {
       const slice = rows.slice(i, i + CHUNK);
       await Promise.all(slice.map(async (o: any) => {
-        const cfg = taxByStore.get(o.ml_user_id);
+        const cfg = taxByStore.get(o.ml_user_id) ?? null;
         // Prioridade: seller_sku (Tiny) → item_id ML direto (legado)
         const cost = (o.sku ? costBySku.get(o.sku) : undefined) ?? costByItem.get(o.item_id) ?? null;
         const costFull = o.sku ? costFullBySku.get(o.sku) ?? null : null;
-        // Fase 220 (TAX-01): mesma fórmula compartilhada de sync-ml-orders —
-        // segunda porta de entrada do mesmo bug fechada. O filtro only_missing
-        // continua como está: é decisão de desempenho, não alvo desta fase.
-        const taxRate = computeOrderTaxRate(cfg, o.estado).rate;
         const preco = Number(o.preco_unit ?? 0);
         const qty = Number(o.quantidade ?? 0);
-        const taxAmount = (taxRate != null && preco) ? (preco * qty * taxRate) / 100 : null;
+
+        // Fase 222 (TAX-01/02): a MESMA função compartilhada de
+        // sync-ml-orders — a segunda porta de escrita do imposto recebe a
+        // mesma troca, no mesmo commit. receita_bruta prioriza a coluna já
+        // gravada (Fase 222-04); pedido antigo sem ela cai para preço × qtd.
+        const receitaBruta = o.receita_bruta != null
+          ? Number(o.receita_bruta)
+          : (preco ? preco * qty : null);
+        const comissao = o.comissao != null ? Number(o.comissao) : null;
+        const frete = o.frete != null ? Number(o.frete) : null;
+        const breakdown = computeOrderTax({
+          config: cfg,
+          ufDestino: o.estado,
+          receitaBruta,
+          comissao,
+          frete,
+          tabelaUf,
+        });
+        const taxRate = breakdown.taxRate;
+        const taxAmount = breakdown.taxAmount;
         const ufOrigem = cfg?.uf_origem ?? null;
 
         if (cost == null) costMissing++;
@@ -121,7 +164,23 @@ serve(async (req) => {
         if (cost != null) patch.custo_unit = cost;
         if (costFull != null) patch.custo_unit_cheio = costFull;
         if (taxRate != null) patch.tax_rate = taxRate;
-        if (taxAmount != null) patch.tax_amount = taxAmount;
+        // Componentes fiscais: mesmo padrão de "só grava campo não nulo" dos
+        // demais campos deste patch. tax_versao anda SEMPRE junto de
+        // tax_amount — nunca marcar a linha como régua nova (2) sem
+        // efetivamente gravar o imposto desta rodada, senão a view de saúde
+        // do 222-05 mentiria sobre quanto do passado já migrou.
+        if (taxAmount != null) {
+          patch.tax_amount = taxAmount;
+          patch.tax_versao = 2;
+        }
+        if (breakdown.icmsDebito != null) patch.icms_debito = breakdown.icmsDebito;
+        if (breakdown.pisCofinsDebito != null) patch.pis_cofins_debito = breakdown.pisCofinsDebito;
+        if (breakdown.creditoPcComissao != null) patch.credito_pc_comissao = breakdown.creditoPcComissao;
+        if (breakdown.creditoPcFrete != null) patch.credito_pc_frete = breakdown.creditoPcFrete;
+        if (breakdown.difalBase != null) patch.difal_base = breakdown.difalBase;
+        if (breakdown.difalAmount != null) patch.difal_amount = breakdown.difalAmount;
+        if (breakdown.fcpAmount != null) patch.fcp_amount = breakdown.fcpAmount;
+        if (breakdown.difalFonte != null) patch.difal_fonte = breakdown.difalFonte;
         if (ufOrigem) patch.uf_origem = ufOrigem;
         if (Object.keys(patch).length === 0) return;
 

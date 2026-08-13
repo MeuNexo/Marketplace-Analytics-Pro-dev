@@ -1,7 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import { computeOrderTaxRate } from "../_shared/orderTaxRate.ts";
+import { computeOrderTax, type TabelaAliquotasInternas } from "../_shared/orderTaxRate.ts";
+import { montarTabelaAliquotas } from "../_shared/tabelaUf.ts";
 import {
   extrairLogisticType,
   ehFlex,
@@ -456,6 +457,10 @@ function expandOrder(
   brandMap:       Map<string, string | null>,
   skuCostMap:     Map<string, number>,
   skuCostFullMap: Map<string, number>,
+  // Régua fiscal decomposta (Fase 222, TAX-01/02): tabela de alíquota
+  // interna + FCP por UF, carregada UMA vez por rodada pelo chamador —
+  // nunca uma chamada por pedido dentro deste laço.
+  tabelaUf:       TabelaAliquotasInternas,
 ): Array<Record<string, unknown>> {
   // Converter para BRT (UTC-3) antes de extrair a data: o range de sync usa meia-noite BRT,
   // e o cliente filtra por data BRT — armazenar em UTC causava desvio de um dia nas bordas.
@@ -532,11 +537,29 @@ function expandOrder(
     // disfarçado. Sem cost_full cadastrado → null (o pedido entra sem cheio e o
     // gate do C6 o lista para o Wesley cadastrar no Tiny).
     const custoUnitCheio = (itemSku ? skuCostFullMap.get(itemSku) : null) ?? null;
-    const aliquota    = computeOrderTaxRate(taxConfig, estado);
-    const taxRate     = aliquota.rate;
-    const taxAmount   = (taxRate != null && precoUnit != null)
-      ? (precoUnit * quantidade * taxRate) / 100
-      : null;
+
+    // Comissão e receita bruta precisam estar resolvidas ANTES da chamada de
+    // imposto: os créditos de D-01 (222) usam comissão e frete como base, e
+    // constante usada antes da inicialização aqui é erro de execução, não
+    // de tipo (222-05, ponto de atenção de ordem).
+    const comissao    = item.sale_fee != null ? Number(item.sale_fee) : null;
+    const receitaBruta = precoUnit != null ? precoUnit * quantidade : null;
+
+    // Fase 222 (TAX-01/02): imposto decomposto por componentes (ICMS
+    // débito, PIS/COFINS débito, créditos de PIS/COFINS sobre comissão e
+    // frete, DIFAL por base dupla, FCP) em vez de uma alíquota única —
+    // computeOrderTax é a ÚNICA função que faz esta conta, chamada aqui e
+    // em recalc-order-costs (a segunda porta de escrita), nunca copiada.
+    const breakdown   = computeOrderTax({
+      config:       taxConfig,
+      ufDestino:    estado,
+      receitaBruta,
+      comissao,
+      frete,
+      tabelaUf,
+    });
+    const taxRate     = breakdown.taxRate;
+    const taxAmount   = breakdown.taxAmount;
     const ufOrigem    = taxConfig?.uf_origem ?? null;
     // receita_liquida precisa da mesma proteção que tax_rate/tax_amount: ela é
     // recalculada como número real a cada rodada (preço×qtd−comissão−frete−
@@ -547,8 +570,7 @@ function expandOrder(
     // pior que o original. Quando NÃO existe config fiscal nenhuma (motivo
     // "sem_config"), receita_liquida continua calculada como hoje: orgs sem
     // regime cadastrado não podem regredir por causa desta fase.
-    const impostoDesconhecido = aliquota.motivo === "destino_desconhecido";
-    const receitaBruta = precoUnit != null ? precoUnit * quantidade : null;
+    const impostoDesconhecido = breakdown.motivo === "destino_desconhecido";
 
     // Flex: bônus e custo de entrega já rateados por linha de item (fora
     // deste map). computeReceitaLiquida soma o bônus como receita própria e
@@ -558,7 +580,7 @@ function expandOrder(
     const custoEntregaItem = custoEntregaRateado[idx] ?? null;
     const { receitaLiquida } = computeReceitaLiquida({
       receitaBruta,
-      comissao: item.sale_fee != null ? Number(item.sale_fee) : null,
+      comissao,
       frete,
       bonusEnvio: bonusEnvioItem,
       custoEntrega: custoEntregaItem,
@@ -579,7 +601,7 @@ function expandOrder(
       listing_type,
       quantidade,
       preco_unit:      precoUnit,
-      comissao:        item.sale_fee    != null ? Number(item.sale_fee)    : null,
+      comissao,
       frete,
       status:          order.status ?? null,
       data_pedido:     datePedido,
@@ -599,6 +621,21 @@ function expandOrder(
       logistic_type:   logisticType,
       bonus_envio:     bonusEnvioItem,
       custo_entrega:   custoEntregaItem,
+      // Fase 222 (TAX-01/02): componentes do breakdown decomposto. tax_versao
+      // é gravada SEMPRE (não condicionada a nenhum componente não ser
+      // null) — é o marcador de que esta linha passou pela régua nova nesta
+      // rodada, mesmo quando o resultado é ausência com motivo nomeado
+      // (destino desconhecido, UF não confirmada etc.). A view de saúde do
+      // 222-05 lê esta coluna para separar régua antiga de régua nova.
+      icms_debito:         breakdown.icmsDebito,
+      pis_cofins_debito:   breakdown.pisCofinsDebito,
+      credito_pc_comissao: breakdown.creditoPcComissao,
+      credito_pc_frete:    breakdown.creditoPcFrete,
+      difal_base:          breakdown.difalBase,
+      difal_amount:        breakdown.difalAmount,
+      fcp_amount:          breakdown.fcpAmount,
+      difal_fonte:         breakdown.difalFonte,
+      tax_versao:          2,
     };
   });
 }
@@ -773,6 +810,27 @@ serve(async (req) => {
       taxConfig = cfg ?? null;
     }
 
+    // ── Tabela de alíquota interna + FCP por UF (Fase 222, TAX-01/02) ────────
+    // UMA leitura por rodada — nunca uma por pedido dentro do laço de
+    // expandOrder. `date_to` é "a data do lote": fim da janela sincronizada,
+    // usada como referência de vigência. Se a chamada falhar, segue com
+    // tabela vazia — o DIFAL sai null e a view de saúde do 222-05 mostra;
+    // abortar o sync inteiro por causa do DIFAL seria pior que a ausência.
+    let tabelaUf: TabelaAliquotasInternas = {};
+    {
+      const { data: linhasUf, error: erroUf } = await supabaseAdmin.rpc(
+        "aliquota_interna_vigente",
+        { p_data: date_to },
+      );
+      if (erroUf) {
+        console.warn(
+          `sync-ml-orders: aliquota_interna_vigente falhou (${erroUf.message}) — seguindo com tabela de UF vazia (DIFAL sai ausente, nunca zero)`,
+        );
+      } else {
+        tabelaUf = montarTabelaAliquotas(linhasUf ?? []);
+      }
+    }
+
     const itemIds = Array.from(new Set(
       orders.flatMap((o) => (o.order_items ?? []).map((i: any) => String(i.item?.id ?? ""))).filter(Boolean),
     ));
@@ -815,7 +873,7 @@ serve(async (req) => {
 
     // ── Expand + upsert ───────────────────────────────────────────────────────
     const records = orders.flatMap((o) =>
-      expandOrder(o, ml_user_id, effectiveSellerId, userId, organizationId, syncAt, shipmentMap, costMap, taxConfig, brandMap, skuCostMap, skuCostFullMap),
+      expandOrder(o, ml_user_id, effectiveSellerId, userId, organizationId, syncAt, shipmentMap, costMap, taxConfig, brandMap, skuCostMap, skuCostFullMap, tabelaUf),
     );
     // Visibilidade (Fase 220, TAX-01): silêncio foi o que deixou o bug do
     // imposto viver quatro meses. Conta quantos itens ficaram com o imposto
