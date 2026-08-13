@@ -65,6 +65,19 @@ interface OrderRow {
   custo_unit:      number | null;
   tax_rate:        number | null;
   tax_amount:      number | null;
+  // Fase 222 (222-07): decomposição fiscal + Flex. Nulo = régua anterior a
+  // esta fase, nunca zero disfarçado (mesma régua de custo_unit acima).
+  logistic_type:        string | null;
+  bonus_envio:           number | null;
+  custo_entrega:          number | null;
+  icms_debito:            number | null;
+  pis_cofins_debito:      number | null;
+  credito_pc_comissao:    number | null;
+  credito_pc_frete:       number | null;
+  difal_amount:           number | null;
+  fcp_amount:             number | null;
+  difal_fonte:            string | null;
+  tax_versao:             number | null;
 }
 
 interface ProcessedOrder {
@@ -98,6 +111,20 @@ interface ProcessedOrder {
   gross_margin_pct: number | null;
   full_net_revenue: number | null;
   full_net_margin_pct: number | null;
+  // Fase 222 (222-07): decomposição fiscal + Flex, exibidos no detalhe do pedido.
+  logistic_type:        string | null;
+  is_flex:               boolean;
+  bonus_envio:            number | null;
+  custo_entrega:          number | null;
+  icms_debito:            number | null;
+  pis_cofins_debito:      number | null;
+  credito_pc_comissao:    number | null;
+  credito_pc_frete:       number | null;
+  difal_amount:           number | null;
+  fcp_amount:             number | null;
+  difal_fonte:            string | null;
+  /** true quando o pedido foi gravado pela régua anterior à Fase 222 (tax_versao nulo ou < 2). */
+  regua_antiga:           boolean;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -149,6 +176,18 @@ const LISTING_LABELS: Record<ListingType, string> = {
   premium: "Premium",
   free:    "Grátis",
 };
+
+// Fase 222 (222-07) — procedência do DIFAL por pedido (D-07, orderTaxRate.ts).
+const DIFAL_FONTE_LABELS: Record<string, string> = {
+  cobrado_ml:      "cobrado pelo ML",
+  calculado:       "calculado (régua)",
+  nao_conciliado:  "calculado — cruzamento pendente",
+};
+
+function difalFonteLabel(fonte: string | null): string {
+  if (!fonte) return "—";
+  return DIFAL_FONTE_LABELS[fonte] ?? fonte;
+}
 
 // `LISTING_RATE` foi removido no plano 213-08: seu único consumidor era a
 // sub-aba de Tipo de Anúncio. As taxas de referência por tipo continuam
@@ -471,6 +510,11 @@ export default function MLPedidos() {
               "receita_bruta", "receita_liquida",
               "status", "data_pedido", "comprador", "estado",
               "custo_unit", "tax_rate", "tax_amount",
+              // Fase 222 (222-07): decomposição fiscal + Flex
+              "logistic_type", "bonus_envio", "custo_entrega",
+              "icms_debito", "pis_cofins_debito",
+              "credito_pc_comissao", "credito_pc_frete",
+              "difal_amount", "fcp_amount", "difal_fonte", "tax_versao",
             ].join(", "),
           )
           .in("ml_user_id", resolvedMLUserIds)
@@ -672,6 +716,19 @@ export default function MLPedidos() {
         ? ((Number(r.receita_liquida ?? 0) - Number(r.custo_unit) * r.quantidade)
            / Number(r.receita_bruta)) * 100
         : null,
+      // Fase 222 (222-07) — nulo permanece nulo, nunca vira zero silencioso.
+      logistic_type:       r.logistic_type ?? null,
+      is_flex:             r.logistic_type === "self_service",
+      bonus_envio:         r.bonus_envio          != null ? Number(r.bonus_envio)          : null,
+      custo_entrega:       r.custo_entrega        != null ? Number(r.custo_entrega)        : null,
+      icms_debito:         r.icms_debito          != null ? Number(r.icms_debito)          : null,
+      pis_cofins_debito:   r.pis_cofins_debito    != null ? Number(r.pis_cofins_debito)    : null,
+      credito_pc_comissao: r.credito_pc_comissao  != null ? Number(r.credito_pc_comissao)  : null,
+      credito_pc_frete:    r.credito_pc_frete     != null ? Number(r.credito_pc_frete)     : null,
+      difal_amount:        r.difal_amount         != null ? Number(r.difal_amount)         : null,
+      fcp_amount:          r.fcp_amount           != null ? Number(r.fcp_amount)           : null,
+      difal_fonte:         r.difal_fonte ?? null,
+      regua_antiga:        r.tax_versao == null || r.tax_versao < 2,
     })),
   [rows]);
 
@@ -1122,6 +1179,35 @@ export default function MLPedidos() {
                               </div>
                             ))}
                           </div>
+                          {/* Fase 222 (222-07) — Flex e decomposição fiscal, só quando a
+                              régua nova já gravou a linha (regua_antiga esconde, não zera). */}
+                          {order.regua_antiga ? (
+                            <p className="text-[10px] text-muted-foreground italic">
+                              Pedido na régua fiscal anterior — sem decomposição de DIFAL/Flex.
+                            </p>
+                          ) : (
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-muted-foreground border-t border-border/50 pt-1.5">
+                              {order.is_flex && (
+                                <div className="col-span-2">
+                                  <span>Flex — bônus </span>
+                                  <span className="font-mono tabular-nums text-foreground">
+                                    {order.bonus_envio != null ? currFmt(order.bonus_envio) : "não informado"}
+                                  </span>
+                                  <span> · entrega </span>
+                                  <span className="font-mono tabular-nums text-foreground">
+                                    {order.custo_entrega != null ? currFmt(order.custo_entrega) : "não informado"}
+                                  </span>
+                                </div>
+                              )}
+                              <div>
+                                <span>DIFAL </span>
+                                <span className="font-mono tabular-nums text-foreground">
+                                  {order.difal_amount != null ? currFmt(order.difal_amount) : "—"}
+                                </span>
+                              </div>
+                              <div>{difalFonteLabel(order.difal_fonte)}</div>
+                            </div>
+                          )}
                         </div>
                       ))
                     )}
@@ -1140,6 +1226,8 @@ export default function MLPedidos() {
                           <th className="text-left px-3 py-3 text-xs text-muted-foreground font-medium">Pedido / Produto</th>
                           <th className="text-left px-3 py-3 text-xs text-muted-foreground font-medium">Tipo</th>
                           <th className="text-left px-3 py-3 text-xs text-muted-foreground font-medium">Status</th>
+                          {/* Fase 222 (222-07): tipo logístico + Flex (bônus/custo de entrega) */}
+                          <th className="text-left px-3 py-3 text-xs text-muted-foreground font-medium">Logística</th>
                           <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">
                             <button onClick={() => toggleSort("gross")} className="hover:text-foreground transition-colors">
                               Bruto <SortIcon sortKey={sortKey} k="gross" sortDir={sortDir} />
@@ -1153,6 +1241,8 @@ export default function MLPedidos() {
                           <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">Frete</th>
                           <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">Custo</th>
                           <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">Imposto</th>
+                          {/* Fase 222 (222-07): DIFAL — valor, procedência (D-07) e componentes fiscais no tooltip */}
+                          <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">DIFAL</th>
                           <th className="text-right px-3 py-3 text-xs text-muted-foreground font-medium">
                             <button onClick={() => toggleSort("net")} className="hover:text-foreground transition-colors">
                               Líquido <SortIcon sortKey={sortKey} k="net" sortDir={sortDir} />
@@ -1169,7 +1259,7 @@ export default function MLPedidos() {
                       <tbody className="divide-y divide-border">
                         {filtered.length === 0 ? (
                           <tr>
-                            <td colSpan={12} className="text-center py-12 text-muted-foreground text-sm">
+                            <td colSpan={14} className="text-center py-12 text-muted-foreground text-sm">
                               Nenhum pedido encontrado
                             </td>
                           </tr>
@@ -1189,6 +1279,29 @@ export default function MLPedidos() {
                               </td>
                               <td className="px-3 py-3">
                                 <StatusBadge status={order.status} />
+                              </td>
+                              {/* Fase 222 (222-07): tipo logístico + Flex (bônus/custo de entrega
+                                  aparecem como "não informado" quando ausentes, nunca como zero). */}
+                              <td className="px-3 py-3 text-xs">
+                                {order.regua_antiga ? (
+                                  <span className="text-muted-foreground/60" title="Pedido gravado pela régua fiscal anterior a esta fase">
+                                    régua anterior
+                                  </span>
+                                ) : order.is_flex ? (
+                                  <div>
+                                    <span className="text-sky-600 font-medium">Flex</span>
+                                    <p className="text-[10px] text-muted-foreground">
+                                      bônus{" "}
+                                      {order.bonus_envio != null ? currFmt(order.bonus_envio) : "não informado"}
+                                      {" · entrega "}
+                                      {order.custo_entrega != null ? currFmt(order.custo_entrega) : "não informado"}
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <span className="text-muted-foreground">
+                                    {order.logistic_type ?? "—"}
+                                  </span>
+                                )}
                               </td>
                               <td className="px-3 py-3 text-right font-mono text-xs">
                                 {currFmt(order.gross_revenue)}
@@ -1219,6 +1332,31 @@ export default function MLPedidos() {
                                     </>
                                   )
                                   : <span className="text-muted-foreground/60" title="Fiscal não configurado">—</span>}
+                              </td>
+                              {/* Fase 222 (222-07): DIFAL — valor + procedência (D-07). Tooltip
+                                  carrega ICMS/PIS-COFINS débito e os dois créditos de PIS/COFINS. */}
+                              <td
+                                className="px-3 py-3 text-right text-xs"
+                                title={
+                                  order.regua_antiga
+                                    ? undefined
+                                    : `ICMS débito ${order.icms_debito != null ? currFmt(order.icms_debito) : "—"} · ` +
+                                      `PIS/COFINS débito ${order.pis_cofins_debito != null ? currFmt(order.pis_cofins_debito) : "—"} · ` +
+                                      `crédito comissão ${order.credito_pc_comissao != null ? currFmt(order.credito_pc_comissao) : "—"} · ` +
+                                      `crédito frete ${order.credito_pc_frete != null ? currFmt(order.credito_pc_frete) : "—"} · ` +
+                                      `FCP ${order.fcp_amount != null ? currFmt(order.fcp_amount) : "—"}`
+                                }
+                              >
+                                {order.regua_antiga ? (
+                                  <span className="text-muted-foreground/60">régua anterior</span>
+                                ) : order.difal_amount != null ? (
+                                  <>
+                                    <span className="text-fuchsia-600 font-mono">−{currFmt(order.difal_amount)}</span>
+                                    <p className="text-[10px] text-muted-foreground">{difalFonteLabel(order.difal_fonte)}</p>
+                                  </>
+                                ) : (
+                                  <span className="text-muted-foreground/60">—</span>
+                                )}
                               </td>
                               <td className="px-3 py-3 text-right font-mono text-xs font-semibold">
                                 {currFmt(order.net_revenue)}

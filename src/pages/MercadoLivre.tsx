@@ -18,6 +18,7 @@ import { useMLSync } from "@/hooks/useMLSync";
 import { useMLLastSync } from "@/hooks/useMLLastSync";
 import { useMLOrders } from "@/hooks/useMLOrders";
 import { useMLKPISummary } from "@/hooks/useMLKPISummary";
+import { useMLDifalSummary } from "@/hooks/useMLDifalSummary";
 import { useMLCostWaterfall } from "@/hooks/useMLCostWaterfall";
 import { useMLBillingWithSync, useMLBillingDailyWithSync, groupBillingCharges } from "@/hooks/useMLBilling";
 import { useAutoRecalc } from "@/hooks/useAutoRecalc";
@@ -52,7 +53,7 @@ import { ConsultorCard } from "@/components/mercadolivre/ConsultorCard";
 import { ConsultorLLMSummary } from "@/components/mercadolivre/ConsultorLLMSummary";
 import { useConsultorInsights } from "@/hooks/useConsultorInsights";
 import { MLMcoStrip } from "@/components/mercadolivre/MLMcoStrip";
-import { computeMco } from "@/lib/mco";
+import { computeMcoCenarios } from "@/lib/mcoCenarios";
 import { useDreOperational } from "@/hooks/useDreOperational";
 import { useCancelledRevenue } from "@/hooks/useCancelledRevenue";
 import { buildDreCascade } from "@/lib/dreCascade";
@@ -223,6 +224,13 @@ export default function MercadoLivre() {
     currentFrom,
     currentTo,
     adsTotalPeriodo,
+  );
+  // Mesma janela e mesmas lojas do resumo de KPI acima (Fase 222, 222-07) —
+  // os dois números precisam vir do mesmo conjunto de pedidos, senão deixam
+  // de ser comparáveis na faixa de MCO.
+  const { data: difalSummary, isLoading: difalSummaryLoading } = useMLDifalSummary(
+    currentFrom,
+    currentTo,
   );
 
   // Waterfall mensal — sempre mês corrente, independente do filtro de período
@@ -551,7 +559,14 @@ export default function MercadoLivre() {
     return { grossRevenue, cmv, platformCost, ads, tax };
   }, [kpiSummary, adsTotalPeriodo, monthlyCostWaterfall]);
 
-  const { mco: mcoValue, pct: mcoPct } = useMemo(() => computeMco(mcoInput), [mcoInput]);
+  // Os dois cenários de MCO — com e sem DIFAL (D-02, D-07, Fase 222/222-07).
+  // O helper chama computeMco DUAS vezes por dentro; mco.ts continua
+  // intocado, só a origem do imposto muda por cima dele.
+  const mcoCenarios = useMemo(
+    () => computeMcoCenarios({ base: mcoInput, difal: difalSummary ?? null }),
+    [mcoInput, difalSummary],
+  );
+  const { mco: mcoValue, pct: mcoPct } = mcoCenarios.semDifal;
 
   // Rótulo dinâmico: "MCO do dia" quando o período selecionado é hoje
   const mcoLabel = useMemo(() => {
@@ -938,18 +953,59 @@ export default function MercadoLivre() {
 
           {/* Faixa MCO do período — posicionada entre ConsultorCard e MLKPIGrid.
               Visível apenas quando conectado (mesma condição do restante do conteúdo).
-              Mudança 100% aditiva: não altera o MLKPIGrid nem nenhum KPI existente. */}
+              Mudança 100% aditiva: não altera o MLKPIGrid nem nenhum KPI existente.
+              [Fase 222/222-07] O segundo número (com DIFAL) e a procedência
+              vivem dentro do MESMO wrapper — data-difal-procedencia permite
+              conferir a régua sem abrir o código, mesmo molde do
+              data-ads-source da Fase 210. */}
           {connected && (
-            <MLMcoStrip
-              mco={mcoValue}
-              pct={mcoPct}
-              label={mcoLabel}
-              loading={kpiSummaryLoading || isRecalcing || effectiveLoading || adsBilling.isLoading}
-              empty={mcoEmpty}
-              adsSource={adsResolved.source}
-              adsTotal={adsTotalPeriodo}
-              adsCoverageTo={adsResolved.coverageTo}
-            />
+            <div data-difal-procedencia={mcoCenarios.procedencia} className="w-full">
+              <MLMcoStrip
+                mco={mcoValue}
+                pct={mcoPct}
+                label={mcoLabel}
+                loading={kpiSummaryLoading || isRecalcing || effectiveLoading || adsBilling.isLoading}
+                empty={mcoEmpty}
+                adsSource={adsResolved.source}
+                adsTotal={adsTotalPeriodo}
+                adsCoverageTo={adsResolved.coverageTo}
+              />
+              {!mcoEmpty && !(kpiSummaryLoading || difalSummaryLoading || effectiveLoading) && (
+                <div className="w-full flex items-center gap-2 flex-wrap px-1 pb-2 -mt-1 text-xs text-muted-foreground">
+                  {mcoCenarios.procedencia === "indisponivel" ? (
+                    <span>DIFAL não carregou — cenário com DIFAL indisponível no momento.</span>
+                  ) : (
+                    <>
+                      <span>
+                        MCO com DIFAL:{" "}
+                        <span className="font-semibold text-foreground tabular-nums">
+                          {mcoCenarios.comDifal != null
+                            ? currencyFmt(mcoCenarios.comDifal.mco)
+                            : "—"}
+                        </span>
+                        {mcoCenarios.comDifal?.pct != null && (
+                          <span className="tabular-nums">
+                            {" "}
+                            ({mcoCenarios.comDifal.pct.toFixed(1)}%)
+                          </span>
+                        )}
+                      </span>
+                      {mcoCenarios.procedencia === "calculado_nao_conciliado" && (
+                        <span>
+                          · o DIFAL cobrado pelo ML ainda não foi conciliado — não está somado
+                        </span>
+                      )}
+                      {mcoCenarios.pedidosIndefinidos > 0 && (
+                        <span className="text-warning">
+                          · {mcoCenarios.pedidosIndefinidos} pedido(s) fora da conta — UF do DIFAL
+                          não confirmada
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           )}
 
           {isML && !effectiveLoading && connected && !hasData && (

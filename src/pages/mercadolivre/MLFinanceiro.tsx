@@ -42,6 +42,8 @@ import { useMLFilters } from "@/hooks/useMLFilters";
 import { useMLSync } from "@/hooks/useMLSync";
 import { useMLMarginAnalysis } from "@/hooks/useMLMarginAnalysis";
 import { useMLCostWaterfall } from "@/hooks/useMLCostWaterfall";
+import { useMLDifalSummary } from "@/hooks/useMLDifalSummary";
+import { resolveDifalCenario } from "@/lib/mcoCenarios";
 import { useMLAds } from "@/hooks/useMLAds";
 import { useMLAdsBillingSpend } from "@/hooks/useMLAdsBillingSpend";
 import { resolveAdsSpend } from "@/lib/adsBillingSpend";
@@ -176,6 +178,18 @@ export default function MLFinanceiro() {
   const kpiComissao   = waterfall?.total_comissao  ?? 0;
   const kpiFrete      = waterfall?.total_frete     ?? 0;
   const kpiImpostos   = waterfall?.total_tax       ?? 0;
+
+  // ── DIFAL — o mesmo cenário "com DIFAL" da tela Vendas (Fase 222, 222-07):
+  // mesma janela (currentFrom/currentTo), que a página já calcula para o
+  // resto do KPI row acima. O valor principal do card continua o de hoje;
+  // o subtítulo ganha o cenário com DIFAL e a advertência de indefinidos.
+  const { data: difalSummary, isLoading: difalSummaryLoading } = useMLDifalSummary(
+    currentFrom,
+    currentTo,
+  );
+  const difalCenario = resolveDifalCenario(difalSummary ?? null);
+  const kpiImpostosComDifal =
+    difalCenario.difalAplicado != null ? kpiImpostos + difalCenario.difalAplicado : null;
 
   // ── Publicidade [Fase 210, prioridade invertida na Fase 219 — D-219-01]:
   // fonte RESOLVIDA do período — o cache de ads (`ml_ads_daily_cache`), o
@@ -426,6 +440,20 @@ export default function MLFinanceiro() {
           size="compact"
           iconClassName="bg-purple-500/10 text-purple-500"
           tooltip={tip("impostos")}
+          // [Fase 222/222-07] Subtítulo ganha o cenário com DIFAL (D-02) —
+          // nunca some no lugar de zero: "não carregou" quando indisponível,
+          // e a contagem de pedidos fora da conta quando houver.
+          subtitle={
+            difalSummaryLoading
+              ? undefined
+              : difalCenario.procedencia === "indisponivel"
+              ? "com DIFAL: não carregou"
+              : `com DIFAL: ${currFmt(kpiImpostosComDifal ?? kpiImpostos)}${
+                  difalCenario.pedidosIndefinidos > 0
+                    ? ` · ${difalCenario.pedidosIndefinidos} pedido(s) fora da conta`
+                    : ""
+                }`
+          }
         />
         <KPICard
           title="Publicidade"
