@@ -87,7 +87,68 @@ export interface AliquotaPedido {
   motivo: MotivoAliquota;
 }
 
+/** Resultado da resolução da alíquota de ICMS para o regime lucro_real. */
+export interface IcmsResolvido {
+  icmsAliquota: number | null;
+  motivo: MotivoAliquota;
+}
+
 const c = (v: number | null | undefined): number => v ?? 0;
+
+/**
+ * Resolve a alíquota de ICMS aplicável a um pedido do regime `lucro_real`,
+ * dado o destino do envio. Extraída de dentro de `computeOrderTaxRate` na
+ * Fase 222 (TAX-01 continua intocado): é a MESMA tabela de decisão de
+ * antes, agora em função própria para ser chamada tanto por
+ * `computeOrderTaxRate` quanto por `computeOrderTax` (Fase 222) — uma
+ * resolução de destino, duas consumidoras, nunca duas cópias.
+ *
+ * A guarda de destino ausente continua sendo a PRIMEIRA verificação, antes
+ * de olhar `uf_origem` — inverter essa ordem é o bug que a Fase 220 fechou.
+ */
+export function resolveIcmsAliquota(
+  config: OrderTaxConfig,
+  ufDestino: string | null | undefined,
+): IcmsResolvido {
+  // Normaliza o destino uma vez; string vazia é tratada como ausência.
+  const dest = String(ufDestino ?? "").trim().toUpperCase();
+
+  // Primeira guarda, antes de qualquer outra: destino ausente → null.
+  // Este é o conserto inteiro do TAX-01 em uma linha.
+  if (dest === "") {
+    return { icmsAliquota: null, motivo: "destino_desconhecido" };
+  }
+
+  const intra      = Number(config.lr_icms_aliquota_intra ?? config.lr_icms_debito ?? 0);
+  const interSulSE = Number(config.lr_icms_aliquota_inter_sul_sudeste ?? 12);
+  const interNNECO = Number(config.lr_icms_aliquota_inter_norte_nordeste ?? 7);
+
+  const origRaw = config.uf_origem ? String(config.uf_origem).trim().toUpperCase() : "";
+
+  if (origRaw === "") {
+    // Sem UF origem na config: alíquota interestadual pela tabela do
+    // destino — comportamento idêntico ao de hoje para este caso.
+    const icmsAliquota = isReducedInterstateDest(dest) ? interNNECO : interSulSE;
+    return { icmsAliquota, motivo: "sem_uf_origem" };
+  }
+
+  if (origRaw === dest) {
+    // Origem igual ao destino: intraestadual.
+    return { icmsAliquota: intra, motivo: "intraestadual" };
+  }
+
+  // Interestadual pela tabela do destino.
+  const icmsAliquota = isReducedInterstateDest(dest) ? interNNECO : interSulSE;
+  return { icmsAliquota, motivo: "interestadual" };
+}
+
+/**
+ * Soma de PIS + COFINS do regime Lucro Real (9,25% = 1,65% + 7,60%). Mesma
+ * soma que já estava embutida na fórmula de `computeOrderTaxRate`; extraída
+ * como constante na Fase 222 porque é a base dos créditos de D-01
+ * (comissão e frete) que `computeOrderTax` passa a calcular.
+ */
+export const PIS_COFINS_LUCRO_REAL = 1.65 + 7.60;
 
 /**
  * Calcula a alíquota efetiva (%) de imposto para um pedido, dado o regime
@@ -123,43 +184,18 @@ export function computeOrderTaxRate(
       };
 
     case "lucro_real": {
-      // 4. Normaliza o destino uma vez; string vazia é tratada como ausência.
-      const dest = String(ufDestino ?? "").trim().toUpperCase();
+      // 4. A resolução de destino vive só em resolveIcmsAliquota — uma cópia
+      //    a menos, não uma a mais.
+      const { icmsAliquota, motivo } = resolveIcmsAliquota(config, ufDestino);
 
-      // Primeira guarda, antes de qualquer outra: destino ausente → null.
-      // Este é o conserto inteiro do TAX-01 em uma linha.
-      if (dest === "") {
-        return { rate: null, motivo: "destino_desconhecido" };
+      if (icmsAliquota === null) {
+        return { rate: null, motivo };
       }
 
-      const intra      = Number(config.lr_icms_aliquota_intra ?? config.lr_icms_debito ?? 0);
-      const interSulSE = Number(config.lr_icms_aliquota_inter_sul_sudeste ?? 12);
-      const interNNECO = Number(config.lr_icms_aliquota_inter_norte_nordeste ?? 7);
-
-      const origRaw = config.uf_origem ? String(config.uf_origem).trim().toUpperCase() : "";
-
-      let icmsAliq: number;
-      let motivo: MotivoAliquota;
-
-      if (origRaw === "") {
-        // 5a. Sem UF origem na config: alíquota interestadual pela tabela do
-        // destino — comportamento idêntico ao de hoje para este caso.
-        icmsAliq = isReducedInterstateDest(dest) ? interNNECO : interSulSE;
-        motivo = "sem_uf_origem";
-      } else if (origRaw === dest) {
-        // 5b. Origem igual ao destino: intraestadual.
-        icmsAliq = intra;
-        motivo = "intraestadual";
-      } else {
-        // 5c. Interestadual pela tabela do destino.
-        icmsAliq = isReducedInterstateDest(dest) ? interNNECO : interSulSE;
-        motivo = "interestadual";
-      }
-
-      // 6. Fórmula do Wesley, byte a byte igual às três cópias atuais:
+      // 5. Fórmula do Wesley, byte a byte igual às três cópias atuais:
       //    ICMS + (1 - ICMS%) × (PIS 1,65% + COFINS 7,60%).
-      const baseFactor = 1 - icmsAliq / 100;
-      const rate = Math.max(0, icmsAliq + baseFactor * (1.65 + 7.60));
+      const baseFactor = 1 - icmsAliquota / 100;
+      const rate = Math.max(0, icmsAliquota + baseFactor * PIS_COFINS_LUCRO_REAL);
       return { rate, motivo };
     }
   }
