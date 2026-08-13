@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import { computeOrderTax, type TabelaAliquotasInternas } from "../_shared/orderTaxRate.ts";
+import { computeOrderTax, type TabelaDifal } from "../_shared/orderTaxRate.ts";
 import { montarTabelaAliquotas } from "../_shared/tabelaUf.ts";
 import {
   extrairLogisticType,
@@ -460,7 +460,7 @@ function expandOrder(
   // Régua fiscal decomposta (Fase 222, TAX-01/02): tabela de alíquota
   // interna + FCP por UF, carregada UMA vez por rodada pelo chamador —
   // nunca uma chamada por pedido dentro deste laço.
-  tabelaUf:       TabelaAliquotasInternas,
+  tabelaUf:       TabelaDifal,
 ): Array<Record<string, unknown>> {
   // Converter para BRT (UTC-3) antes de extrair a data: o range de sync usa meia-noite BRT,
   // e o cliente filtra por data BRT — armazenar em UTC causava desvio de um dia nas bordas.
@@ -836,7 +836,7 @@ serve(async (req) => {
     // usada como referência de vigência. Se a chamada falhar, segue com
     // tabela vazia — o DIFAL sai null e a view de saúde do 222-05 mostra;
     // abortar o sync inteiro por causa do DIFAL seria pior que a ausência.
-    let tabelaUf: TabelaAliquotasInternas = {};
+    let tabelaUf: TabelaDifal = {};
     {
       const { data: linhasUf, error: erroUf } = await supabaseAdmin.rpc(
         "aliquota_interna_vigente",

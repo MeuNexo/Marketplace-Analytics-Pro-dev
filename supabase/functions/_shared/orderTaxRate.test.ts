@@ -16,6 +16,7 @@ import {
   UF_REGION,
   type OrderTaxConfig,
   type OrderTaxInput,
+  type DifalFonte,
 } from "./orderTaxRate";
 import { calculateEffectiveRate } from "../../../src/lib/tax/index";
 
@@ -271,14 +272,17 @@ describe("computeOrderTax — caso-prova 2000017711929314 (Wesley conferiu à m�
     tabelaUf: null,
   };
 
-  it("icmsDebito · pisCofinsDebito · creditoPcComissao · creditoPcFrete · taxAmount · taxRate fecham ao centavo, no mesmo bloco", () => {
+  it("icmsDebito · pisCofinsDebito · os três créditos · taxAmount · taxRate fecham ao centavo, no mesmo bloco", () => {
     const r = computeOrderTax(inputCasoProva);
     closeCents(r.icmsDebito, 83.16);
     closeCents(r.pisCofinsDebito, 56.41);
     closeCents(r.creditoPcComissao, 7.37);
-    closeCents(r.creditoPcFrete, 2.84);
-    closeCents(r.taxAmount, 129.35);
-    closeCents(r.taxRate, 18.67);
+    // D-10.2: crédito de ICMS sobre o frete (novo) e PIS/COFINS sobre o frete
+    // LÍQUIDO de ICMS — 27,06, não os 30,75 cheios que a régua antiga usava.
+    closeCents(r.creditoIcmsFrete, 3.69);
+    closeCents(r.creditoPcFrete, 2.50);
+    closeCents(r.taxAmount, 126.00);
+    closeCents(r.taxRate, 18.18);
   });
 
   it("taxRate é derivado — igual a taxAmount dividido por receitaBruta vezes cem, não uma constante", () => {
@@ -500,12 +504,16 @@ describe("computeOrderTax — sem crédito (comissão e frete = 0), a decomposi�
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Fase 222 — Plano 03, Task 3: DIFAL por base dupla, FCP, procedência e as
+// Fase 222 — Plano 03-R: DIFAL por BASE SIMPLES (D-08), créditos de D-10 e as
 // guardas de ausência (FISC-03, FISC-05, FISC-07).
+//
+// A régua mudou em 13/08/2026: a planilha de precificação da Pé Vermeio virou
+// a fonte fiscal, e a contadora confirmou os pontos de D-10. Ver 222-CONTEXT.md.
 // ═══════════════════════════════════════════════════════════════════════════
 
+/** MG nacional: interestadual 12%, DIFAL 6% — direto da planilha (D-09). */
 const TABELA_MG_CONFIRMADA = {
-  MG: { aliqInterna: 18, aliqFcp: 0, confirmado: true },
+  MG: { nacional: { aliqInterestadual: 12, pctDifal: 6, confirmado: true } },
 };
 
 const INPUT_CASO_PROVA_DIFAL: OrderTaxInput = {
@@ -517,36 +525,115 @@ const INPUT_CASO_PROVA_DIFAL: OrderTaxInput = {
   tabelaUf: TABELA_MG_CONFIRMADA,
 };
 
-describe("computeOrderTax — DIFAL do caso-prova 2000017711929314 (base dupla, LC 190/2022)", () => {
-  it("difalBase ≈ 743,70 · difalAmount ≈ 50,71 · imposto com DIFAL ≈ 180,06 · alíquota implícita ≈ 25,98, no mesmo bloco", () => {
+describe("computeOrderTax — caso-prova 2000017711929314 na régua D-08/D-10 (base simples)", () => {
+  it("DIFAL = receita × pct, sem base dupla: 692,99 × 6% ≈ 41,58", () => {
     const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
-    closeCents(r.difalBase, 743.70);
-    closeCents(r.difalAmount, 50.71);
-    closeCents(r.fcpAmount, 0);
-    closeCents(r.taxAmountComDifal, 180.06);
-    expect(r.taxRateComDifal).not.toBeNull();
-    expect(Math.abs((r.taxRateComDifal as number) - 25.98)).toBeLessThan(0.01);
+    closeCents(r.difalBase, 692.99); // base SIMPLES é a própria receita
+    closeCents(r.difalAmount, 41.58);
   });
 
-  it("taxAmount continua sendo o cenário SEM DIFAL — nunca soma difalAmount por dentro", () => {
+  it("imposto COM DIFAL ≈ 163,74 e alíquota implícita ≈ 23,63%", () => {
     const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
-    closeCents(r.taxAmount, 129.35);
+    closeCents(r.taxAmountComDifal, 163.74);
+    expect(r.taxRateComDifal).not.toBeNull();
+    expect(Math.abs((r.taxRateComDifal as number) - 23.63)).toBeLessThan(0.01);
+  });
+
+  it("taxAmount continua sendo o cenário SEM DIFAL ≈ 126,00 — nunca soma difalAmount por dentro", () => {
+    const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
+    closeCents(r.taxAmount, 126.00);
     expect(r.taxAmountComDifal).not.toBeCloseTo(r.taxAmount as number, 1);
   });
 
-  it("a base SIMPLES (sem dividir por 1 − alíquota interna) daria um número menor — e NÃO é esse o número devolvido", () => {
+  it("a base DUPLA daria ≈ 50,71 — e NÃO é esse o número devolvido (a régua mudou em 13/08)", () => {
     const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
     const icmsDebito = r.icmsDebito as number;
-    const baseSimples = 692.99 - icmsDebito; // sem dividir por (1 - aliqInterna/100)
-    const difalComBaseSimples = baseSimples * 0.18 - icmsDebito;
-    expect(difalComBaseSimples).toBeLessThan((r.difalAmount as number) - 1); // bem menor, não é o mesmo número
-    expect(Math.abs((r.difalAmount as number) - difalComBaseSimples)).toBeGreaterThan(1);
+    const difalComBaseDupla = ((692.99 - icmsDebito) / (1 - 0.18)) * 0.18 - icmsDebito;
+    expect(difalComBaseDupla).toBeGreaterThan((r.difalAmount as number) + 1);
+    closeCents(difalComBaseDupla, 50.71);
   });
 
-  it("DIFAL não gera crédito — creditoPcComissao/creditoPcFrete não incluem nenhum termo do DIFAL", () => {
+  it("D-10.1: a base do PIS/COFINS COM DIFAL desconta o DIFAL; a SEM DIFAL, não", () => {
     const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
-    closeCents(r.creditoPcComissao, 7.37);
-    closeCents(r.creditoPcFrete, 2.84);
+    const icms = r.icmsDebito as number;
+    const difal = r.difalAmount as number;
+    closeCents(r.pisCofinsDebito, (692.99 - icms) * 0.0925);
+    closeCents(r.pisCofinsDebitoComDifal, (692.99 - icms - difal) * 0.0925);
+    expect(r.pisCofinsDebitoComDifal as number).toBeLessThan(r.pisCofinsDebito as number);
+  });
+
+  it("D-10.2: existe crédito de ICMS sobre o frete, e o PIS/COFINS do frete usa base líquida de ICMS", () => {
+    const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
+    closeCents(r.creditoIcmsFrete, 30.75 * 0.12); // 3,69
+    closeCents(r.creditoPcFrete, (30.75 - 3.69) * 0.0925); // sobre 27,06, não sobre 30,75
+    // o frete cheio daria um crédito maior — provar que não é esse
+    expect(r.creditoPcFrete as number).toBeLessThan(30.75 * 0.0925);
+  });
+
+  it("crédito de comissão sem rebate = comissão cheia × 9,25%", () => {
+    const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
+    closeCents(r.creditoPcComissao, 79.69 * 0.0925);
+  });
+
+  it("DIFAL não gera crédito — nenhum dos três créditos varia quando o DIFAL entra", () => {
+    const comDifal = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
+    const semDifal = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, tabelaUf: {} });
+    expect(semDifal.creditoPcComissao).toBe(comDifal.creditoPcComissao);
+    expect(semDifal.creditoPcFrete).toBe(comDifal.creditoPcFrete);
+    expect(semDifal.creditoIcmsFrete).toBe(comDifal.creditoIcmsFrete);
+  });
+});
+
+describe("computeOrderTax — D-10.3: o crédito de comissão é sobre a comissão PÓS-REBATE", () => {
+  it("rebate reduz a base do crédito de comissão", () => {
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, rebate: 20 });
+    closeCents(r.creditoPcComissao, (79.69 - 20) * 0.0925);
+  });
+
+  it("rebate ausente ou nulo se comporta como zero — comportamento de sempre", () => {
+    const base = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
+    expect(computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, rebate: null }).creditoPcComissao)
+      .toBe(base.creditoPcComissao);
+    expect(computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, rebate: 0 }).creditoPcComissao)
+      .toBe(base.creditoPcComissao);
+  });
+
+  it("rebate maior que a comissão não vira crédito negativo — piso em zero", () => {
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, rebate: 999 });
+    expect(r.creditoPcComissao).toBe(0);
+  });
+});
+
+describe("computeOrderTax — D-11: procedência escolhe a linha da tabela", () => {
+  const TABELA_MG_DUAS_PROCEDENCIAS = {
+    MG: {
+      nacional:  { aliqInterestadual: 12, pctDifal: 6,  confirmado: true },
+      importado: { aliqInterestadual: 4,  pctDifal: 14, confirmado: true },
+    },
+  };
+
+  it("sem procedência informada usa nacional — comportamento idêntico ao de antes da fase", () => {
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, tabelaUf: TABELA_MG_DUAS_PROCEDENCIAS });
+    closeCents(r.difalAmount, 692.99 * 0.06);
+  });
+
+  it("procedência importado usa a linha de 4% e o DIFAL maior", () => {
+    const r = computeOrderTax({
+      ...INPUT_CASO_PROVA_DIFAL,
+      tabelaUf: TABELA_MG_DUAS_PROCEDENCIAS,
+      procedencia: "importado",
+    });
+    closeCents(r.difalAmount, 692.99 * 0.14);
+  });
+
+  it("UF sem a procedência pedida → uf_fora_da_tabela, nunca cai para a outra procedência em silêncio", () => {
+    const r = computeOrderTax({
+      ...INPUT_CASO_PROVA_DIFAL,
+      tabelaUf: TABELA_MG_CONFIRMADA, // só tem nacional
+      procedencia: "importado",
+    });
+    expect(r.difalMotivoAusencia).toBe("uf_fora_da_tabela");
+    expect(r.difalAmount).toBeNull();
   });
 });
 
@@ -559,7 +646,11 @@ describe("computeOrderTax — as cinco guardas de ausência do DIFAL, nenhuma de
   });
 
   it("pedido intraestadual (origem igual ao destino) → difalMotivoAusencia intraestadual, difalAmount null", () => {
-    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, ufDestino: "SP", tabelaUf: { SP: { aliqInterna: 18, aliqFcp: 0, confirmado: true } } });
+    const r = computeOrderTax({
+      ...INPUT_CASO_PROVA_DIFAL,
+      ufDestino: "SP",
+      tabelaUf: { SP: { nacional: { aliqInterestadual: 18, pctDifal: 0, confirmado: true } } },
+    });
     expect(r.motivo).toBe("intraestadual");
     expect(r.difalMotivoAusencia).toBe("intraestadual");
     expect(r.difalAmount).toBeNull();
@@ -592,10 +683,10 @@ describe("computeOrderTax — as cinco guardas de ausência do DIFAL, nenhuma de
     expect(r.taxAmount).not.toBeNull();
   });
 
-  it("UF com linha não confirmada por humano → difalMotivoAusencia uf_nao_confirmada, difalAmount null", () => {
+  it("UF com linha não confirmada por nenhuma fonte → difalMotivoAusencia uf_nao_confirmada, difalAmount null", () => {
     const r = computeOrderTax({
       ...INPUT_CASO_PROVA_DIFAL,
-      tabelaUf: { MG: { aliqInterna: 18, aliqFcp: 0, confirmado: false } },
+      tabelaUf: { MG: { nacional: { aliqInterestadual: 12, pctDifal: 6, confirmado: false } } },
     });
     expect(r.difalMotivoAusencia).toBe("uf_nao_confirmada");
     expect(r.difalAmount).toBeNull();
@@ -604,24 +695,25 @@ describe("computeOrderTax — as cinco guardas de ausência do DIFAL, nenhuma de
   });
 });
 
-describe("computeOrderTax — FCP: UF com FCP zero devolve 0 (valor conhecido), não null", () => {
-  it("aliqFcp 0 na tabela devolve fcpAmount 0", () => {
+describe("computeOrderTax — FCP embutido no percentual (D-09), nunca somado à parte", () => {
+  it("fcpAmount é 0 quando há DIFAL — valor conhecido, não ausência", () => {
     const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
     expect(r.fcpAmount).toBe(0);
+    expect(r.fcpAmount).not.toBeNull();
   });
 
-  it("aliqFcp positiva na tabela devolve fcpAmount calculado a partir da base dupla", () => {
+  it("RJ a 10% já embute os 2 pp de FCP — o DIFAL sai de um percentual só", () => {
     const r = computeOrderTax({
       ...INPUT_CASO_PROVA_DIFAL,
-      tabelaUf: { MG: { aliqInterna: 18, aliqFcp: 2, confirmado: true } },
+      ufDestino: "RJ",
+      tabelaUf: { RJ: { nacional: { aliqInterestadual: 12, pctDifal: 10, confirmado: true } } },
     });
-    expect(r.fcpAmount).not.toBeNull();
-    expect(r.fcpAmount as number).toBeGreaterThan(0);
-    expect(r.fcpAmount).toBeCloseTo((r.difalBase as number) * 0.02, 6);
+    closeCents(r.difalAmount, 692.99 * 0.10);
+    expect(r.fcpAmount).toBe(0);
   });
 });
 
-describe("computeOrderTax — procedência do DIFAL, os três estados de D-07 sobre o MESMO pedido", () => {
+describe("computeOrderTax — procedência do DIFAL, os estados de D-07 sobre o MESMO pedido", () => {
   it("lista de UFs cobradas pelo ML nula (222-02 ainda não cruzou) → nao_conciliado", () => {
     const cfg: OrderTaxConfig = { ...CFG_PE_VERMEIO, difal_ufs_cobradas_pelo_ml: null };
     const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, config: cfg });
@@ -653,15 +745,29 @@ describe("computeOrderTax — procedência do DIFAL, os três estados de D-07 so
     expect(r.difalFonte).toBe("cobrado_ml");
   });
 
-  it("difalFonte nunca é cobrado_ml e calculado ao mesmo tempo — é um campo só, não dois booleanos", () => {
+  it("difalFonte nunca é dois estados ao mesmo tempo — é um campo só, não vários booleanos", () => {
     const cfgCobrado: OrderTaxConfig = { ...CFG_PE_VERMEIO, difal_ufs_cobradas_pelo_ml: ["MG"] };
     const rCobrado = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, config: cfgCobrado });
     expect(rCobrado.difalFonte).toBe("cobrado_ml");
     expect(rCobrado.difalFonte).not.toBe("calculado");
+    expect(rCobrado.difalFonte).not.toBe("documento_fiscal");
 
     const cfgCalculado: OrderTaxConfig = { ...CFG_PE_VERMEIO, difal_ufs_cobradas_pelo_ml: ["RJ"] };
     const rCalculado = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, config: cfgCalculado });
     expect(rCalculado.difalFonte).toBe("calculado");
     expect(rCalculado.difalFonte).not.toBe("cobrado_ml");
+  });
+
+  it("D-12: documento_fiscal é um valor VÁLIDO do tipo — reservado para a Fase 223, ninguém escreve nele ainda", () => {
+    const reservado: DifalFonte = "documento_fiscal";
+    expect(reservado).toBe("documento_fiscal");
+    // Nenhum caminho de computeOrderTax pode produzi-lo hoje.
+    const estados = [null, [], ["MG"], ["RJ"]].map((lista) =>
+      computeOrderTax({
+        ...INPUT_CASO_PROVA_DIFAL,
+        config: { ...CFG_PE_VERMEIO, difal_ufs_cobradas_pelo_ml: lista as string[] | null },
+      }).difalFonte
+    );
+    expect(estados).not.toContain("documento_fiscal");
   });
 });

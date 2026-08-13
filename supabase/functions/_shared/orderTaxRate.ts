@@ -30,19 +30,26 @@
  * vezes a receita e passa a ser `computeOrderTax`, a soma de componentes
  * com bases distintas — ICMS débito, PIS/COFINS débito (Tema 69), os
  * créditos de PIS/COFINS sobre comissão e frete (D-01, sempre ligados,
- * sem toggle) e o DIFAL por base dupla (LC 190/2022) mais FCP, cada um com
+ * sem toggle) e o DIFAL por BASE SIMPLES (D-08), cada um com
  * a sua procedência (D-07). `resolveIcmsAliquota` é a resolução de destino
  * extraída de dentro de `computeOrderTaxRate` — a mesma tabela de decisão
  * de sempre, agora chamada por duas funções em vez de copiada para a
  * segunda. `taxAmount` CONTINUA sendo o cenário SEM DIFAL — o cenário com
  * DIFAL é composto por cima em `taxAmountComDifal`, nunca por soma dentro
  * de `taxAmount`, porque é isso que mantém as RPCs que já leem `tax_amount`
- * corretas sem precisar de nenhuma alteração. Existe controvérsia jurídica
- * registrada em `222-RESEARCH.md` (seção R4) sobre a base dupla se aplicar
- * a consumidor final não contribuinte; a decisão desta fase — base dupla
- * sempre, com o número conferido pelo Wesley no caso-prova
- * `2000017711929314` — está travada por D-03. Se um dia essa decisão
- * mudar, muda aqui, em um lugar só.
+ * corretas sem precisar de nenhuma alteração.
+ *
+ * A BASE DO DIFAL (13/08/2026): existe controvérsia jurídica real — LC
+ * 190/2022 e leis estaduais desde 2015 sustentam a base dupla; o Convênio
+ * ICMS 236/21 manda base simples para consumidor final NÃO contribuinte, que
+ * é ~todo pedido do ML. A contadora da Pé Vermeio NÃO escolheu entre as duas:
+ * disse que a fórmula vale onde não há nota, e que onde a NF-e é emitida a
+ * margem sai do DOCUMENTO FISCAL. Como a Pé Vermeio emite NF-e em todas as
+ * vendas, o que este módulo produz é ESTIMATIVA, nunca apuração (D-12) — a
+ * tela precisa dizer isso, e `DifalFonte` já tem o estado `documento_fiscal`
+ * reservado para quando a Fase 223 ingerir a nota. A régua implementada é a
+ * BASE SIMPLES da planilha de precificação (D-08). Se essa decisão mudar,
+ * muda aqui, em um lugar só, e `tax_versao` distingue as linhas antigas.
  */
 
 // ── Regime e regiões ──────────────────────────────────────────────────────────
@@ -235,16 +242,42 @@ export function computeOrderTaxRate(
  * módulo não faz IO: quem lê o banco é a edge function do 222-05, que monta
  * este mapa a partir das linhas e passa por parâmetro.
  */
-export interface TabelaAliquotasInternas {
-  [uf: string]: { aliqInterna: number; aliqFcp: number; confirmado: boolean };
+/**
+ * Procedência da mercadoria (D-11). Importado sai a 4% de alíquota
+ * interestadual (Resolução SF 13/2012), não 7%/12%.
+ *
+ * `aliqInterestadual + pctDifal` dá o MESMO total nas duas procedências — a
+ * diferença só aparece quando a UF não recolhe DIFAL, e aí são 8 pp de ICMS.
+ */
+export type Procedencia = "nacional" | "importado";
+
+/**
+ * Tabela de DIFAL vinda de `icms_uf_aliquotas` (222-01-R), indexada por UF e
+ * procedência.
+ *
+ * `pctDifal` é DADO DIRETO da planilha de precificação (D-09), com o FCP já
+ * embutido onde ele existe — nunca derivado de `interna − interestadual`, e
+ * nunca somado a um FCP à parte.
+ */
+export interface TabelaDifal {
+  [uf: string]: Partial<
+    Record<Procedencia, { aliqInterestadual: number; pctDifal: number; confirmado: boolean }>
+  >;
 }
 
 /**
- * Procedência do DIFAL de um pedido (D-07) — campo único de quatro estados
- * em vez de dois booleanos: o estado "cobrado e calculado ao mesmo tempo"
- * (contagem dupla) fica inexprimível pelo tipo, não apenas proibido por
- * convenção.
+ * Procedência do DIFAL de um pedido (D-07, ampliada por D-12) — campo único
+ * de cinco estados em vez de vários booleanos: o estado "documento E fórmula
+ * ao mesmo tempo" (contagem dupla) fica inexprimível pelo tipo, não apenas
+ * proibido por convenção.
  *
+ * A ordem de verdade (D-12) é: documento fiscal > cobrado pelo ML > fórmula.
+ *
+ * - `"documento_fiscal"` — o DIFAL veio da NF-e de venda emitida. É a única
+ *   fonte que a contadora reconhece como apuração; todas as outras são
+ *   estimativa. **Ninguém escreve neste estado ainda** — o tipo existe para
+ *   que a Fase 223 (ingestão da NF-e do Tiny) substitua a estimativa por
+ *   pedido sem alterar nenhuma assinatura.
  * - `"cobrado_ml"` — o ML já cobrou o DIFAL na fatura para esta UF; o valor
  *   que vale é o cobrado, `difalAmount` calculado fica como previsão
  *   informativa, não soma no total.
@@ -255,7 +288,7 @@ export interface TabelaAliquotasInternas {
  *   valor cobrado não pode ser somado por cima em lugar nenhum.
  * - `null` — não há DIFAL a atribuir a este pedido.
  */
-export type DifalFonte = "cobrado_ml" | "calculado" | "nao_conciliado";
+export type DifalFonte = "documento_fiscal" | "cobrado_ml" | "calculado" | "nao_conciliado";
 
 /** Entrada de `computeOrderTax`. Nunca recebe custo de produto (D-06). */
 export interface OrderTaxInput {
@@ -264,7 +297,19 @@ export interface OrderTaxInput {
   receitaBruta: number | null | undefined;
   comissao: number | null | undefined;
   frete: number | null | undefined;
-  tabelaUf: TabelaAliquotasInternas | null | undefined;
+  tabelaUf: TabelaDifal | null | undefined;
+  /**
+   * Rebate concedido pelo ML sobre a comissão (D-10.3). O crédito de
+   * PIS/COFINS incide sobre a comissão LÍQUIDA de rebate.
+   *
+   * ⚠️ A contadora não confirmou este ponto — a comissão é uma nota fiscal
+   * MENSAL e o ML não informa quais vendas ela cobre, então o crédito por
+   * pedido é rateio gerencial, nunca a apuração. Decisão do Wesley (13/08):
+   * considerar o rebate mesmo assim.
+   */
+  rebate?: number | null | undefined;
+  /** Procedência do SKU (D-11). Sem marcação, `"nacional"` — o comportamento de sempre. */
+  procedencia?: Procedencia | null | undefined;
 }
 
 /**
@@ -278,9 +323,27 @@ export interface OrderTaxBreakdown {
   /** Motivo da resolução de ICMS/regime — mesmo vocabulário de `AliquotaPedido`. */
   motivo: MotivoAliquota;
   icmsDebito: number | null;
+  /** PIS/COFINS do cenário SEM DIFAL — base `receita − ICMS` (Tema 69). */
   pisCofinsDebito: number | null;
+  /**
+   * PIS/COFINS do cenário COM DIFAL — base `receita − ICMS − DIFAL` (D-10.1,
+   * confirmado pela contadora em 13/08). São duas bases porque são dois
+   * cenários; colapsar em uma só faria o cenário sem DIFAL pagar por um DIFAL
+   * que ele não tem.
+   */
+  pisCofinsDebitoComDifal: number | null;
   creditoPcComissao: number | null;
   creditoPcFrete: number | null;
+  /**
+   * Crédito de ICMS sobre o frete (D-10.2).
+   *
+   * ⚠️ A base legal é o CTe emitido em nome do vendedor, não `orders.frete`
+   * (que é o que o ML descontou). No Flex quem contrata a entrega é o
+   * vendedor, então o CTe é de outra transportadora ou nem existe. Usar o
+   * frete do pedido e a alíquota da operação é aproximação gerencial
+   * declarada — dívida nomeada em D-10.2, resolvida pela Fase 223.
+   */
+  creditoIcmsFrete: number | null;
   /** Débitos menos créditos — cenário SEM DIFAL. Nunca inclui DIFAL nem FCP. */
   taxAmount: number | null;
   /** Derivado: taxAmount / receitaBruta × 100. Nunca uma alíquota tabelada. */
@@ -315,8 +378,10 @@ function breakdownNulo(motivo: MotivoAliquota, difalMotivoAusencia: string): Ord
     motivo,
     icmsDebito: null,
     pisCofinsDebito: null,
+    pisCofinsDebitoComDifal: null,
     creditoPcComissao: null,
     creditoPcFrete: null,
+    creditoIcmsFrete: null,
     taxAmount: null,
     taxRate: null,
     difalBase: null,
@@ -341,9 +406,9 @@ function listaContemUf(lista: string[], uf: string): boolean {
 }
 
 /**
- * Componentes do DIFAL (base dupla, LC 190/2022) e do FCP para um pedido já
- * com destino conhecido e interestadual. Devolvido junto do motivo de
- * ausência (`null` quando o DIFAL foi calculado com sucesso).
+ * Componentes do DIFAL (BASE SIMPLES, D-08) para um pedido já com destino
+ * conhecido e interestadual. Devolvido junto do motivo de ausência (`null`
+ * quando o DIFAL foi calculado com sucesso).
  */
 interface DifalResolvido {
   difalBase: number | null;
@@ -356,38 +421,44 @@ interface DifalResolvido {
  * Resolve o DIFAL de um pedido do regime `lucro_real` já com destino
  * interestadual conhecido (`motivoIcms` é `"interestadual"` ou
  * `"sem_uf_origem"` — nunca chamada para `"intraestadual"` nem
- * `"destino_desconhecido"`, que são guardas resolvidas antes de chegar
- * aqui). A alíquota interna e o FCP vêm de `tabelaUf`, nunca hardcoded
- * (222-01 é quem versiona a tabela no banco).
+ * `"destino_desconhecido"`, que são guardas resolvidas antes de chegar aqui).
+ *
+ * BASE SIMPLES (D-08): `DIFAL = receita × pct_difal`. Não existe mais o
+ * `/(1 − aliqInterna)` da base dupla. A contadora não escolheu entre as duas
+ * bases — disse que a fórmula vale onde NÃO há nota, e que onde a NF-e é
+ * emitida a margem sai do documento fiscal. O que este módulo produz é, por
+ * isso, ESTIMATIVA declarada (D-12).
+ *
+ * O percentual vem de `tabelaUf`, nunca hardcoded (222-01-R versiona a tabela
+ * no banco), e já traz o FCP embutido onde ele existe.
  */
 function resolverDifal(
   dest: string,
   receitaBruta: number,
-  icmsDebito: number,
-  tabelaUf: TabelaAliquotasInternas | null | undefined,
+  tabelaUf: TabelaDifal | null | undefined,
+  procedencia: Procedencia,
 ): DifalResolvido {
-  const linha = tabelaUf ? tabelaUf[dest] : undefined;
+  const linha = tabelaUf?.[dest]?.[procedencia];
 
-  if (!linha || typeof linha.aliqInterna !== "number" || !Number.isFinite(linha.aliqInterna)) {
-    // Linha ausente: falta cadastro na tabela — distinto de "existe mas não
-    // foi conferida" (uf_nao_confirmada), quem lê a view de saúde do 222-05
-    // precisa saber qual dos dois é o caso.
+  if (!linha || typeof linha.pctDifal !== "number" || !Number.isFinite(linha.pctDifal)) {
+    // Linha ausente: falta cadastro na tabela para esta UF/procedência —
+    // distinto de "existe mas não foi conferida" (uf_nao_confirmada). Quem lê
+    // a view de saúde do 222-05 precisa saber qual dos dois é o caso.
     return { difalBase: null, difalAmount: null, fcpAmount: null, difalMotivoAusencia: "uf_fora_da_tabela" };
   }
 
   if (!linha.confirmado) {
-    // Linha existe mas ainda não foi conferida por humano (222-UF-TABELA.md).
+    // Linha existe mas nenhuma fonte a confirmou (222-01-R: `confirmado_por`).
     return { difalBase: null, difalAmount: null, fcpAmount: null, difalMotivoAusencia: "uf_nao_confirmada" };
   }
 
-  const aliqFcp = typeof linha.aliqFcp === "number" && Number.isFinite(linha.aliqFcp) ? linha.aliqFcp : 0;
-
-  // Base dupla (LC 190/2022): (receita − ICMS débito) ÷ (1 − alíquota interna do destino).
-  const difalBase = (receitaBruta - icmsDebito) / (1 - linha.aliqInterna / 100);
-  // DIFAL = base dupla × alíquota interna − o ICMS já debitado. DIFAL não gera crédito (D-03).
-  const difalAmount = difalBase * (linha.aliqInterna / 100) - icmsDebito;
-  // FCP: mesma base dupla, alíquota de FCP do destino. Zero é valor conhecido, não ausência.
-  const fcpAmount = difalBase * (aliqFcp / 100);
+  // Base simples: a própria receita da operação.
+  const difalBase = receitaBruta;
+  const difalAmount = receitaBruta * (linha.pctDifal / 100);
+  // FCP já está embutido em pctDifal (D-09) — este campo fica em zero por
+  // compatibilidade com 222-05/222-07, que já o leem. Zero aqui é valor
+  // conhecido ("não há parcela separada"), não ausência de dado.
+  const fcpAmount = 0;
 
   return { difalBase, difalAmount, fcpAmount, difalMotivoAusencia: null };
 }
@@ -414,14 +485,16 @@ function resolverDifalFonte(
 /**
  * Transforma a fonte única da alíquota (`orderTaxRate.ts`, Fase 220) na
  * fonte única do imposto DECOMPOSTO: ICMS débito, PIS/COFINS débito, os
- * dois créditos de D-01 (sempre ligados, sem toggle), DIFAL por base dupla,
- * FCP e a procedência do DIFAL (D-07).
+ * três créditos de D-01/D-10.2 (sempre ligados, sem toggle), DIFAL por BASE
+ * SIMPLES (D-08) e a procedência do DIFAL (D-07/D-12).
  */
 export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
   const { config, ufDestino, tabelaUf } = input;
   const receitaBruta = numeroValido(input.receitaBruta);
   const comissao = numeroValido(input.comissao);
   const frete = numeroValido(input.frete);
+  const rebate = numeroValido(input.rebate) ?? 0;
+  const procedencia: Procedencia = input.procedencia === "importado" ? "importado" : "nacional";
 
   // 1. Sem configuração fiscal, não existe imposto a inventar.
   if (!config) {
@@ -442,8 +515,10 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
       motivo,
       icmsDebito: null,
       pisCofinsDebito: null,
+      pisCofinsDebitoComDifal: null,
       creditoPcComissao: null,
       creditoPcFrete: null,
+      creditoIcmsFrete: null,
       taxAmount,
       taxRate: taxRateDerivado(taxAmount, receitaBruta),
       difalBase: null,
@@ -468,15 +543,33 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
   const icmsDebito = receitaBruta * (icmsAliquota / 100);
 
   // Tema 69 (STF RE 574.706): base do PIS/COFINS é a receita MENOS o ICMS.
+  // Esta é a base do cenário SEM DIFAL. A base do cenário COM DIFAL desconta
+  // também o DIFAL (D-10.1) e é calculada depois, quando ele existir.
   const pisCofinsDebito = (receitaBruta - icmsDebito) * (PIS_COFINS_LUCRO_REAL / 100);
 
-  // Créditos de D-01: base é o valor do SERVIÇO tomado (comissão, frete),
-  // não a receita. Entram sempre — não há parâmetro que os desligue.
+  // Créditos de D-01: base é o valor do SERVIÇO tomado, não a receita. Entram
+  // sempre — não há parâmetro que os desligue.
   // null permanece null (ausência de base ≠ crédito zero conhecido).
-  const creditoPcComissao = comissao === null ? null : comissao * (PIS_COFINS_LUCRO_REAL / 100);
-  const creditoPcFrete = frete === null ? null : frete * (PIS_COFINS_LUCRO_REAL / 100);
 
-  const taxAmount = icmsDebito + pisCofinsDebito - (creditoPcComissao ?? 0) - (creditoPcFrete ?? 0);
+  // Comissão LÍQUIDA de rebate (D-10.3). Math.max protege contra rebate maior
+  // que a comissão, que viraria crédito negativo.
+  const comissaoLiquida = comissao === null ? null : Math.max(0, comissao - rebate);
+  const creditoPcComissao = comissaoLiquida === null
+    ? null
+    : comissaoLiquida * (PIS_COFINS_LUCRO_REAL / 100);
+
+  // Crédito de ICMS sobre o frete (D-10.2), na alíquota da própria operação.
+  // Aproximação declarada: a base legal é o CTe, não o frete do pedido.
+  const creditoIcmsFrete = frete === null ? null : frete * (icmsAliquota / 100);
+  // PIS/COFINS do frete incide sobre o frete LÍQUIDO de ICMS, não sobre o cheio.
+  const freteLiquido = frete === null ? null : frete - (creditoIcmsFrete ?? 0);
+  const creditoPcFrete = freteLiquido === null
+    ? null
+    : freteLiquido * (PIS_COFINS_LUCRO_REAL / 100);
+
+  const creditosTotais = (creditoPcComissao ?? 0) + (creditoPcFrete ?? 0) + (creditoIcmsFrete ?? 0);
+
+  const taxAmount = icmsDebito + pisCofinsDebito - creditosTotais;
   const taxRate = taxRateDerivado(taxAmount, receitaBruta);
 
   // 4. DIFAL: só se aplica quando o destino é conhecido e interestadual —
@@ -484,7 +577,8 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
   //    quarta cópia da regra de destino.
   if (motivo === "intraestadual") {
     return {
-      motivo, icmsDebito, pisCofinsDebito, creditoPcComissao, creditoPcFrete, taxAmount, taxRate,
+      motivo, icmsDebito, pisCofinsDebito, pisCofinsDebitoComDifal: null,
+      creditoPcComissao, creditoPcFrete, creditoIcmsFrete, taxAmount, taxRate,
       difalBase: null, difalAmount: null, fcpAmount: null,
       taxAmountComDifal: null, taxRateComDifal: null, difalFonte: null,
       difalMotivoAusencia: "intraestadual",
@@ -492,20 +586,30 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
   }
 
   const dest = normalizarUf(String(ufDestino ?? ""));
-  const difal = resolverDifal(dest, receitaBruta, icmsDebito, tabelaUf);
+  const difal = resolverDifal(dest, receitaBruta, tabelaUf, procedencia);
 
   if (difal.difalAmount === null) {
     // Guarda de tabela (uf_fora_da_tabela ou uf_nao_confirmada) — o imposto
     // base continua calculado normalmente, só o DIFAL fica ausente.
     return {
-      motivo, icmsDebito, pisCofinsDebito, creditoPcComissao, creditoPcFrete, taxAmount, taxRate,
+      motivo, icmsDebito, pisCofinsDebito, pisCofinsDebitoComDifal: null,
+      creditoPcComissao, creditoPcFrete, creditoIcmsFrete, taxAmount, taxRate,
       difalBase: null, difalAmount: null, fcpAmount: null,
       taxAmountComDifal: null, taxRateComDifal: null, difalFonte: null,
       difalMotivoAusencia: difal.difalMotivoAusencia,
     };
   }
 
-  const taxAmountComDifal = taxAmount + difal.difalAmount + (difal.fcpAmount ?? 0);
+  // D-10.1: no cenário COM DIFAL a base do PIS/COFINS desconta também o DIFAL.
+  // Confirmado pela contadora em 13/08: "tanto difal quanto ICMS são utilizados
+  // para exclusão da base de pis e cofins".
+  const pisCofinsDebitoComDifal =
+    (receitaBruta - icmsDebito - difal.difalAmount) * (PIS_COFINS_LUCRO_REAL / 100);
+
+  // Composto POR CIMA, nunca por subtração de taxAmount — é o que mantém as 9
+  // RPCs que já leem tax_amount corretas sem uma linha alterada.
+  const taxAmountComDifal =
+    icmsDebito + difal.difalAmount + pisCofinsDebitoComDifal + (difal.fcpAmount ?? 0) - creditosTotais;
   const taxRateComDifal = taxRateDerivado(taxAmountComDifal, receitaBruta);
   const difalFonte = resolverDifalFonte(dest, config.difal_ufs_cobradas_pelo_ml);
 
@@ -513,8 +617,10 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
     motivo,
     icmsDebito,
     pisCofinsDebito,
+    pisCofinsDebitoComDifal,
     creditoPcComissao,
     creditoPcFrete,
+    creditoIcmsFrete,
     taxAmount,
     taxRate,
     difalBase: difal.difalBase,

@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { computeOrderTax, type TabelaAliquotasInternas } from "../_shared/orderTaxRate.ts";
+import { computeOrderTax, type TabelaDifal } from "../_shared/orderTaxRate.ts";
 import { montarTabelaAliquotas } from "../_shared/tabelaUf.ts";
 
 const corsHeaders = {
@@ -57,7 +57,7 @@ serve(async (req) => {
     // chamada falhar, segue com tabela vazia — o DIFAL sai ausente (nunca
     // zero) e a view de saúde do 222-05 mostra; abortar o recálculo inteiro
     // por causa do DIFAL seria pior que a ausência.
-    let tabelaUf: TabelaAliquotasInternas = {};
+    let tabelaUf: TabelaDifal = {};
     {
       const { data: linhasUf, error: erroUf } = await supabase.rpc(
         "aliquota_interna_vigente",

@@ -1,15 +1,25 @@
 /**
  * tabelaUf.test.ts — prova sem rede de `montarTabelaAliquotas` (Fase 222,
- * plano 222-05).
+ * planos 222-01-R/222-05).
  *
- * As linhas de fixture têm o formato de `aliquota_interna_vigente(date)`
- * (222-01-SUMMARY.md): `{ uf, aliq_interna, aliq_fcp, confirmado }`. Alguns
- * casos usam `aliq_interna`/`aliq_fcp` como STRING de propósito — é o
- * formato real que o driver Postgres/PostgREST costuma devolver para
- * `numeric`, e este módulo não pode depender do chamador já ter convertido.
+ * As linhas de fixture têm o formato de `aliquota_interna_vigente(date)` na
+ * régua D-09: `{ uf, procedencia, aliq_interestadual, pct_difal, confirmado }`.
+ * Alguns casos usam os numéricos como STRING de propósito — é o formato real
+ * que o driver Postgres/PostgREST costuma devolver para `numeric`, e este
+ * módulo não pode depender do chamador já ter convertido.
  */
 import { describe, it, expect } from "vitest";
 import { montarTabelaAliquotas, type LinhaAliquotaUf } from "./tabelaUf";
+
+/** Linha válida mínima, para os casos que só variam um campo. */
+const linha = (over: Partial<LinhaAliquotaUf> = {}): LinhaAliquotaUf => ({
+  uf: "MG",
+  procedencia: "nacional",
+  aliq_interestadual: 12,
+  pct_difal: 6,
+  confirmado: true,
+  ...over,
+});
 
 describe("montarTabelaAliquotas", () => {
   it("array vazio devolve objeto vazio — a tabela não carregou", () => {
@@ -21,143 +31,156 @@ describe("montarTabelaAliquotas", () => {
     expect(montarTabelaAliquotas(undefined)).toEqual({});
   });
 
-  it("chaveia por sigla em caixa alta", () => {
-    const linhas: LinhaAliquotaUf[] = [
-      { uf: "sp", aliq_interna: 18, aliq_fcp: 2, confirmado: true },
-    ];
-    const tabela = montarTabelaAliquotas(linhas);
-    expect(tabela.SP).toBeDefined();
+  it("chaveia por sigla em caixa alta e por procedência", () => {
+    const tabela = montarTabelaAliquotas([linha({ uf: "sp" })]);
+    expect(tabela.SP?.nacional).toBeDefined();
     expect(tabela.sp).toBeUndefined();
   });
 
   it("apara espaço da sigla", () => {
-    const linhas: LinhaAliquotaUf[] = [
-      { uf: "  MG  ", aliq_interna: 18, aliq_fcp: 2, confirmado: true },
-    ];
-    const tabela = montarTabelaAliquotas(linhas);
-    expect(tabela.MG).toBeDefined();
+    expect(montarTabelaAliquotas([linha({ uf: "  MG  " })]).MG?.nacional).toBeDefined();
   });
 
-  it("linha sem confirmação humana vira confirmado: false", () => {
-    const linhas: LinhaAliquotaUf[] = [
-      { uf: "RJ", aliq_interna: 20, aliq_fcp: 4, confirmado: false },
-    ];
-    expect(montarTabelaAliquotas(linhas).RJ.confirmado).toBe(false);
+  it("preserva os dois números da linha", () => {
+    const tabela = montarTabelaAliquotas([linha({ uf: "RJ", aliq_interestadual: 12, pct_difal: 10 })]);
+    expect(tabela.RJ?.nacional).toEqual({
+      aliqInterestadual: 12,
+      pctDifal: 10,
+      confirmado: true,
+    });
   });
 
-  it("linha confirmada vira confirmado: true", () => {
-    const linhas: LinhaAliquotaUf[] = [
-      { uf: "RJ", aliq_interna: 20, aliq_fcp: 4, confirmado: true },
-    ];
-    expect(montarTabelaAliquotas(linhas).RJ.confirmado).toBe(true);
+  // ── Procedência (D-11) ──────────────────────────────────────────────────
+
+  it("a mesma UF convive com as duas procedências, cada uma com seus números", () => {
+    const tabela = montarTabelaAliquotas([
+      linha({ uf: "MG", procedencia: "nacional", aliq_interestadual: 12, pct_difal: 6 }),
+      linha({ uf: "MG", procedencia: "importado", aliq_interestadual: 4, pct_difal: 14 }),
+    ]);
+    expect(tabela.MG?.nacional?.pctDifal).toBe(6);
+    expect(tabela.MG?.importado?.pctDifal).toBe(14);
+  });
+
+  it("procedência ausente vira nacional — o comportamento conservador", () => {
+    const tabela = montarTabelaAliquotas([
+      { uf: "BA", aliq_interestadual: 7, pct_difal: 14, confirmado: true } as LinhaAliquotaUf,
+    ]);
+    expect(tabela.BA?.nacional).toBeDefined();
+    expect(tabela.BA?.importado).toBeUndefined();
+  });
+
+  it("procedência com lixo vira nacional, nunca importado por engano", () => {
+    const tabela = montarTabelaAliquotas([linha({ uf: "CE", procedencia: "importada!" })]);
+    expect(tabela.CE?.nacional).toBeDefined();
+    expect(tabela.CE?.importado).toBeUndefined();
+  });
+
+  it("procedência é normalizada (caixa e espaço)", () => {
+    const tabela = montarTabelaAliquotas([linha({ uf: "PE", procedencia: "  IMPORTADO " })]);
+    expect(tabela.PE?.importado).toBeDefined();
+  });
+
+  // ── Confirmação ─────────────────────────────────────────────────────────
+
+  it("linha sem confirmação de fonte vira confirmado: false", () => {
+    expect(montarTabelaAliquotas([linha({ uf: "RJ", confirmado: false })]).RJ?.nacional?.confirmado)
+      .toBe(false);
   });
 
   it("confirmado ausente (campo não veio) vira false, nunca true por omissão", () => {
-    const linhas: LinhaAliquotaUf[] = [
-      { uf: "BA", aliq_interna: 18, aliq_fcp: 0 } as LinhaAliquotaUf,
-    ];
-    expect(montarTabelaAliquotas(linhas).BA.confirmado).toBe(false);
+    const tabela = montarTabelaAliquotas([
+      { uf: "BA", procedencia: "nacional", aliq_interestadual: 7, pct_difal: 14 } as LinhaAliquotaUf,
+    ]);
+    expect(tabela.BA?.nacional?.confirmado).toBe(false);
   });
 
-  it("duas linhas para a mesma UF (mesma grafia) lançam erro", () => {
-    const linhas: LinhaAliquotaUf[] = [
-      { uf: "SP", aliq_interna: 18, aliq_fcp: 2, confirmado: true },
-      { uf: "SP", aliq_interna: 18, aliq_fcp: 2, confirmado: true },
-    ];
-    expect(() => montarTabelaAliquotas(linhas)).toThrow();
+  it("confirmado com valor não booleano (string 'true') também vira false", () => {
+    const tabela = montarTabelaAliquotas([linha({ uf: "GO", confirmado: "true" })]);
+    expect(tabela.GO?.nacional?.confirmado).toBe(false);
   });
 
-  it("duas linhas para a mesma UF (grafia diferente) também lançam erro — comparação normalizada", () => {
-    const linhas: LinhaAliquotaUf[] = [
-      { uf: "sp", aliq_interna: 18, aliq_fcp: 2, confirmado: true },
-      { uf: " SP ", aliq_interna: 18, aliq_fcp: 2, confirmado: true },
-    ];
-    expect(() => montarTabelaAliquotas(linhas)).toThrow();
+  // ── Duplicatas ──────────────────────────────────────────────────────────
+
+  it("duas linhas para o mesmo par (UF, procedência) lançam erro", () => {
+    expect(() => montarTabelaAliquotas([linha(), linha()])).toThrow();
   });
 
-  it("alíquota não numérica descarta a linha inteira, nunca vira zero silencioso", () => {
-    const linhas: LinhaAliquotaUf[] = [
-      { uf: "AC", aliq_interna: "não é número", aliq_fcp: 0, confirmado: true },
-    ];
-    expect(montarTabelaAliquotas(linhas)).toEqual({});
+  it("duplicata é detectada com a sigla normalizada (grafia diferente)", () => {
+    expect(() => montarTabelaAliquotas([
+      linha({ uf: "sp" }),
+      linha({ uf: " SP " }),
+    ])).toThrow();
   });
 
-  it("alíquota negativa descarta a linha inteira", () => {
-    const linhas: LinhaAliquotaUf[] = [
-      { uf: "AC", aliq_interna: -5, aliq_fcp: 0, confirmado: true },
-    ];
-    expect(montarTabelaAliquotas(linhas)).toEqual({});
+  it("mesma UF em procedências diferentes NÃO é duplicata", () => {
+    expect(() => montarTabelaAliquotas([
+      linha({ uf: "MG", procedencia: "nacional" }),
+      linha({ uf: "MG", procedencia: "importado" }),
+    ])).not.toThrow();
   });
 
-  it("alíquota não finita (NaN/Infinity) descarta a linha inteira", () => {
-    const linhas: LinhaAliquotaUf[] = [
-      { uf: "AC", aliq_interna: NaN, aliq_fcp: 0, confirmado: true },
-      { uf: "AP", aliq_interna: Infinity, aliq_fcp: 0, confirmado: true },
-    ];
-    expect(montarTabelaAliquotas(linhas)).toEqual({});
+  // ── Descarte de linha inválida ──────────────────────────────────────────
+
+  it("pct_difal não numérico descarta a linha inteira, nunca vira zero silencioso", () => {
+    expect(montarTabelaAliquotas([linha({ uf: "AC", pct_difal: "não é número" })])).toEqual({});
   });
 
-  it("FCP ausente (null) vira zero — valor conhecido, não ausência", () => {
-    const linhas: LinhaAliquotaUf[] = [
-      { uf: "SC", aliq_interna: 17, aliq_fcp: null, confirmado: true },
-    ];
-    expect(montarTabelaAliquotas(linhas).SC).toEqual({
-      aliqInterna: 17,
-      aliqFcp: 0,
+  it("pct_difal negativo descarta a linha inteira", () => {
+    expect(montarTabelaAliquotas([linha({ uf: "AC", pct_difal: -5 })])).toEqual({});
+  });
+
+  it("pct_difal não finito (NaN/Infinity) descarta a linha inteira", () => {
+    expect(montarTabelaAliquotas([
+      linha({ uf: "AC", pct_difal: NaN }),
+      linha({ uf: "AP", pct_difal: Infinity }),
+    ])).toEqual({});
+  });
+
+  it("aliq_interestadual ausente descarta a linha — não existe interestadual zero por omissão", () => {
+    expect(montarTabelaAliquotas([linha({ uf: "SC", aliq_interestadual: null })])).toEqual({});
+  });
+
+  it("aliq_interestadual inválida descarta a linha inteira, não só o campo", () => {
+    expect(montarTabelaAliquotas([linha({ uf: "PR", aliq_interestadual: -1 })])).toEqual({});
+    expect(montarTabelaAliquotas([linha({ uf: "PR", aliq_interestadual: "abc" })])).toEqual({});
+  });
+
+  it("pct_difal ZERO é valor legítimo e entra na tabela — diferente de ausência", () => {
+    const tabela = montarTabelaAliquotas([linha({ uf: "SP", aliq_interestadual: 18, pct_difal: 0 })]);
+    expect(tabela.SP?.nacional?.pctDifal).toBe(0);
+  });
+
+  // ── Formato do driver ───────────────────────────────────────────────────
+
+  it("aceita os numéricos como STRING — formato real do driver Postgres para numeric", () => {
+    const tabela = montarTabelaAliquotas([
+      linha({ uf: "SP", aliq_interestadual: "18.00", pct_difal: "0.00" }),
+    ]);
+    expect(tabela.SP?.nacional).toEqual({
+      aliqInterestadual: 18,
+      pctDifal: 0,
       confirmado: true,
     });
   });
 
-  it("FCP ausente (campo não veio) também vira zero", () => {
-    const linhas: LinhaAliquotaUf[] = [
-      { uf: "SC", aliq_interna: 17, confirmado: true } as LinhaAliquotaUf,
-    ];
-    expect(montarTabelaAliquotas(linhas).SC.aliqFcp).toBe(0);
-  });
+  // ── Conjunto ────────────────────────────────────────────────────────────
 
-  it("FCP inválido (negativo) descarta a linha inteira, não só o FCP", () => {
-    const linhas: LinhaAliquotaUf[] = [
-      { uf: "PR", aliq_interna: 18, aliq_fcp: -1, confirmado: true },
-    ];
-    expect(montarTabelaAliquotas(linhas)).toEqual({});
-  });
-
-  it("FCP inválido (não numérico) descarta a linha inteira", () => {
-    const linhas: LinhaAliquotaUf[] = [
-      { uf: "PR", aliq_interna: 18, aliq_fcp: "abc", confirmado: true },
-    ];
-    expect(montarTabelaAliquotas(linhas)).toEqual({});
-  });
-
-  it("aceita aliq_interna/aliq_fcp como STRING numérica — formato real do driver Postgres para numeric", () => {
-    const linhas: LinhaAliquotaUf[] = [
-      { uf: "SP", aliq_interna: "18.00", aliq_fcp: "2.00", confirmado: true },
-    ];
-    expect(montarTabelaAliquotas(linhas).SP).toEqual({
-      aliqInterna: 18,
-      aliqFcp: 2,
-      confirmado: true,
-    });
-  });
-
-  it("monta a tabela inteira com múltiplas UFs válidas de uma vez, preservando cada uma", () => {
-    const linhas: LinhaAliquotaUf[] = [
-      { uf: "SP", aliq_interna: 18, aliq_fcp: 2, confirmado: true },
-      { uf: "MG", aliq_interna: 18, aliq_fcp: 2, confirmado: false },
-      { uf: "AM", aliq_interna: 20, aliq_fcp: 0, confirmado: true },
-    ];
-    const tabela = montarTabelaAliquotas(linhas);
+  it("monta a tabela inteira com múltiplas UFs de uma vez, preservando cada uma", () => {
+    const tabela = montarTabelaAliquotas([
+      linha({ uf: "SP", aliq_interestadual: 18, pct_difal: 0 }),
+      linha({ uf: "MG", confirmado: false }),
+      linha({ uf: "AM", aliq_interestadual: 7, pct_difal: 13 }),
+    ]);
     expect(Object.keys(tabela).sort()).toEqual(["AM", "MG", "SP"]);
-    expect(tabela.AM).toEqual({ aliqInterna: 20, aliqFcp: 0, confirmado: true });
+    expect(tabela.AM?.nacional).toEqual({ aliqInterestadual: 7, pctDifal: 13, confirmado: true });
   });
 
   it("uma linha descartada não impede as outras válidas de entrarem na tabela", () => {
-    const linhas: LinhaAliquotaUf[] = [
-      { uf: "SP", aliq_interna: 18, aliq_fcp: 2, confirmado: true },
-      { uf: "AC", aliq_interna: -1, aliq_fcp: 0, confirmado: true },
-    ];
-    const tabela = montarTabelaAliquotas(linhas);
-    expect(tabela.SP).toBeDefined();
+    const tabela = montarTabelaAliquotas([
+      linha({ uf: "SP" }),
+      linha({ uf: "AC", pct_difal: -1 }),
+    ]);
+    expect(tabela.SP?.nacional).toBeDefined();
     expect(tabela.AC).toBeUndefined();
   });
 });

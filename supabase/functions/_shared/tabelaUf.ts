@@ -1,6 +1,6 @@
 /**
- * tabelaUf.ts — monta `TabelaAliquotasInternas` a partir das linhas cruas de
- * `public.aliquota_interna_vigente(date)` (Fase 222, plano 222-05).
+ * tabelaUf.ts — monta `TabelaDifal` a partir das linhas cruas de
+ * `public.aliquota_interna_vigente(date)` (Fase 222, planos 222-01-R/222-05).
  *
  * Módulo PURO, no mesmo molde de `orderTaxRate.ts` e `flexOrder.ts`: nenhum
  * import remoto nem referência ao runtime das edge functions, zero IO —
@@ -13,22 +13,27 @@
  * em `recalc-order-costs` (as duas portas de escrita do imposto) — copiar a
  * lógica de montagem para as duas seria reabrir a lição da Fase 220 (três
  * cópias divergentes da mesma fórmula).
+ *
+ * ⚠️ RÉGUA D-09: a tabela deixou de guardar alíquota interna + FCP e passou a
+ * guardar o PERCENTUAL DE DIFAL pronto por (UF, procedência). A chave do
+ * objeto virou de um nível para dois.
  */
 
-import type { TabelaAliquotasInternas } from "./orderTaxRate";
+import type { Procedencia, TabelaDifal } from "./orderTaxRate";
 
 /**
  * Linha crua devolvida por `aliquota_interna_vigente(p_data date)`
- * (assinatura em `222-01-SUMMARY.md`): `uf char(2), aliq_interna numeric,
- * aliq_fcp numeric, confirmado boolean`. Os campos numéricos chegam como
- * `unknown` de propósito — o driver Postgres/PostgREST costuma devolver
- * `numeric` como STRING para não perder precisão, e este módulo não pode
- * depender do chamador já ter convertido.
+ * (assinatura na migration 222-01-R): `uf char(2), procedencia text,
+ * aliq_interestadual numeric, pct_difal numeric, confirmado boolean`. Os
+ * campos numéricos chegam como `unknown` de propósito — o driver
+ * Postgres/PostgREST costuma devolver `numeric` como STRING para não perder
+ * precisão, e este módulo não pode depender do chamador já ter convertido.
  */
 export interface LinhaAliquotaUf {
   uf: unknown;
-  aliq_interna: unknown;
-  aliq_fcp?: unknown;
+  procedencia?: unknown;
+  aliq_interestadual: unknown;
+  pct_difal: unknown;
   confirmado?: unknown;
 }
 
@@ -37,11 +42,20 @@ function normalizarSigla(uf: unknown): string {
 }
 
 /**
+ * `"importado"` só quando a linha disser exatamente isso (aparada, em caixa
+ * baixa). Qualquer outra coisa — inclusive ausente, nulo ou lixo — vira
+ * `"nacional"`, que é o comportamento conservador: é a procedência da esmagadora
+ * maioria do catálogo, e errar para nacional mantém o cálculo idêntico ao de
+ * antes desta fase.
+ */
+function normalizarProcedencia(v: unknown): Procedencia {
+  return String(v ?? "").trim().toLowerCase() === "importado" ? "importado" : "nacional";
+}
+
+/**
  * Número finito e não negativo, aceitando `number` ou `string` numérica.
- * `null`/`undefined` devolvem `null` (ausência) — quem chama decide se
- * ausência é "vira zero" (FCP) ou "descarta a linha" (aliq_interna).
- * Qualquer outra coisa não conversível (string não numérica, negativo,
- * `NaN`, `Infinity`) também devolve `null`.
+ * `null`/`undefined` devolvem `null` (ausência) — e aqui ausência sempre
+ * descarta a linha, nunca vira zero.
  */
 function numeroValidoNaoNegativo(v: unknown): number | null {
   if (v == null) return null;
@@ -51,59 +65,58 @@ function numeroValidoNaoNegativo(v: unknown): number | null {
 }
 
 /**
- * Monta a tabela de alíquota interna de ICMS + FCP por UF a partir das
- * linhas cruas do banco.
+ * Monta a tabela de DIFAL por (UF, procedência) a partir das linhas cruas do
+ * banco.
  *
- * - `[]`/`null`/`undefined` devolvem `{}` — é o caso "a tabela não
- *   carregou": o consumidor (`resolverDifal`, `orderTaxRate.ts`) trata toda
- *   UF como fora da tabela, e o DIFAL sai ausente, nunca zero.
- * - Chaveia por sigla em CAIXA ALTA, sigla aparada de espaço.
+ * - `[]`/`null`/`undefined` devolvem `{}` — é o caso "a tabela não carregou":
+ *   o consumidor (`resolverDifal`, `orderTaxRate.ts`) trata toda UF como fora
+ *   da tabela, e o DIFAL sai ausente, nunca zero.
+ * - Chaveia por sigla em CAIXA ALTA (aparada) e depois por procedência.
  * - `confirmado` só é `true` quando a linha trouxer `confirmado === true`
  *   literal — `false`, `null`, ausente ou qualquer valor não booleano vira
- *   `false`: linha sem confirmação humana nunca é tratada como confirmada
+ *   `false`: linha sem confirmação de fonte nunca é tratada como confirmada
  *   por omissão.
- * - Duas linhas para a mesma UF (mesma sigla normalizada) fazem a função
- *   LANÇAR ERRO: a unicidade é garantida pelo banco (vigência sem
- *   sobreposição, migration do 222-01), e se chegou duplicado algo quebrou
- *   antes deste módulo — nunca escolher uma das duas em silêncio. A
- *   detecção acontece ANTES de validar os números, para pegar duplicata
- *   mesmo quando uma das duas linhas seria descartada por outro motivo.
- * - `aliq_interna` não numérica, negativa ou não finita descarta A LINHA
- *   INTEIRA (não entra no objeto devolvido) — nunca vira zero silencioso.
- * - `aliq_fcp` ausente (`null`/`undefined`/campo não veio) vira `0` — é o
- *   caso comum e é valor conhecido. `aliq_fcp` presente mas inválido (não
- *   numérico, negativo, não finito) descarta a linha inteira, pelo mesmo
- *   motivo do `aliq_interna`.
+ * - Duas linhas para o mesmo par (UF, procedência) fazem a função LANÇAR
+ *   ERRO: a unicidade é garantida pelo banco (vigência sem sobreposição,
+ *   migration 222-01-R), e se chegou duplicado algo quebrou antes deste
+ *   módulo — nunca escolher uma das duas em silêncio. A detecção acontece
+ *   ANTES de validar os números, para pegar duplicata mesmo quando uma das
+ *   duas linhas seria descartada por outro motivo.
+ * - `pct_difal` ou `aliq_interestadual` não numérica, negativa ou não finita
+ *   descarta A LINHA INTEIRA (não entra no objeto devolvido) — nunca vira
+ *   zero silencioso. Zero de DIFAL é um valor legítimo e diferente de
+ *   ausência: uma UF pode ter DIFAL zero, e isso não é o mesmo que não saber
+ *   o DIFAL dela.
  */
 export function montarTabelaAliquotas(
   linhas: LinhaAliquotaUf[] | null | undefined,
-): TabelaAliquotasInternas {
-  const tabela: TabelaAliquotasInternas = {};
+): TabelaDifal {
+  const tabela: TabelaDifal = {};
   if (!linhas || linhas.length === 0) return tabela;
 
   const vistos = new Set<string>();
   for (const linha of linhas) {
     const sigla = normalizarSigla(linha.uf);
-    if (vistos.has(sigla)) {
+    const procedencia = normalizarProcedencia(linha.procedencia);
+    const chave = `${sigla}|${procedencia}`;
+
+    if (vistos.has(chave)) {
       throw new Error(
-        `montarTabelaAliquotas: UF duplicada na tabela de alíquotas (${sigla}) — a unicidade deveria ser garantida pelo banco`,
+        `montarTabelaAliquotas: par (UF, procedência) duplicado na tabela de alíquotas (${sigla}, ${procedencia}) — a unicidade deveria ser garantida pelo banco`,
       );
     }
-    vistos.add(sigla);
+    vistos.add(chave);
 
-    const aliqInterna = numeroValidoNaoNegativo(linha.aliq_interna);
-    if (aliqInterna === null) continue; // descartada, nunca vira zero silencioso
+    const aliqInterestadual = numeroValidoNaoNegativo(linha.aliq_interestadual);
+    if (aliqInterestadual === null) continue; // descartada, nunca vira zero silencioso
 
-    let aliqFcp = 0;
-    if (linha.aliq_fcp != null) {
-      const fcpValido = numeroValidoNaoNegativo(linha.aliq_fcp);
-      if (fcpValido === null) continue; // FCP inválido descarta a linha inteira
-      aliqFcp = fcpValido;
-    }
+    const pctDifal = numeroValidoNaoNegativo(linha.pct_difal);
+    if (pctDifal === null) continue;
 
-    tabela[sigla] = {
-      aliqInterna,
-      aliqFcp,
+    if (!tabela[sigla]) tabela[sigla] = {};
+    tabela[sigla][procedencia] = {
+      aliqInterestadual,
+      pctDifal,
       confirmado: linha.confirmado === true,
     };
   }
