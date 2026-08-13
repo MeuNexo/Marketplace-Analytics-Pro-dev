@@ -296,7 +296,18 @@ async function fetchShipmentDetails(
       const r = results[j];
       if (r.status === "fulfilled") {
         detailMap.set(r.value.id, {
-          cost:   r.value.cost != null && r.value.cost > 0 ? r.value.cost : null,
+          // 2026-08-11: o `> 0` daqui transformava frete ZERO em null e era a
+          // causa dos pedidos "sem frete". Envio self_service (Mercado Envios
+          // Flex) devolve base_cost/list_cost = 0 — o vendedor nao paga frete
+          // ao ML —, e zero e um valor CONHECIDO, nao ausencia. Virar null
+          // apagava essa informacao: na conta Junior eram 13,2% dos pedidos
+          // abaixo de R$ 79 (medido 11/08). Prova de que era determinístico e
+          // nao falha de rede: reprocessar o dia nao recuperava nenhum, e o
+          // banco inteiro — 3 contas, centenas de milhares de pedidos — nao
+          // tinha UM unico frete = 0. A Pe Vermeio era imune por ser toda
+          // fulfillment, onde o custo e sempre positivo.
+          // `r.value.cost` ja e null quando o campo vem ausente da API.
+          cost:   r.value.cost,
           estado: r.value.estado,
           cidade: r.value.cidade,
         });
