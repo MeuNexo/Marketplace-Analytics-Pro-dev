@@ -771,16 +771,36 @@ serve(async (req) => {
     // ── Fetch shipment details (cost + address) for all orders ───────────────
     // Sync incremental: descobre quais pedidos do lote JA tem frete e endereco
     // gravados. So os que faltam vao para a API do ML.
+    //
+    // Backfill do Flex (Fase 222, FLEX-01): `orders` nao tinha `logistic_type`
+    // ate o 222-04 -- todo pedido historico Flex ficaria pulado por este
+    // mesmo otimizacao PARA SEMPRE, sem o predicado abaixo enxergar o campo
+    // novo. BACKFILL_LOGISTIC_TYPE, DESLIGADO por padrao (ausencia da
+    // variavel e falso, nunca verdadeiro): ligado, o predicado tambem exige
+    // logistic_type preenchido, entao todo pedido do lote que ainda nao tem
+    // tipo logistico volta a ser buscado no ML -- ha 193 pedidos com frete
+    // nulo na Pe Vermeio e 630 no Junior (222-CONTEXT.md), cada um custando
+    // uma chamada a /shipments/{id} que ja seria feita de qualquer forma
+    // (zero chamada NOVA so por causa deste campo). Manter o predicado
+    // alargado depois do backfill terminar faria toda rodada horaria pagar
+    // por um dado que ja esta la -- por isso o interruptor e desligado ao
+    // fim do backfill (222-PROVA.md, Passo 8), nao deixado ligado.
+    const backfillLogisticType =
+      (Deno.env.get("BACKFILL_LOGISTIC_TYPE") ?? "").trim().toLowerCase() === "true";
     const jaCompletos = new Set<string>();
     if (organizationId && orders.length) {
       const idsLote = orders.map((o: any) => String(o.id));
-      const { data: jaNoBanco, error: erroLookup } = await supabaseAdmin
+      let lookupCompletos = supabaseAdmin
         .from("orders")
         .select("ml_order_id")
         .eq("organization_id", organizationId)
         .in("ml_order_id", idsLote)
         .not("frete", "is", null)
         .not("estado", "is", null);
+      if (backfillLogisticType) {
+        lookupCompletos = lookupCompletos.not("logistic_type", "is", null);
+      }
+      const { data: jaNoBanco, error: erroLookup } = await lookupCompletos;
       if (erroLookup) {
         // Falha aqui NAO pode virar dado faltando: sem a lista, busca tudo,
         // que e o comportamento antigo. Degrada para lento, nunca para errado.
