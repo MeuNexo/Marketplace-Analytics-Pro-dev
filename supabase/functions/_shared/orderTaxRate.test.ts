@@ -498,3 +498,170 @@ describe("computeOrderTax — sem crédito (comissão e frete = 0), a decomposi�
     },
   );
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Fase 222 — Plano 03, Task 3: DIFAL por base dupla, FCP, procedência e as
+// guardas de ausência (FISC-03, FISC-05, FISC-07).
+// ═══════════════════════════════════════════════════════════════════════════
+
+const TABELA_MG_CONFIRMADA = {
+  MG: { aliqInterna: 18, aliqFcp: 0, confirmado: true },
+};
+
+const INPUT_CASO_PROVA_DIFAL: OrderTaxInput = {
+  config: CFG_PE_VERMEIO,
+  ufDestino: "MG",
+  receitaBruta: 692.99,
+  comissao: 79.69,
+  frete: 30.75,
+  tabelaUf: TABELA_MG_CONFIRMADA,
+};
+
+describe("computeOrderTax — DIFAL do caso-prova 2000017711929314 (base dupla, LC 190/2022)", () => {
+  it("difalBase ≈ 743,70 · difalAmount ≈ 50,71 · imposto com DIFAL ≈ 180,06 · alíquota implícita ≈ 25,98, no mesmo bloco", () => {
+    const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
+    closeCents(r.difalBase, 743.70);
+    closeCents(r.difalAmount, 50.71);
+    closeCents(r.fcpAmount, 0);
+    closeCents(r.taxAmountComDifal, 180.06);
+    expect(r.taxRateComDifal).not.toBeNull();
+    expect(Math.abs((r.taxRateComDifal as number) - 25.98)).toBeLessThan(0.01);
+  });
+
+  it("taxAmount continua sendo o cenário SEM DIFAL — nunca soma difalAmount por dentro", () => {
+    const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
+    closeCents(r.taxAmount, 129.35);
+    expect(r.taxAmountComDifal).not.toBeCloseTo(r.taxAmount as number, 1);
+  });
+
+  it("a base SIMPLES (sem dividir por 1 − alíquota interna) daria um número menor — e NÃO é esse o número devolvido", () => {
+    const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
+    const icmsDebito = r.icmsDebito as number;
+    const baseSimples = 692.99 - icmsDebito; // sem dividir por (1 - aliqInterna/100)
+    const difalComBaseSimples = baseSimples * 0.18 - icmsDebito;
+    expect(difalComBaseSimples).toBeLessThan((r.difalAmount as number) - 1); // bem menor, não é o mesmo número
+    expect(Math.abs((r.difalAmount as number) - difalComBaseSimples)).toBeGreaterThan(1);
+  });
+
+  it("DIFAL não gera crédito — creditoPcComissao/creditoPcFrete não incluem nenhum termo do DIFAL", () => {
+    const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
+    closeCents(r.creditoPcComissao, 7.37);
+    closeCents(r.creditoPcFrete, 2.84);
+  });
+});
+
+describe("computeOrderTax — as cinco guardas de ausência do DIFAL, nenhuma delas aceitando zero (FISC-05)", () => {
+  it("destino desconhecido → difalMotivoAusencia destino_desconhecido, difalAmount null (nunca zero)", () => {
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, ufDestino: null });
+    expect(r.difalMotivoAusencia).toBe("destino_desconhecido");
+    expect(r.difalAmount).toBeNull();
+    expect(r.difalAmount).not.toBe(0);
+  });
+
+  it("pedido intraestadual (origem igual ao destino) → difalMotivoAusencia intraestadual, difalAmount null", () => {
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, ufDestino: "SP", tabelaUf: { SP: { aliqInterna: 18, aliqFcp: 0, confirmado: true } } });
+    expect(r.motivo).toBe("intraestadual");
+    expect(r.difalMotivoAusencia).toBe("intraestadual");
+    expect(r.difalAmount).toBeNull();
+    expect(r.difalAmount).not.toBe(0);
+    // O imposto base continua calculado normalmente — só o DIFAL fica ausente.
+    expect(r.taxAmount).not.toBeNull();
+  });
+
+  it("regime diferente de lucro_real → difalMotivoAusencia regime_nao_aplicavel, difalAmount null", () => {
+    const cfgSimples: OrderTaxConfig = {
+      regime: "simples_nacional",
+      uf_origem: null,
+      sn_aliquota_efetiva: 6.5,
+      lp_pis: null, lp_cofins: null, lp_irpj: null, lp_csll: null,
+      lr_icms_aliquota_intra: null, lr_icms_aliquota_inter_sul_sudeste: null,
+      lr_icms_aliquota_inter_norte_nordeste: null, lr_icms_debito: null,
+    };
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, config: cfgSimples });
+    expect(r.difalMotivoAusencia).toBe("regime_nao_aplicavel");
+    expect(r.difalAmount).toBeNull();
+    expect(r.difalAmount).not.toBe(0);
+  });
+
+  it("UF sem linha na tabela recebida → difalMotivoAusencia uf_fora_da_tabela, difalAmount null", () => {
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, tabelaUf: {} });
+    expect(r.difalMotivoAusencia).toBe("uf_fora_da_tabela");
+    expect(r.difalAmount).toBeNull();
+    expect(r.difalAmount).not.toBe(0);
+    // O imposto base continua calculado normalmente — só o DIFAL fica ausente.
+    expect(r.taxAmount).not.toBeNull();
+  });
+
+  it("UF com linha não confirmada por humano → difalMotivoAusencia uf_nao_confirmada, difalAmount null", () => {
+    const r = computeOrderTax({
+      ...INPUT_CASO_PROVA_DIFAL,
+      tabelaUf: { MG: { aliqInterna: 18, aliqFcp: 0, confirmado: false } },
+    });
+    expect(r.difalMotivoAusencia).toBe("uf_nao_confirmada");
+    expect(r.difalAmount).toBeNull();
+    expect(r.difalAmount).not.toBe(0);
+    expect(r.taxAmount).not.toBeNull();
+  });
+});
+
+describe("computeOrderTax — FCP: UF com FCP zero devolve 0 (valor conhecido), não null", () => {
+  it("aliqFcp 0 na tabela devolve fcpAmount 0", () => {
+    const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
+    expect(r.fcpAmount).toBe(0);
+  });
+
+  it("aliqFcp positiva na tabela devolve fcpAmount calculado a partir da base dupla", () => {
+    const r = computeOrderTax({
+      ...INPUT_CASO_PROVA_DIFAL,
+      tabelaUf: { MG: { aliqInterna: 18, aliqFcp: 2, confirmado: true } },
+    });
+    expect(r.fcpAmount).not.toBeNull();
+    expect(r.fcpAmount as number).toBeGreaterThan(0);
+    expect(r.fcpAmount).toBeCloseTo((r.difalBase as number) * 0.02, 6);
+  });
+});
+
+describe("computeOrderTax — procedência do DIFAL, os três estados de D-07 sobre o MESMO pedido", () => {
+  it("lista de UFs cobradas pelo ML nula (222-02 ainda não cruzou) → nao_conciliado", () => {
+    const cfg: OrderTaxConfig = { ...CFG_PE_VERMEIO, difal_ufs_cobradas_pelo_ml: null };
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, config: cfg });
+    expect(r.difalFonte).toBe("nao_conciliado");
+    expect(r.difalAmount).not.toBeNull();
+  });
+
+  it("lista preenchida (inclusive vazia) e sem a UF de destino → calculado", () => {
+    const cfg: OrderTaxConfig = { ...CFG_PE_VERMEIO, difal_ufs_cobradas_pelo_ml: [] };
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, config: cfg });
+    expect(r.difalFonte).toBe("calculado");
+
+    const cfg2: OrderTaxConfig = { ...CFG_PE_VERMEIO, difal_ufs_cobradas_pelo_ml: ["RJ", "SC"] };
+    const r2 = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, config: cfg2 });
+    expect(r2.difalFonte).toBe("calculado");
+  });
+
+  it("lista preenchida e contém a UF de destino → cobrado_ml", () => {
+    const cfg: OrderTaxConfig = { ...CFG_PE_VERMEIO, difal_ufs_cobradas_pelo_ml: ["MG"] };
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, config: cfg });
+    expect(r.difalFonte).toBe("cobrado_ml");
+    // O valor calculado continua existindo como previsão informativa.
+    expect(r.difalAmount).not.toBeNull();
+  });
+
+  it("comparação de sigla é insensível a caixa e a espaço em branco", () => {
+    const cfg: OrderTaxConfig = { ...CFG_PE_VERMEIO, difal_ufs_cobradas_pelo_ml: [" mg "] };
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, config: cfg });
+    expect(r.difalFonte).toBe("cobrado_ml");
+  });
+
+  it("difalFonte nunca é cobrado_ml e calculado ao mesmo tempo — é um campo só, não dois booleanos", () => {
+    const cfgCobrado: OrderTaxConfig = { ...CFG_PE_VERMEIO, difal_ufs_cobradas_pelo_ml: ["MG"] };
+    const rCobrado = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, config: cfgCobrado });
+    expect(rCobrado.difalFonte).toBe("cobrado_ml");
+    expect(rCobrado.difalFonte).not.toBe("calculado");
+
+    const cfgCalculado: OrderTaxConfig = { ...CFG_PE_VERMEIO, difal_ufs_cobradas_pelo_ml: ["RJ"] };
+    const rCalculado = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, config: cfgCalculado });
+    expect(rCalculado.difalFonte).toBe("calculado");
+    expect(rCalculado.difalFonte).not.toBe("cobrado_ml");
+  });
+});

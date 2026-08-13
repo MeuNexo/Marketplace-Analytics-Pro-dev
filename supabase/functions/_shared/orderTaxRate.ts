@@ -25,6 +25,24 @@
  * mudança — no CÁLCULO, não só no upsert — que faz o `COALESCE` já aplicado
  * a `tax_rate`/`tax_amount` em `batch_upsert_orders` ter efeito: antes dele,
  * `EXCLUDED.tax_rate` nunca chegava `null`, então `COALESCE` nunca disparava.
+ *
+ * O QUE MUDOU NA FASE 222: o imposto deixa de ser uma alíquota efetiva
+ * vezes a receita e passa a ser `computeOrderTax`, a soma de componentes
+ * com bases distintas — ICMS débito, PIS/COFINS débito (Tema 69), os
+ * créditos de PIS/COFINS sobre comissão e frete (D-01, sempre ligados,
+ * sem toggle) e o DIFAL por base dupla (LC 190/2022) mais FCP, cada um com
+ * a sua procedência (D-07). `resolveIcmsAliquota` é a resolução de destino
+ * extraída de dentro de `computeOrderTaxRate` — a mesma tabela de decisão
+ * de sempre, agora chamada por duas funções em vez de copiada para a
+ * segunda. `taxAmount` CONTINUA sendo o cenário SEM DIFAL — o cenário com
+ * DIFAL é composto por cima em `taxAmountComDifal`, nunca por soma dentro
+ * de `taxAmount`, porque é isso que mantém as RPCs que já leem `tax_amount`
+ * corretas sem precisar de nenhuma alteração. Existe controvérsia jurídica
+ * registrada em `222-RESEARCH.md` (seção R4) sobre a base dupla se aplicar
+ * a consumidor final não contribuinte; a decisão desta fase — base dupla
+ * sempre, com o número conferido pelo Wesley no caso-prova
+ * `2000017711929314` — está travada por D-03. Se um dia essa decisão
+ * mudar, muda aqui, em um lugar só.
  */
 
 // ── Regime e regiões ──────────────────────────────────────────────────────────
@@ -311,36 +329,113 @@ function breakdownNulo(motivo: MotivoAliquota, difalMotivoAusencia: string): Ord
   };
 }
 
+/** Normaliza sigla de UF: caixa alta, sem espaço em volta. */
+function normalizarUf(uf: string): string {
+  return uf.trim().toUpperCase();
+}
+
+/** `true` se `lista` (já normalizada por item) contém `uf` (comparação insensível a caixa/espaço). */
+function listaContemUf(lista: string[], uf: string): boolean {
+  const alvo = normalizarUf(uf);
+  return lista.some((item) => typeof item === "string" && normalizarUf(item) === alvo);
+}
+
+/**
+ * Componentes do DIFAL (base dupla, LC 190/2022) e do FCP para um pedido já
+ * com destino conhecido e interestadual. Devolvido junto do motivo de
+ * ausência (`null` quando o DIFAL foi calculado com sucesso).
+ */
+interface DifalResolvido {
+  difalBase: number | null;
+  difalAmount: number | null;
+  fcpAmount: number | null;
+  difalMotivoAusencia: string | null;
+}
+
+/**
+ * Resolve o DIFAL de um pedido do regime `lucro_real` já com destino
+ * interestadual conhecido (`motivoIcms` é `"interestadual"` ou
+ * `"sem_uf_origem"` — nunca chamada para `"intraestadual"` nem
+ * `"destino_desconhecido"`, que são guardas resolvidas antes de chegar
+ * aqui). A alíquota interna e o FCP vêm de `tabelaUf`, nunca hardcoded
+ * (222-01 é quem versiona a tabela no banco).
+ */
+function resolverDifal(
+  dest: string,
+  receitaBruta: number,
+  icmsDebito: number,
+  tabelaUf: TabelaAliquotasInternas | null | undefined,
+): DifalResolvido {
+  const linha = tabelaUf ? tabelaUf[dest] : undefined;
+
+  if (!linha || typeof linha.aliqInterna !== "number" || !Number.isFinite(linha.aliqInterna)) {
+    // Linha ausente: falta cadastro na tabela — distinto de "existe mas não
+    // foi conferida" (uf_nao_confirmada), quem lê a view de saúde do 222-05
+    // precisa saber qual dos dois é o caso.
+    return { difalBase: null, difalAmount: null, fcpAmount: null, difalMotivoAusencia: "uf_fora_da_tabela" };
+  }
+
+  if (!linha.confirmado) {
+    // Linha existe mas ainda não foi conferida por humano (222-UF-TABELA.md).
+    return { difalBase: null, difalAmount: null, fcpAmount: null, difalMotivoAusencia: "uf_nao_confirmada" };
+  }
+
+  const aliqFcp = typeof linha.aliqFcp === "number" && Number.isFinite(linha.aliqFcp) ? linha.aliqFcp : 0;
+
+  // Base dupla (LC 190/2022): (receita − ICMS débito) ÷ (1 − alíquota interna do destino).
+  const difalBase = (receitaBruta - icmsDebito) / (1 - linha.aliqInterna / 100);
+  // DIFAL = base dupla × alíquota interna − o ICMS já debitado. DIFAL não gera crédito (D-03).
+  const difalAmount = difalBase * (linha.aliqInterna / 100) - icmsDebito;
+  // FCP: mesma base dupla, alíquota de FCP do destino. Zero é valor conhecido, não ausência.
+  const fcpAmount = difalBase * (aliqFcp / 100);
+
+  return { difalBase, difalAmount, fcpAmount, difalMotivoAusencia: null };
+}
+
+/** Procedência do DIFAL (D-07) a partir das duas listas de configuração. */
+function resolverDifalFonte(
+  dest: string,
+  ufsCobradasPeloMl: string[] | null | undefined,
+): DifalFonte {
+  if (ufsCobradasPeloMl == null) {
+    // O cruzamento fatura↔pedidos (222-02) ainda não foi feito para esta loja.
+    return "nao_conciliado";
+  }
+  if (listaContemUf(ufsCobradasPeloMl, dest)) {
+    // O ML já cobra o DIFAL desta UF na fatura — o valor que vale é o
+    // cobrado (fato); o calculado abaixo fica como previsão informativa.
+    return "cobrado_ml";
+  }
+  // Lista preenchida (mesmo vazia) e não contém a UF: ainda não foi cobrado,
+  // a previsão calculada entra na soma.
+  return "calculado";
+}
+
 /**
  * Transforma a fonte única da alíquota (`orderTaxRate.ts`, Fase 220) na
  * fonte única do imposto DECOMPOSTO: ICMS débito, PIS/COFINS débito, os
- * dois créditos de D-01 (sempre ligados, sem toggle), e — a partir da
- * Task 3 deste plano — DIFAL por base dupla, FCP e a procedência do DIFAL.
- *
- * Nesta task (Task 2), `difalBase`/`difalAmount`/`fcpAmount`/`difalFonte`
- * ainda saem `null` com `difalMotivoAusencia: "nao_calculado_ainda"` — a
- * Task 3 é quem liga o DIFAL, reaproveitando o mesmo destino já resolvido
- * aqui por `resolveIcmsAliquota`.
+ * dois créditos de D-01 (sempre ligados, sem toggle), DIFAL por base dupla,
+ * FCP e a procedência do DIFAL (D-07).
  */
 export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
   const { config, ufDestino, tabelaUf } = input;
   const receitaBruta = numeroValido(input.receitaBruta);
   const comissao = numeroValido(input.comissao);
   const frete = numeroValido(input.frete);
-  void tabelaUf; // consumido pela Task 3
 
   // 1. Sem configuração fiscal, não existe imposto a inventar.
   if (!config) {
-    return breakdownNulo("sem_config", "nao_calculado_ainda");
+    return breakdownNulo("sem_config", "sem_config");
   }
 
   // 2. Regimes fixos (Simples Nacional, Lucro Presumido): o destino não
   //    entra na conta, não há crédito de PIS/COFINS (a apuração desses
-  //    regimes não funciona por débito/crédito) e o DIFAL não se aplica.
+  //    regimes não funciona por débito/crédito) e o DIFAL não se aplica —
+  //    é regime, não ausência de dado.
   if (config.regime === "simples_nacional" || config.regime === "lucro_presumido") {
     const { rate, motivo } = computeOrderTaxRate(config, ufDestino);
     if (rate === null || receitaBruta === null) {
-      return breakdownNulo(motivo, "nao_calculado_ainda");
+      return breakdownNulo(motivo, "regime_nao_aplicavel");
     }
     const taxAmount = receitaBruta * (rate / 100);
     return {
@@ -357,7 +452,7 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
       taxAmountComDifal: null,
       taxRateComDifal: null,
       difalFonte: null,
-      difalMotivoAusencia: "nao_calculado_ainda",
+      difalMotivoAusencia: "regime_nao_aplicavel",
     };
   }
 
@@ -365,7 +460,8 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
   const { icmsAliquota, motivo } = resolveIcmsAliquota(config, ufDestino);
 
   if (icmsAliquota === null || receitaBruta === null) {
-    return breakdownNulo(motivo, "nao_calculado_ainda");
+    // destino_desconhecido (ou receita ausente): motivo já nomeia a causa.
+    return breakdownNulo(motivo, motivo);
   }
 
   // ICMS "por dentro": já embutido no preço, débito = receita × alíquota (D-03).
@@ -383,6 +479,36 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
   const taxAmount = icmsDebito + pisCofinsDebito - (creditoPcComissao ?? 0) - (creditoPcFrete ?? 0);
   const taxRate = taxRateDerivado(taxAmount, receitaBruta);
 
+  // 4. DIFAL: só se aplica quando o destino é conhecido e interestadual —
+  //    derivado do MESMO destino que já resolveu o ICMS acima, nunca uma
+  //    quarta cópia da regra de destino.
+  if (motivo === "intraestadual") {
+    return {
+      motivo, icmsDebito, pisCofinsDebito, creditoPcComissao, creditoPcFrete, taxAmount, taxRate,
+      difalBase: null, difalAmount: null, fcpAmount: null,
+      taxAmountComDifal: null, taxRateComDifal: null, difalFonte: null,
+      difalMotivoAusencia: "intraestadual",
+    };
+  }
+
+  const dest = normalizarUf(String(ufDestino ?? ""));
+  const difal = resolverDifal(dest, receitaBruta, icmsDebito, tabelaUf);
+
+  if (difal.difalAmount === null) {
+    // Guarda de tabela (uf_fora_da_tabela ou uf_nao_confirmada) — o imposto
+    // base continua calculado normalmente, só o DIFAL fica ausente.
+    return {
+      motivo, icmsDebito, pisCofinsDebito, creditoPcComissao, creditoPcFrete, taxAmount, taxRate,
+      difalBase: null, difalAmount: null, fcpAmount: null,
+      taxAmountComDifal: null, taxRateComDifal: null, difalFonte: null,
+      difalMotivoAusencia: difal.difalMotivoAusencia,
+    };
+  }
+
+  const taxAmountComDifal = taxAmount + difal.difalAmount + (difal.fcpAmount ?? 0);
+  const taxRateComDifal = taxRateDerivado(taxAmountComDifal, receitaBruta);
+  const difalFonte = resolverDifalFonte(dest, config.difal_ufs_cobradas_pelo_ml);
+
   return {
     motivo,
     icmsDebito,
@@ -391,14 +517,12 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
     creditoPcFrete,
     taxAmount,
     taxRate,
-    // DIFAL: campos ainda desligados nesta task — a Task 3 substitui este
-    // bloco pela aritmética de base dupla, FCP e procedência (D-07).
-    difalBase: null,
-    difalAmount: null,
-    fcpAmount: null,
-    taxAmountComDifal: null,
-    taxRateComDifal: null,
-    difalFonte: null,
-    difalMotivoAusencia: "nao_calculado_ainda",
+    difalBase: difal.difalBase,
+    difalAmount: difal.difalAmount,
+    fcpAmount: difal.fcpAmount,
+    taxAmountComDifal,
+    taxRateComDifal,
+    difalFonte,
+    difalMotivoAusencia: null,
   };
 }
