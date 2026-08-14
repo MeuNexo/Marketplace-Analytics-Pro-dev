@@ -298,16 +298,8 @@ export interface OrderTaxInput {
   comissao: number | null | undefined;
   frete: number | null | undefined;
   tabelaUf: TabelaDifal | null | undefined;
-  /**
-   * Rebate concedido pelo ML sobre a comissão (D-10.3). O crédito de
-   * PIS/COFINS incide sobre a comissão LÍQUIDA de rebate.
-   *
-   * ⚠️ A contadora não confirmou este ponto — a comissão é uma nota fiscal
-   * MENSAL e o ML não informa quais vendas ela cobre, então o crédito por
-   * pedido é rateio gerencial, nunca a apuração. Decisão do Wesley (13/08):
-   * considerar o rebate mesmo assim.
-   */
-  rebate?: number | null | undefined;
+  // NÃO EXISTE parâmetro `rebate` aqui, e a ausência é deliberada — ver o
+  // bloco "Rebate: por que não há parâmetro" no cabeçalho de comissaoLiquida.
   /** Procedência do SKU (D-11). Sem marcação, `"nacional"` — o comportamento de sempre. */
   procedencia?: Procedencia | null | undefined;
 }
@@ -493,7 +485,6 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
   const receitaBruta = numeroValido(input.receitaBruta);
   const comissao = numeroValido(input.comissao);
   const frete = numeroValido(input.frete);
-  const rebate = numeroValido(input.rebate) ?? 0;
   const procedencia: Procedencia = input.procedencia === "importado" ? "importado" : "nacional";
 
   // 1. Sem configuração fiscal, não existe imposto a inventar.
@@ -551,12 +542,35 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
   // sempre — não há parâmetro que os desligue.
   // null permanece null (ausência de base ≠ crédito zero conhecido).
 
-  // Comissão LÍQUIDA de rebate (D-10.3). Math.max protege contra rebate maior
-  // que a comissão, que viraria crédito negativo.
-  const comissaoLiquida = comissao === null ? null : Math.max(0, comissao - rebate);
-  const creditoPcComissao = comissaoLiquida === null
+  // ── Rebate: por que NÃO há parâmetro (D-10.3, resolvida por medição em 14/08) ──
+  //
+  // D-10.3 diz que o crédito de PIS/COFINS incide sobre a comissão LÍQUIDA de
+  // rebate. Isso está correto — e JÁ É o que acontece, sem nenhum cálculo aqui.
+  //
+  // `orders.comissao` vem de `item.sale_fee` (sync-ml-orders), que é o valor que
+  // o ML EFETIVAMENTE COBROU. Quando uma promoção cofinanciada está ativa, o ML
+  // aplica a parte dele abatendo a própria comissão antes de reportar o
+  // `sale_fee` — não repassando dinheiro por fora.
+  //
+  // Medido no anúncio MLB7070651566 (mesmo item, promoção SMART iniciada em
+  // 01/08/2026):
+  //   08/07  R$ 570,59 → comissão 62,76 = 11,00%   (fora da promoção)
+  //   31/07  R$ 369,99 → comissão 40,70 = 11,00%   (fora da promoção)
+  //   04/08  R$ 358,89 → comissão 21,90 =  6,10%   (dentro)  ← 9 pedidos iguais
+  // E em MLB7168848038: 12,00% fora × 9,40% dentro.
+  //
+  // 🔴 Por isso subtrair um rebate aqui seria DUPLA CONTAGEM: reduziria a base
+  // do crédito por um abatimento que o ML já fez. O parâmetro que existia neste
+  // input foi REMOVIDO em 14/08 — parâmetro cujo único valor correto é zero não
+  // é parâmetro, é armadilha para quem vier depois e o "preencher".
+  //
+  // O `meli_percentage` da API de promoções (`/seller-promotions/.../items`) NÃO
+  // entra aqui. Ele serve à D-218-03 (break-even de ads com e sem rebate), que é
+  // outra pergunta: "o anúncio dá margem por mérito ou só enquanto a promoção
+  // durar?". Ali o rebate é informação de decisão, não componente de imposto.
+  const creditoPcComissao = comissao === null
     ? null
-    : comissaoLiquida * (PIS_COFINS_LUCRO_REAL / 100);
+    : comissao * (PIS_COFINS_LUCRO_REAL / 100);
 
   // Crédito de ICMS sobre o frete (D-10.2), na alíquota da própria operação.
   // Aproximação declarada: a base legal é o CTe, não o frete do pedido.

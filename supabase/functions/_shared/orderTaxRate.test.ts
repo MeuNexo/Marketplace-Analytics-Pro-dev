@@ -584,23 +584,34 @@ describe("computeOrderTax — caso-prova 2000017711929314 na régua D-08/D-10 (b
   });
 });
 
-describe("computeOrderTax — D-10.3: o crédito de comissão é sobre a comissão PÓS-REBATE", () => {
-  it("rebate reduz a base do crédito de comissão", () => {
-    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, rebate: 20 });
-    closeCents(r.creditoPcComissao, (79.69 - 20) * 0.0925);
+describe("computeOrderTax — D-10.3: a comissão JÁ chega líquida de rebate", () => {
+  // Medido em 14/08/2026 contra a API do ML e os pedidos reais: o ML abate a
+  // parte dele da promoção cofinanciada na PRÓPRIA comissão, antes de reportar
+  // o `sale_fee` de onde `orders.comissao` nasce. MLB7070651566: 11,00% fora da
+  // promoção × 6,10% dentro. Logo D-10.3 está satisfeita pelo dado, e subtrair
+  // um rebate aqui seria dupla contagem.
+
+  it("o crédito de comissão é a comissão gravada × 9,25% — sem nenhum abatimento extra", () => {
+    const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
+    closeCents(r.creditoPcComissao, 79.69 * 0.0925);
   });
 
-  it("rebate ausente ou nulo se comporta como zero — comportamento de sempre", () => {
+  it("comissão menor (pedido em promoção cofinanciada) gera crédito proporcionalmente menor", () => {
+    // 21,90 é a comissão real de MLB7070651566 dentro da promoção (era 39,48
+    // pela alíquota cheia). O crédito acompanha o que o ML cobrou, não o cheio.
+    const emPromocao = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, comissao: 21.9 });
+    closeCents(emPromocao.creditoPcComissao, 21.9 * 0.0925);
+  });
+
+  it("NÃO existe parâmetro `rebate` — passá-lo não pode alterar o resultado", () => {
+    // Guarda contra reintrodução: se alguém voltar a aceitar `rebate` no input,
+    // este teste passa a falhar e a dupla contagem é pega antes do deploy.
     const base = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
-    expect(computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, rebate: null }).creditoPcComissao)
-      .toBe(base.creditoPcComissao);
-    expect(computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, rebate: 0 }).creditoPcComissao)
-      .toBe(base.creditoPcComissao);
-  });
-
-  it("rebate maior que a comissão não vira crédito negativo — piso em zero", () => {
-    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, rebate: 999 });
-    expect(r.creditoPcComissao).toBe(0);
+    const comCampoIntruso = computeOrderTax(
+      { ...INPUT_CASO_PROVA_DIFAL, rebate: 20 } as unknown as Parameters<typeof computeOrderTax>[0],
+    );
+    expect(comCampoIntruso.creditoPcComissao).toBe(base.creditoPcComissao);
+    expect(comCampoIntruso.taxAmount).toBe(base.taxAmount);
   });
 });
 
