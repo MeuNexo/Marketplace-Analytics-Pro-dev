@@ -4,6 +4,10 @@ import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { computeOrderTax, type TabelaDifal } from "../_shared/orderTaxRate.ts";
 import { montarTabelaAliquotas } from "../_shared/tabelaUf.ts";
 import {
+  resolverConfigVigente,
+  type LinhaTaxConfigVigencia,
+} from "../_shared/taxConfigVigente.ts";
+import {
   extrairLogisticType,
   ehFlex,
   extrairBonusEnvio,
@@ -453,7 +457,10 @@ function expandOrder(
   syncAt:         string,
   shipmentMap:    Map<number, ShipmentDetail>,
   costMap:        Map<string, number>,
-  taxConfig:      any | null,
+  // [222-05-R] LISTA de vigências da loja, não mais uma config única. O nome
+  // do parâmetro mudou junto com o tipo de propósito: nenhuma chamada antiga
+  // pode continuar compilando por acidente e passando uma config só.
+  taxConfigs:     LinhaTaxConfigVigencia[],
   brandMap:       Map<string, string | null>,
   skuCostMap:     Map<string, number>,
   skuCostFullMap: Map<string, number>,
@@ -461,6 +468,10 @@ function expandOrder(
   // interna + FCP por UF, carregada UMA vez por rodada pelo chamador —
   // nunca uma chamada por pedido dentro deste laço.
   tabelaUf:       TabelaDifal,
+  // [222-05-R] Contador da rodada: quantos pedidos têm loja COM config mas
+  // NENHUMA vigência cobrindo a data deles. Silêncio aqui é o que deixou o
+  // imposto errado viver quatro meses na Fase 220.
+  contadores:     { pedidosSemVigencia: number },
 ): Array<Record<string, unknown>> {
   // Converter para BRT (UTC-3) antes de extrair a data: o range de sync usa meia-noite BRT,
   // e o cliente filtra por data BRT — armazenar em UTC causava desvio de um dia nas bordas.
@@ -471,6 +482,24 @@ function expandOrder(
   };
   const datePedido    = toBRT(order.date_created);
   const dataPagamento = toBRT(order.date_approved);
+
+  // ── Régua fiscal POR COMPETÊNCIA (Fase 222, 222-05-R) ──────────────────────
+  // `datePedido` já está em BRT e no formato ano-mês-dia. A config do pedido é
+  // resolvida AQUI, por pedido — nunca "a config da rodada": a janela de um
+  // sync cruza meses, e usar o fim do lote como referência é o bug que
+  // regravou 352 pedidos do Junior de 01–10/08 com a alíquota de 11/08.
+  const temAlgumaConfig = Array.isArray(taxConfigs) && taxConfigs.length > 0;
+  const taxConfig       = resolverConfigVigente(taxConfigs, datePedido);
+  // Duas ausências DIFERENTES, que antes colapsavam numa só:
+  //  · loja sem config nenhuma  → motivo "sem_config", carve-out deliberado da
+  //    Fase 220: `receita_liquida` continua sendo calculada, para não regredir
+  //    org que nunca cadastrou regime;
+  //  · loja COM config, mas nenhuma vigência cobrindo esta data → o imposto é
+  //    desconhecido de verdade, e `receita_liquida` NÃO pode ser calculada
+  //    como se o imposto fosse zero (sairia inflada pelo valor inteiro dele —
+  //    pior que o bug original).
+  const semVigenciaCobrindo = temAlgumaConfig && taxConfig === null;
+  if (semVigenciaCobrindo) contadores.pedidosSemVigencia++;
 
   const comprador = safeStr(
     order.buyer?.nickname ?? order.buyer?.first_name ?? null,
@@ -570,7 +599,12 @@ function expandOrder(
     // pior que o original. Quando NÃO existe config fiscal nenhuma (motivo
     // "sem_config"), receita_liquida continua calculada como hoje: orgs sem
     // regime cadastrado não podem regredir por causa desta fase.
-    const impostoDesconhecido = breakdown.motivo === "destino_desconhecido";
+    // [222-05-R] `semVigenciaCobrindo` entra JUNTO com destino desconhecido, e
+    // não no carve-out de "sem_config": a loja TEM regime cadastrado, só não
+    // temos a régua daquela competência. Deixar cair no carve-out gravaria
+    // `receita_liquida` inflada pelo imposto inteiro.
+    const impostoDesconhecido =
+      breakdown.motivo === "destino_desconhecido" || semVigenciaCobrindo;
 
     // Flex: bônus e custo de entrega já rateados por linha de item (fora
     // deste map). computeReceitaLiquida soma o bônus como receita própria e
@@ -704,14 +738,20 @@ serve(async (req) => {
     // Sem ORDER BY, o lookup é não-determinístico em multi-tenant (dois orgs com mesmo ml_user_id).
     // process-sync-job não envia organization_id no body; filtro por org é feito pós-lookup via
     // is_org_member (skip para service role). ORDER BY updated_at DESC garante token mais recente.
-    const { data: tokenRow, error: tokenErr } = await supabaseAdmin
+    //
+    // [222-05-R] O modificador de linha única saiu daqui também. Não é o bug
+    // desta fase — `.limit(1)` já garante no máximo uma linha, então a troca é
+    // equivalente em comportamento — mas a régua da fase é "nenhuma leitura de
+    // linha única neste arquivo", e uma exceção sobrevivente convidaria a
+    // próxima. Erro de leitura continua chegando em `tokenErr`.
+    const { data: tokenRows, error: tokenErr } = await supabaseAdmin
       .from("ml_tokens")
       .select("access_token, organization_id, seller_id, updated_at")
       .eq("ml_user_id", ml_user_id)
       .not("access_token", "is", null)
       .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+    const tokenRow = (tokenRows ?? [])[0] ?? null;
 
     if (tokenErr || !tokenRow?.access_token) {
       return new Response(JSON.stringify({ error: "No ML token found for this store" }), {
@@ -821,15 +861,26 @@ serve(async (req) => {
     } = await fetchShipmentDetails(orders, accessToken, 500, jaCompletos);
 
     // ── Load tax config + product costs for this store ──────────────────────
-    let taxConfig: any = null;
+    // [222-05-R] LISTA de vigências, uma leitura por rodada — a escolha da
+    // linha é feita por PEDIDO, dentro de expandOrder. A leitura de linha
+    // única saiu daqui de propósito: com duas vigências ela devolveria erro,
+    // o erro seria ignorado e o imposto da loja inteira sairia ausente em
+    // silêncio. Mesmo espírito do bloco de `tabelaUf` logo abaixo: falha de
+    // leitura degrada para ausência nomeada, nunca para número inventado.
+    let taxConfigs: LinhaTaxConfigVigencia[] = [];
     if (organizationId) {
-      const { data: cfg } = await supabaseAdmin
+      const { data: cfgs, error: erroCfg } = await supabaseAdmin
         .from("ml_tax_config")
         .select("*")
         .eq("ml_user_id", ml_user_id)
-        .eq("organization_id", organizationId)
-        .maybeSingle();
-      taxConfig = cfg ?? null;
+        .eq("organization_id", organizationId);
+      if (erroCfg) {
+        console.warn(
+          `sync-ml-orders: leitura de ml_tax_config falhou (${erroCfg.message}) — seguindo sem config (imposto sai ausente, nunca zero)`,
+        );
+      } else {
+        taxConfigs = (cfgs ?? []) as LinhaTaxConfigVigencia[];
+      }
     }
 
     // ── Tabela de alíquota interna + FCP por UF (Fase 222, TAX-01/02) ────────
@@ -894,9 +945,15 @@ serve(async (req) => {
     console.log(`Brand map populated: ${brandMap.size} entries`);
 
     // ── Expand + upsert ───────────────────────────────────────────────────────
+    const contadoresFiscais = { pedidosSemVigencia: 0 };
     const records = orders.flatMap((o) =>
-      expandOrder(o, ml_user_id, effectiveSellerId, userId, organizationId, syncAt, shipmentMap, costMap, taxConfig, brandMap, skuCostMap, skuCostFullMap, tabelaUf),
+      expandOrder(o, ml_user_id, effectiveSellerId, userId, organizationId, syncAt, shipmentMap, costMap, taxConfigs, brandMap, skuCostMap, skuCostFullMap, tabelaUf, contadoresFiscais),
     );
+    if (contadoresFiscais.pedidosSemVigencia > 0) {
+      console.log(
+        `sync-ml-orders: ${contadoresFiscais.pedidosSemVigencia} pedidos com config fiscal cadastrada mas SEM vigência cobrindo a data do pedido — imposto ausente e receita_liquida não recalculada`,
+      );
+    }
     // Visibilidade (Fase 220, TAX-01): silêncio foi o que deixou o bug do
     // imposto viver quatro meses. Conta quantos itens ficaram com o imposto
     // preservado (não recalculado) por destino desconhecido nesta rodada.
@@ -978,6 +1035,9 @@ serve(async (req) => {
         shipments_failed: shipmentsFailed,
         shipments_total:  shipmentsAttempted,
         tax_preserved:    impostoPreservado,
+        // [222-05-R] Distinto de tax_preserved: aqui a loja TEM regime
+        // cadastrado, e mesmo assim nenhuma vigência cobre a data do pedido.
+        tax_sem_vigencia: contadoresFiscais.pedidosSemVigencia,
         // Flex (Fase 222): silêncio aqui é o que deixou o imposto errado
         // viver quatro meses (Fase 220) — nunca omitir estes três.
         flex_self_service:  flexSelfService,
