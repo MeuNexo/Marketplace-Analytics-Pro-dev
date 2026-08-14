@@ -33,13 +33,22 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { UF_LIST } from "@/lib/tax/regions";
 import { UFS_BRASIL, listaUfParaBanco, normalizarCustoEntrega } from "@/lib/fiscalConfig";
+import { planejarSalvamentoVigencia } from "@/lib/fiscal/vigencia";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Regime = "simples_nacional" | "lucro_presumido" | "lucro_real";
 
 interface TaxConfig {
+  /** [222-05-R] Identificador da linha: sem ele não dá para atualizar uma
+   *  vigência específica, e o salvamento voltaria a depender de upsert por
+   *  conflito de chave — que deixa de existir quando a UNIQUE por loja sai. */
+  id: string;
   ml_user_id: string;
+  /** `AAAA-MM-DD` — desde quando esta régua vale. */
+  vigencia_inicio: string | null;
+  /** `AAAA-MM-DD` ou nulo (= vigência corrente). */
+  vigencia_fim: string | null;
   regime: Regime;
   uf_origem: string | null;
   sn_aliquota_efetiva: number | null;
@@ -87,6 +96,18 @@ function pct(val: string): number {
 
 function fmtPct(val: number): string {
   return val.toFixed(2).replace(".", ",") + "%";
+}
+
+/** `AAAA-MM-DD` → `DD/MM/AAAA`, sem passar por objeto de data (fuso). */
+function fmtData(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const [ano, mes, dia] = String(iso).substring(0, 10).split("-");
+  return ano && mes && dia ? `${dia}/${mes}/${ano}` : null;
+}
+
+/** Hoje em BRT (UTC−3), no formato do input de data. */
+function hojeBRT(): string {
+  return new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().substring(0, 10);
 }
 
 // ─── PercentInput ─────────────────────────────────────────────────────────────
@@ -488,10 +509,14 @@ export default function MLFiscal() {
     queryKey: ["ml", "taxConfig", orgId],
     queryFn: async () => {
       if (!orgId) return [];
+      // [222-05-R] Só a vigência ABERTA. Esta tela edita a régua corrente; sem
+      // o filtro, uma loja com histórico apareceria duas vezes na lista de
+      // cards, cada linha oferecendo editar uma vigência diferente.
       const { data, error } = await supabase
         .from("ml_tax_config")
         .select("*")
-        .eq("organization_id", orgId);
+        .eq("organization_id", orgId)
+        .is("vigencia_fim", null);
       if (error) throw error;
       return (data ?? []) as TaxConfig[];
     },
@@ -520,12 +545,18 @@ export default function MLFiscal() {
   const [difalCobradas, setDifalCobradas] = useState<string[] | null>(null);
   const [flexCustoInput, setFlexCustoInput] = useState<string>("");
 
+  // [222-05-R] Desde quando a régua que está sendo salva vale. Pré-preenchido
+  // com o início da vigência corrente: manter a data = corrigir o período
+  // atual; avançar a data = abrir um período novo e preservar o anterior.
+  const [vigenciaInicio, setVigenciaInicio] = useState<string>("");
+
   const currentConfig = configs.find((c) => c.ml_user_id === selectedStoreId);
 
   function openDialog(mlUserId: string) {
     setSelectedStoreId(mlUserId);
     const existing = configs.find((c) => c.ml_user_id === mlUserId);
     setSelectedTab(existing?.regime ?? "simples_nacional");
+    setVigenciaInicio(existing?.vigencia_inicio ?? hojeBRT());
     setUfOrigem(existing?.uf_origem ?? "");
     setDifalRecolhidas(existing?.difal_ufs_recolhidas ?? null);
     setDifalCobradas(existing?.difal_ufs_cobradas_pelo_ml ?? null);
@@ -557,35 +588,111 @@ export default function MLFiscal() {
       setConfirmOpen(true);
       return;
     }
-    void executeUpsert(merged);
+    void salvarVigencia(merged);
   }
 
-  async function executeUpsert(fields: Partial<TaxConfig>) {
+  /**
+   * [222-05-R] Salvar deixou de sobrescrever a linha da loja.
+   *
+   * O upsert com resolução de conflito por `(ml_user_id, organization_id)`
+   * saiu por dois motivos, cada um suficiente: (1) ele APAGAVA a régua
+   * anterior, e todo recálculo posterior passava a aplicar a alíquota nova ao
+   * passado — foi assim que 352 pedidos do Junior de 01–10/08 viraram 4%;
+   * (2) a restrição de unicidade que ele usava para inferir o conflito deixa
+   * de existir na migration `20260814203000`, e a chamada quebraria na hora.
+   *
+   * A decisão de qual caminho seguir está em `planejarSalvamentoVigencia`
+   * (helper puro e testado); aqui só se executa o que ele devolveu.
+   */
+  async function salvarVigencia(fields: Partial<TaxConfig>) {
     if (!orgId || !selectedStoreId) return;
+
+    const plano = planejarSalvamentoVigencia(
+      currentConfig ? { id: currentConfig.id, vigencia_inicio: currentConfig.vigencia_inicio } : null,
+      vigenciaInicio,
+      { regime: selectedTab, ...fields },
+    );
+
+    if (plano.acao === "recusar") {
+      // Recusa NUNCA escreve nada.
+      toast({ title: "Não foi possível salvar", description: plano.motivo, variant: "destructive" });
+      return;
+    }
+
     setSaving(true);
-    const { error } = await supabase.from("ml_tax_config").upsert(
-      {
+    let error: { message: string } | null = null;
+
+    if (plano.acao === "atualizar") {
+      ({ error } = await supabase
+        .from("ml_tax_config")
+        .update({ ...plano.campos, vigencia_inicio: plano.vigencia_inicio })
+        .eq("id", plano.id));
+    } else if (plano.acao === "inserir_primeira") {
+      ({ error } = await supabase.from("ml_tax_config").insert({
         organization_id: orgId,
         ml_user_id: selectedStoreId,
-        regime: selectedTab,
-        ...fields,
-      },
-      { onConflict: "ml_user_id,organization_id" }
-    );
+        ...plano.campos,
+        vigencia_inicio: plano.vigencia_inicio,
+        vigencia_fim: null,
+      }));
+    } else {
+      // Fechar a corrente e abrir a nova. Se a inserção falhar depois do
+      // fechamento, a loja ficaria SEM vigência aberta — e aí todo pedido novo
+      // sairia sem imposto, em silêncio. Por isso a anterior é reaberta antes
+      // de reportar o erro: melhor voltar ao estado de partida do que deixar a
+      // loja num estado que nenhuma tela mostra.
+      const { error: erroFechar } = await supabase
+        .from("ml_tax_config")
+        .update({ vigencia_fim: plano.fechar_em })
+        .eq("id", plano.id_anterior);
+      if (erroFechar) {
+        setSaving(false);
+        toast({
+          title: "Erro ao encerrar a vigência anterior",
+          description: erroFechar.message,
+          variant: "destructive",
+        });
+        return;
+      }
+      const { error: erroInserir } = await supabase.from("ml_tax_config").insert({
+        organization_id: orgId,
+        ml_user_id: selectedStoreId,
+        ...plano.campos,
+        vigencia_inicio: plano.vigencia_inicio,
+        vigencia_fim: null,
+      });
+      if (erroInserir) {
+        await supabase
+          .from("ml_tax_config")
+          .update({ vigencia_fim: null })
+          .eq("id", plano.id_anterior);
+      }
+      error = erroInserir;
+    }
+
     setSaving(false);
     if (error) {
       toast({ title: "Erro ao salvar", description: error.message, variant: "destructive" });
       return;
     }
     queryClient.invalidateQueries({ queryKey: ["ml", "taxConfig", orgId] });
-    toast({ title: "Regime salvo com sucesso" });
+    toast({
+      title:
+        plano.acao === "abrir_nova"
+          ? `Nova vigência a partir de ${fmtData(plano.vigencia_inicio)}`
+          : "Regime salvo com sucesso",
+      description:
+        plano.acao === "abrir_nova"
+          ? `A régua anterior foi preservada, encerrada em ${fmtData(plano.fechar_em)}.`
+          : undefined,
+    });
     setDialogOpen(false);
     setConfirmOpen(false);
     setPendingFields(null);
   }
 
   function handleConfirmedSave() {
-    if (pendingFields) void executeUpsert(pendingFields);
+    if (pendingFields) void salvarVigencia(pendingFields);
   }
 
   const selectedStore = stores.find((s) => s.ml_user_id === selectedStoreId);
@@ -601,10 +708,18 @@ export default function MLFiscal() {
         </Badge>
       );
     }
+    // [222-05-R] Número fiscal sem data ao lado é a origem deste plano
+    // inteiro: quem olha o selo precisa saber DESDE QUANDO a régua vale.
+    const desde = fmtData(config.vigencia_inicio);
     return (
-      <Badge className="bg-emerald-500/15 text-emerald-700 border-emerald-500/30 text-xs hover:bg-emerald-500/15">
-        {REGIME_LABELS[config.regime]}
-      </Badge>
+      <div className="space-y-1">
+        <Badge className="bg-emerald-500/15 text-emerald-700 border-emerald-500/30 text-xs hover:bg-emerald-500/15">
+          {REGIME_LABELS[config.regime]}
+        </Badge>
+        <p className="text-[11px] text-muted-foreground">
+          {desde ? `Vigente desde ${desde}` : "Vigência não informada"}
+        </p>
+      </div>
     );
   }
 
@@ -669,6 +784,34 @@ export default function MLFiscal() {
               Selecione o regime tributário e preencha os parâmetros.
             </DialogDescription>
           </DialogHeader>
+
+          {/* ── Vigência da régua — 222-05-R, FISC-02 ────────────────────── */}
+          <div className="rounded-md border border-border/60 p-3 space-y-2 bg-muted/30">
+            <Label className="text-xs font-medium flex items-center gap-1">
+              Vigente a partir de
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Info className="w-3 h-3 cursor-help text-muted-foreground" />
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[280px] text-xs">
+                  A alíquota de cada pedido é a que valia na DATA DO PEDIDO. Mudar esta data
+                  abre uma vigência nova e preserva a anterior; manter a data corrige o
+                  período atual.
+                </TooltipContent>
+              </Tooltip>
+            </Label>
+            <Input
+              type="date"
+              className="max-w-[180px]"
+              value={vigenciaInicio}
+              onChange={(e) => setVigenciaInicio(e.target.value)}
+            />
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              {currentConfig?.vigencia_inicio && vigenciaInicio > currentConfig.vigencia_inicio
+                ? `A régua atual (desde ${fmtData(currentConfig.vigencia_inicio)}) será encerrada e preservada — os pedidos anteriores continuam com a alíquota daquele período.`
+                : "Manter a data preenchida corrige a régua do período atual. Avançar a data abre uma vigência nova e preserva o passado."}
+            </p>
+          </div>
 
           {/* ── Entrega própria (Flex) — vale para os três regimes, FLEX-04 ── */}
           <div className="rounded-md border border-border/60 p-3 space-y-2 bg-muted/30">

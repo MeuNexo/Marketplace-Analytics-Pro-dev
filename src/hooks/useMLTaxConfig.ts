@@ -21,6 +21,14 @@ export interface MLTaxConfigEntry extends OrderTaxConfig {
  *
  * effective_rate is the computed value from the DB trigger (see calculate_effective_rate).
  * For lucro_real the value may be negative when credits exceed debits — clamp at display layer.
+ *
+ * [222-05-R] Só a VIGÊNCIA ABERTA (`vigencia_fim IS NULL`). Este hook responde
+ * "qual é a régua de HOJE" para as telas de margem, e essa é a leitura certa
+ * para elas. Sem o filtro, uma loja com histórico devolveria mais de uma linha
+ * e o `Map` abaixo ficaria com a última do array — uma régua sorteada pela
+ * ordem em que o banco devolveu. Quem precisa da régua de uma competência
+ * passada não usa este hook: usa `orders`, onde o imposto já está gravado por
+ * pedido pela vigência que valia na data dele.
  */
 export function useMLTaxConfig(mlUserIds: string[], orgId: string) {
   const { user } = useAuth();
@@ -32,7 +40,8 @@ export function useMLTaxConfig(mlUserIds: string[], orgId: string) {
         .from("ml_tax_config")
         .select("*")
         .in("ml_user_id", mlUserIds)
-        .eq("organization_id", orgId);
+        .eq("organization_id", orgId)
+        .is("vigencia_fim", null);
 
       if (error) throw error;
 
