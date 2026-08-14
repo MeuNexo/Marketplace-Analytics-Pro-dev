@@ -579,7 +579,12 @@ export function SimuladorPrecificacao() {
             </CollapsibleTrigger>
             <CollapsibleContent>
               <CardContent className="px-4 pb-3 pt-0 space-y-2">
-                <ExtraField label="Rebate Mercado Livre" value={state.rebate} onChange={(p) => dispatch({ type: "extra", key: "rebate", patch: p })} />
+                <ExtraField
+                  label="Rebate Mercado Livre"
+                  hint="Abate a comissão do ML, não o preço de venda — diferente do cupom/promoção que o vendedor concede. Medido em 14/08/2026 contra pedidos reais (Fase 222)."
+                  value={state.rebate}
+                  onChange={(p) => dispatch({ type: "extra", key: "rebate", patch: p })}
+                />
                 <ExtraField label="Cupom do vendedor"   value={state.cupom}  onChange={(p) => dispatch({ type: "extra", key: "cupom",  patch: p })} />
                 <ExtraField label="Comissão de afiliado" value={state.afiliado} onChange={(p) => dispatch({ type: "extra", key: "afiliado", patch: p })} />
                 <ExtraField label="Desconto promocional" value={state.promo} onChange={(p) => dispatch({ type: "extra", key: "promo", patch: p })} />
@@ -692,14 +697,31 @@ export function SimuladorPrecificacao() {
 
             <div className="space-y-0.5 text-xs">
               <Row label="Receita bruta" value={formatBRL(result.receitaBruta)} />
-              <Row label={`Comissão ML (${formatPct(pricingInput.commissionPct)})`} value={`-${formatBRL(result.comissaoValor)}`} negative />
+              <Row label={`Comissão ML (${formatPct(pricingInput.commissionPct)})`} value={`-${formatBRL(result.comissaoBruta)}`} negative />
+              {result.rebateValor > 0 && (
+                <Row
+                  label="Rebate ML (abate a comissão)"
+                  value={`+${formatBRL(result.rebateValor)}`}
+                  className="text-kpi-positive"
+                />
+              )}
+              {result.rebateExcedeComissao && (
+                <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-[11px] leading-4 text-amber-700 dark:text-amber-400">
+                  <strong>Rebate maior que a comissão:</strong> o Mercado Livre nunca
+                  abate mais do que cobra de comissão. O valor foi travado em{" "}
+                  {formatBRL(result.comissaoBruta)} (comissão cheia) — provavelmente
+                  você digitou o desconto promocional TOTAL, não só a parte que o ML
+                  banca. Medido em produção (MLB7070651566): o ML financiou 3,7% do
+                  desconto contra 33,4% do vendedor — em geral é uma fatia pequena da
+                  comissão, não o valor inteiro.
+                </div>
+              )}
               <Row label="Taxa fixa" value={`-${formatBRL(result.taxaFixa)}`} negative />
               <Row label="Frete" value={`-${formatBRL(result.frete)}`} negative />
               <Row label={`Imposto (${formatPct(taxPct)})`} value={`-${formatBRL(result.imposto)}`} negative />
               {state.difalEnabled && difalAutoPct > 0 && (
                 <Row label={`DIFAL (${formatPct(difalAutoPct)})`} value={`-${formatBRL(result.difal)}`} negative />
               )}
-              {result.rebateValor > 0 && <Row label="Rebate" value={`-${formatBRL(result.rebateValor)}`} negative />}
               {result.cupomValor > 0 && <Row label="Cupom" value={`-${formatBRL(result.cupomValor)}`} negative />}
               {result.afiliadoValor > 0 && <Row label="Afiliado" value={`-${formatBRL(result.afiliadoValor)}`} negative />}
               {result.promoValor > 0 && <Row label="Promo" value={`-${formatBRL(result.promoValor)}`} negative />}
@@ -756,9 +778,10 @@ function Row({ label, value, negative, bold, className }: {
 }
 
 function ExtraField({
-  label, value, onChange,
+  label, hint, value, onChange,
 }: {
   label: string;
+  hint?: string;
   value: ExtraDeduction;
   onChange: (patch: Partial<ExtraDeduction>) => void;
 }) {
@@ -771,6 +794,12 @@ function ExtraField({
           className="h-4 w-7 [&>span]:h-3 [&>span]:w-3 [&>span]:data-[state=checked]:translate-x-3"
         />
         <span className={`text-xs flex-1 ${value.enabled ? "text-foreground" : "text-muted-foreground"}`}>{label}</span>
+        {hint && (
+          <Tooltip>
+            <TooltipTrigger asChild><Info className="w-3 h-3 text-muted-foreground cursor-help" /></TooltipTrigger>
+            <TooltipContent className="max-w-xs">{hint}</TooltipContent>
+          </Tooltip>
+        )}
       </div>
       <div className="flex items-center gap-2 sm:ml-auto">
         <Select
