@@ -56,6 +56,17 @@ import {
 } from "@/components/mercadolivre/anuncios/soldProductsMcoAgg";
 import type { CurvaAbc } from "@/lib/curvaAbc";
 import { classifyMcoHealth, mcoHealthRole, type McoHealth, type McoColorRole } from "@/lib/mcoHealth";
+import {
+  McoDoisCenarios,
+  McoDoisCenariosCabecalho,
+} from "@/components/mercadolivre/McoDoisCenarios";
+import {
+  DIFAL_ESTIMATIVA_AJUDA,
+  DIFAL_ESTIMATIVA_LABEL,
+  resolveLinhaCenarios,
+  type LinhaCenariosResult,
+} from "@/lib/mcoLinhaCenarios";
+import { useDifalRegimeAplicavel } from "@/hooks/useDifalRegimeAplicavel";
 import { KPI_GLOSSARY } from "@/lib/kpi-glossary";
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
@@ -201,29 +212,86 @@ function BreakevenCell({ item }: { item: PvMcoItem }) {
 
 // ─── Célula/badge de MCO% (semáforo + rótulo + tooltip de quebra de custos) ───
 
-function McoCell({ item }: { item: PvMcoItem }) {
+/**
+ * [222-15-R2] Os dois cenários da linha, decididos por `resolveLinhaCenarios`.
+ *
+ * 🔴 Nada é recalculado aqui: os dois pares saem PRONTOS da mesma RPC, das
+ * mesmas expressões, com o termo de imposto trocado. Somar DIFAL sobre o MCO
+ * já pronto é o atalho que custou R$ 3,85 por pedido no 222-06-R/07-R.
+ */
+function cenariosPosAds(item: PvMcoItem, regimeAplicaDifal?: boolean): LinhaCenariosResult {
+  return resolveLinhaCenarios({
+    semDifal: { valor: item.mcoReais, pct: item.mcoPct },
+    comDifal:
+      item.mcoComDifalReais != null
+        ? { valor: item.mcoComDifalReais, pct: item.mcoPctComDifal }
+        : null,
+    difalEfeito: item.difalEfeito,
+    pedidosDifalIndefinido: item.pedidosDifalIndefinido,
+    regimeAplicaDifal,
+  });
+}
+
+function cenariosPreAds(item: PvMcoItem, regimeAplicaDifal?: boolean): LinhaCenariosResult {
+  return resolveLinhaCenarios({
+    semDifal: { valor: item.mcoPreAdsReais ?? 0, pct: item.mcoPreAdsPct },
+    comDifal:
+      item.mcoPreAdsComDifalReais != null
+        ? { valor: item.mcoPreAdsComDifalReais, pct: item.mcoPreAdsPctComDifal }
+        : null,
+    difalEfeito: item.difalEfeito,
+    pedidosDifalIndefinido: item.pedidosDifalIndefinido,
+    regimeAplicaDifal,
+  });
+}
+
+function McoCell({
+  item,
+  regimeAplicaDifal,
+}: {
+  item: PvMcoItem;
+  regimeAplicaDifal?: boolean;
+}) {
+  // 🔴 O SEMÁFORO CONTINUA LENDO O CENÁRIO SEM DIFAL. Trocar a base de uma cor
+  // é decisão de negócio que ninguém tomou — o Wesley pediu para VER os dois
+  // cenários, não para realertar por outro.
   const role = mcoHealthRole(item.health);
   const cls = MCO_ROLE_CLASSES[role];
-  const label = item.hasCmv ? pctFmt(item.mcoPct) : "—";
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <span className="inline-flex items-center gap-1.5 cursor-default">
           <span className={`w-2 h-2 rounded-full shrink-0 ${cls.dot}`} aria-hidden="true" />
-          <span className={`text-xs font-medium tabular-nums ${cls.text}`}>{label}</span>
+          {item.hasCmv ? (
+            <McoDoisCenarios
+              cenarios={cenariosPosAds(item, regimeAplicaDifal)}
+              densidade="celula"
+              role={role}
+              ressalvaNoCabecalho
+              rotuloSemDifal=""
+              rotuloComDifal="c/ DIFAL"
+            />
+          ) : (
+            <span className={`text-xs font-medium tabular-nums ${cls.text}`}>—</span>
+          )}
           {!item.hasCmv && (
             <AlertCircle className="w-3 h-3 text-muted-foreground shrink-0" aria-hidden="true" />
           )}
         </span>
       </TooltipTrigger>
-      <TooltipContent side="top" className="text-xs max-w-[240px] space-y-1">
+      <TooltipContent side="top" className="text-xs max-w-[260px] space-y-1">
         {!item.hasCmv && (
           <p className="font-medium text-warning">Sem custo cadastrado — MCO indefinido</p>
         )}
         <p>
           MCO {brl(item.mcoReais)} · Ads {brl(item.adsSpend)} · Comissão {brl(item.comissao)} · Frete{" "}
           {brl(item.frete)} · Imposto {brl(item.impostos)}
+        </p>
+        <p className="border-t border-border/50 pt-1">
+          {item.mcoComDifalReais != null
+            ? `Com DIFAL (${DIFAL_ESTIMATIVA_LABEL}): ${brl(item.mcoComDifalReais)} · efeito do DIFAL ${brl(item.difalEfeito ?? 0)}. ${DIFAL_ESTIMATIVA_AJUDA}`
+            : DIFAL_ESTIMATIVA_AJUDA}
         </p>
       </TooltipContent>
     </Tooltip>
@@ -236,7 +304,13 @@ function McoCell({ item }: { item: PvMcoItem }) {
 // responde "o produto é bom?" contra "ele é bom depois do que gastei para
 // vendê-lo?". A diferença entre as duas É o peso da publicidade.
 
-function PreAdsCell({ item }: { item: PvMcoItem }) {
+function PreAdsCell({
+  item,
+  regimeAplicaDifal,
+}: {
+  item: PvMcoItem;
+  regimeAplicaDifal?: boolean;
+}) {
   if (item.mcoPreAdsPct === null) {
     return (
       <Tooltip>
@@ -253,16 +327,23 @@ function PreAdsCell({ item }: { item: PvMcoItem }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="text-xs tabular-nums text-foreground cursor-default">
-          {pctFmt(item.mcoPreAdsPct)}
+        <span className="cursor-default">
+          <McoDoisCenarios
+            cenarios={cenariosPreAds(item, regimeAplicaDifal)}
+            densidade="celula"
+            ressalvaNoCabecalho
+            rotuloSemDifal=""
+            rotuloComDifal="c/ DIFAL"
+          />
         </span>
       </TooltipTrigger>
-      <TooltipContent side="top" className="text-xs max-w-[240px]">
+      <TooltipContent side="top" className="text-xs max-w-[260px] space-y-1">
         <p>
           Margem antes da publicidade
           {item.mcoPreAdsReais !== null ? `: ${brl(item.mcoPreAdsReais)}` : ""}. Depois dos{" "}
           {brl(item.adsSpend)} de ads, sobra {pctFmt(item.mcoPct)}.
         </p>
+        <p className="border-t border-border/50 pt-1">{DIFAL_ESTIMATIVA_AJUDA}</p>
       </TooltipContent>
     </Tooltip>
   );
@@ -271,34 +352,57 @@ function PreAdsCell({ item }: { item: PvMcoItem }) {
 // ─── Badge de MCO% do grupo (painel esquerdo + cabeçalho-resumo) ─────────────
 
 function GroupMcoBadge({
-  mcoPct,
-  hasMissingCost,
+  group,
   size = "sm",
+  regimeAplicaDifal,
 }: {
-  mcoPct: number | null;
-  hasMissingCost: boolean;
+  group: PvMcoGroup;
   size?: "sm" | "md";
+  regimeAplicaDifal?: boolean;
 }) {
-  const health: McoHealth = classifyMcoHealth(mcoPct);
+  // Semáforo do grupo continua na régua SEM DIFAL — ver a nota em McoCell.
+  const health: McoHealth = classifyMcoHealth(group.mcoPct);
   const role = mcoHealthRole(health);
   const cls = MCO_ROLE_CLASSES[role];
-  const textSize = size === "md" ? "text-sm" : "text-[11px]";
+
+  // [222-15-R2] O par do grupo. O percentual do segundo cenário já veio da
+  // agregação como RAZÃO DE SOMAS (Σlucro pós-ads com DIFAL ÷ Σreceita),
+  // nunca média dos percentuais dos itens.
+  const cenarios = resolveLinhaCenarios({
+    semDifal: { valor: group.revenue * ((group.mcoPct ?? 0) / 100), pct: group.mcoPct },
+    comDifal:
+      group.mcoComDifalReais != null
+        ? { valor: group.mcoComDifalReais, pct: group.mcoPctComDifal }
+        : null,
+    difalEfeito: group.difalEfeito,
+    pedidosDifalIndefinido: group.pedidosDifalIndefinido,
+    regimeAplicaDifal,
+  });
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <span className="inline-flex items-center gap-1 cursor-default">
           <span className={`w-2 h-2 rounded-full shrink-0 ${cls.dot}`} aria-hidden="true" />
-          <span className={`${textSize} font-medium tabular-nums ${cls.text}`}>{pctFmt(mcoPct)}</span>
-          {hasMissingCost && (
+          <McoDoisCenarios
+            cenarios={cenarios}
+            densidade={size === "md" ? "bloco" : "celula"}
+            role={role}
+            rotuloSemDifal=""
+            rotuloComDifal="c/ DIFAL"
+          />
+          {group.hasMissingCost && (
             <AlertCircle className="w-2.5 h-2.5 text-muted-foreground shrink-0" aria-hidden="true" />
           )}
         </span>
       </TooltipTrigger>
-      <TooltipContent side="top" className="text-xs max-w-[220px]">
-        {hasMissingCost
-          ? "MCO% inclui anúncios sem custo cadastrado — pode estar impreciso."
-          : "MCO% médio pós-ads do grupo (Σlucro pós-ads ÷ Σreceita)."}
+      <TooltipContent side="top" className="text-xs max-w-[240px] space-y-1">
+        <p>
+          {group.hasMissingCost
+            ? "MCO% inclui anúncios sem custo cadastrado — pode estar impreciso."
+            : "MCO% médio pós-ads do grupo (Σlucro pós-ads ÷ Σreceita)."}
+        </p>
+        <p className="border-t border-border/50 pt-1">{DIFAL_ESTIMATIVA_AJUDA}</p>
       </TooltipContent>
     </Tooltip>
   );
@@ -325,12 +429,15 @@ function SortHead({
   currentDir,
   onSort,
   tooltip,
+  ressalvaDifal = false,
 }: {
   sortKey: SortKey;
   currentKey: SortKey;
   currentDir: SortDir;
   onSort: (k: SortKey) => void;
   tooltip?: string;
+  /** Coluna que exibe os dois cenários: carrega a ressalva UMA vez. */
+  ressalvaDifal?: boolean;
 }) {
   const isActive = currentKey === key;
   const label = COLUMN_LABEL[key];
@@ -341,7 +448,7 @@ function SortHead({
       className="inline-flex items-center gap-1 justify-end cursor-pointer select-none group"
       onClick={() => onSort(key)}
     >
-      {label}
+      {ressalvaDifal ? <McoDoisCenariosCabecalho titulo={label} /> : label}
       <SortIndicator active={isActive} dir={currentDir} />
     </span>
   );
@@ -394,6 +501,11 @@ export default function MLResultado() {
   // Fase 212: a publicidade destas linhas é a fatura do ML rateada por anúncio,
   // não mais o gasto do relatório de publicidade. `margem.ads` diz a origem.
   const { data: margem, isLoading } = useMLMarginWithAds(currentFrom, currentTo);
+
+  // [222-15-R2] O recorte de lojas recolhe DIFAL? `false` só quando TODAS são
+  // do Simples Nacional — aí as células dizem "regime não aplicável" em vez de
+  // exibir dois números iguais e mudos (foi o caso da conta Junior).
+  const regimeAplicaDifal = useDifalRegimeAplicavel();
 
   // Ate que horas o numero desta tela vale. Em 04/08 a operacao vendeu
   // R$ 19.040 e a tela mostrou R$ 13-14 mil: o calculo estava certo, faltava
@@ -610,7 +722,7 @@ export default function MLResultado() {
                             <span className="font-medium text-foreground">
                               {brl(g.revenue)}
                             </span>
-                            <GroupMcoBadge mcoPct={g.mcoPct} hasMissingCost={g.hasMissingCost} />
+                            <GroupMcoBadge group={g} regimeAplicaDifal={regimeAplicaDifal} />
                             <span>{intFmt(g.qty)} un.</span>
                           </span>
                         </span>
@@ -656,9 +768,9 @@ export default function MLResultado() {
                           MCO% médio
                         </p>
                         <GroupMcoBadge
-                          mcoPct={selectedGroup.mcoPct}
-                          hasMissingCost={selectedGroup.hasMissingCost}
+                          group={selectedGroup}
                           size="md"
+                          regimeAplicaDifal={regimeAplicaDifal}
                         />
                       </div>
                       <div>
@@ -696,6 +808,11 @@ export default function MLResultado() {
                               currentKey={sortKey}
                               currentDir={sortDir}
                               onSort={onSortClick}
+                              /* [222-15-R2] A ressalva de estimativa aparece UMA
+                                 vez, no cabeçalho das duas colunas de MCO — não
+                                 repetida em cada uma das centenas de linhas. A
+                                 palavra tem de informar, não virar ruído. */
+                              ressalvaDifal={k === "mcoPct" || k === "mcoPreAdsPct"}
                             />
                           ))}
                         </tr>
@@ -732,10 +849,10 @@ export default function MLResultado() {
                                 {brl(item.revenue)}
                               </td>
                               <td className="py-2.5 text-right pr-4">
-                                <PreAdsCell item={item} />
+                                <PreAdsCell item={item} regimeAplicaDifal={regimeAplicaDifal} />
                               </td>
                               <td className="py-2.5 text-right pr-4">
-                                <McoCell item={item} />
+                                <McoCell item={item} regimeAplicaDifal={regimeAplicaDifal} />
                               </td>
                               <td className="py-2.5 text-right pr-4 text-xs tabular-nums text-muted-foreground">
                                 {pctFmt(item.acosPct)}
@@ -829,13 +946,13 @@ export default function MLResultado() {
                             <div>
                               <span className="text-muted-foreground">MCO pré-ads</span>
                               <p className="font-medium tabular-nums">
-                                <PreAdsCell item={item} />
+                                <PreAdsCell item={item} regimeAplicaDifal={regimeAplicaDifal} />
                               </p>
                             </div>
                             <div>
                               <span className="text-muted-foreground">MCO pós-ads</span>
                               <p className="font-medium tabular-nums">
-                                <McoCell item={item} />
+                                <McoCell item={item} regimeAplicaDifal={regimeAplicaDifal} />
                               </p>
                             </div>
                             <div>

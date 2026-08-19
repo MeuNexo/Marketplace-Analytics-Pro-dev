@@ -18,6 +18,11 @@ import {
 // e a sub-tabela de variações chamam os dois helpers abaixo, nunca aritmética
 // de margem inline. Ver o cabeçalho de anuncioMargens.ts para a régua completa.
 import { calcularMargensDoAnuncio, precoPromocionalAplicavel } from "@/lib/anuncioMargens";
+import { McoDoisCenarios, McoDoisCenariosCabecalho } from "@/components/mercadolivre/McoDoisCenarios";
+import {
+  cenariosMargemReal,
+  regimeAplicaDifalNasLojas,
+} from "@/lib/mcoLinhaCenarios";
 // AV-03: a ausência de CMV é contada e declarada em agregado, em vez de virar
 // um traço solto célula a célula. Ver o cabeçalho de custoFaltante.ts.
 import { contarSemCusto } from "@/lib/custoFaltante";
@@ -703,6 +708,17 @@ export default function MLAnunciosPage() {
     [marginWithAds],
   );
 
+  // [222-15-R2] O recorte de lojas recolhe DIFAL? `false` só quando TODAS são
+  // do Simples Nacional — aí as colunas dizem "regime não aplicável" em vez de
+  // exibir dois números iguais e mudos.
+  const regimeAplicaDifal = useMemo(
+    () =>
+      taxMap
+        ? regimeAplicaDifalNasLojas(resolvedMLUserIds.map((id) => taxMap.get(id)?.regime ?? null))
+        : undefined,
+    [taxMap, resolvedMLUserIds],
+  );
+
   // ── CR-09: os metadados de publicidade deixam de ser descartados ───────────
   // O hook devolve `{ rows, ads }` e esta tela só lia `.rows`, apesar de as
   // colunas Mg. Pós-Ads consumirem a régua da fatura. `/produtos-vendidos` já
@@ -1312,6 +1328,7 @@ export default function MLAnunciosPage() {
                   });
                   const mads = marginByItem.get(item.id);
                   const mgOp = mads?.lucro_pct;
+                  const mgPosAds = mads?.lucro_pct_pos_ads;
                   return (
                     <div
                       key={item.id}
@@ -1332,9 +1349,34 @@ export default function MLAnunciosPage() {
                             // reais, que é o que permite agir sem sair da tela.
                             ["Imposto",  margens.impostoValor != null ? currencyFmt(margens.impostoValor) : "—"],
                             ["Comissão", `−${currencyFmt(margens.comissaoValor)}`],
-                            ["Mg. Op.",  mgOp != null ? `${mgOp.toFixed(1)}%` : "—"],
-                          ] as [string, string][] : []),
-                        ] as [string, string][]).map(([label, val]) => (
+                            /* [222-15-R2] 🔴 O ramo móvel recebe o MESMO par do
+                               ramo de mesa. Ligar um só deixaria metade da tela
+                               numa régua diferente da outra — foi exatamente o
+                               defeito CR-08 desta página. O cartão não comporta
+                               duas linhas por métrica, então o par vira uma
+                               linha só, com os dois números. */
+                            ["Mg. Op.",
+                              mgOp != null && mads !== undefined ? (
+                                <McoDoisCenarios
+                                  cenarios={cenariosMargemReal(mads, "preAds", regimeAplicaDifal)}
+                                  densidade="celula"
+                                  role={mgOp >= 0 ? "good" : "critical"}
+                                  rotuloSemDifal=""
+                                  rotuloComDifal="c/ DIFAL"
+                                />
+                              ) : "—"],
+                            ["Mg. Pós-Ads",
+                              mgPosAds != null && mads !== undefined ? (
+                                <McoDoisCenarios
+                                  cenarios={cenariosMargemReal(mads, "posAds", regimeAplicaDifal)}
+                                  densidade="celula"
+                                  role={mgPosAds >= 0 ? "good" : "critical"}
+                                  rotuloSemDifal=""
+                                  rotuloComDifal="c/ DIFAL"
+                                />
+                              ) : "—"],
+                          ] as [string, React.ReactNode][] : []),
+                        ] as [string, React.ReactNode][]).map(([label, val]) => (
                           <div key={label}>
                             <span className="text-muted-foreground">{label} </span>
                             <span className="font-mono tabular-nums">{val}</span>
@@ -1385,7 +1427,7 @@ export default function MLAnunciosPage() {
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <span className="cursor-help border-b border-dashed border-muted-foreground/40">
-                                  Mg. Op.
+                                  <McoDoisCenariosCabecalho titulo="Mg. Op." />
                                   {/* CR-09: a janela que a coluna cobre, em datas. Sem
                                       isso, uma coluna de margem ao lado de um seletor de
                                       período é um convite ao engano. */}
@@ -1404,7 +1446,7 @@ export default function MLAnunciosPage() {
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <span className="cursor-help border-b border-dashed border-muted-foreground/40">
-                                  Mg. Pós-Ads
+                                  <McoDoisCenariosCabecalho titulo="Mg. Pós-Ads" />
                                   <span className="block text-[9px] font-normal text-muted-foreground tabular-nums">
                                     {janelaMargemLabel}
                                   </span>
@@ -1566,8 +1608,8 @@ export default function MLAnunciosPage() {
                                     const mads = marginByItem.get(item.id);
                                     const mgOp     = mads?.lucro_pct;
                                     const mgPosAds = mads?.lucro_pct_pos_ads;
-                                    const colorFor = (v: number | null | undefined) =>
-                                      v == null ? "" : v >= 0 ? "text-kpi-positive" : "text-kpi-negative";
+                                    const roleFor = (v: number | null | undefined) =>
+                                      v == null ? "neutral" : v >= 0 ? "good" : "critical";
                                     const semVendas = mads === undefined;
                                     return (
                                       <>
@@ -1582,7 +1624,15 @@ export default function MLAnunciosPage() {
                                               </TooltipContent>
                                             </Tooltip>
                                           ) : (
-                                            <span className={`text-xs font-bold tabular-nums ${colorFor(mgOp)}`}>{mgOp!.toFixed(1)}%</span>
+                                            /* [222-15-R2] Os dois cenários, na mesma régua do banco. */
+                                            <McoDoisCenarios
+                                              cenarios={cenariosMargemReal(mads, "preAds", regimeAplicaDifal)}
+                                              densidade="celula"
+                                              role={roleFor(mgOp)}
+                                              ressalvaNoCabecalho
+                                              rotuloSemDifal=""
+                                              rotuloComDifal="c/ DIFAL"
+                                            />
                                           )}
                                         </TableCell>
                                         <TableCell className="text-right">
@@ -1596,7 +1646,14 @@ export default function MLAnunciosPage() {
                                               </TooltipContent>
                                             </Tooltip>
                                           ) : (
-                                            <span className={`text-xs font-bold tabular-nums ${colorFor(mgPosAds)}`}>{mgPosAds!.toFixed(1)}%</span>
+                                            <McoDoisCenarios
+                                              cenarios={cenariosMargemReal(mads, "posAds", regimeAplicaDifal)}
+                                              densidade="celula"
+                                              role={roleFor(mgPosAds)}
+                                              ressalvaNoCabecalho
+                                              rotuloSemDifal=""
+                                              rotuloComDifal="c/ DIFAL"
+                                            />
                                           )}
                                         </TableCell>
                                       </>

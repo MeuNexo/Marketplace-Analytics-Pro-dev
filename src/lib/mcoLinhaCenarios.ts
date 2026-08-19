@@ -186,3 +186,76 @@ export function fraseMotivoSemDifal(
 /** Frase que explica dois números iguais: o DIFAL estimado não moveu a margem. */
 export const FRASE_EFEITO_NULO =
   "O DIFAL estimado não muda a margem neste recorte — os dois cenários coincidem.";
+
+/**
+ * Formato mínimo de uma linha de `get_margin_with_ads_by_product` — só os
+ * campos que o par de cenários consome. Deliberadamente estrutural (e não o
+ * tipo inteiro do hook) para este módulo continuar sem dependência de rede.
+ */
+export interface LinhaMargemComDifal {
+  lucro: number;
+  lucro_pct: number | null;
+  lucro_pos_ads: number;
+  lucro_pct_pos_ads: number | null;
+  lucro_com_difal?: number | null;
+  lucro_pct_com_difal?: number | null;
+  lucro_pos_ads_com_difal?: number | null;
+  lucro_pct_pos_ads_com_difal?: number | null;
+  difal_efeito?: number | null;
+  pedidos_difal_indefinido?: number | null;
+}
+
+/**
+ * Monta o par de cenários de uma linha de margem REAL — a que vem pronta do
+ * banco. Existe para as três telas que consomem a mesma RPC (`/resultado`,
+ * `/publicidade`, `/anuncios` nos dois ramos) não escreverem três vezes a
+ * mesma projeção: foi assim que a página de anúncios acabou com duas fórmulas
+ * de margem, uma por ramo de renderização (CR-08).
+ *
+ * 🔴 Zero aritmética: os quatro números já vieram da mesma expressão SQL,
+ * trocando só o termo de imposto.
+ */
+export function cenariosMargemReal(
+  linha: LinhaMargemComDifal | null | undefined,
+  qual: "preAds" | "posAds",
+  regimeAplicaDifal?: boolean,
+): LinhaCenariosResult {
+  const preAds = qual === "preAds";
+  const semDifalValor = preAds ? linha?.lucro ?? 0 : linha?.lucro_pos_ads ?? 0;
+  const semDifalPct = preAds ? linha?.lucro_pct ?? null : linha?.lucro_pct_pos_ads ?? null;
+  const comValor = preAds ? linha?.lucro_com_difal : linha?.lucro_pos_ads_com_difal;
+  const comPct = preAds ? linha?.lucro_pct_com_difal : linha?.lucro_pct_pos_ads_com_difal;
+
+  return resolveLinhaCenarios({
+    semDifal: { valor: semDifalValor, pct: semDifalPct },
+    comDifal: comValor != null ? { valor: comValor, pct: comPct ?? null } : null,
+    difalEfeito: linha?.difal_efeito,
+    pedidosDifalIndefinido: linha?.pedidos_difal_indefinido,
+    regimeAplicaDifal,
+  });
+}
+
+/**
+ * O recorte de lojas selecionado recolhe DIFAL?
+ *
+ * Só o Simples Nacional é imune por destino — Lucro Presumido e Lucro Real
+ * recolhem. A resposta é:
+ *
+ * - `false` quando TODAS as lojas do recorte são do Simples: aí o segundo
+ *   cenário não existe por regime, e a tela diz isso em palavras (foi o caso
+ *   da conta Junior, que ficaria com dois números iguais e mudos).
+ * - `true` quando pelo menos uma loja recolhe — um número agregado que mistura
+ *   regimes não pode ser declarado imune.
+ * - `undefined` quando não há informação de regime nenhuma: não saber não pode
+ *   virar a afirmação de que não se aplica.
+ *
+ * Mesma disciplina de `regua_*_configurada` no resumo agregado: o estado
+ * conservador vale para o recorte inteiro, nunca por metade.
+ */
+export function regimeAplicaDifalNasLojas(
+  regimes: ReadonlyArray<string | null | undefined>,
+): boolean | undefined {
+  const conhecidos = regimes.filter((r): r is string => !!r);
+  if (conhecidos.length === 0) return undefined;
+  return conhecidos.some((r) => r !== "simples_nacional");
+}

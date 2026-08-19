@@ -77,6 +77,23 @@ export interface McoProductRow {
   lucro_pos_ads: number;
   lucro_pct_pos_ads: number | null;
   has_cmv: boolean;
+
+  // ── Segundo cenário: com DIFAL (Fase 222, 222-15-R2) ──────────────────────
+  // Opcionais de propósito: linha vinda de uma RPC que ainda não devolve as
+  // colunas novas (janela de publicação) chega sem eles, e a agregação
+  // responde com ausência declarada, nunca com zero.
+  /** Efeito líquido do DIFAL do anúncio (R$); null/ausente = não apurado. */
+  difal_efeito?: number | null;
+  /** Pedidos do anúncio com destino interestadual e sem DIFAL calculado. */
+  pedidos_difal_indefinido?: number | null;
+  /** Lucro pré-ads COM DIFAL (R$); null/ausente = não apurado. */
+  lucro_com_difal?: number | null;
+  /** Margem pré-ads COM DIFAL (%); null quando receita = 0 ou não apurado. */
+  lucro_pct_com_difal?: number | null;
+  /** Lucro pós-ads COM DIFAL (R$); null/ausente = não apurado. */
+  lucro_pos_ads_com_difal?: number | null;
+  /** Margem pós-ads COM DIFAL (%); null quando receita = 0 ou não apurado. */
+  lucro_pct_pos_ads_com_difal?: number | null;
 }
 
 /** Um grupo de vendas por marca ou categoria, com saúde de MCO agregada. */
@@ -95,6 +112,21 @@ export interface PvMcoGroup {
   redCount: number;
   /** true quando algum anúncio do grupo tem has_cmv=false (custo ausente). */
   hasMissingCost: boolean;
+
+  // ── Segundo cenário do grupo (222-15-R2) ──────────────────────────────────
+  //
+  // 🔴 MESMA REGRA TRAVADA DO PRIMEIRO: o percentual do grupo é RAZÃO DE
+  // SOMAS (Σlucro_pos_ads_com_difal ÷ Σreceita × 100), nunca a média simples
+  // dos percentuais dos itens. Um anúncio de R$ 12 e outro de R$ 12.000 não
+  // pesam igual na margem da marca.
+  /** MCO em R$ pós-ads COM DIFAL; null quando algum item não foi apurado. */
+  mcoComDifalReais: number | null;
+  /** MCO% pós-ads COM DIFAL = razão de somas; null sem receita ou apuração. */
+  mcoPctComDifal: number | null;
+  /** Soma dos efeitos líquidos de DIFAL dos itens (R$); null se não apurado. */
+  difalEfeito: number | null;
+  /** Soma dos pedidos do grupo fora da conta por UF não confirmada. */
+  pedidosDifalIndefinido: number;
 }
 
 /**
@@ -143,6 +175,22 @@ export interface PvMcoItem {
   impostos: number;
   /** Gasto de ads do anúncio (R$) — quebra de custos do tooltip. */
   adsSpend: number;
+
+  // ── Segundo cenário do item (222-15-R2) ───────────────────────────────────
+  /** MCO em R$ pós-ads COM DIFAL; null quando não apurado. */
+  mcoComDifalReais: number | null;
+  /** MCO% pós-ads COM DIFAL; null quando não apurado ou sem receita. */
+  mcoPctComDifal: number | null;
+  /** MCO em R$ PRÉ-ads COM DIFAL; null sem custo cadastrado ou não apurado. */
+  mcoPreAdsComDifalReais: number | null;
+  /** MCO% PRÉ-ads COM DIFAL; null sem custo cadastrado ou não apurado. */
+  mcoPreAdsPctComDifal: number | null;
+  /** Breakeven de ACoS no cenário COM DIFAL (%); null pela mesma disciplina. */
+  breakevenAcosPctComDifal: number | null;
+  /** Efeito líquido do DIFAL do anúncio (R$); null quando não apurado. */
+  difalEfeito: number | null;
+  /** Pedidos do anúncio fora da conta por UF não confirmada. */
+  pedidosDifalIndefinido: number;
 }
 
 // ─── Helpers internos ─────────────────────────────────────────────────────────
@@ -202,14 +250,36 @@ export function aggregateMcoGroups(
 ): PvMcoGroup[] {
   const map = new Map<
     string,
-    { revenue: number; qty: number; lucroPosAdsSum: number; redCount: number; hasMissingCost: boolean }
+    {
+      revenue: number;
+      qty: number;
+      lucroPosAdsSum: number;
+      redCount: number;
+      hasMissingCost: boolean;
+      lucroPosAdsComDifalSum: number;
+      difalEfeitoSum: number;
+      pedidosDifalIndefinido: number;
+      /** Algum item do grupo não teve o segundo cenário apurado. */
+      algumSemSegundoCenario: boolean;
+    }
   >();
 
   for (const row of rows) {
     const key = groupKey(row, pvView, itemsMap);
-    const prev = map.get(key) ?? { revenue: 0, qty: 0, lucroPosAdsSum: 0, redCount: 0, hasMissingCost: false };
+    const prev = map.get(key) ?? {
+      revenue: 0,
+      qty: 0,
+      lucroPosAdsSum: 0,
+      redCount: 0,
+      hasMissingCost: false,
+      lucroPosAdsComDifalSum: 0,
+      difalEfeitoSum: 0,
+      pedidosDifalIndefinido: 0,
+      algumSemSegundoCenario: false,
+    };
 
     const health = itemHealth(row);
+    const semSegundo = row.lucro_pos_ads_com_difal == null;
 
     map.set(key, {
       revenue: prev.revenue + row.receita,
@@ -217,19 +287,38 @@ export function aggregateMcoGroups(
       lucroPosAdsSum: prev.lucroPosAdsSum + row.lucro_pos_ads,
       redCount: prev.redCount + (health === "vermelho" ? 1 : 0),
       hasMissingCost: prev.hasMissingCost || !row.has_cmv,
+      // Um item sem segundo cenário CONTAMINA o grupo: somar só os apurados
+      // produziria um total que não corresponde à receita do denominador.
+      lucroPosAdsComDifalSum:
+        prev.lucroPosAdsComDifalSum + (row.lucro_pos_ads_com_difal ?? 0),
+      difalEfeitoSum: prev.difalEfeitoSum + (row.difal_efeito ?? 0),
+      pedidosDifalIndefinido:
+        prev.pedidosDifalIndefinido + (row.pedidos_difal_indefinido ?? 0),
+      algumSemSegundoCenario: prev.algumSemSegundoCenario || semSegundo,
     });
   }
 
   return Array.from(map.entries())
-    .map(([key, d]) => ({
-      key,
-      name: key || (pvView === "marca" ? "Sem marca" : "Sem categoria"),
-      revenue: d.revenue,
-      qty: d.qty,
-      mcoPct: d.revenue > 0 ? (d.lucroPosAdsSum / d.revenue) * 100 : null,
-      redCount: d.redCount,
-      hasMissingCost: d.hasMissingCost,
-    }))
+    .map(([key, d]) => {
+      const temSegundoCenario = !d.algumSemSegundoCenario;
+      return {
+        key,
+        name: key || (pvView === "marca" ? "Sem marca" : "Sem categoria"),
+        revenue: d.revenue,
+        qty: d.qty,
+        mcoPct: d.revenue > 0 ? (d.lucroPosAdsSum / d.revenue) * 100 : null,
+        redCount: d.redCount,
+        hasMissingCost: d.hasMissingCost,
+        mcoComDifalReais: temSegundoCenario ? d.lucroPosAdsComDifalSum : null,
+        // Razão de somas, igual ao primeiro cenário — nunca média de %.
+        mcoPctComDifal:
+          temSegundoCenario && d.revenue > 0
+            ? (d.lucroPosAdsComDifalSum / d.revenue) * 100
+            : null,
+        difalEfeito: temSegundoCenario ? d.difalEfeitoSum : null,
+        pedidosDifalIndefinido: d.pedidosDifalIndefinido,
+      };
+    })
     .sort((a, b) => b.revenue - a.revenue);
 }
 
@@ -263,6 +352,12 @@ export function aggregateMcoItems(
       // zero. Sem receita no período, o percentual já vem null da própria RPC.
       const preAdsPct = row.has_cmv && row.lucro_pct != null ? row.lucro_pct : null;
 
+      // [222-15-R2] O segundo cenário obedece EXATAMENTE à mesma disciplina do
+      // primeiro: sem CMV o pré-ads sai inflado (o custo entra como zero), e
+      // trocar um número errado por outro não é ganho — fica indefinido.
+      const preAdsPctComDifal =
+        row.has_cmv && row.lucro_pct_com_difal != null ? row.lucro_pct_com_difal : null;
+
       return {
         item_id: row.item_id,
         title,
@@ -283,6 +378,15 @@ export function aggregateMcoItems(
         frete: row.frete,
         impostos: row.impostos,
         adsSpend: row.ads_spend,
+        mcoComDifalReais: row.lucro_pos_ads_com_difal ?? null,
+        mcoPctComDifal: row.lucro_pct_pos_ads_com_difal ?? null,
+        mcoPreAdsComDifalReais:
+          row.has_cmv && row.lucro_com_difal != null ? row.lucro_com_difal : null,
+        mcoPreAdsPctComDifal: preAdsPctComDifal,
+        breakevenAcosPctComDifal:
+          preAdsPctComDifal != null ? round2(preAdsPctComDifal) : null,
+        difalEfeito: row.difal_efeito ?? null,
+        pedidosDifalIndefinido: row.pedidos_difal_indefinido ?? 0,
       };
     })
     .sort((a, b) => b.revenue - a.revenue);

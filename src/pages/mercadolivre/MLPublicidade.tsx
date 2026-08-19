@@ -30,6 +30,12 @@ import { KPICard } from "@/components/dashboard/KPICard";
 import { useMLAds, type AdsCampaign } from "@/hooks/useMLAds";
 import { useMLAdsDerivedMetrics, type EnrichedAdsProduct } from "@/hooks/useMLAdsDerivedMetrics";
 import { useMLMarginWithAds, type ProductMarginWithAds } from "@/hooks/useMLMarginWithAds";
+import { McoDoisCenarios, McoDoisCenariosCabecalho } from "@/components/mercadolivre/McoDoisCenarios";
+import {
+  cenariosMargemReal,
+  DIFAL_ESTIMATIVA_LABEL,
+} from "@/lib/mcoLinhaCenarios";
+import { useDifalRegimeAplicavel } from "@/hooks/useDifalRegimeAplicavel";
 import { useMLFilters } from "@/hooks/useMLFilters";
 import { useMLInventory } from "@/contexts/MLInventoryContext";
 import { AdsOrigemNota } from "@/components/mercadolivre/AdsOrigemNota";
@@ -116,6 +122,11 @@ export default function MLPublicidadePage() {
   // e recalcula com a fatura do ML rateada — a mesma régua de `/anuncios` e
   // `/produtos-vendidos`. É essa convergência que o CR-01 promete.
   const { data: margem } = useMLMarginWithAds(currentFrom, currentTo);
+
+  // [222-15-R2] O recorte recolhe DIFAL? `false` só com TODAS as lojas no
+  // Simples Nacional — aí a coluna diz "regime não aplicável", não dois
+  // números iguais.
+  const regimeAplicaDifal = useDifalRegimeAplicavel();
   const marginMap = useMemo(() => {
     const map = new Map<string, number>();
     for (const r of margem?.rows ?? []) {
@@ -919,11 +930,17 @@ export default function MLPublicidadePage() {
                           TACoS (métrica global, KPI do topo). Nome e semáforo trocados. */}
                       <span className="inline-flex items-center gap-1">Share Gasto <SortIcon k="spend_share_pct" /></span>
                     </th>
-                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Mg. Pós-Ads</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">
+                      {/* [222-15-R2] A ressalva de estimativa aparece UMA vez
+                          aqui, não repetida em cada linha da tabela. */}
+                      <McoDoisCenariosCabecalho titulo="Mg. Pós-Ads" />
+                    </th>
                     {/* Rótulo distinto de "Share Gasto" acima — mesma régua (participação
                         nos pedidos atribuídos a ads), evita duas colunas chamadas "share". */}
                     <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Part. Pedidos</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">ACoS BE</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">
+                      <McoDoisCenariosCabecalho titulo="ACoS BE" />
+                    </th>
                     <th
                       onClick={() => toggleSort("stock")}
                       className="px-4 py-2.5 pr-6 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground"
@@ -982,10 +999,19 @@ export default function MLPublicidadePage() {
                         {(() => {
                           const m = marginMap?.get(p.item_id);
                           if (m == null) return <span className="text-muted-foreground">—</span>;
+                          // [222-15-R2] Os dois cenários vêm PRONTOS da RPC, da
+                          // mesma expressão, com o termo de imposto trocado.
+                          // Nada é recomposto aqui.
+                          const linha = marginByItem.get(p.item_id);
                           return (
-                            <span className={m >= 0 ? "text-emerald-500 font-semibold" : "text-red-500 font-semibold"}>
-                              {m.toFixed(1)}%
-                            </span>
+                            <McoDoisCenarios
+                              cenarios={cenariosMargemReal(linha, "posAds", regimeAplicaDifal)}
+                              densidade="celula"
+                              role={m >= 0 ? "good" : "critical"}
+                              ressalvaNoCabecalho
+                              rotuloSemDifal=""
+                              rotuloComDifal="c/ DIFAL"
+                            />
                           );
                         })()}
                       </td>
@@ -993,7 +1019,28 @@ export default function MLPublicidadePage() {
                         {p.share_ads_pct != null ? pctFmt(p.share_ads_pct) : "—"}
                       </td>
                       <td className="px-4 py-3 text-right text-xs tabular-nums text-muted-foreground">
-                        {p.acos_breakeven != null ? pctFmt(p.acos_breakeven) : "—"}
+                        {/* [222-15-R2] O break-even de ACoS é o que decide
+                            quanto se pode gastar em publicidade. Um break-even
+                            otimista faz gastar demais — por isso o segundo
+                            cenário vem ao lado, com a mesma ressalva. */}
+                        {(() => {
+                          if (p.acos_breakeven == null) return "—";
+                          const linha = marginByItem.get(p.item_id);
+                          const beComDifal =
+                            linha?.has_cmv && linha.lucro_pct_com_difal != null
+                              ? Math.round(linha.lucro_pct_com_difal * 100) / 100
+                              : null;
+                          return (
+                            <span className="inline-flex flex-col items-end leading-tight">
+                              <span>{pctFmt(p.acos_breakeven)}</span>
+                              <span className="text-[10px]">
+                                {beComDifal != null
+                                  ? `${pctFmt(beComDifal)} c/ DIFAL`
+                                  : `sem cenário c/ DIFAL (${DIFAL_ESTIMATIVA_LABEL} indisponível)`}
+                              </span>
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-3 pr-6 tabular-nums">
                         {(() => {

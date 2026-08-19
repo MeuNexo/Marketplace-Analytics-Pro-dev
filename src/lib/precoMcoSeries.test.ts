@@ -361,3 +361,132 @@ describe("percentDelta / pointDelta", () => {
     expect(pointDelta(null, null)).toBeNull();
   });
 });
+
+// ─── Segundo cenário: com DIFAL (Fase 222, plano 222-15-R2) ──────────────────
+//
+// 🔴 O ponto que estes testes defendem: o segundo cenário é `computeMco`
+// chamado uma SEGUNDA VEZ com o imposto acrescido do efeito líquido do DIFAL —
+// nunca o primeiro cenário com o DIFAL somado por fora. As duas coisas dão
+// números diferentes quando há publicidade e receita no meio, e a diferença é
+// silenciosa: nenhum teste antigo quebraria.
+
+describe("computePrecoMcoSeries — cenário com DIFAL", () => {
+  const opts = { adsDaily: [], incluirAds: false, granularity: "day" as const };
+
+  const linha = (over: Partial<PrecoSeriesRow> = {}): PrecoSeriesRow => ({
+    bucket: "2026-08-01",
+    qtd: 10,
+    total: 1000,
+    cmv: 400,
+    comissao: 150,
+    frete: 50,
+    qtd_sem_custo: 0,
+    impostos: 120,
+    qtd_sem_imposto: 0,
+    ...over,
+  });
+
+  it("compõe o segundo ponto chamando o módulo de MCO de novo, com o imposto trocado", () => {
+    const [ponto] = computePrecoMcoSeries([linha({ difal_efeito: 60 })], opts);
+
+    // Cenário 1: 1000 − 400 − 200 − 0 − 120 = 280.
+    expect(ponto.mco).toBe(280);
+    expect(ponto.mcoPct).toBeCloseTo(28, 10);
+    // Cenário 2: o MESMO cálculo com imposto 120 + 60 = 180 ⇒ 220.
+    expect(ponto.mcoComDifal).toBe(220);
+    expect(ponto.mcoPctComDifal).toBeCloseTo(22, 10);
+  });
+
+  it("o segundo ponto NÃO é o primeiro com DIFAL somado por fora do módulo", () => {
+    // Aqui os dois caminhos coincidiriam por sorte; o que o teste trava é que o
+    // segundo número vem de `computeMco`, com todas as parcelas na mesma conta.
+    const [ponto] = computePrecoMcoSeries([linha({ difal_efeito: 60 })], opts);
+
+    const recomposicaoProibida = ponto.mco - 60;
+    expect(ponto.mcoComDifal).toBe(recomposicaoProibida);
+    // ...e o break-even do segundo cenário sobe pela mesma parcela, o que uma
+    // subtração por fora do módulo não produziria sozinha.
+    expect(ponto.breakevenUnitComDifal).toBeCloseTo(ponto.breakevenUnit + 6, 10);
+  });
+
+  it("o break-even do segundo cenário inclui a publicidade, como o primeiro", () => {
+    const comAds = {
+      adsDaily: [{ date: "2026-08-01", spend: 100 }],
+      incluirAds: true,
+      granularity: "day" as const,
+    };
+    const [ponto] = computePrecoMcoSeries([linha({ difal_efeito: 60 })], comAds);
+
+    // (400 + 150 + 50 + 100 + 180) ÷ 10 = 88.
+    expect(ponto.breakevenUnitComDifal).toBeCloseTo(88, 10);
+    expect(ponto.mcoComDifal).toBe(120);
+  });
+
+  it("sem o efeito apurado, o segundo cenário é AUSÊNCIA — nunca zero", () => {
+    const [ponto] = computePrecoMcoSeries([linha()], opts);
+
+    expect(ponto.difalEfeito).toBeNull();
+    expect(ponto.mcoComDifal).toBeNull();
+    expect(ponto.mcoPctComDifal).toBeNull();
+    expect(ponto.breakevenUnitComDifal).toBeNull();
+    // ...e o primeiro cenário segue idêntico ao de antes desta fase.
+    expect(ponto.mco).toBe(280);
+  });
+
+  it("efeito ZERO é resultado apurado: os dois cenários coincidem, sem virar ausência", () => {
+    const [ponto] = computePrecoMcoSeries([linha({ difal_efeito: 0 })], opts);
+
+    expect(ponto.difalEfeito).toBe(0);
+    expect(ponto.mcoComDifal).toBe(280);
+    expect(ponto.breakevenUnitComDifal).toBeCloseTo(ponto.breakevenUnit, 10);
+  });
+
+  it("a contagem de pedidos sem DIFAL definido atravessa para o ponto", () => {
+    const [ponto] = computePrecoMcoSeries(
+      [linha({ difal_efeito: 10, pedidos_difal_indefinido: 3 })],
+      opts,
+    );
+
+    expect(ponto.pedidosDifalIndefinido).toBe(3);
+  });
+});
+
+describe("computeWaterfallCard — cenário com DIFAL", () => {
+  const opts = { adsDaily: [], incluirAds: false, granularity: "day" as const };
+
+  const linha = (over: Partial<PrecoSeriesRow> = {}): PrecoSeriesRow => ({
+    bucket: "2026-08-01",
+    qtd: 10,
+    total: 1000,
+    cmv: 400,
+    comissao: 150,
+    frete: 50,
+    qtd_sem_custo: 0,
+    impostos: 120,
+    qtd_sem_imposto: 0,
+    ...over,
+  });
+
+  it("compõe o par do período com a mesma função de MCO", () => {
+    const card = computeWaterfallCard([linha({ difal_efeito: 60 })], opts);
+
+    expect(card.mcoPct).toBeCloseTo(28, 10);
+    expect(card.mcoComDifal).toBe(220);
+    expect(card.mcoPctComDifal).toBeCloseTo(22, 10);
+    expect(card.mcoUnitComDifal).toBeCloseTo(22, 10);
+    expect(card.impostoUnitComDifal).toBeCloseTo(18, 10);
+  });
+
+  it("um intervalo sem o efeito apurado derruba o período inteiro para ausência", () => {
+    // Somar só os intervalos apurados daria um numerador que não corresponde à
+    // receita do denominador — um MCO com DIFAL otimista e inexplicável.
+    const card = computeWaterfallCard(
+      [linha({ difal_efeito: 60 }), linha({ bucket: "2026-08-02" })],
+      opts,
+    );
+
+    expect(card.difalEfeito).toBeNull();
+    expect(card.mcoComDifal).toBeNull();
+    expect(card.mcoPctComDifal).toBeNull();
+  });
+});

@@ -590,3 +590,173 @@ describe("curva ABC do período na tabela de resultado (Fase 213-06, CR-06)", ()
     expect(curvasDaCarteira([]).size).toBe(0);
   });
 });
+
+// ─── Segundo cenário: com DIFAL (Fase 222, plano 222-15-R2) ──────────────────
+//
+// A régua travada na fase 83 vale igual para o segundo cenário: o percentual do
+// GRUPO é razão de somas, nunca média simples dos percentuais dos itens. E a
+// ausência do segundo cenário (RPC antiga, janela de publicação) aparece como
+// ausência declarada, nunca como zero.
+
+describe("aggregateMcoGroups — cenário com DIFAL", () => {
+  it("o MCO% do grupo no segundo cenário é RAZÃO DE SOMAS, não média de percentuais", () => {
+    const rows: McoProductRow[] = [
+      makeRow({
+        item_id: "MLB001",
+        marca: "Marca A",
+        receita: 100,
+        lucro_pos_ads: 20,
+        lucro_pct_pos_ads: 20,
+        lucro_pos_ads_com_difal: 10,
+        lucro_pct_pos_ads_com_difal: 10,
+        difal_efeito: 10,
+      }),
+      makeRow({
+        item_id: "MLB002",
+        marca: "Marca A",
+        receita: 900,
+        lucro_pos_ads: 90,
+        lucro_pct_pos_ads: 10,
+        lucro_pos_ads_com_difal: 45,
+        lucro_pct_pos_ads_com_difal: 5,
+        difal_efeito: 45,
+      }),
+    ];
+
+    const [grupo] = aggregateMcoGroups(rows, "marca", new Map());
+
+    // Razão de somas: (10 + 45) ÷ (100 + 900) × 100 = 5,5%.
+    expect(grupo.mcoComDifalReais).toBe(55);
+    expect(grupo.mcoPctComDifal).toBeCloseTo(5.5, 10);
+    // A média simples dos percentuais dos itens daria 7,5% — o número que um
+    // anúncio de R$ 100 e um de R$ 900 não têm direito de produzir juntos.
+    expect(grupo.mcoPctComDifal).not.toBeCloseTo(7.5, 3);
+    expect(grupo.difalEfeito).toBe(55);
+  });
+
+  it("o primeiro cenário do grupo continua sendo razão de somas, inalterado", () => {
+    const rows: McoProductRow[] = [
+      makeRow({ item_id: "MLB001", marca: "Marca A", receita: 100, lucro_pos_ads: 20, lucro_pct_pos_ads: 20 }),
+      makeRow({ item_id: "MLB002", marca: "Marca A", receita: 900, lucro_pos_ads: 90, lucro_pct_pos_ads: 10 }),
+    ];
+
+    const [grupo] = aggregateMcoGroups(rows, "marca", new Map());
+
+    expect(grupo.mcoPct).toBeCloseTo(11, 10);
+  });
+
+  it("um item sem segundo cenário derruba o grupo para AUSÊNCIA, nunca para zero", () => {
+    // Somar só os itens apurados produziria um numerador que não corresponde ao
+    // denominador — um percentual otimista e inexplicável.
+    const rows: McoProductRow[] = [
+      makeRow({
+        item_id: "MLB001",
+        marca: "Marca A",
+        receita: 100,
+        lucro_pos_ads: 20,
+        lucro_pos_ads_com_difal: 10,
+      }),
+      makeRow({ item_id: "MLB002", marca: "Marca A", receita: 900, lucro_pos_ads: 90 }),
+    ];
+
+    const [grupo] = aggregateMcoGroups(rows, "marca", new Map());
+
+    expect(grupo.mcoPctComDifal).toBeNull();
+    expect(grupo.mcoComDifalReais).toBeNull();
+    expect(grupo.difalEfeito).toBeNull();
+  });
+
+  it("a contagem de pedidos fora da conta por UF não confirmada soma no grupo", () => {
+    const rows: McoProductRow[] = [
+      makeRow({ item_id: "MLB001", marca: "Marca A", receita: 100, pedidos_difal_indefinido: 2 }),
+      makeRow({ item_id: "MLB002", marca: "Marca A", receita: 900, pedidos_difal_indefinido: 5 }),
+    ];
+
+    const [grupo] = aggregateMcoGroups(rows, "marca", new Map());
+
+    expect(grupo.pedidosDifalIndefinido).toBe(7);
+  });
+
+  it("efeito de DIFAL igual a zero é RESULTADO apurado, não ausência", () => {
+    const rows: McoProductRow[] = [
+      makeRow({
+        item_id: "MLB001",
+        marca: "Marca A",
+        receita: 100,
+        lucro_pos_ads: 20,
+        lucro_pos_ads_com_difal: 20,
+        difal_efeito: 0,
+      }),
+    ];
+
+    const [grupo] = aggregateMcoGroups(rows, "marca", new Map());
+
+    expect(grupo.difalEfeito).toBe(0);
+    expect(grupo.mcoPctComDifal).toBeCloseTo(20, 10);
+  });
+});
+
+describe("aggregateMcoItems — cenário com DIFAL", () => {
+  it("repassa os quatro números do segundo cenário sem recalcular nenhum", () => {
+    const rows: McoProductRow[] = [
+      makeRow({
+        item_id: "MLB001",
+        marca: "Marca A",
+        receita: 1000,
+        lucro: 150,
+        lucro_pct: 15,
+        lucro_pos_ads: 120,
+        lucro_pct_pos_ads: 12,
+        lucro_com_difal: 100,
+        lucro_pct_com_difal: 10,
+        lucro_pos_ads_com_difal: 70,
+        lucro_pct_pos_ads_com_difal: 7,
+        difal_efeito: 50,
+        has_cmv: true,
+      }),
+    ];
+
+    const [item] = aggregateMcoItems(rows, "Marca A", "marca", new Map());
+
+    expect(item.mcoComDifalReais).toBe(70);
+    expect(item.mcoPctComDifal).toBe(7);
+    expect(item.mcoPreAdsComDifalReais).toBe(100);
+    expect(item.mcoPreAdsPctComDifal).toBe(10);
+    expect(item.breakevenAcosPctComDifal).toBe(10);
+    expect(item.difalEfeito).toBe(50);
+  });
+
+  it("sem CMV, o pré-ads COM DIFAL fica indefinido — mesma disciplina do primeiro", () => {
+    const rows: McoProductRow[] = [
+      makeRow({
+        item_id: "MLB001",
+        marca: "Marca A",
+        receita: 1000,
+        lucro_pct: 15,
+        lucro_pct_com_difal: 10,
+        has_cmv: false,
+      }),
+    ];
+
+    const [item] = aggregateMcoItems(rows, "Marca A", "marca", new Map());
+
+    expect(item.mcoPreAdsPct).toBeNull();
+    expect(item.mcoPreAdsPctComDifal).toBeNull();
+    expect(item.breakevenAcosPctComDifal).toBeNull();
+  });
+
+  it("linha vinda da RPC antiga não inventa segundo cenário", () => {
+    const rows: McoProductRow[] = [
+      makeRow({ item_id: "MLB001", marca: "Marca A", receita: 1000, lucro_pos_ads: 120 }),
+    ];
+
+    const [item] = aggregateMcoItems(rows, "Marca A", "marca", new Map());
+
+    expect(item.mcoComDifalReais).toBeNull();
+    expect(item.mcoPctComDifal).toBeNull();
+    expect(item.difalEfeito).toBeNull();
+    expect(item.pedidosDifalIndefinido).toBe(0);
+    // ...e o primeiro cenário segue intacto.
+    expect(item.mcoReais).toBe(120);
+  });
+});

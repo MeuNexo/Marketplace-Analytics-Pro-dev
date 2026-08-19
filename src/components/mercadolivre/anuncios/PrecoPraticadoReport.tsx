@@ -41,6 +41,11 @@ import {
   type PriceKpis,
   type SeriesGranularity,
 } from "@/lib/precoMcoSeries";
+import { McoDoisCenarios } from "@/components/mercadolivre/McoDoisCenarios";
+import {
+  DIFAL_ESTIMATIVA_LABEL,
+  resolveLinhaCenarios,
+} from "@/lib/mcoLinhaCenarios";
 import {
   computePrecoFaixas,
   computeVeredicto,
@@ -435,6 +440,11 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
         qtd_sem_custo: Number(r.qtd_sem_custo ?? 0),
         impostos: Number(r.impostos ?? 0),
         qtd_sem_imposto: Number(r.qtd_sem_imposto ?? 0),
+        // [222-15-R2] Insumo do segundo cenário. `!= null` distingue "a RPC
+        // ainda não devolve a coluna" (janela de publicação) de "apurado como
+        // zero" — o segundo é resultado legítimo, o primeiro é ausência.
+        difal_efeito: r.difal_efeito != null ? Number(r.difal_efeito) : null,
+        pedidos_difal_indefinido: Number(r.pedidos_difal_indefinido ?? 0),
       }));
     const fetchWindow = (_from: string | null, _to: string | null) =>
       // RPC ainda não presente nos tipos gerados — cast como no restante do projeto.
@@ -490,6 +500,11 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
         qtd_sem_custo: Number(r.qtd_sem_custo ?? 0),
         impostos: Number(r.impostos ?? 0),
         qtd_sem_imposto: Number(r.qtd_sem_imposto ?? 0),
+        // [222-15-R2] Insumo do segundo cenário. `!= null` distingue "a RPC
+        // ainda não devolve a coluna" (janela de publicação) de "apurado como
+        // zero" — o segundo é resultado legítimo, o primeiro é ausência.
+        difal_efeito: r.difal_efeito != null ? Number(r.difal_efeito) : null,
+        pedidos_difal_indefinido: Number(r.pedidos_difal_indefinido ?? 0),
       }));
     (async () => {
       setLoadingDaily(true);
@@ -1243,6 +1258,32 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                         accent={mcoRole === "good"}
                         danger={mcoRole === "critical"}
                       />
+                      {/* [222-15-R2] O par de cenários pelo componente único —
+                          o segundo composto por `computeMco` chamado de novo,
+                          nunca por DIFAL somado sobre o MCO já pronto. */}
+                      <div className="pt-2 mt-1 border-t border-border/40">
+                        <McoDoisCenarios
+                          cenarios={resolveLinhaCenarios({
+                            semDifal: {
+                              valor: waterfallCard.mcoUnit,
+                              pct: waterfallCard.mcoPct,
+                            },
+                            comDifal:
+                              waterfallCard.mcoUnitComDifal != null
+                                ? {
+                                    valor: waterfallCard.mcoUnitComDifal,
+                                    pct: waterfallCard.mcoPctComDifal,
+                                  }
+                                : null,
+                            difalEfeito: waterfallCard.difalEfeito,
+                            pedidosDifalIndefinido: waterfallCard.pedidosDifalIndefinido,
+                          })}
+                          densidade="bloco"
+                          role={mcoRole}
+                          rotuloSemDifal="MCO/un sem DIFAL"
+                          rotuloComDifal="MCO/un com DIFAL"
+                        />
+                      </div>
                     </div>
                   </>
                 )}
@@ -1415,6 +1456,10 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                     payload={[
                       { value: "Preço praticado", type: "line", id: "precoUnit", color: "hsl(var(--chart-price))" },
                       { value: "Break-even", type: "line", id: "breakevenUnit", color: "hsl(var(--chart-breakeven))" },
+                      /* [222-15-R2] Um gráfico com UMA linha de break-even está
+                         afirmando que só existe um. A segunda, com DIFAL, é
+                         estimativa e vem pontilhada e rotulada como tal. */
+                      { value: `Break-even c/ DIFAL (${DIFAL_ESTIMATIVA_LABEL})`, type: "line", id: "breakevenUnitComDifal", color: "hsl(var(--chart-breakeven))" },
                       { value: "MCO %", type: "line", id: "mcoPct", color: "hsl(var(--chart-mco))" },
                       { value: "Margem positiva", type: "rect", id: "gainBand", color: "hsl(var(--success))" },
                       { value: "Margem negativa", type: "rect", id: "lossBand", color: "hsl(var(--destructive))" },
@@ -1450,6 +1495,15 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                     yAxisId="preco" type="linear" dataKey="breakevenUnit" name="breakevenUnit"
                     stroke="hsl(var(--chart-breakeven))" strokeWidth={2}
                     strokeDasharray="5 4" dot={false}
+                  />
+                  {/* Segunda linha de break-even — o cenário com DIFAL. Traço
+                      mais curto e opacidade menor: é estimativa, e a diferença
+                      entre as duas linhas É o custo do DIFAL por unidade. */}
+                  <Line
+                    yAxisId="preco" type="linear" dataKey="breakevenUnitComDifal" name="breakevenUnitComDifal"
+                    stroke="hsl(var(--chart-breakeven))" strokeWidth={1.6}
+                    strokeOpacity={0.55} strokeDasharray="2 3" dot={false}
+                    connectNulls={false}
                   />
                   <Line
                     yAxisId="mco" type="monotone" dataKey="mcoPct" name="mcoPct"

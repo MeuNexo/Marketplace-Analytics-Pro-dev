@@ -54,6 +54,30 @@ export interface ProductMarginWithAds {
   ads_no_sale: boolean;
   /** Marca do anúncio (MAX(o.marca) agregado); null quando ausente. */
   marca: string | null;
+
+  // ── Segundo cenário: com DIFAL (Fase 222, 222-15-R2) ──────────────────────
+  //
+  // Os quatro números abaixo vêm PRONTOS da mesma RPC, das MESMAS expressões
+  // que produziram os quatro de cima, trocando só o termo de imposto. O
+  // navegador não faz aritmética de MCO aqui — se fizesse, o mesmo anúncio
+  // teria duas réguas.
+  //
+  // 🔴 `null` quando a RPC ainda não devolve as colunas novas (janela entre
+  // publicar o frontend e aplicar a migration). Ausência preservada como
+  // ausência: a tela mostra o primeiro cenário e diz que o segundo não
+  // carregou, em vez de exibir zero.
+  /** Efeito líquido do DIFAL do anúncio no período (R$); null = não apurado. */
+  difal_efeito: number | null;
+  /** Pedidos do anúncio com destino interestadual e sem DIFAL calculado. */
+  pedidos_difal_indefinido: number;
+  /** Lucro operacional COM DIFAL (pré-ads); null quando não apurado. */
+  lucro_com_difal: number | null;
+  /** Margem operacional COM DIFAL em %; null sem receita ou sem apuração. */
+  lucro_pct_com_difal: number | null;
+  /** Lucro COM DIFAL após a publicidade rateada da fatura. */
+  lucro_pos_ads_com_difal: number | null;
+  /** Margem pós-ads COM DIFAL em %; null sem receita ou sem apuração. */
+  lucro_pct_pos_ads_com_difal: number | null;
 }
 
 /**
@@ -126,6 +150,16 @@ export function useMLMarginWithAds(dateFrom: string, dateTo: string) {
         lucro_pct_pos_ads:     r.lucro_pct_pos_ads != null ? Number(r.lucro_pct_pos_ads) : null,
         ads_no_sale:           Boolean(r.ads_no_sale),
         marca:                 r.marca ? String(r.marca) : null,
+        // Mesma conversão numérica explícita dos demais campos (`numeric` do
+        // Postgres chega como string via PostgREST). `!= null` distingue
+        // "coluna ausente / não apurado" de "apurado como zero" — zero é um
+        // resultado legítimo do DIFAL e não pode virar ausência.
+        difal_efeito:                r.difal_efeito != null ? Number(r.difal_efeito) : null,
+        pedidos_difal_indefinido:    Number(r.pedidos_difal_indefinido ?? 0),
+        lucro_com_difal:             r.lucro_com_difal != null ? Number(r.lucro_com_difal) : null,
+        lucro_pct_com_difal:         r.lucro_pct_com_difal != null ? Number(r.lucro_pct_com_difal) : null,
+        lucro_pos_ads_com_difal:     r.lucro_pos_ads_com_difal != null ? Number(r.lucro_pos_ads_com_difal) : null,
+        lucro_pct_pos_ads_com_difal: r.lucro_pct_pos_ads_com_difal != null ? Number(r.lucro_pct_pos_ads_com_difal) : null,
       }));
 
       // O denominador do rateio é a carteira INTEIRA do período — inclusive os
@@ -139,12 +173,23 @@ export function useMLMarginWithAds(dateFrom: string, dateTo: string) {
       const rows = brutas.map((r) => {
         const ads = rateio.porItem.get(r.item_id) ?? 0;
         const lucroPosAds = r.lucro - ads;
+        // [222-15-R2] O pós-ads do SEGUNDO cenário é recalculado exatamente
+        // como o do primeiro — o mesmo `ads` rateado da fatura, subtraído do
+        // lucro pré-ads correspondente. Ausente continua ausente: sem
+        // `lucro_com_difal` não há pós-ads com DIFAL a inventar.
+        const lucroPosAdsComDifal =
+          r.lucro_com_difal != null ? r.lucro_com_difal - ads : null;
         return {
           ...r,
           ads_spend:         ads,
           lucro_pos_ads:     lucroPosAds,
           lucro_pct_pos_ads: r.receita > 0 ? round2((lucroPosAds / r.receita) * 100) : null,
           ads_no_sale:       ads > 0 && r.ads_attributed_orders === 0,
+          lucro_pos_ads_com_difal: lucroPosAdsComDifal,
+          lucro_pct_pos_ads_com_difal:
+            lucroPosAdsComDifal != null && r.receita > 0
+              ? round2((lucroPosAdsComDifal / r.receita) * 100)
+              : null,
         };
       });
 

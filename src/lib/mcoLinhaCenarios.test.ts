@@ -13,6 +13,7 @@
  */
 import { describe, it, expect } from "vitest";
 import {
+  regimeAplicaDifalNasLojas,
   resolveLinhaCenarios,
   type LinhaCenariosInput,
   type MotivoSemDifal,
@@ -204,5 +205,25 @@ describe("resolveLinhaCenarios — fronteiras do módulo", () => {
     // Este módulo não redeclara o texto (D-12): duas telas divergirem no que
     // afirmam sobre a mesma régua é o começo de um número sem dono.
     expect(DIFAL_ESTIMATIVA_LABEL).toBe("estimativa");
+  });
+});
+
+describe("regimeAplicaDifalNasLojas — o regime do RECORTE, nunca de metade dele", () => {
+  it("todas as lojas no Simples: o recorte não recolhe DIFAL", () => {
+    expect(regimeAplicaDifalNasLojas(["simples_nacional", "simples_nacional"])).toBe(false);
+  });
+
+  it("uma loja fora do Simples já obriga o segundo cenário a existir", () => {
+    // Um agregado que mistura regimes não pode ser declarado imune.
+    expect(regimeAplicaDifalNasLojas(["simples_nacional", "lucro_real"])).toBe(true);
+  });
+
+  it("Lucro Presumido recolhe DIFAL — só o Simples é imune por destino", () => {
+    expect(regimeAplicaDifalNasLojas(["lucro_presumido"])).toBe(true);
+  });
+
+  it("sem informação de regime, devolve indefinido — não saber não é afirmar", () => {
+    expect(regimeAplicaDifalNasLojas([])).toBeUndefined();
+    expect(regimeAplicaDifalNasLojas([null, undefined])).toBeUndefined();
   });
 });

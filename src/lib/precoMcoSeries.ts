@@ -48,6 +48,14 @@ export interface PrecoSeriesRow {
   /** SUM(tax_amount) do bucket — imposto firme por pedido (UF real) */
   impostos: number;
   qtd_sem_imposto: number;
+  /**
+   * [222-15-R2] Efeito líquido do DIFAL do intervalo — o INSUMO do segundo
+   * cenário, nunca o segundo cenário pronto. `null`/ausente = a RPC ainda não
+   * devolve a coluna (janela de publicação) e o segundo cenário não existe.
+   */
+  difal_efeito?: number | null;
+  /** Pedidos do intervalo com destino interestadual e sem DIFAL calculado. */
+  pedidos_difal_indefinido?: number | null;
 }
 
 /** Linha diária de spend de ads (ml_ads_products_cache). */
@@ -81,6 +89,23 @@ export interface McoSeriesPoint {
   lossBand: number;
   custoAusente: boolean;
   impostoAusente: boolean;
+  // ── Segundo cenário: com DIFAL (222-15-R2) ────────────────────────────────
+  //
+  // 🔴 COMPOSTO CHAMANDO `computeMco` UMA SEGUNDA VEZ, com o imposto acrescido
+  // do efeito líquido do DIFAL — NUNCA somando DIFAL sobre o MCO já pronto.
+  // O segundo atalho é o que custou R$ 3,85 por pedido no 222-06-R/07-R.
+  /** Efeito líquido do DIFAL do bucket (R$); null quando não apurado. */
+  difalEfeito: number | null;
+  /** MCO do bucket COM DIFAL (R$); null quando não apurado. */
+  mcoComDifal: number | null;
+  /** MCO% do bucket COM DIFAL; null quando não apurado ou sem receita. */
+  mcoPctComDifal: number | null;
+  /** Break-even por unidade COM DIFAL; null quando não apurado. */
+  breakevenUnitComDifal: number | null;
+  /** Imposto por unidade COM DIFAL; null quando não apurado. */
+  impostoUnitComDifal: number | null;
+  /** Pedidos do bucket fora da conta por UF não confirmada. */
+  pedidosDifalIndefinido: number;
 }
 
 /**
@@ -139,6 +164,23 @@ export function computePrecoMcoSeries(
     const gainBand = precoUnit >= breakevenUnit ? precoUnit - breakevenUnit : 0;
     const lossBand = precoUnit < breakevenUnit ? breakevenUnit - precoUnit : 0;
 
+    // [222-15-R2] O SEGUNDO CENÁRIO. `computeMco` é chamado uma segunda vez —
+    // a mesma função, a mesma entrada, com o termo de imposto trocado por
+    // `impostos + efeito líquido do DIFAL`. Somar o DIFAL sobre `mco` já
+    // calculado daria um número diferente deste, e errado.
+    const difalEfeito = r.difal_efeito ?? null;
+    const impostosComDifal = difalEfeito != null ? r.impostos + difalEfeito : null;
+    const comDifal =
+      impostosComDifal != null
+        ? computeMco({
+            grossRevenue: r.total,
+            cmv: r.cmv,
+            platformCost: r.comissao + r.frete,
+            ads,
+            tax: impostosComDifal,
+          })
+        : null;
+
     return {
       bucket: r.bucket,
       qtd: r.qtd,
@@ -157,6 +199,16 @@ export function computePrecoMcoSeries(
       lossBand,
       custoAusente: r.qtd_sem_custo > 0,
       impostoAusente: r.qtd_sem_imposto > 0,
+      difalEfeito,
+      mcoComDifal: comDifal ? comDifal.mco : null,
+      mcoPctComDifal: comDifal ? comDifal.pct : null,
+      breakevenUnitComDifal:
+        impostosComDifal != null && qtd > 0
+          ? (r.cmv + r.comissao + r.frete + ads + impostosComDifal) / qtd
+          : null,
+      impostoUnitComDifal:
+        impostosComDifal != null && qtd > 0 ? impostosComDifal / qtd : null,
+      pedidosDifalIndefinido: r.pedidos_difal_indefinido ?? 0,
     };
   });
 }
@@ -179,6 +231,19 @@ export interface WaterfallCard {
   mcBeforeAdsPct: number | null;
   custoAusente: boolean;
   impostoAusente: boolean;
+  // ── Segundo cenário: com DIFAL (222-15-R2) ────────────────────────────────
+  /** Efeito líquido do DIFAL do período (R$); null quando não apurado. */
+  difalEfeito: number | null;
+  /** Imposto por unidade COM DIFAL; null quando não apurado. */
+  impostoUnitComDifal: number | null;
+  /** MCO por unidade COM DIFAL; null quando não apurado. */
+  mcoUnitComDifal: number | null;
+  /** MCO em R$ do período COM DIFAL; null quando não apurado. */
+  mcoComDifal: number | null;
+  /** MCO% do período COM DIFAL; null quando não apurado ou sem receita. */
+  mcoPctComDifal: number | null;
+  /** Pedidos do período fora da conta por UF não confirmada. */
+  pedidosDifalIndefinido: number;
 }
 
 /**
@@ -209,6 +274,26 @@ export function computeWaterfallCard(
     tax: impostos,
   });
 
+  // [222-15-R2] Segundo cenário do card: mesma `computeMco`, mesma entrada,
+  // termo de imposto trocado. Um único intervalo sem o efeito apurado derruba
+  // o período inteiro para AUSÊNCIA — somar só os apurados produziria um
+  // numerador que não corresponde à receita do denominador.
+  const algumSemDifal = rows.some((r) => r.difal_efeito == null);
+  const difalEfeito = algumSemDifal
+    ? null
+    : rows.reduce((sfx, r) => sfx + (r.difal_efeito ?? 0), 0);
+  const impostosComDifal = difalEfeito != null ? impostos + difalEfeito : null;
+  const comDifal =
+    impostosComDifal != null
+      ? computeMco({
+          grossRevenue: receita,
+          cmv,
+          platformCost: comissao + frete,
+          ads: adsTotal,
+          tax: impostosComDifal,
+        })
+      : null;
+
   const precoUnit = qtd > 0 ? receita / qtd : 0;
   const mcBeforeAdsUnit = qtd > 0 ? (receita - cmv - comissao - frete - impostos) / qtd : 0;
 
@@ -225,6 +310,16 @@ export function computeWaterfallCard(
     mcBeforeAdsPct: precoUnit > 0 ? (mcBeforeAdsUnit / precoUnit) * 100 : null,
     custoAusente: rows.some((r) => r.qtd_sem_custo > 0),
     impostoAusente: rows.some((r) => r.qtd_sem_imposto > 0),
+    difalEfeito,
+    impostoUnitComDifal:
+      impostosComDifal != null && qtd > 0 ? impostosComDifal / qtd : null,
+    mcoUnitComDifal: comDifal && qtd > 0 ? comDifal.mco / qtd : null,
+    mcoComDifal: comDifal ? comDifal.mco : null,
+    mcoPctComDifal: comDifal ? comDifal.pct : null,
+    pedidosDifalIndefinido: rows.reduce(
+      (sfx, r) => sfx + (r.pedidos_difal_indefinido ?? 0),
+      0,
+    ),
   };
 }
 
