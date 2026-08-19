@@ -78,6 +78,63 @@ export function extrairBonusEnvio(
   return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
 }
 
+// ── Frete pago pelo comprador ────────────────────────────────────────────────
+
+/**
+ * Lê o frete pago pelo COMPRADOR direto no checkout ("Mercado Envios por conta
+ * do comprador") de `GET /shipments/{id}/costs` → `receiver.cost` — a MESMA
+ * resposta de onde já sai `gross_amount`, nunca uma chamada nova.
+ *
+ * (1) O QUE É, E ONDE ENTRA. É o que o comprador pagou de frete no checkout.
+ * A régua fiscal o soma em DOIS lugares (D-R2-04, 222-CONTEXT-R2): na base
+ * tributável — porque a NF-e cobre produto + frete cobrado do cliente — e no
+ * frete total do envio, base dos dois créditos de frete. Ele NÃO é receita
+ * nossa nem custo nosso: não entra em receita líquida, em margem nem no MCO.
+ *
+ * (2) ZERO E AUSÊNCIA SÃO ESTADOS DIFERENTES, e a diferença viaja daqui até a
+ * coluna `orders.frete_comprador` e até `orders_regua_health`, que os conta
+ * separados. Quem chama passa `null`/`undefined` SÓ quando a requisição de
+ * custos falhou — e só nesse caso o retorno é `null` (ausência declarada).
+ * Resposta que chegou sem o objeto do recebedor, ou com ele sem o campo de
+ * custo, devolve `0`: o comprador não pagou frete, e isso é informação.
+ * ⚠️ Colapsar os dois é exatamente o defeito que esta casa consertou em 11/08
+ * no frete (`> 0 ? valor : null` transformava frete zero em "sem frete", 13,2%
+ * dos pedidos do Junior). A versão de referência do dashboard faz esse `> 0`
+ * neste mesmo campo — a regra dela NÃO foi copiada, de propósito.
+ *
+ * (3) NÃO DEPENDE DO TIPO LOGÍSTICO. Diferente do bônus de envio, que só pode
+ * ser lido em `self_service` (ler o bônus de um envio que não é Flex inventaria
+ * receita — ver `ehFlex`), este campo existe em QUALQUER envio em que o
+ * comprador tenha pago frete. Por isso a extração dele não fica atrás da guarda
+ * de Flex; só a leitura do bônus continua atrás dela.
+ *
+ * Valor negativo, não finito ou de tipo não numérico devolve `null`: número
+ * inválido nunca é propagado para dentro da base de cálculo do imposto. Valor
+ * numérico vindo como texto é aceito e convertido; texto vazio ou não numérico
+ * devolve `null` — `Number("")` é `0`, e esse zero seria inventado.
+ */
+export function extrairFreteComprador(
+  custos: { receiver?: { cost?: unknown } | null } | null | undefined,
+): number | null {
+  // Ausência: o chamador passa null/undefined quando a requisição falhou.
+  if (custos == null) return null;
+
+  const raw = custos.receiver?.cost;
+  // A resposta chegou e não traz cobrança do comprador — zero conhecido.
+  if (raw == null) return 0;
+
+  if (typeof raw === "number") {
+    return Number.isFinite(raw) && raw >= 0 ? raw : null;
+  }
+  if (typeof raw === "string") {
+    const texto = raw.trim();
+    if (texto === "") return null;
+    const numero = Number(texto);
+    return Number.isFinite(numero) && numero >= 0 ? numero : null;
+  }
+  return null;
+}
+
 // ── Rateio por receita ───────────────────────────────────────────────────────
 
 const arredondaCentavos = (v: number): number => Math.round(v * 100) / 100;
