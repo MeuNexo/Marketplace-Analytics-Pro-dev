@@ -1,13 +1,19 @@
--- Flex + componentes fiscais: 14 colunas novas em orders, e a whitelist de
+-- Flex + componentes fiscais: 15 colunas novas em orders, e a whitelist de
 -- batch_upsert_orders passa a conhece-las (Fase 222, planos 222-04/222-03-R).
 --
--- (a) POR QUE 14 COLUNAS NUMA MIGRATION SO: reescrever a funcao de upsert
+-- (a) POR QUE 15 COLUNAS NUMA MIGRATION SO: reescrever a funcao de upsert
 -- duas vezes na mesma fase e risco sem beneficio -- cada reescrita e uma
 -- chance nova de a whitelist descartar um campo em silencio. As 12 colunas
 -- desta fase (Flex + fiscal) nascem juntas, na mesma entrega, com a mesma
 -- guarda. As duas ultimas (credito_icms_frete, pis_cofins_debito_com_difal)
 -- entraram no retrabalho de 13/08, quando a planilha de precificacao virou a
 -- regua e a contadora confirmou o credito de ICMS sobre o frete (D-10).
+-- A decima quinta (frete_comprador) entrou na rodada R2, em 19/08, vinda de
+-- D-R2-04 -- e entra AQUI, e nao numa migration nova, pela mesma razao das
+-- duas de 13/08: uma reescrita da funcao de upsert por fase, nunca uma por
+-- decisao. Esta migration nunca foi aplicada (orders segue sem nenhuma das
+-- colunas novas, medido em 19/08), entao corrigi-la na origem custa zero e
+-- poupa a segunda reescrita.
 --
 -- (b) A ARMADILHA DA WHITELIST: batch_upsert_orders tem lista EXPLICITA de
 -- colunas no INSERT, na projecao do SELECT e no DO UPDATE SET. Um campo que
@@ -34,6 +40,10 @@
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS logistic_type text;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS bonus_envio numeric;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS custo_entrega numeric;
+-- Frete pago pelo COMPRADOR no checkout (D-R2-04, rodada R2). Nulavel e sem
+-- padrao pela mesma razao das demais: zero diria que o comprador
+-- comprovadamente nao pagou frete, e isso ainda nao foi medido.
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS frete_comprador numeric;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS icms_debito numeric;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS pis_cofins_debito numeric;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS credito_pc_comissao numeric;
@@ -53,6 +63,9 @@ COMMENT ON COLUMN public.orders.bonus_envio IS
 
 COMMENT ON COLUMN public.orders.custo_entrega IS
   'Custo de entrega propria (Flex) copiado de ml_tax_config.flex_custo_entrega no momento do sync. NULL significa que o dono da conta ainda nao informou o valor -- o MCO deste pedido esta declaradamente inflado enquanto isso.';
+
+COMMENT ON COLUMN public.orders.frete_comprador IS
+  'Frete que o COMPRADOR pagou direto no checkout ("Mercado Envios por conta do comprador"), lido de receiver.cost em /shipments/{id}/costs -- a MESMA resposta de onde ja sai bonus_envio, nao uma chamada nova. Rateado entre os itens do pacote na mesma proporcao usada em frete. Entra em DOIS lugares da regua fiscal (D-R2-04): na base tributavel (venda + frete_comprador, que alimenta ICMS debito, DIFAL e PIS/COFINS debito) e no frete total do credito (frete + frete_comprador, base do credito de ICMS e de PIS/COFINS sobre frete). NAO entra em receita, NAO entra em margem e NAO entra no MCO -- e dinheiro do comprador, nunca do vendedor. A distincao entre zero e nulo e a mesma de bonus_envio: ZERO = capturado, e o comprador nao pagou frete; NULL = nao capturado, porque a chamada falhou ou nem foi feita. Nunca tratar ausencia como zero.';
 
 COMMENT ON COLUMN public.orders.difal_amount IS
   'DIFAL ESTIMADO pela regua (BASE SIMPLES: receita x percentual do destino -- D-08), nao necessariamente devido nem recolhido. Onde ha NF-e emitida, o valor que vale para a apuracao e o do documento fiscal, nao este (D-12). Quem recolhe de fato e configuracao por loja (D-02, ml_tax_config.difal_ufs_recolhidas) -- este campo nunca decide sozinho se o DIFAL entra no MCO exibido.';
@@ -84,12 +97,12 @@ CREATE INDEX IF NOT EXISTS idx_orders_org_logistic_type
 -- (ml_order_id, ml_user_id, item_id, variation_id) nao muda.
 --
 -- Regra de preserve decidida por campo, nao por reflexo:
---   - logistic_type, bonus_envio, custo_entrega recebem COALESCE contra a
---     coluna atual: os tres vem de chamada de rede que pode falhar (a
---     mesma chamada ao envio, ou a chamada extra de /costs), e falha
---     passageira nao pode apagar dado bom -- e a licao da Fase 219
---     (frete/estado/cidade), reaplicada aqui aos campos novos que tambem
---     dependem de rede.
+--   - logistic_type, bonus_envio, custo_entrega e frete_comprador recebem
+--     COALESCE contra a coluna atual: os quatro vem de chamada de rede que
+--     pode falhar (a mesma chamada ao envio, ou a chamada extra de
+--     /costs), e falha passageira nao pode apagar dado bom -- e a licao da
+--     Fase 219 (frete/estado/cidade), reaplicada aqui aos campos novos que
+--     tambem dependem de rede.
 --   - os onze campos fiscais restantes (icms_debito, pis_cofins_debito,
 --     credito_pc_comissao, credito_pc_frete, credito_icms_frete,
 --     pis_cofins_debito_com_difal, difal_base, difal_amount,
@@ -113,7 +126,7 @@ BEGIN
   INSERT INTO public.orders (
     ml_order_id, ml_user_id, item_id, variation_id, seller_id,
     user_id, organization_id, sku, titulo, listing_type,
-    quantidade, preco_unit, comissao, frete, status,
+    quantidade, preco_unit, comissao, frete, frete_comprador, status,
     data_pedido, data_pagamento, estado, cidade, comprador,
     synced_at, custo_unit, custo_unit_cheio, tax_rate, tax_amount,
     uf_origem, receita_bruta, receita_liquida, marca,
@@ -137,6 +150,7 @@ BEGIN
     (r->>'preco_unit')::numeric,
     (r->>'comissao')::numeric,
     (r->>'frete')::numeric,
+    NULLIF(r->>'frete_comprador', '')::numeric,
     (r->>'status'),
     (r->>'data_pedido')::timestamptz,
     (r->>'data_pagamento')::timestamptz,
@@ -179,6 +193,11 @@ BEGIN
     preco_unit          = EXCLUDED.preco_unit,
     comissao            = EXCLUDED.comissao,
     frete               = COALESCE(EXCLUDED.frete, orders.frete),
+    -- Frete do comprador (D-R2-04): COALESCE pela mesma razao de frete e
+    -- bonus_envio. A sincronizacao e incremental e PULA o detalhe do envio
+    -- de pedido que ja tem frete e endereco no banco; nessa rodada o campo
+    -- chega nulo, e sem COALESCE o nulo apagaria o valor ja capturado.
+    frete_comprador     = COALESCE(EXCLUDED.frete_comprador, orders.frete_comprador),
     status              = EXCLUDED.status,
     data_pedido         = EXCLUDED.data_pedido,
     data_pagamento      = EXCLUDED.data_pagamento,
@@ -222,16 +241,17 @@ $function$;
 -- ────────────────────────────────────────────────────────────────────────
 -- BLOCO 3 — guarda
 -- ────────────────────────────────────────────────────────────────────────
--- Falha alto se qualquer uma das 12 colunas novas nao aparecer pelo menos
+-- Falha alto se qualquer uma das 15 colunas novas nao aparecer pelo menos
 -- tres vezes no corpo da funcao (INSERT + SELECT + DO UPDATE SET), ou se
--- qualquer um dos nove COALESCE historicos tiver sumido. Melhor a
+-- qualquer um dos dez COALESCE obrigatorios (os nove historicos mais o do
+-- frete do comprador, D-R2-04) tiver sumido. Melhor a
 -- migration falhar do que aplicar meia whitelist e o campo sumir em
 -- silencio -- e exatamente o que ja aconteceu uma vez, na Fase 96-07.
 do $$
 declare
   v_src   text;
   v_cols  text[] := array[
-    'logistic_type', 'bonus_envio', 'custo_entrega',
+    'logistic_type', 'bonus_envio', 'custo_entrega', 'frete_comprador',
     'icms_debito', 'pis_cofins_debito', 'pis_cofins_debito_com_difal',
     'credito_pc_comissao', 'credito_pc_frete', 'credito_icms_frete',
     'difal_base', 'difal_amount', 'fcp_amount', 'difal_fonte', 'tax_versao'
@@ -245,7 +265,8 @@ declare
     'COALESCE(EXCLUDED.tax_rate, orders.tax_rate)',
     'COALESCE(EXCLUDED.tax_amount, orders.tax_amount)',
     'COALESCE(EXCLUDED.receita_bruta, orders.receita_bruta)',
-    'COALESCE(EXCLUDED.receita_liquida, orders.receita_liquida)'
+    'COALESCE(EXCLUDED.receita_liquida, orders.receita_liquida)',
+    'COALESCE(EXCLUDED.frete_comprador, orders.frete_comprador)'
   ];
   v_col  text;
   v_coal text;
@@ -267,9 +288,9 @@ begin
 
   foreach v_coal in array v_coalesces loop
     if position(v_coal in v_src) = 0 then
-      RAISE EXCEPTION 'COALESCE historico sumiu do corpo da funcao: % -- Fase 219/220 desfeita por engano', v_coal;
+      RAISE EXCEPTION 'COALESCE obrigatorio sumiu do corpo da funcao: % -- preserve da Fase 219/220 ou de D-R2-04 desfeito por engano', v_coal;
     end if;
   end loop;
 
-  RAISE NOTICE '222-04: 12 colunas novas + 9 COALESCE historicos confirmados no corpo de batch_upsert_orders';
+  RAISE NOTICE '222-04 + 222-11-R2: 15 colunas novas + 10 COALESCE obrigatorios confirmados no corpo de batch_upsert_orders';
 end $$;
