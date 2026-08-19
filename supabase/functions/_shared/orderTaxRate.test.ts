@@ -16,6 +16,8 @@ import {
   UF_REGION,
   type OrderTaxConfig,
   type OrderTaxInput,
+  type OrderTaxBreakdown,
+  type TabelaDifal,
   type DifalFonte,
 } from "./orderTaxRate";
 import { calculateEffectiveRate } from "../../../src/lib/tax/index";
@@ -780,5 +782,354 @@ describe("computeOrderTax — procedência do DIFAL, os estados de D-07 sobre o 
       }).difalFonte
     );
     expect(estados).not.toContain("documento_fiscal");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Fase 222 — Plano 12-R2: a régua que a CONTADORA APROVOU.
+//
+// Rodando o módulo fiscal do arquivo aprovado e o nosso no MESMO pedido real,
+// uma única linha divergia — a base do crédito da comissão. Estes blocos
+// fecham as três decisões de R2 que faltavam (222-CONTEXT-R2.md):
+//
+//   D-R2-01  a base do crédito de PIS/COFINS sobre a comissão é a comissão
+//            LÍQUIDA de um ICMS de referência, que NÃO é crédito
+//   D-R2-03  o FCP é parcela própria, calculada do campo da tabela de UF,
+//            e não mais presunção embutida no percentual do DIFAL
+//   D-R2-04  o frete pago pelo COMPRADOR entra em dois lugares: soma na base
+//            tributável (a NF-e cobre produto + frete cobrado do cliente) e
+//            soma ao frete do vendedor para formar o frete total do crédito
+//
+// 🔴 A ÂNCORA: `icmsDebito + pisCofinsDebito` do caso-prova tem de continuar
+// dando 139,568186 — é o `orders.tax_amount` gravado hoje em produção. Se uma
+// mudança move a BASE, ela quebra a fase inteira, não só um teste.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Soma dos créditos que de fato ABATEM o imposto. `icmsRefComissao`
+ * deliberadamente não está aqui: comissão é prestação de serviço e não gera
+ * crédito de ICMS de fato (D-R2-01). Se ele entrasse, o total viraria
+ * 22,242616 em vez de 12,679816 — crédito inventado (T-222-R2-11).
+ */
+const somaCreditos = (r: OrderTaxBreakdown): number =>
+  (r.creditoIcmsFrete ?? 0) + (r.creditoPcFrete ?? 0) + (r.creditoPcComissao ?? 0);
+
+/**
+ * R$ 39,82 — não é número inventado: é o "Envio pago pelo comprador" medido
+ * numa botina no relatório de conciliação do ML de 31/07 (D-R2-04).
+ */
+const FRETE_COMPRADOR_MEDIDO = 39.82;
+
+describe("computeOrderTax — D-R2-01: o crédito da comissão nasce da comissão LÍQUIDA de um ICMS de referência", () => {
+  it("caso-prova cenário A: ICMS de referência 9,562800 · base 70,127200 · crédito 6,486766 (era 7,371325)", () => {
+    const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
+    expect(typeof r.icmsRefComissao).toBe("number");
+    expect(typeof r.creditoComissaoBase).toBe("number");
+    closeCents(r.icmsRefComissao, 9.5628);
+    closeCents(r.creditoComissaoBase, 70.1272);
+    closeCents(r.creditoPcComissao, 6.486766);
+    // A régua antiga (comissão CHEIA) dava 7,371325 — 0,88 a mais de crédito
+    // por pedido de Lucro Real interestadual. Provar que não é mais esse.
+    expect(Math.abs((r.creditoPcComissao as number) - 79.69 * 0.0925)).toBeGreaterThan(0.5);
+  });
+
+  it("caso-prova cenário A: imposto SEM DIFAL 126,888370 e COM DIFAL 164,621676", () => {
+    const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
+    closeCents(r.taxAmount, 126.88837);
+    closeCents(r.taxAmountComDifal, 164.621676);
+    closeCents(r.taxRate, 18.310274);
+    closeCents(r.taxRateComDifal, 23.755274);
+  });
+
+  it("T-222-R2-11: o ICMS de referência NÃO entra no total de créditos — 12,679816, jamais 22,242616", () => {
+    const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
+    closeCents(somaCreditos(r), 12.679816);
+    // 22,242616 é exatamente o total que sairia se icmsRefComissao fosse somado.
+    expect(Math.abs(somaCreditos(r) - 22.242616)).toBeGreaterThan(1);
+    // E a identidade fecha: débitos − créditos = taxAmount, sem sobra nenhuma.
+    expect(
+      (r.icmsDebito as number) + (r.pisCofinsDebito as number) - somaCreditos(r),
+    ).toBeCloseTo(r.taxAmount as number, 9);
+  });
+
+  it("comissão zero (valor conhecido): ICMS de referência 0, base 0 e crédito 0 — nunca negativo", () => {
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, comissao: 0 });
+    expect(r.icmsRefComissao).toBe(0);
+    expect(r.creditoComissaoBase).toBe(0);
+    expect(r.creditoPcComissao).toBe(0);
+    expect(r.creditoComissaoBase as number).not.toBeLessThan(0);
+  });
+
+  it("comissão ausente: os três campos ficam null — ausência não vira zero (FISC-05)", () => {
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, comissao: null });
+    expect(r.icmsRefComissao).toBeNull();
+    expect(r.creditoComissaoBase).toBeNull();
+    expect(r.creditoPcComissao).toBeNull();
+  });
+
+  it("venda intraestadual: o ICMS de referência usa a alíquota INTERNA da config (18%), não a interestadual", () => {
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, ufDestino: "SP" });
+    expect(r.motivo).toBe("intraestadual");
+    closeCents(r.icmsRefComissao, 79.69 * 0.18); // 14,3442 — não 9,5628
+    closeCents(r.creditoComissaoBase, 65.3458);
+    closeCents(r.creditoPcComissao, 6.044486);
+  });
+
+  it("a guarda de tabela ausente não engole os campos novos: sem DIFAL, o crédito da comissão continua inteiro", () => {
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, tabelaUf: {} });
+    expect(r.difalMotivoAusencia).toBe("uf_fora_da_tabela");
+    closeCents(r.icmsRefComissao, 9.5628);
+    closeCents(r.creditoComissaoBase, 70.1272);
+    closeCents(r.creditoPcComissao, 6.486766);
+    closeCents(r.taxAmount, 126.88837);
+  });
+});
+
+describe("computeOrderTax — D-R2-03: o FCP é parcela PRÓPRIA, calculada do campo da tabela de UF", () => {
+  const tabelaMg = (fcp: number): TabelaDifal => ({
+    MG: { nacional: { aliqInterestadual: 12, pctDifal: 6, fcp, confirmado: true } },
+  });
+
+  it("UF com FCP zero na tabela: fcpAmount é 0 (valor conhecido, não nulo) e o imposto com DIFAL não muda", () => {
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, tabelaUf: tabelaMg(0) });
+    expect(r.fcpAmount).toBe(0);
+    expect(r.fcpAmount).not.toBeNull();
+    closeCents(r.taxAmountComDifal, 164.621676);
+  });
+
+  it("UF com FCP 2: fcpAmount = base × 2% = 13,859800, entra no imposto com DIFAL E reduz a base do PIS/COFINS com DIFAL", () => {
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, tabelaUf: tabelaMg(2) });
+    closeCents(r.fcpAmount, 13.8598);
+    // (692,99 − 83,1588 − 41,5794 − 13,8598) × 9,25% — o FCP deduz junto com o DIFAL
+    closeCents(r.pisCofinsDebitoComDifal, 51.28126);
+    closeCents(r.taxAmountComDifal, 177.199444);
+  });
+
+  it("o FCP vive só no cenário COM DIFAL: taxAmount, pisCofinsDebito e a âncora não sentem o FCP", () => {
+    const semFcp = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, tabelaUf: tabelaMg(0) });
+    const comFcp = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, tabelaUf: tabelaMg(2) });
+    expect(comFcp.taxAmount).toBe(semFcp.taxAmount);
+    expect(comFcp.pisCofinsDebito).toBe(semFcp.pisCofinsDebito);
+    expect(comFcp.icmsDebito).toBe(semFcp.icmsDebito);
+    closeCents(comFcp.taxAmount, 126.88837);
+    expect(comFcp.taxAmountComDifal as number).toBeGreaterThan(semFcp.taxAmountComDifal as number);
+  });
+
+  it("linha sem FCP válido não vira FCP zero: o DIFAL sai ausente com uf_fora_da_tabela (FISC-05)", () => {
+    const semFcp = {
+      MG: { nacional: { aliqInterestadual: 12, pctDifal: 6, confirmado: true } },
+    } as unknown as TabelaDifal;
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, tabelaUf: semFcp });
+    expect(r.difalMotivoAusencia).toBe("uf_fora_da_tabela");
+    expect(r.difalAmount).toBeNull();
+    expect(r.fcpAmount).toBeNull();
+    expect(r.fcpAmount).not.toBe(0);
+    // O imposto base continua calculado normalmente — só o DIFAL fica ausente.
+    closeCents(r.taxAmount, 126.88837);
+  });
+
+  it("FCP não finito também descarta a linha inteira, nunca propaga NaN para a soma", () => {
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, tabelaUf: tabelaMg(Number.NaN) });
+    expect(r.difalMotivoAusencia).toBe("uf_fora_da_tabela");
+    expect(r.difalAmount).toBeNull();
+    expect(r.fcpAmount).toBeNull();
+    expect(Number.isNaN(r.taxAmount as number)).toBe(false);
+  });
+});
+
+describe("computeOrderTax — D-R2-04: o frete pago pelo COMPRADOR entra em dois lugares", () => {
+  const COM_FRETE_COMPRADOR: OrderTaxInput = {
+    ...INPUT_CASO_PROVA_DIFAL,
+    freteComprador: FRETE_COMPRADOR_MEDIDO,
+  };
+
+  it("cenário B, lugar 1 (base tributável): base 732,81 · ICMS 87,937200 · DIFAL 43,968600 · PIS/COFINS 59,650734", () => {
+    const r = computeOrderTax(COM_FRETE_COMPRADOR);
+    closeCents(r.icmsDebito, 87.9372);
+    closeCents(r.pisCofinsDebito, 59.650734);
+    closeCents(r.difalBase, 732.81); // base do DIFAL também é a tributável
+    closeCents(r.difalAmount, 43.9686);
+    closeCents(r.pisCofinsDebitoComDifal, 55.583639);
+  });
+
+  it("cenário B, lugar 2 (frete total 70,57): crédito de ICMS 8,468400 e de PIS/COFINS 5,744398", () => {
+    const r = computeOrderTax(COM_FRETE_COMPRADOR);
+    closeCents(r.creditoIcmsFrete, 8.4684);
+    closeCents(r.creditoPcFrete, 5.744398);
+    closeCents(somaCreditos(r), 20.699564);
+  });
+
+  it("cenário B: o crédito da comissão NÃO se move — a comissão não tem frete na base", () => {
+    const r = computeOrderTax(COM_FRETE_COMPRADOR);
+    closeCents(r.icmsRefComissao, 9.5628);
+    closeCents(r.creditoComissaoBase, 70.1272);
+    closeCents(r.creditoPcComissao, 6.486766);
+  });
+
+  it("cenário B: imposto SEM DIFAL 126,888370 (o mesmo do cenário A) e COM DIFAL 166,789875", () => {
+    const r = computeOrderTax(COM_FRETE_COMPRADOR);
+    closeCents(r.taxAmount, 126.88837);
+    closeCents(r.taxAmountComDifal, 166.789875);
+  });
+
+  it("INVARIANTE DE NEUTRALIDADE: variando só o frete do comprador, taxAmount e taxRate são IDÊNTICOS; com DIFAL a diferença é 2,168199", () => {
+    const a = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, freteComprador: 0 });
+    const b = computeOrderTax(COM_FRETE_COMPRADOR);
+
+    // Sem DIFAL ele é exatamente neutro: soma o mesmo valor ao débito e ao
+    // crédito, porque a alíquota do débito e a do crédito de frete são a mesma.
+    expect(b.taxAmount).toBeCloseTo(a.taxAmount as number, 9);
+    expect(b.taxRate).toBeCloseTo(a.taxRate as number, 9);
+    closeCents(a.taxAmount, 126.88837);
+    closeCents(b.taxAmount, 126.88837);
+
+    // Com DIFAL ele NÃO é neutro: o DIFAL incide sobre a base e não gera crédito.
+    const custoDoDifal = (b.taxAmountComDifal as number) - (a.taxAmountComDifal as number);
+    expect(Math.abs(custoDoDifal - 2.168199)).toBeLessThan(1e-4);
+    expect(custoDoDifal).toBeGreaterThan(0);
+  });
+
+  it("frete do comprador nulo dá os MESMOS números que zero, mas marca a base como incompleta (T-222-R2-13)", () => {
+    const zero = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, freteComprador: 0 });
+    const ausente = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, freteComprador: null });
+
+    expect(ausente.taxAmount).toBe(zero.taxAmount);
+    expect(ausente.taxAmountComDifal).toBe(zero.taxAmountComDifal);
+    expect(ausente.icmsDebito).toBe(zero.icmsDebito);
+
+    // A diferença não está no número — está na declaração de que ele saiu de
+    // uma base que podia estar incompleta.
+    expect(zero.baseIncompleta).toBe(false);
+    expect(ausente.baseIncompleta).toBe(true);
+  });
+
+  it("frete do comprador simplesmente não informado é ausência, igual a null", () => {
+    const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL); // sem a chave freteComprador
+    expect(r.baseIncompleta).toBe(true);
+    closeCents(r.taxAmount, 126.88837);
+  });
+
+  it.each([
+    ["negativo", -39.82],
+    ["NaN", Number.NaN],
+    ["Infinity", Number.POSITIVE_INFINITY],
+    ["texto", "39.82" as unknown as number],
+  ])("frete do comprador %s é tratado como ausência — nunca somado à base", (_nome, valor) => {
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, freteComprador: valor as number });
+    closeCents(r.icmsDebito, 83.1588); // base continua 692,99
+    closeCents(r.taxAmount, 126.88837);
+    expect(r.baseIncompleta).toBe(true);
+  });
+
+  it("frete do vendedor ausente e do comprador presente: o frete total é só o do comprador, e os dois créditos saem dele", () => {
+    const r = computeOrderTax({
+      ...INPUT_CASO_PROVA_DIFAL,
+      frete: null,
+      freteComprador: FRETE_COMPRADOR_MEDIDO,
+    });
+    closeCents(r.creditoIcmsFrete, 4.7784); // 39,82 × 12%
+    closeCents(r.creditoPcFrete, 3.241348); // (39,82 − 4,7784) × 9,25%
+    expect(r.baseIncompleta).toBe(false);
+  });
+
+  it("os dois fretes ausentes mantêm os créditos de frete NULL — ausência dupla não vira frete total zero", () => {
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, frete: null, freteComprador: null });
+    expect(r.creditoIcmsFrete).toBeNull();
+    expect(r.creditoPcFrete).toBeNull();
+    expect(r.taxAmount).not.toBeNull();
+  });
+});
+
+describe("computeOrderTax — a ÂNCORA de produção e a não-regressão dos outros regimes", () => {
+  it("ÂNCORA: ICMS débito + PIS/COFINS débito = 139,568186 — e é exatamente taxAmount + os três créditos", () => {
+    const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
+    // Este é o orders.tax_amount gravado hoje em produção. Se ele se mover,
+    // a mudança moveu a BASE e quebrou a fase.
+    closeCents((r.icmsDebito as number) + (r.pisCofinsDebito as number), 139.568186);
+    // A mesma âncora vista do outro lado: só os créditos mudaram nesta rodada.
+    closeCents((r.taxAmount as number) + somaCreditos(r), 139.568186);
+  });
+
+  it("ÂNCORA: frete do comprador ZERO não a move — 139,568186 com 0 e sem o campo", () => {
+    const semCampo = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
+    const comZero = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, freteComprador: 0 });
+    closeCents((semCampo.icmsDebito as number) + (semCampo.pisCofinsDebito as number), 139.568186);
+    closeCents((comZero.icmsDebito as number) + (comZero.pisCofinsDebito as number), 139.568186);
+    closeCents((comZero.taxAmount as number) + somaCreditos(comZero), 139.568186);
+  });
+
+  it("Simples Nacional: resultado idêntico com e sem frete do comprador — a conta do Junior não se move", () => {
+    const cfgSimples: OrderTaxConfig = {
+      regime: "simples_nacional",
+      uf_origem: null,
+      sn_aliquota_efetiva: 6.5,
+      lp_pis: null, lp_cofins: null, lp_irpj: null, lp_csll: null,
+      lr_icms_aliquota_intra: null, lr_icms_aliquota_inter_sul_sudeste: null,
+      lr_icms_aliquota_inter_norte_nordeste: null, lr_icms_debito: null,
+    };
+    const base: OrderTaxInput = {
+      config: cfgSimples, ufDestino: "MG", receitaBruta: 692.99,
+      comissao: 79.69, frete: 30.75, tabelaUf: TABELA_MG_CONFIRMADA,
+    };
+    const semFc = computeOrderTax(base);
+    const comFc = computeOrderTax({ ...base, freteComprador: FRETE_COMPRADOR_MEDIDO });
+
+    expect(comFc).toEqual(semFc);
+    expect(semFc.taxAmount).toBeCloseTo(692.99 * 0.065, 9);
+    expect(semFc.taxRate).toBe(6.5);
+    // A base do Simples não usa o frete do comprador — logo ela não está
+    // incompleta por ele faltar. Marcar seria alarme falso no 222-13-R2.
+    expect(semFc.baseIncompleta).toBe(false);
+    expect(comFc.baseIncompleta).toBe(false);
+  });
+
+  it("Lucro Presumido: resultado idêntico com e sem frete do comprador", () => {
+    const cfgPresumido: OrderTaxConfig = {
+      regime: "lucro_presumido",
+      uf_origem: null,
+      sn_aliquota_efetiva: null,
+      lp_pis: 0.65, lp_cofins: 3.0, lp_irpj: 1.2, lp_csll: 1.08,
+      lr_icms_aliquota_intra: null, lr_icms_aliquota_inter_sul_sudeste: null,
+      lr_icms_aliquota_inter_norte_nordeste: null, lr_icms_debito: null,
+    };
+    const base: OrderTaxInput = {
+      config: cfgPresumido, ufDestino: "MG", receitaBruta: 1000,
+      comissao: 50, frete: 10, tabelaUf: TABELA_MG_CONFIRMADA,
+    };
+    const semFc = computeOrderTax(base);
+    const comFc = computeOrderTax({ ...base, freteComprador: FRETE_COMPRADOR_MEDIDO });
+
+    expect(comFc).toEqual(semFc);
+    expect(semFc.taxAmount).toBeCloseTo(59.3, 6);
+    expect(semFc.baseIncompleta).toBe(false);
+  });
+
+  it("destino desconhecido com frete do comprador preenchido continua INTEIRAMENTE nulo", () => {
+    const r = computeOrderTax({
+      ...INPUT_CASO_PROVA_DIFAL,
+      ufDestino: null,
+      freteComprador: FRETE_COMPRADOR_MEDIDO,
+    });
+    expect(r.motivo).toBe("destino_desconhecido");
+    expect(r.icmsDebito).toBeNull();
+    expect(r.taxAmount).toBeNull();
+    expect(r.icmsRefComissao).toBeNull();
+    expect(r.creditoComissaoBase).toBeNull();
+    expect(r.fcpAmount).toBeNull();
+    // Nada foi calculado — não há base para estar incompleta.
+    expect(r.baseIncompleta).toBe(false);
+  });
+
+  it("sem config com frete do comprador preenchido continua INTEIRAMENTE nulo", () => {
+    const r = computeOrderTax({
+      ...INPUT_CASO_PROVA_DIFAL,
+      config: null,
+      freteComprador: FRETE_COMPRADOR_MEDIDO,
+    });
+    expect(r.motivo).toBe("sem_config");
+    expect(r.taxAmount).toBeNull();
+    expect(r.icmsRefComissao).toBeNull();
+    expect(r.creditoComissaoBase).toBeNull();
+    expect(r.baseIncompleta).toBe(false);
   });
 });
