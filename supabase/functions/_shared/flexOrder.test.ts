@@ -12,6 +12,7 @@ import {
   extrairLogisticType,
   ehFlex,
   extrairBonusEnvio,
+  extrairFreteComprador,
   ratearPorReceita,
   computeReceitaLiquida,
 } from "./flexOrder";
@@ -63,6 +64,18 @@ const CUSTOS_XD_DROP_OFF_MEDIDO = {
   senders: [{ cost: 0, save: 0, compensation: 0, compensations: [], charges: { charge_flex: 0 }, discounts: [] }],
   receiver: { cost: 0, save: 0, discounts: [] },
   gross_amount: 20.1,
+};
+
+// Mesmo envelope medido, com o comprador pagando o frete no checkout. O valor
+// 39,82 e o da coluna "Envio pago pelo comprador" da amostra de 31/07 do
+// relatorio de conciliacao do ML, citada em 222-CONTEXT-R2 (D-R2-04) — nao e
+// numero inventado. senders[0].cost e gross_amount ficam como no envelope
+// medido, de proposito: o extrator do frete do comprador nao pode confundi-los
+// com receiver.cost.
+const CUSTOS_COM_FRETE_DO_COMPRADOR = {
+  senders: [{ cost: 0, save: 0, compensation: 0, compensations: [], charges: { charge_flex: 0 }, discounts: [] }],
+  receiver: { cost: 39.82, save: 0, discounts: [] },
+  gross_amount: 11,
 };
 
 // ── extrairLogisticType ──────────────────────────────────────────────────────
@@ -169,6 +182,104 @@ describe("extrairBonusEnvio", () => {
     // extrairBonusEnvio é ingênuo por desenho: quem decide se DEVE chamar
     // é o sync (guarda ehFlex), não este extrator.
     expect(extrairBonusEnvio(CUSTOS_XD_DROP_OFF_MEDIDO)).toBe(20.1);
+  });
+});
+
+// ── extrairFreteComprador (D-R2-04) ──────────────────────────────────────────
+
+describe("extrairFreteComprador", () => {
+  it("le receiver.cost do objeto de custos — R$ 39,82 da amostra de conciliacao do ML", () => {
+    expect(extrairFreteComprador(CUSTOS_COM_FRETE_DO_COMPRADOR)).toBe(39.82);
+  });
+
+  it("NAO confunde receiver.cost com gross_amount nem com senders[0].cost", () => {
+    // O mesmo objeto tem gross_amount 11 e senders[0].cost 0. Se o extrator
+    // lesse o bruto, devolveria 11; se lesse o remetente, devolveria 0.
+    expect(CUSTOS_COM_FRETE_DO_COMPRADOR.gross_amount).toBe(11);
+    expect(CUSTOS_COM_FRETE_DO_COMPRADOR.senders[0].cost).toBe(0);
+    expect(extrairFreteComprador(CUSTOS_COM_FRETE_DO_COMPRADOR)).not.toBe(11);
+    expect(extrairFreteComprador(CUSTOS_COM_FRETE_DO_COMPRADOR)).toBe(39.82);
+  });
+
+  it("le zero da fixture medida como ZERO — o comprador comprovadamente nao pagou frete", () => {
+    // CUSTOS_SELF_SERVICE_MEDIDO tem receiver.cost = 0 (envio Flex real).
+    expect(CUSTOS_SELF_SERVICE_MEDIDO.receiver.cost).toBe(0);
+    expect(extrairFreteComprador(CUSTOS_SELF_SERVICE_MEDIDO)).toBe(0);
+  });
+
+  it("zero e ZERO, nunca nulo — valor conhecido, nao ausencia (DM-2)", () => {
+    expect(extrairFreteComprador({ receiver: { cost: 0 } })).toBe(0);
+    expect(extrairFreteComprador({ receiver: { cost: 0 } })).not.toBeNull();
+  });
+
+  it("objeto nulo e NULO, nunca zero — ausencia declarada, a requisicao falhou (DM-2)", () => {
+    expect(extrairFreteComprador(null)).toBeNull();
+    expect(extrairFreteComprador(null)).not.toBe(0);
+  });
+
+  it("zero e ausencia sao estados DIFERENTES — um nunca e o outro", () => {
+    const zero = extrairFreteComprador({ receiver: { cost: 0 } });
+    const ausente = extrairFreteComprador(null);
+    expect(zero).toBe(0);
+    expect(ausente).toBeNull();
+    expect(zero).not.toBe(ausente);
+    expect(Object.is(zero, ausente)).toBe(false);
+  });
+
+  it("devolve null quando o recurso nao veio (undefined)", () => {
+    expect(extrairFreteComprador(undefined)).toBeNull();
+  });
+
+  it("resposta sem o objeto receiver devolve ZERO — a resposta chegou, nao houve cobranca", () => {
+    expect(extrairFreteComprador({})).toBe(0);
+  });
+
+  it("receiver presente sem o campo cost devolve ZERO", () => {
+    expect(extrairFreteComprador({ receiver: {} })).toBe(0);
+  });
+
+  it("receiver explicitamente nulo devolve ZERO — a resposta chegou", () => {
+    expect(extrairFreteComprador({ receiver: null })).toBe(0);
+  });
+
+  it("cost explicitamente nulo devolve ZERO — o campo veio vazio na resposta que chegou", () => {
+    expect(extrairFreteComprador({ receiver: { cost: null } })).toBe(0);
+  });
+
+  it("valor negativo devolve null — nunca propaga numero invalido para a base do imposto", () => {
+    expect(extrairFreteComprador({ receiver: { cost: -1 } })).toBeNull();
+    expect(extrairFreteComprador({ receiver: { cost: -39.82 } })).toBeNull();
+  });
+
+  it("valor nao finito devolve null", () => {
+    expect(extrairFreteComprador({ receiver: { cost: NaN } })).toBeNull();
+    expect(extrairFreteComprador({ receiver: { cost: Infinity } })).toBeNull();
+    expect(extrairFreteComprador({ receiver: { cost: -Infinity } })).toBeNull();
+  });
+
+  it("valor nao numerico devolve null", () => {
+    expect(extrairFreteComprador({ receiver: { cost: true } })).toBeNull();
+    expect(extrairFreteComprador({ receiver: { cost: {} } })).toBeNull();
+    expect(extrairFreteComprador({ receiver: { cost: [] } })).toBeNull();
+  });
+
+  it("valor numerico vindo como texto e aceito e convertido", () => {
+    expect(extrairFreteComprador({ receiver: { cost: "39.82" } })).toBe(39.82);
+    expect(extrairFreteComprador({ receiver: { cost: " 12 " } })).toBe(12);
+    expect(extrairFreteComprador({ receiver: { cost: "0" } })).toBe(0);
+  });
+
+  it("texto vazio ou nao numerico devolve null — nao vira zero por Number(\"\")", () => {
+    expect(extrairFreteComprador({ receiver: { cost: "" } })).toBeNull();
+    expect(extrairFreteComprador({ receiver: { cost: "   " } })).toBeNull();
+    expect(extrairFreteComprador({ receiver: { cost: "R$ 39,82" } })).toBeNull();
+  });
+
+  it("NAO fica atras da guarda de Flex — le o xd_drop_off medido do mesmo jeito", () => {
+    // Diferente do bonus, este campo nao depende do tipo logistico: existe em
+    // qualquer envio em que o comprador tenha pago frete.
+    expect(extrairFreteComprador(CUSTOS_XD_DROP_OFF_MEDIDO)).toBe(0);
+    expect(ehFlex("xd_drop_off")).toBe(false);
   });
 });
 
