@@ -1,3 +1,20 @@
+/**
+ * sync-ml-orders — captura de pedidos do ML e escrita em `orders`.
+ *
+ * INTERRUPTORES DE BACKFILL (variaveis de ambiente da edge function).
+ * Os dois seguem a MESMA regra: DESLIGADOS por padrao — ausencia da variavel e
+ * falso, nunca verdadeiro — e ligados so durante o backfill, porque cada um
+ * alarga o predicado de "pedido ja completo" e faz o historico voltar a ser
+ * buscado no ML. Manter qualquer um deles ligado depois do backfill faria toda
+ * rodada horaria pagar por um dado que ja esta no banco.
+ *
+ *   BACKFILL_LOGISTIC_TYPE=true   → exige `logistic_type` preenchido (Fase 222,
+ *                                    FLEX-01). Desligar ao fim do backfill
+ *                                    (222-PROVA.md, Passo 8).
+ *   BACKFILL_FRETE_COMPRADOR=true → exige `frete_comprador` preenchido (Fase
+ *                                    222, D-R2-04 / 222-13-R2). Desligar ao fim
+ *                                    do backfill, pelo mesmo motivo.
+ */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
@@ -11,6 +28,7 @@ import {
   extrairLogisticType,
   ehFlex,
   extrairBonusEnvio,
+  extrairFreteComprador,
   ratearPorReceita,
   computeReceitaLiquida,
 } from "../_shared/flexOrder.ts";
@@ -236,6 +254,11 @@ interface ShipmentDetail {
   // por envio self_service — nunca para os outros tipos (guarda ehFlex).
   logisticType: string | null;
   bonusEnvio:   number | null;
+  // D-R2-04 (222-13-R2): frete pago pelo COMPRADOR no checkout, lido de
+  // `receiver.cost` da MESMA resposta de custos de onde sai o bonus. `null`
+  // aqui significa que a chamada de custos falhou — nunca "o comprador nao
+  // pagou", que e `0`.
+  freteComprador: number | null;
 }
 
 async function fetchShipmentDetails(
@@ -260,6 +283,14 @@ async function fetchShipmentDetails(
   flexSelfService:   number;
   flexBonusResolved: number;
   flexBonusFailed:   number;
+  // D-R2-04: os tres particionam o conjunto de envios buscados —
+  // capturado + zero + ausente = envios resolvidos. Zero e ausencia ficam
+  // SEPARADOS de proposito: zero e valor conhecido (o comprador nao pagou
+  // frete), ausencia e a chamada de custos que falhou. Colapsar os dois e o
+  // defeito consertado em 11/08 no frete.
+  freteCompradorCapturado: number;
+  freteCompradorZero:      number;
+  freteCompradorAusente:   number;
 }> {
   const detailMap = new Map<number, ShipmentDetail>();
 
@@ -281,7 +312,11 @@ async function fetchShipmentDetails(
   }
 
   if (!ids.length) {
-    return { detailMap, attempted: 0, failed: 0, flexSelfService: 0, flexBonusResolved: 0, flexBonusFailed: 0 };
+    return {
+      detailMap, attempted: 0, failed: 0,
+      flexSelfService: 0, flexBonusResolved: 0, flexBonusFailed: 0,
+      freteCompradorCapturado: 0, freteCompradorZero: 0, freteCompradorAusente: 0,
+    };
   }
   console.log(`Fetching ${ids.length} shipments for cost + address…`);
 
@@ -294,6 +329,9 @@ async function fetchShipmentDetails(
   let flexSelfService = 0;
   let flexBonusResolved = 0;
   let flexBonusFailed = 0;
+  let freteCompradorCapturado = 0;
+  let freteCompradorZero = 0;
+  let freteCompradorAusente = 0;
   const CONCURRENCY = 10;
   for (let i = 0; i < ids.length; i += CONCURRENCY) {
     const batch = ids.slice(i, i + CONCURRENCY);
@@ -324,26 +362,59 @@ async function fetchShipmentDetails(
           : null;
 
         // Flex (FLEX-01/03): logistic_type ja veio no MESMO payload acima —
-        // zero requisicao nova. O bonus exige 1 requisicao a mais, e SO
-        // acontece atras da guarda ehFlex — 2,6% dos pedidos na Pe Vermeio,
-        // 19,8% no Junior (222-ML-API.md). `frete IS NULL` NAO e sinonimo de
-        // Flex: ler o bonus de um envio que nao e self_service inventaria
-        // receita (achado medido, mesmo documento).
+        // zero requisicao nova.
         const logisticType = extrairLogisticType(s);
+
+        // ── UMA chamada de custos por envio, servindo DUAS grandezas ────────
+        // [222-13-R2, D-R2-04] Ate aqui esta requisicao vivia atras da guarda
+        // ehFlex (2,6% dos envios na Pe Vermeio, 19,8% no Junior). O frete
+        // pago pelo COMPRADOR sai do mesmo recurso e existe em QUALQUER envio,
+        // nao so no Flex — entao a REQUISICAO saiu de tras da guarda. A
+        // LEITURA DO BONUS nao saiu, e essa distincao e o ponto todo (ver o
+        // bloco logo abaixo).
+        //
+        // Custo medido: cada envio NOVO passa de ~1,03 para 2 chamadas. A
+        // sincronizacao e incremental (envio que ja tem frete e endereco no
+        // banco nem chega aqui), entao quem paga sao os pedidos novos da
+        // rodada — dezenas por loja —, nunca os milhares do historico. Fazer
+        // duas requisicoes separadas ao MESMO endpoint (uma para o bonus,
+        // outra para o frete do comprador) seria pior: uma so resposta serve
+        // as duas leituras.
+        let custos:
+          | { gross_amount?: unknown; receiver?: { cost?: unknown } | null }
+          | null = null;
+        let custosFalhou = false;
+        try {
+          custos = await mlFetch(`/shipments/${id}/costs`, accessToken, 8_000);
+        } catch (err) {
+          // Falha na chamada de custos NAO derruba o envio: tipo logistico,
+          // custo e endereco continuam sendo gravados. As DUAS grandezas
+          // ficam null — nunca zero por falha de rede (DM-2: resposta sem o
+          // campo e zero conhecido; chamada que falhou e ausencia).
+          const motivo = err instanceof Error ? err.message : String(err);
+          console.warn(`fetchShipmentDetails: /shipments/${id}/costs falhou — ${motivo}`);
+          custosFalhou = true;
+        }
+
+        // Frete do comprador: SEMPRE, fora da guarda de Flex. `custos` vale
+        // null quando a requisicao falhou, e o extrator devolve null nesse
+        // caso — a ausencia viaja declarada ate a coluna e a view de saude.
+        const freteComprador = extrairFreteComprador(custos);
+
+        // Bonus de envio: SO atras da guarda ehFlex, e isto NAO mudou.
+        // `frete IS NULL` NAO e sinonimo de Flex: ler o bonus de um envio que
+        // nao e self_service inventaria receita que o vendedor nunca recebeu
+        // (achado medido, 222-ML-API.md — xd_drop_off tem gross_amount nao
+        // zero e frete subsidiado pelo ML). A requisicao saiu de tras da
+        // guarda; a leitura do bonus, nao.
         let bonusEnvio: number | null = null;
         let bonusStatus: "nao_flex" | "resolvido" | "falho" = "nao_flex";
         if (ehFlex(logisticType)) {
-          try {
-            const custos = await mlFetch(`/shipments/${id}/costs`, accessToken, 8_000);
+          if (custosFalhou) {
+            bonusStatus = "falho";
+          } else {
             bonusEnvio = extrairBonusEnvio(custos);
             bonusStatus = "resolvido";
-          } catch (err) {
-            // Falha na chamada de custos NAO derruba o envio: tipo logistico,
-            // custo e endereco continuam sendo gravados. bonusEnvio fica
-            // null — nunca zero por falha de rede.
-            const motivo = err instanceof Error ? err.message : String(err);
-            console.warn(`fetchShipmentDetails: /shipments/${id}/costs falhou — ${motivo}`);
-            bonusStatus = "falho";
           }
         }
 
@@ -355,6 +426,7 @@ async function fetchShipmentDetails(
           logisticType,
           bonusEnvio,
           bonusStatus,
+          freteComprador,
         };
       }),
     );
@@ -364,6 +436,13 @@ async function fetchShipmentDetails(
         if (r.value.bonusStatus !== "nao_flex") flexSelfService++;
         if (r.value.bonusStatus === "resolvido") flexBonusResolved++;
         if (r.value.bonusStatus === "falho") flexBonusFailed++;
+
+        // D-R2-04: particao exaustiva dos envios resolvidos. Silencio foi o
+        // que deixou o imposto errado viver quatro meses (Fase 220) — os tres
+        // numeros viajam ate a resposta do sync.
+        if (r.value.freteComprador == null) freteCompradorAusente++;
+        else if (r.value.freteComprador === 0) freteCompradorZero++;
+        else freteCompradorCapturado++;
 
         detailMap.set(r.value.id, {
           // 2026-08-11: o `> 0` daqui transformava frete ZERO em null e era a
@@ -382,6 +461,7 @@ async function fetchShipmentDetails(
           cidade:       r.value.cidade,
           logisticType: r.value.logisticType,
           bonusEnvio:   r.value.bonusEnvio,
+          freteComprador: r.value.freteComprador,
         });
       } else if (r.status === "rejected") {
         failed++;
@@ -394,9 +474,14 @@ async function fetchShipmentDetails(
 
   console.log(
     `Shipment details resolved: ${detailMap.size} / ${ids.length} (falhas: ${failed}); ` +
-    `Flex self_service: ${flexSelfService} (bonus resolvido: ${flexBonusResolved}, falho: ${flexBonusFailed})`,
+    `Flex self_service: ${flexSelfService} (bonus resolvido: ${flexBonusResolved}, falho: ${flexBonusFailed}); ` +
+    `frete do comprador: ${freteCompradorCapturado} capturado(s), ${freteCompradorZero} zero, ${freteCompradorAusente} ausente(s)`,
   );
-  return { detailMap, attempted: ids.length, failed, flexSelfService, flexBonusResolved, flexBonusFailed };
+  return {
+    detailMap, attempted: ids.length, failed,
+    flexSelfService, flexBonusResolved, flexBonusFailed,
+    freteCompradorCapturado, freteCompradorZero, freteCompradorAusente,
+  };
 }
 
 // ── Batch-fetch brand names from /items?ids=... ───────────────────────────────
@@ -520,6 +605,10 @@ function expandOrder(
   // inventado — 222-CONTEXT.md, Deferred Ideas).
   const logisticType   = detail?.logisticType ?? null;
   const bonusEnvioPedido = detail?.bonusEnvio ?? null;
+  // D-R2-04: frete pago pelo COMPRADOR, tambem grandeza do ENVIO. `null` aqui
+  // e ausencia (a chamada de custos falhou, ou o envio nem foi buscado nesta
+  // rodada), `0` e valor conhecido — a regua fiscal trata os dois diferente.
+  const freteCompradorPedido = detail?.freteComprador ?? null;
   const custoEntregaPedido =
     ehFlex(logisticType) && taxConfig?.flex_custo_entrega != null
       ? Number(taxConfig.flex_custo_entrega)
@@ -539,6 +628,18 @@ function expandOrder(
   });
   const bonusRateado        = ratearPorReceita(bonusEnvioPedido, receitasPorItem);
   const custoEntregaRateado = ratearPorReceita(custoEntregaPedido, receitasPorItem);
+  // D-R2-04: o frete do comprador e do ENVIO, nao do item — rateado pela
+  // MESMA funcao do bonus e do custo de entrega, e pelo mesmo motivo (fecha ao
+  // centavo e nao herda a divida do frete replicado por linha).
+  //
+  // ⚠️ BASE MISTA, registrada de proposito: `frete` (do vendedor) continua
+  // REPLICADO por linha, sem rateio — divida anterior a esta fase, ja nomeada
+  // no cabecalho de flexOrder.ts —, e o frete do comprador entra RATEADO. Em
+  // pedido de item unico, que e a esmagadora maioria, os dois coincidem; em
+  // pedido de varios itens o `freteTotal` da regua (frete + freteComprador,
+  // base dos dois creditos de frete) mistura as duas bases. A divida e
+  // REGISTRADA no 222-14-R2, nao corrigida aqui.
+  const freteCompradorRateado = ratearPorReceita(freteCompradorPedido, receitasPorItem);
 
   return items.map((item: any, idx: number) => {
     const prod           = item.item ?? {};
@@ -573,6 +674,10 @@ function expandOrder(
     // de tipo (222-05, ponto de atenção de ordem).
     const comissao    = item.sale_fee != null ? Number(item.sale_fee) : null;
     const receitaBruta = precoUnit != null ? precoUnit * quantidade : null;
+    // D-R2-04: parcela do frete do comprador desta linha. Resolvida ANTES da
+    // chamada da regua pelo mesmo motivo de comissao/receita bruta acima — a
+    // regua a usa em dois lugares (base tributavel e frete total do credito).
+    const freteCompradorItem = freteCompradorRateado[idx] ?? null;
 
     // Fase 222 (TAX-01/02): imposto decomposto por componentes (ICMS
     // débito, PIS/COFINS débito, créditos de PIS/COFINS sobre comissão e
@@ -585,6 +690,7 @@ function expandOrder(
       receitaBruta,
       comissao,
       frete,
+      freteComprador: freteCompradorItem,
       tabelaUf,
     });
     const taxRate     = breakdown.taxRate;
@@ -655,6 +761,10 @@ function expandOrder(
       logistic_type:   logisticType,
       bonus_envio:     bonusEnvioItem,
       custo_entrega:   custoEntregaItem,
+      // D-R2-04: dinheiro do COMPRADOR. Existe so para a regua fiscal — nao
+      // entra em receita_liquida, em margem nem no MCO (por isso nao aparece
+      // na chamada de computeReceitaLiquida acima).
+      frete_comprador: freteCompradorItem,
       // Fase 222 (TAX-01/02): componentes do breakdown decomposto. tax_versao
       // é gravada SEMPRE (não condicionada a nenhum componente não ser
       // null) — é o marcador de que esta linha passou pela régua nova nesta
@@ -829,6 +939,18 @@ serve(async (req) => {
     // fim do backfill (222-PROVA.md, Passo 8), nao deixado ligado.
     const backfillLogisticType =
       (Deno.env.get("BACKFILL_LOGISTIC_TYPE") ?? "").trim().toLowerCase() === "true";
+    // [222-13-R2, D-R2-04] Mesmo molde, mesma razao, mesmo desligamento:
+    // `orders` nao tinha `frete_comprador` ate o 222-11-R2, entao todo pedido
+    // historico ficaria pulado PARA SEMPRE pela otimizacao incremental sem um
+    // predicado que enxergue o campo novo. BACKFILL_FRETE_COMPRADOR, DESLIGADO
+    // por padrao (ausencia da variavel e falso, nunca verdadeiro): ligado, o
+    // predicado tambem exige `frete_comprador` preenchido, e o historico volta
+    // a ser buscado. Diferente do tipo logistico, aqui a busca custa UMA
+    // chamada nova por envio (/shipments/{id}/costs) — razao a mais para
+    // DESLIGAR ao fim do backfill, e nao deixar ligado: manter o predicado
+    // alargado faria toda rodada horaria pagar por um dado que ja esta la.
+    const backfillFreteComprador =
+      (Deno.env.get("BACKFILL_FRETE_COMPRADOR") ?? "").trim().toLowerCase() === "true";
     const jaCompletos = new Set<string>();
     if (organizationId && orders.length) {
       const idsLote = orders.map((o: any) => String(o.id));
@@ -841,6 +963,9 @@ serve(async (req) => {
         .not("estado", "is", null);
       if (backfillLogisticType) {
         lookupCompletos = lookupCompletos.not("logistic_type", "is", null);
+      }
+      if (backfillFreteComprador) {
+        lookupCompletos = lookupCompletos.not("frete_comprador", "is", null);
       }
       const { data: jaNoBanco, error: erroLookup } = await lookupCompletos;
       if (erroLookup) {
@@ -858,6 +983,9 @@ serve(async (req) => {
       flexSelfService,
       flexBonusResolved,
       flexBonusFailed,
+      freteCompradorCapturado,
+      freteCompradorZero,
+      freteCompradorAusente,
     } = await fetchShipmentDetails(orders, accessToken, 500, jaCompletos);
 
     // ── Load tax config + product costs for this store ──────────────────────
@@ -1043,6 +1171,14 @@ serve(async (req) => {
         flex_self_service:  flexSelfService,
         flex_bonus_resolved: flexBonusResolved,
         flex_bonus_failed:   flexBonusFailed,
+        // [222-13-R2, D-R2-04] Particao dos envios buscados nesta rodada.
+        // `_zero` e `_ausente` NUNCA colapsam: zero e o comprador que
+        // comprovadamente nao pagou frete, ausente e a chamada de custos que
+        // falhou. E `_ausente` alto e o sinal de que o recalculo em lote ainda
+        // nao pode rodar sobre a janela.
+        frete_comprador_capturado: freteCompradorCapturado,
+        frete_comprador_zero:      freteCompradorZero,
+        frete_comprador_ausente:   freteCompradorAusente,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
