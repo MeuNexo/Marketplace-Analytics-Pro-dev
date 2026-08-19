@@ -125,10 +125,22 @@ serve(async (req) => {
     // mesmo erro que o desenho de `tabelaUf` evita de propósito). A coluna é
     // TEXT e linhas antigas podem trazer carimbo de hora — a normalização já
     // está em `resolverConfigVigente`, não é replicada aqui.
+    //
+    // 🔴 [222-13-R2, D-R2-04] `frete_comprador` entrou na projeção, e ESTE é o
+    // ponto de falha silenciosa do plano inteiro. Se a coluna sair daqui, esta
+    // função continua compilando, continua devolvendo `success: true`, e
+    // recalcula o histórico INTEIRO com o insumo faltando — apagando, linha a
+    // linha, o que o sync acabou de capturar. Não há erro, não há aviso: só
+    // uma base tributável menor e um crédito de frete menor em todo pedido em
+    // que o comprador pagou o envio.
+    // É a MESMA forma de dois defeitos já pagos nesta casa: `data_pedido`
+    // usada no filtro e ausente da projeção (222-05-R, logo acima) e a
+    // whitelist de `batch_upsert_orders` (Fase 96-07). Coluna que o laço usa
+    // TEM de estar na projeção — não há como o compilador cobrar isso.
     const montarQuery = () => {
       let q = supabase
         .from("orders")
-        .select("id, ml_order_id, ml_user_id, item_id, sku, quantidade, preco_unit, comissao, frete, receita_bruta, estado, custo_unit, custo_unit_cheio, tax_rate, tax_amount, uf_origem, tax_versao, data_pedido")
+        .select("id, ml_order_id, ml_user_id, item_id, sku, quantidade, preco_unit, comissao, frete, frete_comprador, receita_bruta, estado, custo_unit, custo_unit_cheio, tax_rate, tax_amount, uf_origem, tax_versao, data_pedido")
         .in("ml_user_id", ml_user_ids)
         .gte("data_pedido", date_from)
         .lte("data_pedido", date_to)
@@ -198,6 +210,13 @@ serve(async (req) => {
     // `receita_liquida`, então aqui a consequência é só de medição — mas é a
     // contagem que permite ao orquestrador saber se o backfill terminou.
     let semVigencia = 0;
+    // [222-13-R2, D-R2-04] Pedidos recalculados SEM o frete do comprador
+    // capturado. É o número que o portão de produção lê para decidir se o
+    // recálculo pode rodar agora ou se precisa esperar o backfill de captura:
+    // recalcular com este contador alto grava a régua nova com um insumo
+    // faltando, e a base fica errada em todo pedido em que o comprador pagou
+    // o envio. `computeOrderTax` marca esses casos com `baseIncompleta`.
+    let freteCompradorAusente = 0;
 
     // Batch updates serially in chunks
     const CHUNK = 100;
@@ -228,12 +247,20 @@ serve(async (req) => {
           : (preco ? preco * qty : null);
         const comissao = o.comissao != null ? Number(o.comissao) : null;
         const frete = o.frete != null ? Number(o.frete) : null;
+        // D-R2-04: mesmo molde de `comissao` e `frete` — convertido para
+        // número quando não nulo, mantido NULO quando nulo. Nulo aqui
+        // significa "este pedido ainda não teve o frete do comprador
+        // capturado", e a régua o declara em `baseIncompleta` em vez de
+        // tratá-lo como zero em silêncio.
+        const freteComprador = o.frete_comprador != null ? Number(o.frete_comprador) : null;
+        if (freteComprador == null) freteCompradorAusente++;
         const breakdown = computeOrderTax({
           config: cfg,
           ufDestino: o.estado,
           receitaBruta,
           comissao,
           frete,
+          freteComprador,
           tabelaUf,
         });
         const taxRate = breakdown.taxRate;
@@ -293,6 +320,11 @@ serve(async (req) => {
         // Pedidos de loja com config cadastrada e nenhuma vigência cobrindo a
         // data — distinto de `tax_missing`, que também conta loja sem config.
         tax_sem_vigencia: semVigencia,
+        // [222-13-R2, D-R2-04] Quantos pedidos do lote foram recalculados sem
+        // o frete do comprador. Diferente de zero significa que a régua nova
+        // foi gravada com insumo faltando nesses pedidos — o portão de
+        // produção lê este número ANTES de liberar o backfill.
+        frete_comprador_ausente: freteCompradorAusente,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
