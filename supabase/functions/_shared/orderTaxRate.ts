@@ -252,16 +252,26 @@ export function computeOrderTaxRate(
 export type Procedencia = "nacional" | "importado";
 
 /**
- * Tabela de DIFAL vinda de `icms_uf_aliquotas` (222-01-R), indexada por UF e
- * procedência.
+ * Tabela de DIFAL vinda de `icms_uf_aliquotas` (222-01-R, régua trocada por
+ * D-R2-02/D-R2-03), indexada por UF e procedência.
  *
- * `pctDifal` é DADO DIRETO da planilha de precificação (D-09), com o FCP já
- * embutido onde ele existe — nunca derivado de `interna − interestadual`, e
- * nunca somado a um FCP à parte.
+ * `pctDifal` deixou de ser dado armazenado: a tabela do banco guarda a
+ * ALÍQUOTA INTERNA que a planilha oficial entrega, e o percentual sai de
+ * `aliq_interna − aliq_interestadual` dentro de `aliquota_interna_vigente`.
+ * Aqui ele chega pronto — este módulo não refaz a subtração.
+ *
+ * `fcp` é parcela PRÓPRIA (D-R2-03), nunca embutida no percentual. O desenho
+ * anterior (D-09) presumia 2 pp de FCP no Rio de Janeiro; a planilha oficial
+ * diz que a interna do RJ é 20 e não tem coluna de FCP — era presunção errada.
+ * Zero é valor conhecido ("não há parcela"), diferente de ausência: linha com
+ * FCP inválido não chega aqui, é descartada em `montarTabelaAliquotas`.
  */
 export interface TabelaDifal {
   [uf: string]: Partial<
-    Record<Procedencia, { aliqInterestadual: number; pctDifal: number; confirmado: boolean }>
+    Record<
+      Procedencia,
+      { aliqInterestadual: number; pctDifal: number; fcp: number; confirmado: boolean }
+    >
   >;
 }
 

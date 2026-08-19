@@ -70,7 +70,7 @@ describe("montarTabelaAliquotas", () => {
 
   it("procedência ausente vira nacional — o comportamento conservador", () => {
     const tabela = montarTabelaAliquotas([
-      { uf: "BA", aliq_interestadual: 7, pct_difal: 14, confirmado: true } as LinhaAliquotaUf,
+      { uf: "BA", aliq_interestadual: 7, pct_difal: 13.5, fcp: 0, confirmado: true } as LinhaAliquotaUf,
     ]);
     expect(tabela.BA?.nacional).toBeDefined();
     expect(tabela.BA?.importado).toBeUndefined();
@@ -96,7 +96,7 @@ describe("montarTabelaAliquotas", () => {
 
   it("confirmado ausente (campo não veio) vira false, nunca true por omissão", () => {
     const tabela = montarTabelaAliquotas([
-      { uf: "BA", procedencia: "nacional", aliq_interestadual: 7, pct_difal: 14 } as LinhaAliquotaUf,
+      { uf: "BA", procedencia: "nacional", aliq_interestadual: 7, pct_difal: 13.5, fcp: 0 } as LinhaAliquotaUf,
     ]);
     expect(tabela.BA?.nacional?.confirmado).toBe(false);
   });

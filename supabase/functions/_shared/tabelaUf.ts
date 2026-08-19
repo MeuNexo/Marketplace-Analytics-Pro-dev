@@ -14,26 +14,44 @@
  * lógica de montagem para as duas seria reabrir a lição da Fase 220 (três
  * cópias divergentes da mesma fórmula).
  *
- * ⚠️ RÉGUA D-09: a tabela deixou de guardar alíquota interna + FCP e passou a
- * guardar o PERCENTUAL DE DIFAL pronto por (UF, procedência). A chave do
- * objeto virou de um nível para dois.
+ * ⚠️ RÉGUA D-R2-02/D-R2-03 (revoga D-09): a tabela do banco voltou a guardar a
+ * ALÍQUOTA INTERNA — é o número que a planilha oficial entrega — e o percentual
+ * de DIFAL passou a ser DERIVADO dentro de `aliquota_interna_vigente`. Para
+ * este módulo nada disso muda de forma: `pct_difal` continua chegando pronto na
+ * linha, só deixou de ser lido de coluna. A chave do objeto segue em dois
+ * níveis (UF, procedência).
+ *
+ * ⚠️ O FCP virou PARCELA PRÓPRIA (D-R2-03), com padrão zero no banco, em vez de
+ * ficar embutido no percentual. O desenho anterior presumia 2 pp de FCP no Rio
+ * de Janeiro e por isso tratava 22 como a interna do RJ; a planilha oficial diz
+ * 20, sem FCP — era presunção errada. Aqui o FCP entra na MESMA régua de
+ * ausência das outras parcelas, e não numa régua própria mais frouxa.
  */
 
 import type { Procedencia, TabelaDifal } from "./orderTaxRate";
 
 /**
  * Linha crua devolvida por `aliquota_interna_vigente(p_data date)`
- * (assinatura na migration 222-01-R): `uf char(2), procedencia text,
- * aliq_interestadual numeric, pct_difal numeric, confirmado boolean`. Os
- * campos numéricos chegam como `unknown` de propósito — o driver
- * Postgres/PostgREST costuma devolver `numeric` como STRING para não perder
- * precisão, e este módulo não pode depender do chamador já ter convertido.
+ * (assinatura na migration 222-10-R2): `uf char(2), procedencia text,
+ * aliq_interestadual numeric, aliq_interna numeric, pct_difal numeric,
+ * fcp numeric, confirmado boolean`. Os campos numéricos chegam como `unknown`
+ * de propósito — o driver Postgres/PostgREST costuma devolver `numeric` como
+ * STRING para não perder precisão, e este módulo não pode depender do chamador
+ * já ter convertido.
+ *
+ * `aliq_interna` é declarada porque a função a devolve, e a forma do retorno do
+ * banco tem de estar escrita em algum lugar. Ela NÃO é copiada para
+ * `TabelaDifal` nem participa de validação nenhuma: a rastreabilidade da fonte
+ * vive na tabela do banco, que é onde a conferência contra a planilha oficial
+ * acontece. Duplicá-la em memória só criaria um segundo lugar para divergir.
  */
 export interface LinhaAliquotaUf {
   uf: unknown;
   procedencia?: unknown;
   aliq_interestadual: unknown;
+  aliq_interna?: unknown;
   pct_difal: unknown;
+  fcp: unknown;
   confirmado?: unknown;
 }
 
@@ -82,11 +100,17 @@ function numeroValidoNaoNegativo(v: unknown): number | null {
  *   módulo — nunca escolher uma das duas em silêncio. A detecção acontece
  *   ANTES de validar os números, para pegar duplicata mesmo quando uma das
  *   duas linhas seria descartada por outro motivo.
- * - `pct_difal` ou `aliq_interestadual` não numérica, negativa ou não finita
- *   descarta A LINHA INTEIRA (não entra no objeto devolvido) — nunca vira
- *   zero silencioso. Zero de DIFAL é um valor legítimo e diferente de
- *   ausência: uma UF pode ter DIFAL zero, e isso não é o mesmo que não saber
- *   o DIFAL dela.
+ * - `pct_difal`, `aliq_interestadual` ou `fcp` não numérica, negativa ou não
+ *   finita descarta A LINHA INTEIRA (não entra no objeto devolvido) — nunca
+ *   vira zero silencioso. Zero é um valor legítimo e diferente de ausência:
+ *   uma UF pode ter DIFAL zero (ou FCP zero, que é o caso das 26 hoje), e isso
+ *   não é o mesmo que não saber o número dela. Sem entrada em (UF,
+ *   procedência), `resolverDifal` devolve `uf_fora_da_tabela` — ausência com
+ *   motivo nomeado.
+ * - O FCP entra nessa mesma frase por D-R2-03, que o promoveu a parcela
+ *   própria e revogou o desenho de FCP embutido do 222-RETRABALHO. Dar ao FCP
+ *   uma régua mais frouxa que a das outras parcelas (zerar quando ausente)
+ *   reintroduziria, pela porta dos fundos, a presunção que D-R2-03 derrubou.
  */
 export function montarTabelaAliquotas(
   linhas: LinhaAliquotaUf[] | null | undefined,
@@ -113,10 +137,14 @@ export function montarTabelaAliquotas(
     const pctDifal = numeroValidoNaoNegativo(linha.pct_difal);
     if (pctDifal === null) continue;
 
+    const fcp = numeroValidoNaoNegativo(linha.fcp);
+    if (fcp === null) continue; // mesma régua das outras duas: ausência descarta
+
     if (!tabela[sigla]) tabela[sigla] = {};
     tabela[sigla][procedencia] = {
       aliqInterestadual,
       pctDifal,
+      fcp,
       confirmado: linha.confirmado === true,
     };
   }

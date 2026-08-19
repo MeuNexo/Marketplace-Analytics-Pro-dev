@@ -513,7 +513,7 @@ describe("computeOrderTax — sem crédito (comissão e frete = 0), a decomposi�
 
 /** MG nacional: interestadual 12%, DIFAL 6% — direto da planilha (D-09). */
 const TABELA_MG_CONFIRMADA = {
-  MG: { nacional: { aliqInterestadual: 12, pctDifal: 6, confirmado: true } },
+  MG: { nacional: { aliqInterestadual: 12, pctDifal: 6, fcp: 0, confirmado: true } },
 };
 
 const INPUT_CASO_PROVA_DIFAL: OrderTaxInput = {
@@ -618,8 +618,8 @@ describe("computeOrderTax — D-10.3: a comissão JÁ chega líquida de rebate",
 describe("computeOrderTax — D-11: procedência escolhe a linha da tabela", () => {
   const TABELA_MG_DUAS_PROCEDENCIAS = {
     MG: {
-      nacional:  { aliqInterestadual: 12, pctDifal: 6,  confirmado: true },
-      importado: { aliqInterestadual: 4,  pctDifal: 14, confirmado: true },
+      nacional:  { aliqInterestadual: 12, pctDifal: 6, fcp: 0,  confirmado: true },
+      importado: { aliqInterestadual: 4,  pctDifal: 14, fcp: 0, confirmado: true },
     },
   };
 
@@ -660,7 +660,7 @@ describe("computeOrderTax — as cinco guardas de ausência do DIFAL, nenhuma de
     const r = computeOrderTax({
       ...INPUT_CASO_PROVA_DIFAL,
       ufDestino: "SP",
-      tabelaUf: { SP: { nacional: { aliqInterestadual: 18, pctDifal: 0, confirmado: true } } },
+      tabelaUf: { SP: { nacional: { aliqInterestadual: 18, pctDifal: 0, fcp: 0, confirmado: true } } },
     });
     expect(r.motivo).toBe("intraestadual");
     expect(r.difalMotivoAusencia).toBe("intraestadual");
@@ -697,7 +697,7 @@ describe("computeOrderTax — as cinco guardas de ausência do DIFAL, nenhuma de
   it("UF com linha não confirmada por nenhuma fonte → difalMotivoAusencia uf_nao_confirmada, difalAmount null", () => {
     const r = computeOrderTax({
       ...INPUT_CASO_PROVA_DIFAL,
-      tabelaUf: { MG: { nacional: { aliqInterestadual: 12, pctDifal: 6, confirmado: false } } },
+      tabelaUf: { MG: { nacional: { aliqInterestadual: 12, pctDifal: 6, fcp: 0, confirmado: false } } },
     });
     expect(r.difalMotivoAusencia).toBe("uf_nao_confirmada");
     expect(r.difalAmount).toBeNull();
@@ -717,7 +717,7 @@ describe("computeOrderTax — FCP embutido no percentual (D-09), nunca somado à
     const r = computeOrderTax({
       ...INPUT_CASO_PROVA_DIFAL,
       ufDestino: "RJ",
-      tabelaUf: { RJ: { nacional: { aliqInterestadual: 12, pctDifal: 10, confirmado: true } } },
+      tabelaUf: { RJ: { nacional: { aliqInterestadual: 12, pctDifal: 10, fcp: 0, confirmado: true } } },
     });
     closeCents(r.difalAmount, 692.99 * 0.10);
     expect(r.fcpAmount).toBe(0);
