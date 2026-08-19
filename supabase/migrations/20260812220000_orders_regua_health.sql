@@ -63,13 +63,46 @@ SELECT
   -- nunca somam no mesmo pedido -- e o que difal_fonte garante por tipo.
   count(*) FILTER (WHERE difal_fonte = 'cobrado_ml') AS pedidos_difal_cobrado_ml,
   count(*) FILTER (WHERE difal_fonte = 'calculado') AS pedidos_difal_calculado,
-  count(*) FILTER (WHERE difal_fonte = 'nao_conciliado') AS pedidos_difal_nao_conciliado
+  count(*) FILTER (WHERE difal_fonte = 'nao_conciliado') AS pedidos_difal_nao_conciliado,
+
+  -- Frete pago pelo COMPRADOR (D-R2-04). Acrescentadas AO FIM de proposito:
+  -- CREATE OR REPLACE VIEW so aceita coluna nova no fim da lista -- inserir
+  -- no meio faria esta migration falhar caso a view ja exista no banco, e o
+  -- estado dela em producao nao esta confirmado.
+  --
+  -- Nulo x zero separados, nunca somados: ZERO e valor conhecido (o comprador
+  -- nao pagou frete), NULO e ausencia (nunca capturado). Colapsar os dois e o
+  -- erro que apagou o frete em 11/08, e a fase inteira existe para evitar.
+  count(*) FILTER (WHERE frete_comprador IS NULL) AS pedidos_frete_comprador_nulo,
+  count(*) FILTER (WHERE frete_comprador = 0) AS pedidos_frete_comprador_zero,
+
+  -- Risco de DUPLA CONTAGEM, medido em vez de suposto. D-R2-04 manda somar
+  -- frete + frete_comprador na base do credito. Mas sync-ml-orders resolve
+  -- `frete = buyerCost > 0 ? buyerCost : detail.cost`, com
+  -- `buyerCost = order.shipping.cost` -- que o proprio codigo chama de
+  -- "buyer-paid". Quando esse primeiro ramo dispara, orders.frete JA E
+  -- dinheiro do comprador, e somar receiver.cost por cima contaria o mesmo
+  -- frete duas vezes.
+  --
+  -- Num envio pago pelo vendedor o comprador costuma pagar zero, e vice-versa:
+  -- os dois positivos ao mesmo tempo sao o conjunto que merece explicacao. O
+  -- subconjunto em que os dois carregam o MESMO numero e onde a dupla contagem
+  -- e praticamente certa -- dois campos com valor identico quase so acontecem
+  -- quando sairam da mesma origem.
+  --
+  -- Estes dois contadores NAO decidem nada: alimentam o portao humano do
+  -- 222-14-R2, que le o numero e escolhe. Zero confirma a formula literal de
+  -- D-R2-04; diferente de zero e decisao do dono, com o numero na mao.
+  count(*) FILTER (WHERE frete > 0 AND frete_comprador > 0)
+    AS pedidos_frete_e_frete_comprador_positivos,
+  count(*) FILTER (WHERE frete > 0 AND frete_comprador > 0 AND frete = frete_comprador)
+    AS pedidos_frete_igual_frete_comprador
 
 FROM public.orders
 GROUP BY organization_id, ml_user_id, date_trunc('month', data_pedido);
 
 COMMENT ON VIEW public.orders_regua_health IS
-  'Saude do backfill fiscal da Fase 222, por organizacao/loja/mes: quanto do passado ja migrou da regua antiga (tax_versao nulo ou 1) para a nova (2), quantos pedidos de auto-servico ainda faltam tipo logistico/frete/bonus/custo de entrega, e quantos pedidos interestaduais ficam sem DIFAL por UF nao confirmada -- para nao confundir "sem DIFAL porque e intraestadual" com "sem DIFAL porque falta confirmar a UF".';
+  'Saude do backfill fiscal da Fase 222, por organizacao/loja/mes: quanto do passado ja migrou da regua antiga (tax_versao nulo ou 1) para a nova (2), quantos pedidos de auto-servico ainda faltam tipo logistico/frete/bonus/custo de entrega, e quantos pedidos interestaduais ficam sem DIFAL por UF nao confirmada -- para nao confundir "sem DIFAL porque e intraestadual" com "sem DIFAL porque falta confirmar a UF". Desde 222-11-R2 mede tambem o frete pago pelo COMPRADOR (D-R2-04), em quatro contagens: pedidos_frete_comprador_nulo e pedidos_frete_comprador_zero, deliberadamente SEPARADAS -- zero e valor conhecido (o comprador nao pagou frete), nulo e ausencia (nunca capturado), e colapsar os dois seria repetir o erro que apagou o frete; e pedidos_frete_e_frete_comprador_positivos com pedidos_frete_igual_frete_comprador, que existem para o portao de producao decidir se a soma frete + frete_comprador de D-R2-04 e segura NESTA base -- sync-ml-orders grava em orders.frete o valor pago pelo comprador quando order.shipping.cost e positivo, e nesses pedidos somar receiver.cost por cima seria contar o mesmo frete duas vezes.';
 
 -- SELECT liberado a authenticated (herda a RLS de orders); nenhum GRANT
 -- para anon -- mesma convencao das demais tabelas/views de referencia
