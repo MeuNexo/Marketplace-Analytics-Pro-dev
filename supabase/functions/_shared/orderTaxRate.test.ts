@@ -278,13 +278,17 @@ describe("computeOrderTax — caso-prova 2000017711929314 (Wesley conferiu à m�
     const r = computeOrderTax(inputCasoProva);
     closeCents(r.icmsDebito, 83.16);
     closeCents(r.pisCofinsDebito, 56.41);
-    closeCents(r.creditoPcComissao, 7.37);
+    // D-R2-01 (19/08): a base do crédito da comissão passou a ser a comissão
+    // LÍQUIDA do ICMS de referência — 70,1272, não os 79,69 cheios. O crédito
+    // caiu de 7,371325 para 6,486766, e com ele o imposto subiu R$ 0,88.
+    closeCents(r.creditoPcComissao, 6.486766);
     // D-10.2: crédito de ICMS sobre o frete (novo) e PIS/COFINS sobre o frete
     // LÍQUIDO de ICMS — 27,06, não os 30,75 cheios que a régua antiga usava.
     closeCents(r.creditoIcmsFrete, 3.69);
     closeCents(r.creditoPcFrete, 2.50);
-    closeCents(r.taxAmount, 126.00);
-    closeCents(r.taxRate, 18.18);
+    // D-R2-01: era 126,003811 na régua da comissão cheia.
+    closeCents(r.taxAmount, 126.88837);
+    closeCents(r.taxRate, 18.310274);
   });
 
   it("taxRate é derivado — igual a taxAmount dividido por receitaBruta vezes cem, não uma constante", () => {
@@ -534,16 +538,20 @@ describe("computeOrderTax — caso-prova 2000017711929314 na régua D-08/D-10 (b
     closeCents(r.difalAmount, 41.58);
   });
 
-  it("imposto COM DIFAL ≈ 163,74 e alíquota implícita ≈ 23,63%", () => {
+  it("imposto COM DIFAL ≈ 164,62 e alíquota implícita ≈ 23,76%", () => {
+    // D-R2-01: era 163,737116 / 23,63% na régua da comissão cheia. O DIFAL não
+    // mudou (41,5794) — o que mudou foi o crédito da comissão.
     const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
-    closeCents(r.taxAmountComDifal, 163.74);
+    closeCents(r.taxAmountComDifal, 164.621676);
     expect(r.taxRateComDifal).not.toBeNull();
-    expect(Math.abs((r.taxRateComDifal as number) - 23.63)).toBeLessThan(0.01);
+    expect(Math.abs((r.taxRateComDifal as number) - 23.755274)).toBeLessThan(0.01);
   });
 
-  it("taxAmount continua sendo o cenário SEM DIFAL ≈ 126,00 — nunca soma difalAmount por dentro", () => {
+  it("taxAmount continua sendo o cenário SEM DIFAL ≈ 126,89 — nunca soma difalAmount por dentro", () => {
+    // D-R2-01: era 126,003811. A composição não mudou — o DIFAL continua
+    // entrando POR CIMA, em taxAmountComDifal, nunca por dentro de taxAmount.
     const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
-    closeCents(r.taxAmount, 126.00);
+    closeCents(r.taxAmount, 126.88837);
     expect(r.taxAmountComDifal).not.toBeCloseTo(r.taxAmount as number, 1);
   });
 
@@ -572,9 +580,11 @@ describe("computeOrderTax — caso-prova 2000017711929314 na régua D-08/D-10 (b
     expect(r.creditoPcFrete as number).toBeLessThan(30.75 * 0.0925);
   });
 
-  it("crédito de comissão sem rebate = comissão cheia × 9,25%", () => {
+  it("crédito de comissão sem rebate = comissão LÍQUIDA do ICMS de referência × 9,25% (D-R2-01)", () => {
+    // Revogado em 19/08: a base era a comissão cheia (79,69 × 9,25% = 7,371325).
+    // Agora é 79,69 − 79,69×12% = 70,1272, e o crédito é 6,486766.
     const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
-    closeCents(r.creditoPcComissao, 79.69 * 0.0925);
+    closeCents(r.creditoPcComissao, (79.69 - 79.69 * 0.12) * 0.0925);
   });
 
   it("DIFAL não gera crédito — nenhum dos três créditos varia quando o DIFAL entra", () => {
@@ -593,16 +603,18 @@ describe("computeOrderTax — D-10.3: a comissão JÁ chega líquida de rebate",
   // promoção × 6,10% dentro. Logo D-10.3 está satisfeita pelo dado, e subtrair
   // um rebate aqui seria dupla contagem.
 
-  it("o crédito de comissão é a comissão gravada × 9,25% — sem nenhum abatimento extra", () => {
+  it("o crédito nasce da comissão GRAVADA — sem nenhum abatimento de rebate por cima (D-R2-01 muda a base, não a tese)", () => {
     const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
-    closeCents(r.creditoPcComissao, 79.69 * 0.0925);
+    closeCents(r.creditoPcComissao, (79.69 - 79.69 * 0.12) * 0.0925);
   });
 
   it("comissão menor (pedido em promoção cofinanciada) gera crédito proporcionalmente menor", () => {
     // 21,90 é a comissão real de MLB7070651566 dentro da promoção (era 39,48
     // pela alíquota cheia). O crédito acompanha o que o ML cobrou, não o cheio.
     const emPromocao = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, comissao: 21.9 });
-    closeCents(emPromocao.creditoPcComissao, 21.9 * 0.0925);
+    // D-R2-01: a base é a comissão líquida do ICMS de referência, e ela
+    // acompanha proporcionalmente a comissão menor.
+    closeCents(emPromocao.creditoPcComissao, (21.9 - 21.9 * 0.12) * 0.0925);
   });
 
   it("NÃO existe parâmetro `rebate` — passá-lo não pode alterar o resultado", () => {
@@ -708,21 +720,43 @@ describe("computeOrderTax — as cinco guardas de ausência do DIFAL, nenhuma de
   });
 });
 
-describe("computeOrderTax — FCP embutido no percentual (D-09), nunca somado à parte", () => {
-  it("fcpAmount é 0 quando há DIFAL — valor conhecido, não ausência", () => {
+// ⚠️ Este bloco afirmava a régua REVOGADA por D-R2-03 ("RJ a 10% já embute os
+// 2 pp de FCP — o DIFAL sai de um percentual só"). A planilha oficial diz que a
+// interna do RJ é 20, não 22: os 2 pp presumidos nunca existiram, e o RJ oficial
+// é 20 − 12 = 8 de DIFAL, com FCP em campo próprio (222-10-R2 corrigiu a seed).
+// O bloco foi reescrito para afirmar o contrário do que afirmava.
+describe("computeOrderTax — FCP é parcela PRÓPRIA (D-R2-03), calculada do campo da tabela", () => {
+  it("fcpAmount é 0 quando a tabela traz FCP 0 — valor conhecido, e agora porque a FONTE diz zero", () => {
     const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
     expect(r.fcpAmount).toBe(0);
     expect(r.fcpAmount).not.toBeNull();
   });
 
-  it("RJ a 10% já embute os 2 pp de FCP — o DIFAL sai de um percentual só", () => {
+  it("RJ pela folha oficial: 20 − 12 = 8 de DIFAL, e o FCP NÃO está embutido nesse percentual", () => {
     const r = computeOrderTax({
       ...INPUT_CASO_PROVA_DIFAL,
       ufDestino: "RJ",
-      tabelaUf: { RJ: { nacional: { aliqInterestadual: 12, pctDifal: 10, fcp: 0, confirmado: true } } },
+      tabelaUf: { RJ: { nacional: { aliqInterestadual: 12, pctDifal: 8, fcp: 0, confirmado: true } } },
     });
-    closeCents(r.difalAmount, 692.99 * 0.10);
+    closeCents(r.difalAmount, 692.99 * 0.08);
     expect(r.fcpAmount).toBe(0);
+    // A régua antiga daria 69,299 (10%) — 5,54 a mais de DIFAL inventado.
+    expect(Math.abs((r.difalAmount as number) - 692.99 * 0.10)).toBeGreaterThan(1);
+  });
+
+  it("quando uma UF ganhar FCP, ele soma À PARTE — o percentual do DIFAL não se mexe", () => {
+    const rj = (fcp: number): OrderTaxInput => ({
+      ...INPUT_CASO_PROVA_DIFAL,
+      ufDestino: "RJ",
+      tabelaUf: { RJ: { nacional: { aliqInterestadual: 12, pctDifal: 8, fcp, confirmado: true } } },
+    });
+    const semFcp = computeOrderTax(rj(0));
+    const comFcp = computeOrderTax(rj(2));
+    expect(comFcp.difalAmount).toBe(semFcp.difalAmount);
+    closeCents(comFcp.fcpAmount, 692.99 * 0.02);
+    expect(comFcp.taxAmountComDifal as number).toBeGreaterThan(semFcp.taxAmountComDifal as number);
+    // E o cenário SEM DIFAL segue intocado pelo FCP.
+    expect(comFcp.taxAmount).toBe(semFcp.taxAmount);
   });
 });
 

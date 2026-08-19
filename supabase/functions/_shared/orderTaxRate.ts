@@ -50,6 +50,48 @@
  * reservado para quando a Fase 223 ingerir a nota. A régua implementada é a
  * BASE SIMPLES da planilha de precificação (D-08). Se essa decisão mudar,
  * muda aqui, em um lugar só, e `tax_versao` distingue as linhas antigas.
+ *
+ * O QUE MUDOU NA RODADA R2 (19/08/2026): o Wesley trouxe uma versão do
+ * dashboard cuja régua fiscal A CONTADORA APROVOU. Rodando o módulo dela e
+ * este no MESMO pedido real (`2000017711929314`), UMA ÚNICA linha divergia — a
+ * base do crédito da comissão. As três correções que este módulo passou a
+ * adotar (222-CONTEXT-R2.md, decisões fechadas pelo Wesley, não reabríveis):
+ *
+ * 1. D-R2-01 — o crédito de PIS/COFINS sobre a comissão incide sobre a
+ *    comissão LÍQUIDA de um ICMS DE REFERÊNCIA (`comissão × alíquota`), não
+ *    sobre a comissão cheia. 🔴 Esse ICMS de referência NÃO é crédito e NÃO
+ *    entra no total de créditos: comissão é prestação de serviço e não gera
+ *    crédito de ICMS de fato — somá-lo seria INVENTAR crédito. Ele existe só
+ *    para reduzir a base do item seguinte. Vale +R$ 0,88 de imposto por pedido
+ *    de Lucro Real interestadual.
+ *
+ * 2. D-R2-03 — o FCP é PARCELA PRÓPRIA, calculada do campo `fcp` da tabela de
+ *    UF, e não mais presunção embutida no percentual do DIFAL. Isto REVOGA o
+ *    desenho anterior (D-09), que presumia 2 pp de FCP no Rio de Janeiro: a
+ *    planilha oficial diz que a interna do RJ é 20, não 22, e não tem coluna
+ *    de FCP. Era presunção errada. Enquanto todas as UFs tiverem FCP zero
+ *    nenhum número se move — mas o desenho fica certo ANTES de a primeira UF
+ *    ganhar FCP.
+ *
+ * 3. D-R2-04 — o frete pago pelo COMPRADOR no checkout entra em DOIS lugares:
+ *    soma na BASE TRIBUTÁVEL (de ICMS, de DIFAL e do PIS/COFINS débito),
+ *    porque a NF-e cobre produto + frete cobrado do cliente; e soma ao frete
+ *    do vendedor para formar o FRETE TOTAL, base dos dois créditos de frete. O
+ *    frete que o VENDEDOR absorve continua fora da base — só gera crédito.
+ *    Sem isso, todo pedido em que o comprador paga o envio saía com a base do
+ *    ICMS errada.
+ *
+ * 🔴 A ÂNCORA: `icmsDebito + pisCofinsDebito` do caso-prova continua dando
+ * 139,568186 — é o `orders.tax_amount` gravado hoje em produção. Nenhuma das
+ * três mudanças acima move a BASE do caso-prova; a primeira mexe só no
+ * crédito, a segunda só no cenário COM DIFAL, e a terceira é NEUTRA no cenário
+ * sem DIFAL (soma o mesmo valor ao débito e ao crédito).
+ *
+ * O QUE NÃO VEIO DA VERSÃO DELA, deliberadamente: a vigência por competência
+ * (`taxConfigVigente.ts`), a procedência nacional × importado (4%, Resolução
+ * SF 13/2012) e o `difalFonte` com a régua declarada como ESTIMATIVA. São os
+ * três itens que só nós temos, e trazer a régua dela para dentro da nossa
+ * (em vez de substituir o módulo) é o que os preserva.
  */
 
 // ── Regime e regiões ──────────────────────────────────────────────────────────
@@ -306,7 +348,22 @@ export interface OrderTaxInput {
   ufDestino: string | null | undefined;
   receitaBruta: number | null | undefined;
   comissao: number | null | undefined;
+  /** Frete que o VENDEDOR absorve (`orders.frete`). Fica FORA da base — só gera crédito. */
   frete: number | null | undefined;
+  /**
+   * Frete pago pelo COMPRADOR direto no checkout ("Mercado Envios por conta do
+   * comprador", `orders.frete_comprador`, vindo de `receiver.cost` de
+   * `GET /shipments/{id}/costs` — endpoint que `sync-ml-orders` JÁ chama).
+   *
+   * D-R2-04: entra em DOIS lugares — soma na base tributável (a NF-e cobre
+   * produto + frete cobrado do cliente) E soma ao frete do vendedor para formar
+   * o frete total do envio, base dos dois créditos de frete.
+   *
+   * OPCIONAL por compatibilidade: nenhum chamador antigo quebra por tipo. Os
+   * dois chamadores reais passam a informá-lo no 222-13-R2. Ausente NÃO vira
+   * zero em silêncio — conta como zero na soma, mas acende `baseIncompleta`.
+   */
+  freteComprador?: number | null | undefined;
   tabelaUf: TabelaDifal | null | undefined;
   // NÃO EXISTE parâmetro `rebate` aqui, e a ausência é deliberada — ver o
   // bloco "Rebate: por que não há parâmetro" no cabeçalho de comissaoLiquida.
@@ -334,6 +391,19 @@ export interface OrderTaxBreakdown {
    * que ele não tem.
    */
   pisCofinsDebitoComDifal: number | null;
+  /**
+   * ICMS DE REFERÊNCIA da comissão (D-R2-01): `comissão × alíquota de ICMS`.
+   *
+   * 🔴 NÃO É CRÉDITO e NÃO entra em `creditosTotais`. Comissão é prestação de
+   * serviço e não gera crédito de ICMS de fato; somá-lo aos créditos seria
+   * inventar crédito (no caso-prova o total iria de 12,679816 para 22,242616).
+   * Existe só para reduzir `creditoComissaoBase` — e é devolvido para que a
+   * tela mostre a linha da fórmula sem recalcular. O nome tem `Ref`, não
+   * `Credito`, exatamente para que ninguém o some por engano.
+   */
+  icmsRefComissao: number | null;
+  /** Base do crédito de PIS/COFINS sobre a comissão: `comissão − icmsRefComissao` (D-R2-01). */
+  creditoComissaoBase: number | null;
   creditoPcComissao: number | null;
   creditoPcFrete: number | null;
   /**
@@ -360,6 +430,18 @@ export interface OrderTaxBreakdown {
   difalFonte: DifalFonte | null;
   /** Motivo nomeado de ausência de DIFAL — nunca zero por omissão (FISC-05). */
   difalMotivoAusencia: string | null;
+  /**
+   * A base tributável foi montada sem um insumo que deveria estar lá (T-222-R2-13).
+   *
+   * Hoje quem a acende é um só caso: `freteComprador` ausente num pedido de
+   * Lucro Real. O número devolvido é o melhor possível (o frete ausente conta
+   * como zero), mas ele fica DECLARADO como incompleto em vez de passar por
+   * exato — é o que o 222-13-R2 conta na resposta do sync e a view de saúde
+   * mede. Falso enquanto nada foi calculado (sem config, destino desconhecido)
+   * e nos regimes fixos, cuja base não usa o frete do comprador: marcar ali
+   * seria alarme falso.
+   */
+  baseIncompleta: boolean;
 }
 
 /** Número finito e não negativo, ou `null` — nunca propaga NaN/Infinity para a soma (T-222-14). */
@@ -381,6 +463,8 @@ function breakdownNulo(motivo: MotivoAliquota, difalMotivoAusencia: string): Ord
     icmsDebito: null,
     pisCofinsDebito: null,
     pisCofinsDebitoComDifal: null,
+    icmsRefComissao: null,
+    creditoComissaoBase: null,
     creditoPcComissao: null,
     creditoPcFrete: null,
     creditoIcmsFrete: null,
@@ -393,6 +477,8 @@ function breakdownNulo(motivo: MotivoAliquota, difalMotivoAusencia: string): Ord
     taxRateComDifal: null,
     difalFonte: null,
     difalMotivoAusencia,
+    // Nada foi calculado — não existe base para estar incompleta.
+    baseIncompleta: false,
   };
 }
 
@@ -425,24 +511,38 @@ interface DifalResolvido {
  * `"sem_uf_origem"` — nunca chamada para `"intraestadual"` nem
  * `"destino_desconhecido"`, que são guardas resolvidas antes de chegar aqui).
  *
- * BASE SIMPLES (D-08): `DIFAL = receita × pct_difal`. Não existe mais o
- * `/(1 − aliqInterna)` da base dupla. A contadora não escolheu entre as duas
+ * BASE SIMPLES (D-08): `DIFAL = base tributável × pct_difal`. Não existe mais
+ * o `/(1 − aliqInterna)` da base dupla. A contadora não escolheu entre as duas
  * bases — disse que a fórmula vale onde NÃO há nota, e que onde a NF-e é
  * emitida a margem sai do documento fiscal. O que este módulo produz é, por
  * isso, ESTIMATIVA declarada (D-12).
  *
+ * A BASE é a TRIBUTÁVEL (D-R2-04), não a receita bruta: onde o comprador paga
+ * o envio, o frete dele está na nota e o DIFAL incide sobre ele também.
+ *
  * O percentual vem de `tabelaUf`, nunca hardcoded (222-01-R versiona a tabela
- * no banco), e já traz o FCP embutido onde ele existe.
+ * no banco). O FCP é PARCELA PRÓPRIA (D-R2-03), calculada do campo `fcp` da
+ * mesma linha — o desenho de "FCP embutido no percentual" (D-09) está REVOGADO,
+ * porque presumia 2 pp de FCP no RJ que a planilha oficial não confirma.
+ *
+ * FCP inválido descarta a LINHA INTEIRA, na mesma régua do percentual: FCP
+ * ausente nunca vira FCP zero (FISC-05). `montarTabelaAliquotas` já derruba a
+ * linha antes (222-10-R2); a guarda aqui é a segunda tranca, para o caso de a
+ * tabela chegar montada à mão.
  */
 function resolverDifal(
   dest: string,
-  receitaBruta: number,
+  baseTributavel: number,
   tabelaUf: TabelaDifal | null | undefined,
   procedencia: Procedencia,
 ): DifalResolvido {
   const linha = tabelaUf?.[dest]?.[procedencia];
 
-  if (!linha || typeof linha.pctDifal !== "number" || !Number.isFinite(linha.pctDifal)) {
+  if (
+    !linha ||
+    typeof linha.pctDifal !== "number" || !Number.isFinite(linha.pctDifal) ||
+    typeof linha.fcp !== "number" || !Number.isFinite(linha.fcp)
+  ) {
     // Linha ausente: falta cadastro na tabela para esta UF/procedência —
     // distinto de "existe mas não foi conferida" (uf_nao_confirmada). Quem lê
     // a view de saúde do 222-05 precisa saber qual dos dois é o caso.
@@ -454,13 +554,14 @@ function resolverDifal(
     return { difalBase: null, difalAmount: null, fcpAmount: null, difalMotivoAusencia: "uf_nao_confirmada" };
   }
 
-  // Base simples: a própria receita da operação.
-  const difalBase = receitaBruta;
-  const difalAmount = receitaBruta * (linha.pctDifal / 100);
-  // FCP já está embutido em pctDifal (D-09) — este campo fica em zero por
-  // compatibilidade com 222-05/222-07, que já o leem. Zero aqui é valor
-  // conhecido ("não há parcela separada"), não ausência de dado.
-  const fcpAmount = 0;
+  // Base simples: a própria base tributável da operação (venda + frete do
+  // comprador), nunca a receita do produto sozinha.
+  const difalBase = baseTributavel;
+  const difalAmount = baseTributavel * (linha.pctDifal / 100);
+  // D-R2-03: parcela PRÓPRIA, do campo da tabela. Zero continua sendo valor
+  // conhecido ("esta UF não tem FCP"), distinto de ausência — mas agora é zero
+  // porque a FONTE diz zero, não porque o código presume.
+  const fcpAmount = baseTributavel * (linha.fcp / 100);
 
   return { difalBase, difalAmount, fcpAmount, difalMotivoAusencia: null };
 }
@@ -495,6 +596,9 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
   const receitaBruta = numeroValido(input.receitaBruta);
   const comissao = numeroValido(input.comissao);
   const frete = numeroValido(input.frete);
+  // D-R2-04: mesma validação dos demais valores monetários — negativo, não
+  // finito e não numérico caem em ausência, nunca são somados à base.
+  const freteComprador = numeroValido(input.freteComprador);
   const procedencia: Procedencia = input.procedencia === "importado" ? "importado" : "nacional";
 
   // 1. Sem configuração fiscal, não existe imposto a inventar.
@@ -517,6 +621,8 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
       icmsDebito: null,
       pisCofinsDebito: null,
       pisCofinsDebitoComDifal: null,
+      icmsRefComissao: null,
+      creditoComissaoBase: null,
       creditoPcComissao: null,
       creditoPcFrete: null,
       creditoIcmsFrete: null,
@@ -529,6 +635,10 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
       taxRateComDifal: null,
       difalFonte: null,
       difalMotivoAusencia: "regime_nao_aplicavel",
+      // A base do regime fixo é a receita bruta e não usa o frete do
+      // comprador — ela não fica incompleta por ele faltar. Marcar aqui seria
+      // alarme falso, e a conta do Junior não pode se mover (T-222-R2-14).
+      baseIncompleta: false,
     };
   }
 
@@ -540,13 +650,32 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
     return breakdownNulo(motivo, motivo);
   }
 
-  // ICMS "por dentro": já embutido no preço, débito = receita × alíquota (D-03).
-  const icmsDebito = receitaBruta * (icmsAliquota / 100);
+  // ── As duas grandezas derivadas de D-R2-04, calculadas UMA vez ───────────
+  //
+  // A nota fiscal cobre produto + frete cobrado do cliente: o frete que o
+  // COMPRADOR paga está dentro da base tributável. O que o VENDEDOR absorve
+  // fica fora dela e só aparece do lado do crédito.
+  //
+  // Ausente conta como zero — é o único valor com que se pode seguir — mas o
+  // resultado sai com `baseIncompleta`, para que a ausência seja NOMEADA em
+  // vez de silenciosa (FISC-05, T-222-R2-13).
+  const baseTributavel = receitaBruta + (freteComprador ?? 0);
+  const baseIncompleta = freteComprador === null;
 
-  // Tema 69 (STF RE 574.706): base do PIS/COFINS é a receita MENOS o ICMS.
-  // Esta é a base do cenário SEM DIFAL. A base do cenário COM DIFAL desconta
-  // também o DIFAL (D-10.1) e é calculada depois, quando ele existir.
-  const pisCofinsDebito = (receitaBruta - icmsDebito) * (PIS_COFINS_LUCRO_REAL / 100);
+  // Frete TOTAL do envio, base dos dois créditos de frete. Cada parcela
+  // ausente conta como zero, mas se AMBAS forem ausentes o frete total é
+  // ausente, não zero — os créditos continuam nulos, como sempre foram.
+  const freteTotal = frete === null && freteComprador === null
+    ? null
+    : (frete ?? 0) + (freteComprador ?? 0);
+
+  // ICMS "por dentro": já embutido no preço, débito = base × alíquota (D-03).
+  const icmsDebito = baseTributavel * (icmsAliquota / 100);
+
+  // Tema 69 (STF RE 574.706): base do PIS/COFINS é a base tributável MENOS o
+  // ICMS. Esta é a base do cenário SEM DIFAL. A do cenário COM DIFAL desconta
+  // também o DIFAL e o FCP (D-10.1 + D-R2-03) e é calculada depois.
+  const pisCofinsDebito = (baseTributavel - icmsDebito) * (PIS_COFINS_LUCRO_REAL / 100);
 
   // Créditos de D-01: base é o valor do SERVIÇO tomado, não a receita. Entram
   // sempre — não há parâmetro que os desligue.
@@ -578,22 +707,42 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
   // entra aqui. Ele serve à D-218-03 (break-even de ads com e sem rebate), que é
   // outra pergunta: "o anúncio dá margem por mérito ou só enquanto a promoção
   // durar?". Ali o rebate é informação de decisão, não componente de imposto.
-  const creditoPcComissao = comissao === null
+  //
+  // ── D-R2-01: a base do crédito da comissão é LÍQUIDA de um ICMS de
+  // referência, a pedido da CONTADORA (é a única linha em que o módulo dela e
+  // o nosso divergiam no pedido real medido).
+  //
+  // 🔴 `icmsRefComissao` NÃO É CRÉDITO. Ele não entra em `creditosTotais`, e
+  // isso é a decisão, não um esquecimento: a comissão é prestação de SERVIÇO e
+  // não gera crédito de ICMS de fato — somá-lo inventaria crédito que não
+  // existe (no caso-prova o total saltaria de 12,679816 para 22,242616, e o
+  // imposto cairia R$ 9,56 por pedido sem nenhuma base legal). Ele serve só
+  // para reduzir a base do item seguinte.
+  const icmsRefComissao = comissao === null ? null : comissao * (icmsAliquota / 100);
+  const creditoComissaoBase = comissao === null ? null : comissao - (icmsRefComissao ?? 0);
+  const creditoPcComissao = creditoComissaoBase === null
     ? null
-    : comissao * (PIS_COFINS_LUCRO_REAL / 100);
+    : creditoComissaoBase * (PIS_COFINS_LUCRO_REAL / 100);
 
-  // Crédito de ICMS sobre o frete (D-10.2), na alíquota da própria operação.
+  // Crédito de ICMS sobre o frete (D-10.2), na alíquota da própria operação,
+  // sobre o frete TOTAL do envio (vendedor + comprador, D-R2-04).
   // Aproximação declarada: a base legal é o CTe, não o frete do pedido.
-  const creditoIcmsFrete = frete === null ? null : frete * (icmsAliquota / 100);
+  const creditoIcmsFrete = freteTotal === null ? null : freteTotal * (icmsAliquota / 100);
   // PIS/COFINS do frete incide sobre o frete LÍQUIDO de ICMS, não sobre o cheio.
-  const freteLiquido = frete === null ? null : frete - (creditoIcmsFrete ?? 0);
+  const freteLiquido = freteTotal === null ? null : freteTotal - (creditoIcmsFrete ?? 0);
   const creditoPcFrete = freteLiquido === null
     ? null
     : freteLiquido * (PIS_COFINS_LUCRO_REAL / 100);
 
+  // Os TRÊS créditos que de fato abatem o imposto. `icmsRefComissao` está
+  // deliberadamente fora desta soma — ver o bloco acima.
   const creditosTotais = (creditoPcComissao ?? 0) + (creditoPcFrete ?? 0) + (creditoIcmsFrete ?? 0);
 
   const taxAmount = icmsDebito + pisCofinsDebito - creditosTotais;
+  // O denominador continua sendo a RECEITA BRUTA do produto, nunca a base
+  // tributável: é o que preserva a identidade `tax_amount = preco_unit ×
+  // quantidade × tax_rate / 100` que o resto do aplicativo usa. O arquivo
+  // aprovado faz a mesma escolha, pela mesma razão.
   const taxRate = taxRateDerivado(taxAmount, receitaBruta);
 
   // 4. DIFAL: só se aplica quando o destino é conhecido e interestadual —
@@ -602,33 +751,41 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
   if (motivo === "intraestadual") {
     return {
       motivo, icmsDebito, pisCofinsDebito, pisCofinsDebitoComDifal: null,
+      icmsRefComissao, creditoComissaoBase,
       creditoPcComissao, creditoPcFrete, creditoIcmsFrete, taxAmount, taxRate,
       difalBase: null, difalAmount: null, fcpAmount: null,
       taxAmountComDifal: null, taxRateComDifal: null, difalFonte: null,
-      difalMotivoAusencia: "intraestadual",
+      difalMotivoAusencia: "intraestadual", baseIncompleta,
     };
   }
 
   const dest = normalizarUf(String(ufDestino ?? ""));
-  const difal = resolverDifal(dest, receitaBruta, tabelaUf, procedencia);
+  const difal = resolverDifal(dest, baseTributavel, tabelaUf, procedencia);
 
   if (difal.difalAmount === null) {
     // Guarda de tabela (uf_fora_da_tabela ou uf_nao_confirmada) — o imposto
     // base continua calculado normalmente, só o DIFAL fica ausente.
     return {
       motivo, icmsDebito, pisCofinsDebito, pisCofinsDebitoComDifal: null,
+      icmsRefComissao, creditoComissaoBase,
       creditoPcComissao, creditoPcFrete, creditoIcmsFrete, taxAmount, taxRate,
       difalBase: null, difalAmount: null, fcpAmount: null,
       taxAmountComDifal: null, taxRateComDifal: null, difalFonte: null,
-      difalMotivoAusencia: difal.difalMotivoAusencia,
+      difalMotivoAusencia: difal.difalMotivoAusencia, baseIncompleta,
     };
   }
 
   // D-10.1: no cenário COM DIFAL a base do PIS/COFINS desconta também o DIFAL.
   // Confirmado pela contadora em 13/08: "tanto difal quanto ICMS são utilizados
   // para exclusão da base de pis e cofins".
+  //
+  // D-R2-03: o FCP deduz JUNTO com o DIFAL. É o desenho do arquivo aprovado —
+  // lá os dois viajam somados dentro de um percentual só. Enquanto todas as
+  // UFs tiverem FCP zero isto não move nenhum número; o desenho fica certo
+  // ANTES de a primeira UF ganhar FCP, que é o ponto.
   const pisCofinsDebitoComDifal =
-    (receitaBruta - icmsDebito - difal.difalAmount) * (PIS_COFINS_LUCRO_REAL / 100);
+    (baseTributavel - icmsDebito - difal.difalAmount - (difal.fcpAmount ?? 0)) *
+    (PIS_COFINS_LUCRO_REAL / 100);
 
   // Composto POR CIMA, nunca por subtração de taxAmount — é o que mantém as 9
   // RPCs que já leem tax_amount corretas sem uma linha alterada.
@@ -642,6 +799,8 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
     icmsDebito,
     pisCofinsDebito,
     pisCofinsDebitoComDifal,
+    icmsRefComissao,
+    creditoComissaoBase,
     creditoPcComissao,
     creditoPcFrete,
     creditoIcmsFrete,
@@ -654,5 +813,6 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
     taxRateComDifal,
     difalFonte,
     difalMotivoAusencia: null,
+    baseIncompleta,
   };
 }
