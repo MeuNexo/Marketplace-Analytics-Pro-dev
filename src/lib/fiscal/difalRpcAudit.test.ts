@@ -76,8 +76,14 @@ function semComentarios(sql: string): string {
 const SUBTRACAO_PROIBIDA =
   /pis_cofins_debito\s*(?:,\s*0\s*\))?\s*\)?\s*-\s*(?:COALESCE\s*\(\s*)?[\w."]*pis_cofins_debito_com_difal/i;
 
-/** Colunas da `RETURNS TABLE`, em ordem de declaração. */
-function colunasDoRetorno(sql: string): string[] {
+/**
+ * Colunas da `RETURNS TABLE`, em ordem de declaração. Comentários são
+ * removidos ANTES da leitura: as colunas novas vêm com um bloco explicando
+ * por que existem, e uma linha de prosa contada como coluna faria o teste
+ * mentir nas duas direções.
+ */
+function colunasDoRetorno(sqlBruto: string): string[] {
+  const sql = semComentarios(sqlBruto);
   const m = /RETURNS\s+TABLE\s*\(([\s\S]*?)\)\s*LANGUAGE/i.exec(sql);
   if (!m) return [];
   const corpo = m[1];
@@ -206,7 +212,10 @@ describe("difal_efeito_liquido — a definição única do custo do DIFAL", () =
   });
 
   it("é a ÚNICA a escrever a subtração dos dois débitos de PIS/COFINS", () => {
-    expect(SUBTRACAO_PROIBIDA.test(semComentarios(sql))).toBe(true);
+    // Aqui a subtração aparece sobre os PARÂMETROS da função, que é o único
+    // lugar do repositório onde ela tem direito de existir. Nos três arquivos
+    // de RPC, a mesma conta sobre as COLUNAS é proibida (bloco abaixo).
+    expect(/p_pc_debito\s*-\s*p_pc_debito_com_difal/i.test(semComentarios(sql))).toBe(true);
   });
 
   it("é aplicada ANTES do resumo agregado que passa a consumi-la (ordem por nome de arquivo)", () => {

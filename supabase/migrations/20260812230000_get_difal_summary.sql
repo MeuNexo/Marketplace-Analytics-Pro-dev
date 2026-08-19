@@ -64,6 +64,28 @@
 -- Privilegio de invocador (nao de definidor): a RLS de orders,
 -- ml_tax_config e ml_billing_daily continua valendo integralmente para quem
 -- chama esta funcao -- nenhum bypass de tenant.
+--
+-- ── CORRECAO NA ORIGEM (222-15-R2) ───────────────────────────────────────────
+-- Este arquivo NUNCA foi aplicado em producao (nenhuma migration da Fase 222
+-- foi), entao ele e corrigido AQUI em vez de ganhar uma migration corretiva
+-- por cima. Duas mudancas:
+--
+--   1. A aritmetica do efeito liquido do DIFAL saiu daqui e virou
+--      public.difal_efeito_liquido (20260812225000) -- consumida tambem pelas
+--      duas RPCs de margem, para o mesmo numero nao ter tres donos.
+--   2. receita_base entra no FIM do retorno: e o denominador da aliquota de
+--      referencia das telas teoricas.
+--
+-- O DROP explicito existe porque a RETURNS TABLE muda (ganha uma coluna) e o
+-- Postgres recusa CREATE OR REPLACE nesse caso. Remover uma funcao APAGA a
+-- ACL -- por isso o GRANT e reemitido no fim deste mesmo arquivo.
+--
+-- APLICACAO E PORTAO HUMANO (222-15-R2, Task 5): este plano SO escreve. A
+-- aplicacao via MCP apply_migration no projeto ckcdevcxgvueywivefgx e passo
+-- do orquestrador, DEPOIS de 20260812225000_difal_efeito_liquido.sql.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+DROP FUNCTION IF EXISTS public.get_difal_summary(UUID, TEXT[], DATE, DATE);
 
 CREATE OR REPLACE FUNCTION public.get_difal_summary(
   p_org_id   UUID,
@@ -82,7 +104,8 @@ RETURNS TABLE (
   pedidos_difal_indefinido        BIGINT,
   pedidos_nao_conciliados         BIGINT,
   regua_recolhimento_configurada  BOOLEAN,
-  regua_cobranca_configurada      BOOLEAN
+  regua_cobranca_configurada      BOOLEAN,
+  receita_base                    NUMERIC
 )
 LANGUAGE sql
 STABLE
@@ -105,6 +128,7 @@ AS $$
       o.difal_fonte,
       o.pis_cofins_debito,
       o.pis_cofins_debito_com_difal,
+      o.receita_bruta,
       o.estado,
       o.uf_origem,
       c.difal_ufs_recolhidas
@@ -157,14 +181,26 @@ AS $$
     -- este valor. Sem este campo, quem soma difal_amount por cima de
     -- tax_amount SUPERESTIMA o imposto -- medido no caso-prova: R$ 3,85 por
     -- pedido, imposto maior e MCO menor que o real.
-    -- Positivo por construcao (a base com DIFAL e sempre menor); COALESCE
-    -- protege as linhas que a regua nova ainda nao gravou.
+    -- Positivo por construcao (a base com DIFAL e sempre menor).
+    --
+    -- [222-15-R2] A ARITMETICA NAO MORA MAIS AQUI. A reducao e a DIFERENCA
+    -- entre o DIFAL bruto (DIFAL + FCP) e o custo liquido dele, e o custo
+    -- liquido tem uma definicao so: public.difal_efeito_liquido
+    -- (20260812225000). Escrever a subtracao dos dois debitos aqui de novo
+    -- seria a terceira copia da mesma conta -- e a terceira copia e como o
+    -- defeito de R$ 3,85/pedido volta. A linha que a regua nova ainda nao
+    -- gravou (sem pis_cofins_debito_com_difal) entra com reducao ZERO pela
+    -- propria funcao, o que dispensa o filtro que existia aqui antes.
     COALESCE(
-      SUM(COALESCE(p.pis_cofins_debito, 0) - COALESCE(p.pis_cofins_debito_com_difal, 0))
-        FILTER (
-          WHERE p.difal_fonte IN ('calculado', 'nao_conciliado')
-            AND p.pis_cofins_debito_com_difal IS NOT NULL
-        ),
+      SUM(
+        (COALESCE(p.difal_amount, 0) + COALESCE(p.fcp_amount, 0))
+        - public.difal_efeito_liquido(
+            p.difal_amount,
+            p.fcp_amount,
+            p.pis_cofins_debito,
+            p.pis_cofins_debito_com_difal
+          )
+      ) FILTER (WHERE p.difal_fonte IN ('calculado', 'nao_conciliado')),
       0
     )                                                                      AS reducao_pc_por_difal,
     count(*) FILTER (WHERE p.difal_amount IS NOT NULL)                    AS pedidos_com_difal,
@@ -178,7 +214,19 @@ AS $$
     (SELECT total_lojas > 0 AND lojas_recolhimento_config = total_lojas FROM cfg_check)
                                                                             AS regua_recolhimento_configurada,
     (SELECT total_lojas > 0 AND lojas_cobranca_config = total_lojas FROM cfg_check)
-                                                                            AS regua_cobranca_configurada
+                                                                            AS regua_cobranca_configurada,
+    -- [222-15-R2] O DENOMINADOR da aliquota de REFERENCIA das telas teoricas
+    -- (/precificacao aba Margem Teorica, colunas teoricas de /anuncios e o
+    -- modal do anuncio). Elas nao conhecem pedido nenhum -- usam a aliquota
+    -- INTRAESTADUAL, que por definicao nao tem DIFAL. O segundo cenario delas
+    -- e a razao entre o efeito liquido do DIFAL e esta receita, medida na
+    -- mistura de UFs realmente vendidas numa janela declarada.
+    --
+    -- POR QUE SAI DAQUI, E NAO DE OUTRA CONSULTA: numerador e denominador
+    -- precisam vir do MESMO conjunto de pedidos. Buscar a receita em outro
+    -- recorte de status ou de data produziria uma razao que nao e razao de
+    -- nada -- e ela vira ponto percentual somado a uma aliquota.
+    COALESCE(SUM(p.receita_bruta), 0)                                      AS receita_base
   FROM pedidos p;
 $$;
 
