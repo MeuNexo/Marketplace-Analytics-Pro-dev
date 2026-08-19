@@ -19,7 +19,9 @@ CREATE OR REPLACE VIEW public.orders_regua_health AS
 SELECT
   organization_id,
   ml_user_id,
-  date_trunc('month', data_pedido)::date AS mes,
+  -- ADAPTACAO: cast TEXT->date. orders.data_pedido e TEXT nesta base e
+  -- date_trunc nao aceita text (42883, medido ao aplicar em 19/08).
+  date_trunc('month', data_pedido::date)::date AS mes,
 
   -- Volume total do grupo (organizacao, loja, mes).
   count(*) AS total_pedidos,
@@ -29,7 +31,9 @@ SELECT
   -- coisa -- e o marcador que impede exatamente esse erro.
   count(*) FILTER (WHERE tax_versao IS NULL OR tax_versao < 2) AS pedidos_regua_antiga,
   count(*) FILTER (WHERE tax_versao = 2) AS pedidos_regua_nova,
-  min(data_pedido) FILTER (WHERE tax_versao IS NULL OR tax_versao < 2)
+  -- Tambem em date, e nao no TEXT cru: com formatos mistos gravados o min()
+  -- textual devolveria a string vencedora, nao uma data comparavel.
+  min(data_pedido::date) FILTER (WHERE tax_versao IS NULL OR tax_versao < 2)
     AS pedido_mais_antigo_regua_antiga,
 
   -- Tipo logistico: quantos ainda nao passaram pelo backfill do Flex
@@ -99,7 +103,7 @@ SELECT
     AS pedidos_frete_igual_frete_comprador
 
 FROM public.orders
-GROUP BY organization_id, ml_user_id, date_trunc('month', data_pedido);
+GROUP BY organization_id, ml_user_id, date_trunc('month', data_pedido::date);
 
 COMMENT ON VIEW public.orders_regua_health IS
   'Saude do backfill fiscal da Fase 222, por organizacao/loja/mes: quanto do passado ja migrou da regua antiga (tax_versao nulo ou 1) para a nova (2), quantos pedidos de auto-servico ainda faltam tipo logistico/frete/bonus/custo de entrega, e quantos pedidos interestaduais ficam sem DIFAL por UF nao confirmada -- para nao confundir "sem DIFAL porque e intraestadual" com "sem DIFAL porque falta confirmar a UF". Desde 222-11-R2 mede tambem o frete pago pelo COMPRADOR (D-R2-04), em quatro contagens: pedidos_frete_comprador_nulo e pedidos_frete_comprador_zero, deliberadamente SEPARADAS -- zero e valor conhecido (o comprador nao pagou frete), nulo e ausencia (nunca capturado), e colapsar os dois seria repetir o erro que apagou o frete; e pedidos_frete_e_frete_comprador_positivos com pedidos_frete_igual_frete_comprador, que existem para o portao de producao decidir se a soma frete + frete_comprador de D-R2-04 e segura NESTA base -- sync-ml-orders grava em orders.frete o valor pago pelo comprador quando order.shipping.cost e positivo, e nesses pedidos somar receiver.cost por cima seria contar o mesmo frete duas vezes.';
