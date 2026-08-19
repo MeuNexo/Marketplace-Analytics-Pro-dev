@@ -1,4 +1,6 @@
 import { Package } from "lucide-react";
+import { McoDoisCenarios } from "@/components/mercadolivre/McoDoisCenarios";
+import { cenariosMargemReal } from "@/lib/mcoLinhaCenarios";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import type { ProductItem } from "@/contexts/MLInventoryContext";
@@ -122,10 +124,19 @@ export function ListingIndicatorsTab({ item, margin }: ListingIndicatorsTabProps
   // Margem: usa lucro_pct_pos_ads quando disponível, senão lucro_pct
   const marginDisplay = (): React.ReactNode => {
     if (!margin) return <span className="text-muted-foreground">—</span>;
+    const posAds = margin.lucro_pct_pos_ads != null;
     const pct = margin.lucro_pct_pos_ads ?? margin.lucro_pct;
     if (pct === null) return <span className="text-muted-foreground text-xs">Sem vendas no período</span>;
-    const color = pct >= 0 ? "text-emerald-600" : "text-destructive";
-    return <span className={color}>{pct.toFixed(1)}%</span>;
+    // [222-15-R2] Os dois cenários também aqui: o modal é a superfície teórica
+    // que sobrou em /anuncios depois de a margem teórica migrar para
+    // /precificacao (RE-05), e era a única que ainda mostrava um número só.
+    return (
+      <McoDoisCenarios
+        cenarios={cenariosMargemReal(margin, posAds ? "posAds" : "preAds")}
+        densidade="celula"
+        role={pct >= 0 ? "good" : "critical"}
+      />
+    );
   };
 
   const rightCol = (

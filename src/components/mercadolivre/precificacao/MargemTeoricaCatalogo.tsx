@@ -57,7 +57,23 @@ import { useMLTaxConfig } from "@/hooks/useMLTaxConfig";
 import { useMLPrecosCustos } from "@/hooks/useMLPrecosCustos";
 import { currencyFmt, mlListingUrl } from "@/components/mercadolivre/anuncios/listingHelpers";
 // A fonte única da margem teórica do catálogo (CR-08). Ver o cabeçalho acima.
-import { calcularMargensDoAnuncio } from "@/lib/anuncioMargens";
+import {
+  calcularMargensDoAnuncio,
+  difalPctReferencia,
+  JANELA_DIFAL_REFERENCIA_DIAS,
+} from "@/lib/anuncioMargens";
+import {
+  McoDoisCenarios,
+  McoDoisCenariosCabecalho,
+} from "@/components/mercadolivre/McoDoisCenarios";
+import type { McoColorRole } from "@/lib/mcoHealth";
+import {
+  DIFAL_ESTIMATIVA_LABEL,
+  regimeAplicaDifalNasLojas,
+  resolveLinhaCenarios,
+} from "@/lib/mcoLinhaCenarios";
+import { useMLDifalSummary } from "@/hooks/useMLDifalSummary";
+import { format, subDays } from "date-fns";
 // AV-03: sem CMV não existe margem — e uma tabela inteira de margem teórica numa
 // conta sem custo é ficção completa, não uma célula com traço.
 import { contarSemCusto } from "@/lib/custoFaltante";
@@ -89,6 +105,15 @@ const corMargemLiquida = (v: number | null) =>
   v == null ? "" : v >= 30 ? "text-emerald-600" : v >= 10 ? "text-amber-600" : "text-red-600";
 
 /**
+ * [222-15-R2] As MESMAS faixas acima, em papel de cor semântico — o componente
+ * único do par de cenários recebe o papel, nunca a classe. 🔴 O papel é
+ * decidido sobre o cenário SEM DIFAL: mudar a base de uma cor é decisão de
+ * negócio que ninguém tomou.
+ */
+const corMargemLiquidaRole = (v: number | null): McoColorRole =>
+  v == null ? "neutral" : v >= 30 ? "good" : v >= 10 ? "warning" : "critical";
+
+/**
  * Ordena mantendo o indefinido SEMPRE no fim, nos dois sentidos.
  *
  * Sem isto, "menor margem líquida" traria no topo os anúncios sem custo — que
@@ -112,6 +137,42 @@ export function MargemTeoricaCatalogo() {
   const { costs, costsBySku } = useMLProductCosts();
   const { data: taxMap } = useMLTaxConfig(resolvedMLUserIds, orgId ?? "");
   const { fetchCosts } = useMLPrecosCustos();
+
+  // ── [222-15-R2] A alíquota de REFERÊNCIA do DIFAL ─────────────────────────
+  //
+  // 🔴 Esta tela não conhece pedido nenhum: ela usa a alíquota INTRAESTADUAL, e
+  // operação intraestadual NÃO TEM DIFAL. Não existe "o DIFAL deste anúncio"
+  // porque não existe destino. O segundo cenário é uma alíquota MEDIDA na
+  // mistura de estados realmente vendidos numa janela fixa e declarada — e a
+  // nota de régua diz as duas coisas em palavras, senão o número aparenta uma
+  // precisão por anúncio que ele não tem.
+  const janelaReferencia = useMemo(() => {
+    const hoje = new Date();
+    return {
+      from: format(subDays(hoje, JANELA_DIFAL_REFERENCIA_DIAS - 1), "yyyy-MM-dd"),
+      to: format(hoje, "yyyy-MM-dd"),
+    };
+  }, []);
+  const { data: difalResumo } = useMLDifalSummary(janelaReferencia.from, janelaReferencia.to);
+
+  // Efeito LÍQUIDO do DIFAL (o custo real): o calculado menos a queda do débito
+  // de PIS/COFINS que ele mesmo provoca. Somar o DIFAL cheio superestimaria o
+  // acréscimo — é o defeito de R$ 3,85/pedido do 222-06-R/07-R, aqui em forma
+  // de pontos percentuais.
+  const difalPctRef = useMemo(() => {
+    if (!difalResumo) return null;
+    const efeitoLiquido =
+      difalResumo.difal_calculado - (difalResumo.reducao_pc_por_difal ?? 0);
+    return difalPctReferencia(efeitoLiquido, difalResumo.receita_base);
+  }, [difalResumo]);
+
+  const regimeAplicaDifal = useMemo(
+    () =>
+      taxMap
+        ? regimeAplicaDifalNasLojas(resolvedMLUserIds.map((id) => taxMap.get(id)?.regime ?? null))
+        : undefined,
+    [taxMap, resolvedMLUserIds],
+  );
 
   const [busca, setBusca] = useState("");
   const [marca, setMarca] = useState("all");
@@ -167,6 +228,7 @@ export function MargemTeoricaCatalogo() {
           aliquotaEfetivaPct: aliquota,
           comissaoRealPct: commCache.get(item.id)?.pct ?? null,
           tipoAnuncio: item.listing_type_id,
+          difalPctReferencia: difalPctRef,
         });
         return {
           id: item.id,
@@ -180,7 +242,7 @@ export function MargemTeoricaCatalogo() {
           margens,
         };
       });
-  }, [items, busca, marca, custoDe, taxMap, commCache]);
+  }, [items, busca, marca, custoDe, taxMap, commCache, difalPctRef]);
 
   const linhasOrdenadas = useMemo(() => {
     const arr = [...linhas];
@@ -284,6 +346,30 @@ export function MargemTeoricaCatalogo() {
             e nas colunas Mg. Op. e Mg. Pós-Ads de{" "}
             <Link to="/anuncios" className="underline font-medium">Anúncios</Link>.
           </p>
+          {/* [222-15-R2] As DUAS frases que o segundo cenário desta tela exige.
+              Sem elas o número aparenta uma precisão por anúncio que ele não
+              tem: aqui não existe destino, logo não existe DIFAL do anúncio. */}
+          <p className="text-foreground/80">
+            A coluna <strong>Mg. Líq. com DIFAL</strong> é{" "}
+            <strong>{DIFAL_ESTIMATIVA_LABEL}</strong>: ela usa uma{" "}
+            <strong>alíquota de referência medida na mistura de estados realmente
+            vendidos</strong>, não a alíquota do destino de um pedido — esta tela não
+            conhece destino, e operação dentro do estado não tem DIFAL.{" "}
+            {difalPctRef != null ? (
+              <>
+                Referência medida nos últimos <strong>{JANELA_DIFAL_REFERENCIA_DIAS} dias</strong>{" "}
+                ({janelaReferencia.from.split("-").reverse().join("/")} a{" "}
+                {janelaReferencia.to.split("-").reverse().join("/")}):{" "}
+                <strong>{difalPctRef.toFixed(2)} p.p.</strong> sobre o preço.
+              </>
+            ) : (
+              <>
+                Não há venda medida nos últimos <strong>{JANELA_DIFAL_REFERENCIA_DIAS} dias</strong>{" "}
+                — sem receita na janela a referência não existe, e a coluna com DIFAL
+                fica vazia (não é zero).
+              </>
+            )}
+          </p>
         </div>
       </div>
 
@@ -355,7 +441,18 @@ export function MargemTeoricaCatalogo() {
                       ["Imposto",   l.margens.impostoValor != null ? currencyFmt(l.margens.impostoValor) : "—"],
                       ["Comissão",  `−${currencyFmt(l.margens.comissaoValor)}`],
                       ["Mg. Bruta", l.margens.margemBruta != null ? `${l.margens.margemBruta.toFixed(1)}%` : "—"],
-                      ["Mg. Líq.",  l.margens.margemLiquida != null ? `${l.margens.margemLiquida.toFixed(1)}%` : "—"],
+                      /* [222-15-R2] Mesma régua do ramo de mesa — ligar um ramo
+                         só deixaria metade da tela num cenário diferente. */
+                      ["Mg. Líq.",
+                        l.margens.margemLiquida != null
+                          ? `${l.margens.margemLiquida.toFixed(1)}%`
+                          : "—"],
+                      ["Mg. Líq. c/ DIFAL",
+                        l.margens.margemLiquidaComDifal != null
+                          ? `${l.margens.margemLiquidaComDifal.toFixed(1)}% (${DIFAL_ESTIMATIVA_LABEL})`
+                          : difalPctRef == null
+                            ? "sem venda medida na janela"
+                            : "—"],
                     ] as [string, string][]).map(([rotulo, valor]) => (
                       <div key={rotulo}>
                         <span className="text-muted-foreground">{rotulo} </span>
@@ -411,7 +508,11 @@ export function MargemTeoricaCatalogo() {
                     <TableHead className="text-xs text-right w-28">
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <span className="cursor-help border-b border-dashed border-muted-foreground/40">Mg. Líq.</span>
+                          <span className="cursor-help border-b border-dashed border-muted-foreground/40">
+                            {/* [222-15-R2] A ressalva de estimativa aparece UMA
+                                vez, aqui — não repetida por linha. */}
+                            <McoDoisCenariosCabecalho titulo="Mg. Líq." />
+                          </span>
                         </TooltipTrigger>
                         <TooltipContent className="text-xs max-w-[240px]">
                           (preço − custo − comissão − imposto) ÷ preço. Não desconta publicidade nem frete.
@@ -508,9 +609,35 @@ export function MargemTeoricaCatalogo() {
 
                       <TableCell className="text-right">
                         {l.margens.margemLiquida != null ? (
-                          <span className={`text-xs font-bold tabular-nums ${corMargemLiquida(l.margens.margemLiquida)}`}>
-                            {l.margens.margemLiquida.toFixed(1)}%
-                          </span>
+                          /* [222-15-R2] O par de cenários pelo componente único.
+                             O valor em R$ é a margem por unidade vendida a este
+                             preço — valor E percentual, como manda a casa. */
+                          <McoDoisCenarios
+                            cenarios={resolveLinhaCenarios({
+                              semDifal: {
+                                valor: l.preco * (l.margens.margemLiquida / 100),
+                                pct: l.margens.margemLiquida,
+                              },
+                              comDifal:
+                                l.margens.margemLiquidaComDifal != null
+                                  ? {
+                                      valor: l.preco * (l.margens.margemLiquidaComDifal / 100),
+                                      pct: l.margens.margemLiquidaComDifal,
+                                    }
+                                  : null,
+                              difalEfeito:
+                                l.margens.impostoValorComDifal != null &&
+                                l.margens.impostoValor != null
+                                  ? l.margens.impostoValorComDifal - l.margens.impostoValor
+                                  : null,
+                              regimeAplicaDifal,
+                            })}
+                            densidade="celula"
+                            role={corMargemLiquidaRole(l.margens.margemLiquida)}
+                            ressalvaNoCabecalho
+                            rotuloSemDifal=""
+                            rotuloComDifal="c/ DIFAL"
+                          />
                         ) : (
                           <span className="text-xs text-muted-foreground/40">—</span>
                         )}

@@ -9,7 +9,13 @@
 // ============================================================================
 
 import { describe, it, expect } from "vitest";
-import { calcularMargensDoAnuncio, precoPromocionalAplicavel, type EntradaMargemAnuncio } from "./anuncioMargens";
+import {
+  calcularMargensDoAnuncio,
+  difalPctReferencia,
+  JANELA_DIFAL_REFERENCIA_DIAS,
+  precoPromocionalAplicavel,
+  type EntradaMargemAnuncio,
+} from "./anuncioMargens";
 
 // ─── calcularMargensDoAnuncio ──────────────────────────────────────────────
 
@@ -361,5 +367,117 @@ describe("precoPromocionalAplicavel", () => {
     expect(precoPromocionalAplicavel(80, 100, 120)).toBeNull();
     // variação mais barata que o pai
     expect(precoPromocionalAplicavel(80, 100, 90)).toBeNull();
+  });
+});
+
+// ─── Segundo cenário da margem TEÓRICA (Fase 222, plano 222-15-R2) ──────────
+//
+// A margem teórica não conhece pedido nenhum: ela usa a alíquota INTRAESTADUAL,
+// e operação intraestadual não tem DIFAL. O segundo cenário desta tela é uma
+// alíquota de REFERÊNCIA medida na mistura de estados realmente vendidos — e a
+// tela é obrigada a dizer isso, senão o número aparenta uma precisão por
+// anúncio que ele não tem.
+
+describe("calcularMargensDoAnuncio — alíquota de referência do DIFAL", () => {
+  const base = {
+    precoTabela: 100,
+    usarPromocao: false,
+    custo: 40,
+    aliquotaEfetivaPct: 10,
+    comissaoRealPct: 12,
+    tipoAnuncio: "gold_special",
+  } as const;
+
+  it("sem referência informada, o resultado é o de hoje — os campos novos saem nulos", () => {
+    const hoje = calcularMargensDoAnuncio({ ...base });
+
+    expect(hoje).toEqual({
+      precoEfetivo: 100,
+      comissaoValor: 12,
+      comissaoPct: 12,
+      comissaoReal: true,
+      impostoValor: 10,
+      margemBruta: 60,
+      margemLiquida: 38,
+      impostoValorComDifal: null,
+      margemLiquidaComDifal: null,
+    });
+  });
+
+  it("com referência, o segundo conjunto sai da MESMA expressão, com a alíquota somada", () => {
+    const r = calcularMargensDoAnuncio({ ...base, difalPctReferencia: 4 });
+
+    // Primeiro cenário intocado.
+    expect(r.impostoValor).toBe(10);
+    expect(r.margemLiquida).toBe(38);
+    // Segundo: alíquota 10 + 4 = 14 ⇒ imposto 14 ⇒ (100 − 40 − 12 − 14)/100.
+    expect(r.impostoValorComDifal).toBeCloseTo(14, 10);
+    expect(r.margemLiquidaComDifal).toBeCloseTo(34, 10);
+  });
+
+  it("referência sobre o preço PROMOCIONAL quando é ele que vale", () => {
+    const r = calcularMargensDoAnuncio({
+      ...base,
+      precoPromocional: 80,
+      usarPromocao: true,
+      difalPctReferencia: 5,
+    });
+
+    expect(r.precoEfetivo).toBe(80);
+    expect(r.impostoValorComDifal).toBeCloseTo(12, 10); // 80 × 15%
+  });
+
+  it("sem alíquota da loja configurada, o segundo cenário também é indefinido", () => {
+    // Somar a referência a uma alíquota inexistente afirmaria que a loja paga
+    // só o DIFAL — que é exatamente o defeito do ramo mobile que o CR-08
+    // fechou, na versão fiscal.
+    const r = calcularMargensDoAnuncio({
+      ...base,
+      aliquotaEfetivaPct: null,
+      difalPctReferencia: 4,
+    });
+
+    expect(r.impostoValor).toBeNull();
+    expect(r.impostoValorComDifal).toBeNull();
+    expect(r.margemLiquidaComDifal).toBeNull();
+  });
+
+  it("sem custo cadastrado, a margem líquida com DIFAL fica indefinida — nunca zero", () => {
+    const r = calcularMargensDoAnuncio({ ...base, custo: null, difalPctReferencia: 4 });
+
+    expect(r.margemLiquida).toBeNull();
+    expect(r.margemLiquidaComDifal).toBeNull();
+    // ...mas o imposto do segundo cenário existe: ele não depende do custo.
+    expect(r.impostoValorComDifal).toBeCloseTo(14, 10);
+  });
+
+  it("referência de ZERO é resultado medido: os dois cenários coincidem, sem virar ausência", () => {
+    const r = calcularMargensDoAnuncio({ ...base, difalPctReferencia: 0 });
+
+    expect(r.impostoValorComDifal).toBe(10);
+    expect(r.margemLiquidaComDifal).toBe(38);
+  });
+});
+
+describe("difalPctReferencia — a razão que vira ponto percentual", () => {
+  it("é o efeito líquido dividido pela receita base dos MESMOS pedidos", () => {
+    expect(difalPctReferencia(1200, 30000)).toBeCloseTo(4, 10);
+  });
+
+  it("sem receita medida na janela, a referência é AUSENTE — nunca 0%", () => {
+    // 0% seria lido como "o DIFAL não custa nada", que é o oposto de "não há
+    // venda medida no período".
+    expect(difalPctReferencia(0, 0)).toBeNull();
+    expect(difalPctReferencia(1200, 0)).toBeNull();
+    expect(difalPctReferencia(1200, null)).toBeNull();
+    expect(difalPctReferencia(null, 30000)).toBeNull();
+  });
+
+  it("efeito líquido zero com receita medida é 0% de verdade — resultado, não ausência", () => {
+    expect(difalPctReferencia(0, 30000)).toBe(0);
+  });
+
+  it("a janela da medição existe como constante nomeada", () => {
+    expect(JANELA_DIFAL_REFERENCIA_DIAS).toBe(90);
   });
 });

@@ -69,6 +69,22 @@ export interface EntradaMargemAnuncio {
   comissaoRealPct?: number | null;
   /** `listing_type_id` do anúncio — usado apenas para o fallback estático de comissão. */
   tipoAnuncio: string | null;
+  /**
+   * [222-15-R2] Acréscimo de REFERÊNCIA do DIFAL, em pontos percentuais, para
+   * o segundo cenário desta tela.
+   *
+   * 🔴 POR QUE ELE NÃO É "O DIFAL DESTE ANÚNCIO": a margem teórica não conhece
+   * pedido nenhum — ela usa a alíquota INTRAESTADUAL, e operação intraestadual
+   * NÃO TEM DIFAL. Não existe destino, logo não existe DIFAL do anúncio. O que
+   * este campo carrega é uma alíquota medida na mistura de estados REALMENTE
+   * vendidos numa janela declarada (`JANELA_DIFAL_REFERENCIA_DIAS`), que
+   * responde "se este anúncio vender na mesma mistura de estados dos últimos
+   * 90 dias, quanto sobra".
+   *
+   * Quem resolve a referência é o CHAMADOR, como já acontece com a alíquota
+   * efetiva. Ausente ⇒ o resultado é o de hoje, byte a byte.
+   */
+  difalPctReferencia?: number | null;
 }
 
 export interface ResultadoMargemAnuncio {
@@ -91,6 +107,48 @@ export interface ResultadoMargemAnuncio {
    * silenciosamente tratando um dos dois como zero.
    */
   margemLiquida: number | null;
+  /**
+   * [222-15-R2] Imposto em R$ no cenário COM DIFAL de referência. `null`
+   * quando a referência não foi informada OU quando a alíquota da loja não
+   * está configurada — nunca calculado tratando um dos dois como zero.
+   */
+  impostoValorComDifal: number | null;
+  /**
+   * [222-15-R2] Margem líquida no cenário COM DIFAL de referência, pela MESMA
+   * expressão da margem líquida acima, com a alíquota somada. `null` nas
+   * mesmas condições em que `margemLiquida` é nula, mais a ausência de
+   * referência.
+   */
+  margemLiquidaComDifal: number | null;
+}
+
+/**
+ * Janela em que a alíquota de referência do DIFAL é medida. É constante
+ * NOMEADA porque a tela precisa DIZER a janela ao lado do número: sem ela o
+ * segundo cenário aparenta uma precisão por anúncio que ele não tem.
+ */
+export const JANELA_DIFAL_REFERENCIA_DIAS = 90;
+
+/**
+ * Alíquota de REFERÊNCIA do DIFAL, em pontos percentuais: a razão entre o
+ * efeito líquido do DIFAL e a receita base dos MESMOS pedidos, na janela de
+ * `JANELA_DIFAL_REFERENCIA_DIAS`.
+ *
+ * Devolve `null` (ausência declarada, nunca zero) quando não há receita medida
+ * no período — a tela dirá que não houve venda na janela, em vez de exibir uma
+ * alíquota de 0% que pareceria "o DIFAL não custa nada".
+ *
+ * O numerador e o denominador vêm do MESMO resumo agregado (`get_difal_summary`,
+ * colunas `difal_calculado`/`reducao_pc_por_difal` e `receita_base`). Buscar o
+ * denominador em outra consulta faria a razão sair de dois recortes diferentes.
+ */
+export function difalPctReferencia(
+  efeitoLiquido: number | null | undefined,
+  receitaBase: number | null | undefined,
+): number | null {
+  if (efeitoLiquido == null || receitaBase == null) return null;
+  if (!(receitaBase > 0)) return null;
+  return (efeitoLiquido / receitaBase) * 100;
 }
 
 // ─── calcularMargensDoAnuncio ──────────────────────────────────────────────
@@ -110,6 +168,7 @@ export function calcularMargensDoAnuncio(entrada: EntradaMargemAnuncio): Resulta
     aliquotaEfetivaPct = null,
     comissaoRealPct = null,
     tipoAnuncio,
+    difalPctReferencia: difalPctRef = null,
   } = entrada;
 
   // Preço efetivo: promocional só entra quando o chamador pediu E existe
@@ -144,6 +203,20 @@ export function calcularMargensDoAnuncio(entrada: EntradaMargemAnuncio): Resulta
       ? ((precoEfetivo - custo - comissaoValor - impostoValor) / precoEfetivo) * 100
       : null;
 
+  // [222-15-R2] Segundo cenário: a MESMA expressão acima, com a alíquota de
+  // referência somada à alíquota efetiva. Sem referência informada, os dois
+  // campos saem nulos e o resultado é o de hoje, byte a byte — nenhuma tela
+  // que ainda não passe a referência muda de comportamento.
+  const impostoValorComDifal =
+    aliquotaEfetivaPct != null && difalPctRef != null
+      ? precoEfetivo * ((aliquotaEfetivaPct + difalPctRef) / 100)
+      : null;
+
+  const margemLiquidaComDifal =
+    custo != null && impostoValorComDifal != null && precoValido
+      ? ((precoEfetivo - custo - comissaoValor - impostoValorComDifal) / precoEfetivo) * 100
+      : null;
+
   return {
     precoEfetivo,
     comissaoValor,
@@ -152,6 +225,8 @@ export function calcularMargensDoAnuncio(entrada: EntradaMargemAnuncio): Resulta
     impostoValor,
     margemBruta,
     margemLiquida,
+    impostoValorComDifal,
+    margemLiquidaComDifal,
   };
 }
 

@@ -26,6 +26,11 @@ import { UF_LIST } from "@/lib/tax/regions";
 import { useMLPrecosCustos, type MLItemPrice } from "@/hooks/useMLPrecosCustos";
 import { useMLProductCosts } from "@/hooks/useMLProductCosts";
 import { useMLTaxConfig } from "@/hooks/useMLTaxConfig";
+import { useMLDifalSummary } from "@/hooks/useMLDifalSummary";
+import { McoDoisCenarios } from "@/components/mercadolivre/McoDoisCenarios";
+import { resolveLinhaCenarios } from "@/lib/mcoLinhaCenarios";
+import { difalPctReferencia, JANELA_DIFAL_REFERENCIA_DIAS } from "@/lib/anuncioMargens";
+import { format as formatDate, subDays } from "date-fns";
 import { useMLStore } from "@/contexts/MLStoreContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
 
@@ -193,6 +198,26 @@ export function SimuladorPrecificacao() {
   // alíquota de exibição "sem destino disponível" — mas GRAVAÇÃO no banco
   // (sync-ml-orders/recalc-order-costs) não pode: lá, destino desconhecido
   // preserva o imposto já gravado, nunca inventa um número.
+  // ── [222-15-R2] Alíquota de REFERÊNCIA do DIFAL ───────────────────────────
+  // Serve ao segundo cenário quando NÃO há UF de destino escolhida: é a razão
+  // entre o efeito líquido do DIFAL e a receita base dos pedidos reais da
+  // janela declarada. Sem venda medida na janela, a referência é AUSENTE — e a
+  // tela diz isso, em vez de exibir 0% (que se leria como "DIFAL não custa").
+  const janelaReferencia = useMemo(() => {
+    const hoje = new Date();
+    return {
+      from: formatDate(subDays(hoje, JANELA_DIFAL_REFERENCIA_DIAS - 1), "yyyy-MM-dd"),
+      to: formatDate(hoje, "yyyy-MM-dd"),
+    };
+  }, []);
+  const { data: difalResumo } = useMLDifalSummary(janelaReferencia.from, janelaReferencia.to);
+  const difalPctRef = useMemo(() => {
+    if (!difalResumo) return null;
+    const efeitoLiquido =
+      difalResumo.difal_calculado - (difalResumo.reducao_pc_por_difal ?? 0);
+    return difalPctReferencia(efeitoLiquido, difalResumo.receita_base);
+  }, [difalResumo]);
+
   const autoTaxRate = useMemo(() => {
     if (!taxConfig) return 0;
     const { rate } = computeOrderTaxRate(taxConfig as any, state.ufDestino || null);
@@ -206,6 +231,9 @@ export function SimuladorPrecificacao() {
 
   // ── Derived: difal automatic estimate ─────────────────────────────────────────
   const difalAutoPct = useMemo(() => {
+    // [222-15-R2] O interruptor NÃO decide mais se o DIFAL existe — ele decide
+    // se a estimativa vem da UF de destino escolhida. Sem UF escolhida, o
+    // segundo cenário cai na alíquota de REFERÊNCIA medida (abaixo).
     if (!state.difalEnabled || !taxConfig || taxConfig.regime !== "lucro_real") return 0;
     const orig = taxConfig.uf_origem?.toUpperCase() ?? null;
     const dest = state.ufDestino?.toUpperCase() ?? null;
@@ -231,6 +259,13 @@ export function SimuladorPrecificacao() {
     ? parseNumber(state.commissionPct)
     : (liveCommission?.pct ?? defaultCommissionPct);
 
+  // ── [222-15-R2] OS DOIS CENÁRIOS, JUNTOS ──────────────────────────────────
+  //
+  // Antes, o interruptor de DIFAL escolhia QUAL cenário aparecia: ligado, o
+  // primeiro sumia. Isso transformava a comparação em exercício de memória —
+  // exatamente o que a conferência pediu para evitar. Agora o cenário SEM
+  // DIFAL é sempre o principal (é ele que alimenta o preço reverso, o
+  // semáforo e a decomposição), e o cenário COM DIFAL aparece ao lado.
   const pricingInput: PricingInput = {
     cost: parseNumber(state.cost),
     salePrice: parseNumber(state.salePrice),
@@ -238,8 +273,8 @@ export function SimuladorPrecificacao() {
     fixedFee: liveCommission?.fixed ?? 6,
     shippingCost,
     taxPct,
-    difalEnabled: state.difalEnabled,
-    difalPct: difalAutoPct,
+    difalEnabled: false,
+    difalPct: 0,
     rebate: state.rebate,
     cupom: state.cupom,
     afiliado: state.afiliado,
@@ -247,6 +282,24 @@ export function SimuladorPrecificacao() {
   };
 
   const result = computePricing(pricingInput);
+
+  /**
+   * Alíquota do segundo cenário, em pontos percentuais, e de onde ela veio.
+   * A UF escolhida manda; sem UF, vale a REFERÊNCIA medida na mistura de
+   * estados realmente vendidos nos últimos {JANELA_DIFAL_REFERENCIA_DIAS} dias
+   * — e a tela diz qual das duas está valendo.
+   */
+  const difalPctSegundoCenario = difalAutoPct > 0 ? difalAutoPct : difalPctRef;
+  const difalDeReferencia = difalAutoPct <= 0 && difalPctRef != null;
+
+  const resultComDifal =
+    taxConfig?.regime === "lucro_real" && difalPctSegundoCenario != null
+      ? computePricing({
+          ...pricingInput,
+          difalEnabled: true,
+          difalPct: difalPctSegundoCenario,
+        })
+      : null;
 
   // ── Reverse price for objective ───────────────────────────────────────────────
   const target = parseNumber(state.objectiveTarget);
@@ -535,6 +588,7 @@ export function SimuladorPrecificacao() {
                       <TooltipTrigger asChild><Info className="w-3 h-3 text-muted-foreground cursor-help" /></TooltipTrigger>
                       <TooltipContent className="max-w-xs">
                         Diferencial de alíquota cobrado quando UF destino ≠ origem. Estimativa = alíquota interna do destino − interestadual.
+                        Este interruptor escolhe a UF da estimativa — ele NÃO esconde o cenário sem DIFAL, que continua sempre visível ao lado.
                       </TooltipContent>
                     </Tooltip>
                   </Label>
@@ -693,6 +747,33 @@ export function SimuladorPrecificacao() {
                 <Stat label="Markup" value={result.markupMultiplier > 0 ? `${result.markupMultiplier.toFixed(2)}×` : "—"} />
                 <Stat label="ROI"    value={formatPct(result.roiPct)} />
               </div>
+
+              {/* [222-15-R2] Os DOIS cenários juntos — o interruptor de DIFAL
+                  não esconde mais o primeiro. */}
+              {taxConfig?.regime === "lucro_real" && (
+                <div className="mt-2 pt-2 border-t border-border/40">
+                  <McoDoisCenarios
+                    cenarios={resolveLinhaCenarios({
+                      semDifal: { valor: result.lucro, pct: result.margemPct },
+                      comDifal: resultComDifal
+                        ? { valor: resultComDifal.lucro, pct: resultComDifal.margemPct }
+                        : null,
+                      difalEfeito: resultComDifal ? resultComDifal.difal : null,
+                      regimeAplicaDifal: true,
+                    })}
+                    densidade="bloco"
+                    rotuloSemDifal="lucro sem DIFAL"
+                    rotuloComDifal="lucro com DIFAL"
+                  />
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    {resultComDifal == null
+                      ? `Sem UF de destino escolhida e sem venda medida nos últimos ${JANELA_DIFAL_REFERENCIA_DIAS} dias — não há referência para estimar o DIFAL.`
+                      : difalDeReferencia
+                        ? `Sem UF de destino escolhida: o DIFAL usa a alíquota de referência medida na mistura de estados vendidos nos últimos ${JANELA_DIFAL_REFERENCIA_DIAS} dias (${formatPct(difalPctSegundoCenario ?? 0)}).`
+                        : `DIFAL estimado pela UF de destino escolhida (${formatPct(difalPctSegundoCenario ?? 0)}).`}
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="space-y-0.5 text-xs">
@@ -719,8 +800,15 @@ export function SimuladorPrecificacao() {
               <Row label="Taxa fixa" value={`-${formatBRL(result.taxaFixa)}`} negative />
               <Row label="Frete" value={`-${formatBRL(result.frete)}`} negative />
               <Row label={`Imposto (${formatPct(taxPct)})`} value={`-${formatBRL(result.imposto)}`} negative />
-              {state.difalEnabled && difalAutoPct > 0 && (
-                <Row label={`DIFAL (${formatPct(difalAutoPct)})`} value={`-${formatBRL(result.difal)}`} negative />
+              {/* A decomposição é a do cenário SEM DIFAL. O DIFAL entra numa
+                  linha própria, marcada como segundo cenário — nunca somado
+                  por dentro do imposto acima. */}
+              {resultComDifal != null && resultComDifal.difal > 0 && (
+                <Row
+                  label={`DIFAL (${formatPct(difalPctSegundoCenario ?? 0)}) — 2º cenário`}
+                  value={`-${formatBRL(resultComDifal.difal)}`}
+                  negative
+                />
               )}
               {result.cupomValor > 0 && <Row label="Cupom" value={`-${formatBRL(result.cupomValor)}`} negative />}
               {result.afiliadoValor > 0 && <Row label="Afiliado" value={`-${formatBRL(result.afiliadoValor)}`} negative />}

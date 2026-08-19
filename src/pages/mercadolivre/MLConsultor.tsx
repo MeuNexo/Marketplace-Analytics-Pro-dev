@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { DIFAL_ESTIMATIVA_LABEL } from "@/lib/mcoLinhaCenarios";
 import { useState } from "react";
 import { XCircle, AlertTriangle, Info, Activity, Loader2, X, Sparkles } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -240,6 +241,21 @@ export default function MLConsultor() {
             <div className="flex flex-col gap-2 pt-1 border-t border-border/40">
               <p className="text-xs font-medium text-muted-foreground mb-1">Pontuação por pilar</p>
               <PillarRow label="Margem (30%)" score={pillars.margin} />
+              {/* [222-15-R2] DECLARAÇÃO DE RÉGUA — não é um segundo cenário.
+                  Um score de 0 a 100 não tem dois cenários; o que ele pode e
+                  deve dizer é EM QUAL régua foi apurado. Os limiares de alerta
+                  continuam avaliados sobre a margem SEM DIFAL: trocar a base de
+                  um alerta é decisão de negócio que ninguém tomou (dívida
+                  nomeada no resumo do plano). */}
+              <p className="text-[11px] text-muted-foreground pl-1 -mt-1">
+                O score e os alertas de margem usam a margem{" "}
+                <strong>sem DIFAL</strong>. O cenário com DIFAL é{" "}
+                <strong>{DIFAL_ESTIMATIVA_LABEL}</strong> e aparece ao lado do
+                primeiro em{" "}
+                <Link to="/resultado" className="underline">Resultado</Link>,{" "}
+                <Link to="/publicidade" className="underline">Publicidade</Link> e{" "}
+                <Link to="/anuncios" className="underline">Anúncios</Link>.
+              </p>
               <PillarRow label="Ads (25%)" score={pillars.ads} />
               <PillarRow label="Estoque (20%)" score={pillars.estoque} />
               <PillarRow label="Reputação (15%)" score={pillars.reputacao} />

@@ -15,6 +15,13 @@ export interface MLDifalSummary extends DifalSummaryInput {
   fcp_calculado: number;
   pedidos_com_difal: number;
   pedidos_nao_conciliados: number;
+  /**
+   * [222-15-R2] Receita bruta dos MESMOS pedidos, no mesmo recorte de status e
+   * data. É o DENOMINADOR da alíquota de referência das telas teóricas
+   * (`difalPctReferencia`) — sem ele a razão sairia de dois conjuntos
+   * diferentes. `null` quando a RPC ainda não devolve a coluna.
+   */
+  receita_base: number | null;
 }
 
 /**
@@ -64,6 +71,10 @@ export function useMLDifalSummary(from: string, to: string) {
         pedidos_nao_conciliados: Number(row.pedidos_nao_conciliados) || 0,
         regua_recolhimento_configurada: Boolean(row.regua_recolhimento_configurada),
         regua_cobranca_configurada: Boolean(row.regua_cobranca_configurada),
+        // `!= null` distingue "coluna ausente" (RPC antiga) de "zero" — sem
+        // denominador não há alíquota de referência, e zero produziria uma
+        // divisão inventada.
+        receita_base: row.receita_base != null ? Number(row.receita_base) : null,
       };
     },
     enabled: !!orgId && resolvedMLUserIds.length > 0 && !!from && !!to,

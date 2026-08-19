@@ -123,7 +123,11 @@ export const TOOL_DECLARATIONS: FnDecl[] = [
   {
     name: "get_margin_by_product",
     description:
-      "Margem/MCO e ads por SKU da conta no período. Use para lucro por produto, produtos no prejuízo, ads comendo margem, ranking de margem.",
+      "Margem/MCO e ads por SKU da conta no período. Use para lucro por produto, produtos no prejuízo, ads comendo margem, ranking de margem. " +
+      "RÉGUA (Fase 222): o número PRINCIPAL é `lucro`/`lucro_pct` (e `lucro_pos_ads`/`lucro_pct_pos_ads` após publicidade) — cenário SEM DIFAL, que é o que os alertas e os limiares do Consultor avaliam. " +
+      "Os campos `lucro_com_difal`, `lucro_pct_com_difal`, `lucro_pos_ads_com_difal` e `lucro_pct_pos_ads_com_difal` são o SEGUNDO cenário e são ESTIMATIVA: o DIFAL é calculado pela régua fiscal, não apurado pela nota, e onde há NF-e emitida o valor que vale é o do documento fiscal. " +
+      "Ao falar do segundo cenário, diga sempre a palavra estimativa. `difal_efeito` é o custo líquido do DIFAL (já descontada a queda do PIS/COFINS) — NUNCA some `difal_efeito` a `lucro_com_difal`, ele já está lá dentro. " +
+      "`pedidos_difal_indefinido` conta pedidos interestaduais cuja alíquota de destino ainda não foi confirmada: cite a contagem em vez de tratar a lacuna como zero.",
     parameters: { type: "object", properties: { ...DATE_PROPS } },
   },
   {
@@ -131,7 +135,8 @@ export const TOOL_DECLARATIONS: FnDecl[] = [
     description:
       "DRE consolidado do período (receita de pedidos PAGOS, CMV, comissão, frete, impostos, lucro, lucro_pct, pedidos, ticket médio). " +
       "Receita aqui é de pedidos PAGOS — pode divergir levemente do card 'Receita Total' do painel /vendas (que usa ml_daily_cache com escopo levemente diferente). " +
-      "Use para visão geral de lucratividade. Pedidos com status partially_refunded (~21) podem não estar incluídos no total (alinhado ao painel atual).",
+      "Use para visão geral de lucratividade. Pedidos com status partially_refunded (~21) podem não estar incluídos no total (alinhado ao painel atual). " +
+      "RÉGUA (Fase 222): os números deste resumo são o cenário SEM DIFAL. O cenário com DIFAL é ESTIMATIVA e vive em `get_difal_summary`/nas telas de margem — não o invente somando DIFAL por cima destes totais.",
     parameters: { type: "object", properties: { ...DATE_PROPS } },
   },
   {
