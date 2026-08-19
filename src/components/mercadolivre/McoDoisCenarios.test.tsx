@@ -28,9 +28,9 @@ describe("McoDoisCenarios — densidade de bloco", () => {
     render(<McoDoisCenarios cenarios={CENARIOS_OK} densidade="bloco" />);
 
     expect(screen.getByText(/84,20/)).toBeInTheDocument();
-    expect(screen.getByText(/12,2%|12,1%/)).toBeInTheDocument();
+    expect(screen.getByText(/12\.2%/)).toBeInTheDocument();
     expect(screen.getByText(/33,49/)).toBeInTheDocument();
-    expect(screen.getByText(/4,8%/)).toBeInTheDocument();
+    expect(screen.getByText(/4\.8%/)).toBeInTheDocument();
   });
 
   it("traz valor E percentual nos dois cenários (regra da casa)", () => {
@@ -39,8 +39,8 @@ describe("McoDoisCenarios — densidade de bloco", () => {
 
     expect(texto).toContain("84,20");
     expect(texto).toContain("33,49");
-    expect(texto).toMatch(/12,1?5?%|12,2%/);
-    expect(texto).toMatch(/4,8%/);
+    expect(texto).toMatch(/12\.2%/);
+    expect(texto).toMatch(/4\.8%/);
   });
 
   it("rotula o segundo cenário com a palavra que vem da constante única", () => {
@@ -65,8 +65,8 @@ describe("McoDoisCenarios — densidade de célula", () => {
 
     expect(texto).toContain("84,20");
     expect(texto).toContain("33,49");
-    expect(texto).toMatch(/12,2%|12,1%/);
-    expect(texto).toMatch(/4,8%/);
+    expect(texto).toMatch(/12\.2%/);
+    expect(texto).toMatch(/4\.8%/);
   });
 
   it("não repete a ressalva de estimativa em cada linha quando ela já está no cabeçalho", () => {
