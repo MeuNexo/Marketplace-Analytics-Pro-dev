@@ -46,6 +46,8 @@ import {
   DIFAL_ESTIMATIVA_LABEL,
   resolveLinhaCenarios,
 } from "@/lib/mcoLinhaCenarios";
+import { RebateDoisCenarios } from "@/components/mercadolivre/RebateDoisCenarios";
+import { resolveLinhaRebate } from "@/lib/rebateLinhaCenarios";
 import {
   computePrecoFaixas,
   computeVeredicto,
@@ -259,6 +261,12 @@ function ChartTooltip({ active, payload }: any) {
       <Row k="Unidades" v={intFmt(d.qtd)} />
       <Row k="Preço" v={brl(d.precoUnit)} dotColor="hsl(var(--chart-price))" />
       <Row k="Break-even" v={brl(d.breakevenUnit)} dotColor="hsl(var(--chart-breakeven))" />
+      {/* [223-07] O gráfico não ganhou uma terceira linha de break-even (duas
+          já é o limite de leitura, com a de DIFAL) — o equilíbrio na tarifa
+          cheia mora aqui, na dica de contexto, e no card de detalhamento. */}
+      {d.breakevenUnitSemRebate != null && (
+        <Row k="Break-even tarifa cheia" v={brl(d.breakevenUnitSemRebate)} muted />
+      )}
       <Row k="MCO R$/un" v={brl(mcoUnit)} accent={mcoUnit >= 0} danger={mcoUnit < 0} />
       <Row k="MCO %" v={pctFmt(d.mcoPct)} accent={(d.mcoPct ?? 0) >= 0 && d.mcoPct != null} danger={(d.mcoPct ?? 0) < 0} dotColor="hsl(var(--chart-mco))" />
       <div className="mt-1 border-t border-border pt-1">
@@ -445,6 +453,13 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
         // zero" — o segundo é resultado legítimo, o primeiro é ausência.
         difal_efeito: r.difal_efeito != null ? Number(r.difal_efeito) : null,
         pedidos_difal_indefinido: Number(r.pedidos_difal_indefinido ?? 0),
+        // [223-07] Insumo do terceiro cenário (rebate, tarifa cheia). Mesma
+        // disciplina do DIFAL acima: `!= null` distingue "a RPC ainda não
+        // devolve a coluna" (janela de publicação) de "apurado como zero".
+        rebate_bruto: r.rebate_bruto != null ? Number(r.rebate_bruto) : null,
+        rebate_efeito: r.rebate_efeito != null ? Number(r.rebate_efeito) : null,
+        pedidos_sem_captura_rebate: Number(r.pedidos_sem_captura_rebate ?? 0),
+        pedidos_rebate_nao_conferido: Number(r.pedidos_rebate_nao_conferido ?? 0),
       }));
     const fetchWindow = (_from: string | null, _to: string | null) =>
       // RPC ainda não presente nos tipos gerados — cast como no restante do projeto.
@@ -505,6 +520,13 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
         // zero" — o segundo é resultado legítimo, o primeiro é ausência.
         difal_efeito: r.difal_efeito != null ? Number(r.difal_efeito) : null,
         pedidos_difal_indefinido: Number(r.pedidos_difal_indefinido ?? 0),
+        // [223-07] Insumo do terceiro cenário (rebate, tarifa cheia). Mesma
+        // disciplina do DIFAL acima: `!= null` distingue "a RPC ainda não
+        // devolve a coluna" (janela de publicação) de "apurado como zero".
+        rebate_bruto: r.rebate_bruto != null ? Number(r.rebate_bruto) : null,
+        rebate_efeito: r.rebate_efeito != null ? Number(r.rebate_efeito) : null,
+        pedidos_sem_captura_rebate: Number(r.pedidos_sem_captura_rebate ?? 0),
+        pedidos_rebate_nao_conferido: Number(r.pedidos_rebate_nao_conferido ?? 0),
       }));
     (async () => {
       setLoadingDaily(true);
@@ -1240,8 +1262,28 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                     <Row k="Receita/un" v={brl(waterfallCard.precoUnit)} />
                     <Row k="(−) CMV" v={brl(waterfallCard.cmvUnit)} />
                     <Row k="(−) Comissão" v={brl(waterfallCard.comissaoUnit)} />
+                    {/* [223-07] <as_duas_parcelas_do_efeito>: a comissão na
+                        tarifa cheia é a parcela BRUTA do efeito — o que o ML
+                        deixou de cobrar por causa da promoção. */}
+                    {waterfallCard.comissaoUnitSemRebate != null && (
+                      <Row
+                        k="(−) Comissão tarifa cheia"
+                        v={brl(waterfallCard.comissaoUnitSemRebate)}
+                        muted
+                      />
+                    )}
                     <Row k="(−) Frete" v={brl(waterfallCard.freteUnit)} />
                     <Row k="(−) Impostos" v={brl(waterfallCard.impostoUnit)} />
+                    {/* [223-07] A segunda parcela: o crédito MAIOR de
+                        PIS/COFINS que a comissão cheia geraria — por isso o
+                        imposto na tarifa cheia é MENOR que o real. */}
+                    {waterfallCard.impostoUnitSemRebate != null && (
+                      <Row
+                        k="(−) Impostos c/ compensação da tarifa cheia"
+                        v={brl(waterfallCard.impostoUnitSemRebate)}
+                        muted
+                      />
+                    )}
                     <div className="border-t border-border pt-2">
                       <Row
                         k="= Margem de Contribuição/un"
@@ -1282,6 +1324,35 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                           role={mcoRole}
                           rotuloSemDifal="MCO/un sem DIFAL"
                           rotuloComDifal="MCO/un com DIFAL"
+                        />
+                      </div>
+                      {/* [223-07] O par de rebate — irmão do de DIFAL acima,
+                          régua independente. Mesma composição: `computeMco`
+                          chamado de novo, nunca o efeito líquido subtraído do
+                          MCO já pronto (D-218-03, o que decide o break-even de
+                          publicidade em /publicidade). */}
+                      <div className="pt-2 mt-1 border-t border-border/40">
+                        <RebateDoisCenarios
+                          cenarios={resolveLinhaRebate({
+                            comRebate: {
+                              valor: waterfallCard.mcoUnit,
+                              pct: waterfallCard.mcoPct,
+                            },
+                            semRebate:
+                              waterfallCard.mcoUnitSemRebate != null
+                                ? {
+                                    valor: waterfallCard.mcoUnitSemRebate,
+                                    pct: waterfallCard.mcoPctSemRebate,
+                                  }
+                                : null,
+                            rebateEfeito: waterfallCard.rebateEfeito,
+                            pedidosSemCaptura: waterfallCard.pedidosRebateSemCaptura,
+                            pedidosNaoConferidos: waterfallCard.pedidosRebateNaoConferido,
+                          })}
+                          densidade="bloco"
+                          role={mcoRole}
+                          rotuloComRebate="MCO/un com rebate"
+                          rotuloSemRebate="MCO/un tarifa cheia"
                         />
                       </div>
                     </div>
@@ -1546,7 +1617,13 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                 linha do eixo direito = MCO% ·
                 Ads = fatura do Mercado Livre rateada por anúncio pela proporção do relatório de publicidade
                 (sem fatura sincronizada, o próprio relatório) ·
-                imposto pelo regime configurado · granularidade {GRANULARITY_LABELS[granularity].toLowerCase()}
+                imposto pelo regime configurado · granularidade {GRANULARITY_LABELS[granularity].toLowerCase()} ·
+                {/* [223-07] O gráfico não ganha uma terceira linha de
+                    break-even (rebate) para não sobrecarregar a leitura — o
+                    equilíbrio na tarifa cheia (sem o desconto de campanha)
+                    aparece no card de detalhamento acima e na dica de cada
+                    ponto do gráfico, nunca omitido. */}
+                {" "}break-even na tarifa cheia (sem rebate) no card acima e na dica de cada ponto, não como linha do gráfico
               </p>
             )}
           </AccordionContent>
