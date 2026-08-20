@@ -24,6 +24,7 @@ import {
   Megaphone,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { cn } from "@/lib/utils";
 import { KPI_GLOSSARY } from "@/lib/kpi-glossary";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Link } from "react-router-dom";
@@ -44,6 +45,16 @@ import { useMLMarginAnalysis } from "@/hooks/useMLMarginAnalysis";
 import { useMLCostWaterfall } from "@/hooks/useMLCostWaterfall";
 import { useMLDifalSummary } from "@/hooks/useMLDifalSummary";
 import { resolveDifalCenario, DIFAL_ESTIMATIVA_LABEL } from "@/lib/mcoCenarios";
+import {
+  cenariosLucroBrutoFinanceiro,
+  passosWaterfallComDifal,
+  ROTULO_REGUA_SEM_DIFAL,
+  DECLARACAO_REGUA_SEM_DIFAL,
+  DECLARACAO_SEMAFORO_SEM_DIFAL,
+} from "@/lib/financeiroCenarios";
+import { fraseMotivoSemDifal } from "@/lib/mcoLinhaCenarios";
+import { McoDoisCenarios } from "@/components/mercadolivre/McoDoisCenarios";
+import { useDifalRegimeAplicavel } from "@/hooks/useDifalRegimeAplicavel";
 import { useMLAds } from "@/hooks/useMLAds";
 import { useMLAdsBillingSpend } from "@/hooks/useMLAdsBillingSpend";
 import { resolveAdsSpend } from "@/lib/adsBillingSpend";
@@ -190,6 +201,10 @@ export default function MLFinanceiro() {
   const difalCenario = resolveDifalCenario(difalSummary ?? null);
   const kpiImpostosComDifal =
     difalCenario.difalAplicado != null ? kpiImpostos + difalCenario.difalAplicado : null;
+  // O recorte de lojas selecionado recolhe DIFAL? `undefined` = ainda não
+  // sabemos (config carregando) — nunca vira a afirmação de que não se
+  // aplica. Consumido pelo par do Lucro Bruto e pelo Waterfall abaixo.
+  const regimeAplicaDifal = useDifalRegimeAplicavel();
 
   // ── Publicidade [Fase 210, prioridade invertida na Fase 219 — D-219-01]:
   // fonte RESOLVIDA do período — o cache de ads (`ml_ads_daily_cache`), o
@@ -218,8 +233,45 @@ export default function MLFinanceiro() {
   );
 
   // ── Lucro Bruto = Receita - CMV - Comissão - Frete - Impostos - Publicidade
-  const kpiLucro = kpiReceita - kpiCmv - kpiComissao - kpiFrete - kpiImpostos - kpiPublicidade;
-  const kpiLucroPct = kpiReceita > 0 ? Math.round((kpiLucro / kpiReceita) * 10000) / 100 : null;
+  // [Fase 222, quick 260820-2l7] Fonte única: cenariosLucroBrutoFinanceiro
+  // delega ao mesmo par de mcoCenarios.ts que o KPI de Impostos já usa acima
+  // — duas chamadas da MESMA função pura com a MESMA entrada (o resumo de
+  // DIFAL do período), o que é reprodução, não divergência (restrição 4).
+  const cenariosFinanceiro = useMemo(
+    () =>
+      cenariosLucroBrutoFinanceiro({
+        receita: kpiReceita,
+        cmv: kpiCmv,
+        comissao: kpiComissao,
+        frete: kpiFrete,
+        impostos: kpiImpostos,
+        publicidade: kpiPublicidade,
+        difal: difalSummaryLoading ? null : difalSummary ?? null,
+        regimeAplicaDifal,
+      }),
+    [
+      kpiReceita,
+      kpiCmv,
+      kpiComissao,
+      kpiFrete,
+      kpiImpostos,
+      kpiPublicidade,
+      difalSummary,
+      difalSummaryLoading,
+      regimeAplicaDifal,
+    ],
+  );
+  const kpiLucro = cenariosFinanceiro.lucro;
+  const kpiLucroPct = cenariosFinanceiro.lucroPct;
+  // Enquanto o resumo de DIFAL carrega, os degraus extras do Waterfall ficam
+  // vazios (a tela não afirma "não carregou" enquanto ainda está carregando —
+  // restrição 6). Passar `difal: null` durante o loading já garante isso via
+  // `motivo === "indisponivel"`, mas o degrau de renderização (Edição 4) só
+  // aparece depois que `difalSummaryLoading` vira falso.
+  const passosDifalWaterfall = useMemo(
+    () => passosWaterfallComDifal(cenariosFinanceiro),
+    [cenariosFinanceiro],
+  );
 
   // ── Supabase Realtime em orders
   useEffect(() => {
@@ -487,6 +539,21 @@ export default function MLFinanceiro() {
               : "bg-red-500/10 text-red-500"
           }
           tooltip={tip("lucro_bruto")}
+          // [Fase 222, quick 260820-2l7] O par de cenários mora aqui — é o
+          // card onde o dinheiro está, e é onde a comparação acontece
+          // (decisão 1 do plano). Enquanto o resumo de DIFAL carrega, a tela
+          // não afirma que ele não carregou (restrição 6).
+          subtitleNode={
+            difalSummaryLoading ? undefined : (
+              <McoDoisCenarios
+                cenarios={cenariosFinanceiro.cenarios}
+                densidade="celula"
+                role="neutral"
+                rotuloSemDifal="sem DIFAL"
+                rotuloComDifal="com DIFAL"
+              />
+            )
+          }
         />
         <KPICard
           title="Lucro Bruto %"
@@ -510,6 +577,20 @@ export default function MLFinanceiro() {
               : "bg-red-500/10 text-red-500"
           }
           tooltip={tip("margem_bruta")}
+          // [Fase 222, quick 260820-2l7] Declaração: este card não repete o
+          // par (McoDoisCenarios já mostra valor e percentual dos dois
+          // cenários no card ao lado — decisão 1 do plano). O que este card
+          // ganha é o único lugar da tela que diz em que régua o semáforo foi
+          // decidido.
+          subtitleNode={
+            <span
+              data-difal-declaracao="sem_difal"
+              className="text-xs text-muted-foreground"
+              title={DECLARACAO_SEMAFORO_SEM_DIFAL}
+            >
+              {ROTULO_REGUA_SEM_DIFAL}
+            </span>
+          }
         />
       </div>
 
@@ -702,6 +783,74 @@ export default function MLFinanceiro() {
               </div>
             );
           })}
+          {/* [Fase 222, quick 260820-2l7] Os dois degraus novos do fim da
+              escada (decisão 3 do plano). Os sete de cima ficam intactos —
+              nada aqui muda valor, rótulo, cor ou ordem deles. Enquanto o
+              resumo de DIFAL carrega, este bloco não entra (restrição 6). */}
+          {!difalSummaryLoading && (
+            <div
+              data-difal-regua={cenariosFinanceiro.cenarios.motivo}
+              data-mco-role="neutral"
+            >
+              {passosDifalWaterfall.length === 2 ? (
+                passosDifalWaterfall.map((step, i) => {
+                  const isEnd = step.key === "lucro_com_difal";
+                  const color = isEnd
+                    ? step.value >= 0
+                      ? "#10b981"
+                      : "#ef4444"
+                    : "#ef4444";
+                  const maxVal = kpiReceita > 0 ? kpiReceita : 1;
+                  const widthPct =
+                    maxVal > 0 ? (Math.abs(step.value) / maxVal) * 100 : 0;
+                  return (
+                    <div
+                      key={step.key}
+                      className={cn(
+                        "flex items-center gap-3 py-1.5 border-b border-border/30 last:border-0",
+                        i === 0 && "border-t border-dashed border-border/60",
+                      )}
+                    >
+                      <span className="w-32 text-xs text-muted-foreground shrink-0 text-right">
+                        {step.label}
+                      </span>
+                      <div className="flex-1 flex items-center gap-2">
+                        <div
+                          className="h-5 rounded"
+                          style={{
+                            width: `${Math.max(widthPct, 1)}%`,
+                            background: color,
+                            opacity: i === 0 ? 0.45 : 0.75,
+                          }}
+                        />
+                        <span
+                          className="text-xs font-semibold tabular-nums whitespace-nowrap"
+                          style={{ color }}
+                        >
+                          {step.value >= 0 ? "+" : ""}
+                          {currFmt(step.value)}
+                        </span>
+                      </div>
+                      <span className="text-xs text-muted-foreground tabular-nums w-14 text-right shrink-0">
+                        {kpiReceita > 0
+                          ? pctFmt((Math.abs(step.value) / kpiReceita) * 100)
+                          : "—"}
+                      </span>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="flex items-center gap-3 py-1.5 border-t border-dashed border-border/60">
+                  <span className="text-xs text-muted-foreground">
+                    {fraseMotivoSemDifal(
+                      cenariosFinanceiro.cenarios.motivo,
+                      cenariosFinanceiro.cenarios.pedidosDifalIndefinido,
+                    )}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
