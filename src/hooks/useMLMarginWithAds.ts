@@ -78,6 +78,35 @@ export interface ProductMarginWithAds {
   lucro_pos_ads_com_difal: number | null;
   /** Margem pós-ads COM DIFAL em %; null sem receita ou sem apuração. */
   lucro_pct_pos_ads_com_difal: number | null;
+
+  // ── Terceiro cenário: SEM REBATE (Fase 223, 223-05) ───────────────────────
+  //
+  // O rebate do ML abate a comissão (não é receita extra): `orders.comissao`
+  // já vem líquida dele. Este par mostra o que o lucro seria com a tarifa
+  // CHEIA — a mesma expressão de `lucro`, trocando só o termo de rebate.
+  //
+  // 🔴 `null` distingue "não apurado" de "apurado como zero", igual ao par
+  // DIFAL: coluna ausente (migration ainda não aplicada), rebate não
+  // afirmável em nenhum pedido do período (todos sem captura, não
+  // conferidos ou com estorno) e "sem campanha no período" (rebate medido
+  // como zero) são três coisas diferentes — as duas contagens abaixo
+  // distinguem as duas primeiras, e `rebate_efeito` distingue a terceira.
+  /** Soma do rebate afirmável do anúncio, TOTAL em R$ (conferência, não é o que a margem usa); null = nada afirmável. */
+  rebate_bruto: number | null;
+  /** Soma do efeito líquido do rebate (rebate_efeito_liquido), TOTAL em R$; null = nada afirmável. */
+  rebate_efeito: number | null;
+  /** Pedidos do anúncio ainda não consultados (sem captura ou captura não final). */
+  pedidos_sem_captura_rebate: number;
+  /** Pedidos capturados mas não afirmáveis (conferência não fecha ou estorno) — erro nosso. */
+  pedidos_rebate_nao_conferido: number;
+  /** Lucro operacional na tarifa CHEIA (pré-ads); null quando não apurado. */
+  lucro_sem_rebate: number | null;
+  /** Margem na tarifa CHEIA em %; null sem receita ou sem apuração. */
+  lucro_pct_sem_rebate: number | null;
+  /** Lucro na tarifa CHEIA após a publicidade rateada da fatura. */
+  lucro_pos_ads_sem_rebate: number | null;
+  /** Margem pós-ads na tarifa CHEIA em %; null sem receita ou sem apuração. */
+  lucro_pct_pos_ads_sem_rebate: number | null;
 }
 
 /**
@@ -160,6 +189,18 @@ export function useMLMarginWithAds(dateFrom: string, dateTo: string) {
         lucro_pct_com_difal:         r.lucro_pct_com_difal != null ? Number(r.lucro_pct_com_difal) : null,
         lucro_pos_ads_com_difal:     r.lucro_pos_ads_com_difal != null ? Number(r.lucro_pos_ads_com_difal) : null,
         lucro_pct_pos_ads_com_difal: r.lucro_pct_pos_ads_com_difal != null ? Number(r.lucro_pct_pos_ads_com_difal) : null,
+        // Mesma comparação com nulo dos campos de DIFAL: distingue "coluna
+        // ausente / nada afirmável" de "apurado como zero". As duas
+        // contagens são inteiros e nunca ficam ausentes — zero pedido sem
+        // captura é um resultado legítimo, não uma lacuna de coluna.
+        rebate_bruto:                 r.rebate_bruto != null ? Number(r.rebate_bruto) : null,
+        rebate_efeito:                r.rebate_efeito != null ? Number(r.rebate_efeito) : null,
+        pedidos_sem_captura_rebate:   Number(r.pedidos_sem_captura_rebate ?? 0),
+        pedidos_rebate_nao_conferido: Number(r.pedidos_rebate_nao_conferido ?? 0),
+        lucro_sem_rebate:             r.lucro_sem_rebate != null ? Number(r.lucro_sem_rebate) : null,
+        lucro_pct_sem_rebate:         r.lucro_pct_sem_rebate != null ? Number(r.lucro_pct_sem_rebate) : null,
+        lucro_pos_ads_sem_rebate:     r.lucro_pos_ads_sem_rebate != null ? Number(r.lucro_pos_ads_sem_rebate) : null,
+        lucro_pct_pos_ads_sem_rebate: r.lucro_pct_pos_ads_sem_rebate != null ? Number(r.lucro_pct_pos_ads_sem_rebate) : null,
       }));
 
       // O denominador do rateio é a carteira INTEIRA do período — inclusive os
@@ -179,6 +220,12 @@ export function useMLMarginWithAds(dateFrom: string, dateTo: string) {
         // `lucro_com_difal` não há pós-ads com DIFAL a inventar.
         const lucroPosAdsComDifal =
           r.lucro_com_difal != null ? r.lucro_com_difal - ads : null;
+        // [223-05] O pós-ads do TERCEIRO cenário (sem rebate) segue o mesmo
+        // molde: o mesmo `ads` rateado da fatura, subtraído do lucro pré-ads
+        // correspondente. Ausente continua ausente — sem `lucro_sem_rebate`
+        // não há pós-ads sem rebate a inventar.
+        const lucroPosAdsSemRebate =
+          r.lucro_sem_rebate != null ? r.lucro_sem_rebate - ads : null;
         return {
           ...r,
           ads_spend:         ads,
@@ -189,6 +236,11 @@ export function useMLMarginWithAds(dateFrom: string, dateTo: string) {
           lucro_pct_pos_ads_com_difal:
             lucroPosAdsComDifal != null && r.receita > 0
               ? round2((lucroPosAdsComDifal / r.receita) * 100)
+              : null,
+          lucro_pos_ads_sem_rebate: lucroPosAdsSemRebate,
+          lucro_pct_pos_ads_sem_rebate:
+            lucroPosAdsSemRebate != null && r.receita > 0
+              ? round2((lucroPosAdsSemRebate / r.receita) * 100)
               : null,
         };
       });
