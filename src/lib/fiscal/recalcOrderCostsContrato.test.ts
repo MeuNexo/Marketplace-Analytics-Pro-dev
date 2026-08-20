@@ -176,3 +176,29 @@ describe("recalc-order-costs — receita_liquida só entra pelo molde, atrás da
     expect(CORPO).not.toContain("computeReceitaLiquida(");
   });
 });
+
+// ── PINOS de não-regressão (restrição dura do quick 260820-jic) ─────────────
+//
+// ⚠️ Estes dois nascem VERDES, de propósito — são PINOS, no mesmo espírito do
+// "pino histórico" de `batchUpsertColunasAlinhadas.test.ts`. Não provam um
+// defeito: travam duas coisas que este quick NÃO pode mover, e que nenhuma
+// outra assertiva desta suíte prenderia se alguém as removesse junto com uma
+// refatoração da janela ou do molde da receita líquida.
+describe("recalc-order-costs — o que este quick NÃO pode mover", () => {
+  it("🔴 o bloco de tax_amount/tax_versao segue intacto e atrás do MESMO predicado", () => {
+    // Nenhum tax_amount pode mudar por causa deste quick: ele acrescenta a
+    // gravação de uma coluna DERIVADA e conserta o filtro de janela.
+    const bloco =
+      /if\s*\(\s*reguaApurouNestaRodada\(breakdown\)\s*\)\s*\{\s*patch\.tax_amount\s*=\s*taxAmount;\s*patch\.tax_versao\s*=\s*TAX_VERSAO_REGUA_NOVA;\s*\}/;
+    expect(CORPO).toMatch(bloco);
+  });
+
+  it("🔴 o clamp em zero do quick 260820-ikj segue vivo nos DOIS cenários da régua", () => {
+    // Clampar só um cenário inverteria a ordem nas faixas de MCO de todas as
+    // telas. O clamp é do arquivo aprovado pela contadora — desfazê-lo aqui
+    // seria desfazer o que já está em produção desde 20/08.
+    const regua = semComentarios(ler("supabase/functions/_shared/orderTaxRate.ts"));
+    expect(regua).toContain("Math.max(0, taxAmountBruto)");
+    expect(regua).toContain("Math.max(0, taxAmountComDifalBruto)");
+  });
+});

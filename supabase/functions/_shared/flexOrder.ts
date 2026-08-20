@@ -258,3 +258,54 @@ export function computeReceitaLiquida(
 
   return { receitaLiquida, custoEntregaAusente };
 }
+
+/**
+ * Molde de coluna: devolve `{ receita_liquida: n }` ou `{}` — nunca outra
+ * chave (Quick 260820-jic, D-jic-02).
+ *
+ * ── A INVARIANTE, EM UMA FRASE ──────────────────────────────────────────────
+ * `receita_liquida` viaja SEMPRE junto de `tax_amount`, no mesmo patch, ou não
+ * viaja.
+ *
+ * ── POR QUE ELA PRECISA EXISTIR ─────────────────────────────────────────────
+ * `recalc-order-costs` nunca escrevia `receita_liquida`, e o resultado medido
+ * em 20/08 é a divergência ATIVA entre duas colunas da MESMA linha: em
+ * julho/2026, 1.136 de 1.136 pedidos batem a receita líquida contra
+ * `receita − comissão − frete − (icms_debito + pis_cofins_debito)` — a régua
+ * ANTIGA, débitos sem crédito — e ZERO batem contra o `tax_amount` que está
+ * gravado ao lado. 8.458 de 8.544 pedidos de 2026, R$ 54.435 de receita
+ * líquida subestimada.
+ *
+ * Gravar a coluna numa rodada em que `tax_amount` foi PRESERVADO reabriria a
+ * mesma divergência por outro caminho. Por isso: grava as duas, ou não grava
+ * nenhuma. É a terceira do trio que `recalc-order-costs` já declara para
+ * `tax_versao` — *"anda SEMPRE junto de tax_amount"*.
+ *
+ * ── FORMA, E POR QUE ELA É UM MOLDE E NÃO UM `if` SOLTO ─────────────────────
+ * Mesma forma de `camposFiscaisParaUpsert(breakdown)`, que devolve `{}` quando
+ * a régua não apurou: a AUSÊNCIA da chave é o sinal, o `{}` é testável em
+ * unidade, e o padrão "só grava campo não nulo" do patch é respeitado por
+ * construção — sem um segundo caminho de atribuição que escape da guarda.
+ *
+ * ── POR QUE RECEBE `reguaApurou: boolean`, E NÃO O `breakdown` ──────────────
+ * `flexOrder.ts` e `orderTaxRate.ts` são os dois únicos módulos de `_shared`
+ * SEM NENHUM import — puros e independentes. Arrastar mil linhas de régua
+ * fiscal para dentro do módulo do Flex por causa de um booleano derivado seria
+ * acoplamento comprado a preço alto. A edge function é o único lugar que tem os
+ * dois em mãos, e é ela que compõe — passando
+ * `reguaApurou: reguaApurouNestaRodada(breakdown)`, o MESMO predicado que já
+ * governa o bloco de `tax_amount`/`tax_versao`. Que a composição esteja certa é
+ * garantido pela prova estrutural `recalcOrderCostsContrato.test.ts`, não pelo
+ * tipo.
+ *
+ * 🔴 A FÓRMULA NÃO É REESCRITA AQUI: esta função CHAMA `computeReceitaLiquida`.
+ * Três cópias divergentes desta conta foi o que criou a Fase 220.
+ */
+export function campoReceitaLiquidaParaPatch(
+  input: ReceitaLiquidaInput & { reguaApurou: boolean },
+): Record<string, unknown> {
+  if (!input.reguaApurou) return {};
+  const { receitaLiquida } = computeReceitaLiquida(input);
+  if (receitaLiquida == null) return {};
+  return { receita_liquida: receitaLiquida };
+}

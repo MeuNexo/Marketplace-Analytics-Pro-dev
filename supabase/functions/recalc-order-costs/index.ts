@@ -11,6 +11,17 @@ import {
   resolverConfigVigente,
   type LinhaTaxConfigVigencia,
 } from "../_shared/taxConfigVigente.ts";
+// [260820-jic, D-jic-02] O molde da coluna derivada. A fórmula da receita
+// líquida NÃO é reescrita aqui: o molde chama a função do módulo do Flex, a
+// MESMA que sync-ml-orders usa. Uma fórmula só — três cópias divergentes desta
+// conta foi o que criou a Fase 220.
+import { campoReceitaLiquidaParaPatch } from "../_shared/flexOrder.ts";
+// [260820-jic, D-jic-01] O recorte da janela sobre `data_pedido` (TEXT, com
+// carimbo de hora) sai daqui, nunca de uma comparação de string escrita à mão.
+import {
+  inicioInclusivoDataPedido,
+  fimExclusivoDataPedido,
+} from "../_shared/janelaDataPedido.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -60,6 +71,23 @@ serve(async (req) => {
       return new Response(JSON.stringify({ success: false, error: "Missing params" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // ── Janela de datas (Quick 260820-jic, D-jic-01) ─────────────────────────
+    // Os DOIS extremos passam pela mesma normalização, e formato ilegível vira
+    // 400 — nunca uma varredura vazia devolvendo `success: true`. Silêncio aqui
+    // é o defeito, não a validação: é a assinatura exata dos backfills que já
+    // custaram caro nesta casa (28% na 222-05-R, 32,9% na 96-07).
+    const inicioJanela = inicioInclusivoDataPedido(date_from);
+    const fimJanela = fimExclusivoDataPedido(date_to);
+    if (inicioJanela === null || fimJanela === null) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "date_from/date_to fora do formato AAAA-MM-DD",
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
     // Load tax configs for all stores
@@ -145,10 +173,17 @@ serve(async (req) => {
     const montarQuery = () => {
       let q = supabase
         .from("orders")
-        .select("id, ml_order_id, ml_user_id, item_id, sku, quantidade, preco_unit, comissao, frete, frete_comprador, receita_bruta, estado, custo_unit, custo_unit_cheio, tax_rate, tax_amount, uf_origem, tax_versao, data_pedido")
+        .select("id, ml_order_id, ml_user_id, item_id, sku, quantidade, preco_unit, comissao, frete, frete_comprador, receita_bruta, estado, custo_unit, custo_unit_cheio, tax_rate, tax_amount, uf_origem, tax_versao, data_pedido, bonus_envio, custo_entrega")
         .in("ml_user_id", ml_user_ids)
-        .gte("data_pedido", date_from)
-        .lte("data_pedido", date_to)
+        // [260820-jic, D-jic-01] Limite superior EXCLUSIVO, no dia seguinte.
+        // `data_pedido` é TEXT com carimbo de hora, e a comparação de string
+        // fazia o limite inclusivo excluir o próprio dia pedido. MEDIDO em
+        // produção em 20/08: mesma data nos dois extremos devolvia ZERO
+        // varridos, `success: true`; com o dia seguinte como fim, a MESMA
+        // chamada varre 59. Continua um predicado de FAIXA sobre a coluna crua
+        // — o índice segue servível, ao contrário de uma expressão à esquerda.
+        .gte("data_pedido", inicioJanela)
+        .lt("data_pedido", fimJanela)
         // Ordem estável: sem ela, páginas consecutivas podem repetir e pular
         // linhas, e a cobertura provada da resposta viraria ficção.
         .order("id", { ascending: true });
@@ -211,9 +246,13 @@ serve(async (req) => {
     let costMissing = 0;
     let taxMissing = 0;
     // [222-05-R] Pedidos de loja COM config cadastrada, mas sem nenhuma
-    // vigência cobrindo a data deles. Esta função não escreve
-    // `receita_liquida`, então aqui a consequência é só de medição — mas é a
-    // contagem que permite ao orquestrador saber se o backfill terminou.
+    // vigência cobrindo a data deles.
+    // [260820-jic] O comentário que ficava aqui dizia que esta função não
+    // escreve a receita líquida — era verdade, e era o defeito. Ela passou a
+    // escrever, atrás da MESMA guarda do imposto (D-jic-02), então esta
+    // contagem deixou de ser só de medição: pedido sem vigência entra em
+    // `impostoDesconhecido` abaixo e tem a coluna derivada INTOCADA, nunca
+    // inflada pelo valor inteiro do imposto ausente.
     let semVigencia = 0;
     // [222-13-R2, D-R2-04] Pedidos recalculados SEM o frete do comprador
     // capturado. É o número que o portão de produção lê para decidir se o
@@ -236,7 +275,8 @@ serve(async (req) => {
         // sabe produzir basta, e a distinção é contada aqui.
         const vigencias = taxByStore.get(String(o.ml_user_id)) ?? [];
         const cfg = resolverConfigVigente(vigencias, o.data_pedido);
-        if (vigencias.length > 0 && cfg === null) semVigencia++;
+        const semVigenciaCobrindo = vigencias.length > 0 && cfg === null;
+        if (semVigenciaCobrindo) semVigencia++;
         // Prioridade: seller_sku (Tiny) → item_id ML direto (legado)
         const cost = (o.sku ? costBySku.get(o.sku) : undefined) ?? costByItem.get(o.item_id) ?? null;
         const costFull = o.sku ? costFullBySku.get(o.sku) ?? null : null;
@@ -259,6 +299,16 @@ serve(async (req) => {
         // tratá-lo como zero em silêncio.
         const freteComprador = o.frete_comprador != null ? Number(o.frete_comprador) : null;
         if (freteComprador == null) freteCompradorAusente++;
+        // [260820-jic, D-jic-02] Os dois insumos do Flex, no MESMO molde de
+        // `comissao`/`frete`/`freteComprador`: convertidos quando não nulos,
+        // NULOS quando nulos. 🔴 Eles precisam estar na projeção do `.select()`
+        // acima — sem isso a função continuaria compilando, continuaria
+        // devolvendo `success: true`, e gravaria a receita líquida MENOR em
+        // todo pedido Flex (bônus perdido, custo de entrega perdido). Como
+        // `supabase/functions/**` não é typechecked, quem cobra a projeção é
+        // `src/lib/fiscal/recalcOrderCostsContrato.test.ts`, offline.
+        const bonusEnvio = o.bonus_envio != null ? Number(o.bonus_envio) : null;
+        const custoEntrega = o.custo_entrega != null ? Number(o.custo_entrega) : null;
         const breakdown = computeOrderTax({
           config: cfg,
           ufDestino: o.estado,
@@ -291,6 +341,35 @@ serve(async (req) => {
           patch.tax_amount = taxAmount;
           patch.tax_versao = TAX_VERSAO_REGUA_NOVA;
         }
+        // [260820-jic, D-jic-02] A receita líquida é a TERCEIRA do trio: viaja
+        // no MESMO patch que o imposto, atrás do MESMO predicado, ou não viaja.
+        // O molde devolve `{}` quando a régua não apurou nesta rodada — e a
+        // ausência da chave preserva a coluna, nunca a zera.
+        //
+        // 🔴 A coluna NUNCA é atribuída direto no patch: um segundo caminho de
+        // escrita escaparia da guarda e reabriria a divergência que este quick
+        // fecha (8.458 de 8.544 pedidos de 2026 com a coluna na régua ANTIGA,
+        // R$ 54.435 de receita líquida subestimada).
+        //
+        // `impostoDesconhecido` reaproveita `semVigenciaCobrindo`, já calculado
+        // acima — a resolução de config não é refeita. Mesma composição do
+        // sync: loja COM regime cadastrado e sem vigência na competência entra
+        // aqui, e não no carve-out de `sem_config`.
+        const impostoDesconhecido =
+          breakdown.motivo === "destino_desconhecido" || semVigenciaCobrindo;
+        Object.assign(
+          patch,
+          campoReceitaLiquidaParaPatch({
+            reguaApurou: reguaApurouNestaRodada(breakdown),
+            receitaBruta,
+            comissao,
+            frete,
+            bonusEnvio,
+            custoEntrega,
+            taxAmount,
+            impostoDesconhecido,
+          }),
+        );
         if (breakdown.icmsDebito != null) patch.icms_debito = breakdown.icmsDebito;
         if (breakdown.pisCofinsDebito != null) patch.pis_cofins_debito = breakdown.pisCofinsDebito;
         if (breakdown.creditoPcComissao != null) patch.credito_pc_comissao = breakdown.creditoPcComissao;
