@@ -15,6 +15,7 @@ import {
   extrairFreteComprador,
   ratearPorReceita,
   computeReceitaLiquida,
+  campoReceitaLiquidaParaPatch,
 } from "./flexOrder";
 
 // ── Fixtures medidas contra a API real (222-ML-API.md) ──────────────────────
@@ -435,5 +436,111 @@ describe("computeReceitaLiquida", () => {
       impostoDesconhecido: false,
     });
     expect(custoEntregaAusente).toBe(false);
+  });
+});
+
+// ── campoReceitaLiquidaParaPatch (Quick 260820-jic, D-jic-02) ───────────────
+//
+// A INVARIANTE: `receita_liquida` viaja SEMPRE junto de `tax_amount`, no mesmo
+// patch, ou não viaja. O defeito medido em 20/08 é literalmente as duas colunas
+// em réguas diferentes na MESMA linha — em julho/2026, 1.136 de 1.136 pedidos
+// batem a receita líquida contra a régua ANTIGA (débitos sem crédito) e ZERO
+// batem contra o `tax_amount` que está gravado ao lado, porque
+// `recalc-order-costs` nunca escreveu a coluna.
+//
+// Este molde é a forma de `camposFiscaisParaUpsert(breakdown)`: devolve `{}`
+// quando a régua não apurou — a AUSÊNCIA da chave é o sinal, e o patch da edge
+// function respeita o padrão "só grava campo não nulo" por construção.
+describe("campoReceitaLiquidaParaPatch — o molde de coluna que fecha a divergência", () => {
+  const BASE = {
+    receitaBruta: 692.99,
+    comissao: 79.69,
+    frete: 30.75,
+    bonusEnvio: null,
+    custoEntrega: null,
+    taxAmount: 118.24,
+    impostoDesconhecido: false,
+  };
+
+  it("régua apurou: devolve { receita_liquida } idêntico, ao centavo, a computeReceitaLiquida", () => {
+    // Compara contra a FUNÇÃO EXISTENTE, nunca contra um número escrito à mão —
+    // é assim que este teste prova REUSO e não uma segunda cópia da fórmula.
+    // Três cópias divergentes desta conta foi o que criou a Fase 220.
+    const esperado = computeReceitaLiquida(BASE).receitaLiquida;
+    expect(esperado).not.toBeNull();
+
+    const campo = campoReceitaLiquidaParaPatch({ ...BASE, reguaApurou: true });
+    expect(campo).toEqual({ receita_liquida: esperado });
+  });
+
+  it("régua NÃO apurou: devolve {} mesmo com todos os insumos presentes e a conta dando um número bonito", () => {
+    // ESTA é a invariante D-jic-02, e é o teste que impede a divergência de
+    // voltar por outro caminho. A fórmula daria um número perfeitamente
+    // plausível aqui — e gravá-lo numa rodada em que `tax_amount` foi
+    // PRESERVADO reabriria exatamente o defeito que este quick fecha.
+    expect(computeReceitaLiquida(BASE).receitaLiquida).not.toBeNull();
+
+    const campo = campoReceitaLiquidaParaPatch({ ...BASE, reguaApurou: false });
+    expect(campo).toEqual({});
+    expect(Object.keys(campo)).toHaveLength(0);
+    expect("receita_liquida" in campo).toBe(false);
+  });
+
+  it("impostoDesconhecido devolve {} mesmo com reguaApurou true — a guarda da Fase 220 sobrevive à composição", () => {
+    const campo = campoReceitaLiquidaParaPatch({
+      ...BASE,
+      taxAmount: null,
+      impostoDesconhecido: true,
+      reguaApurou: true,
+    });
+    expect(campo).toEqual({});
+  });
+
+  it("receitaBruta null devolve {} — a coluna nunca é zerada", () => {
+    const campo = campoReceitaLiquidaParaPatch({
+      ...BASE,
+      receitaBruta: null,
+      reguaApurou: true,
+    });
+    expect(campo).toEqual({});
+  });
+
+  it("Flex com os sinais certos: bônus SOMA, custo de entrega SUBTRAI — 78,50", () => {
+    // 100 − 11 − 0 + 12,50 − 8 − 15 = 78,50. Em nenhum ponto o bônus vira
+    // frete de sinal invertido (D-05).
+    const campo = campoReceitaLiquidaParaPatch({
+      receitaBruta: 100,
+      comissao: 11,
+      frete: 0,
+      bonusEnvio: 12.5,
+      custoEntrega: 8,
+      taxAmount: 15,
+      impostoDesconhecido: false,
+      reguaApurou: true,
+    });
+    expect(campo).toEqual({ receita_liquida: 78.5 });
+  });
+
+  it("Flex sem custo de entrega informado: grava assim mesmo, com o bônus somado — mesmo comportamento do sync", () => {
+    const entrada = {
+      receitaBruta: 100,
+      comissao: 11,
+      frete: 0,
+      bonusEnvio: 12.5,
+      custoEntrega: null,
+      taxAmount: 15,
+      impostoDesconhecido: false,
+    };
+    // O valor sai declaradamente inflado pelo custo ausente. Não inventar
+    // guarda nova aqui: `computeReceitaLiquida` já nomeia o caso em
+    // `custoEntregaAusente`, e o sync grava do mesmo jeito hoje.
+    expect(computeReceitaLiquida(entrada).custoEntregaAusente).toBe(true);
+    const campo = campoReceitaLiquidaParaPatch({ ...entrada, reguaApurou: true });
+    expect(campo).toEqual({ receita_liquida: 86.5 });
+  });
+
+  it("o objeto devolvido tem NO MÁXIMO a chave receita_liquida — nenhuma outra coluna escapa por este molde", () => {
+    const campo = campoReceitaLiquidaParaPatch({ ...BASE, reguaApurou: true });
+    expect(Object.keys(campo)).toEqual(["receita_liquida"]);
   });
 });
