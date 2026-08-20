@@ -30,6 +30,10 @@ import { useOrganization } from "@/contexts/OrganizationContext";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { KPI_GLOSSARY } from "@/lib/kpi-glossary";
 import { avaliarConfiabilidadeMargem } from "@/lib/custoFaltante";
+// Quick 260820-ikj — a tela LÊ o mesmo predicado que a fórmula usa, nunca
+// repete a subtração "débitos − créditos". Foram três cópias divergentes dessa
+// fórmula que criaram a Fase 220.
+import { ehPosicaoCredora, liquidoSemDifalBruto, type ComponentesFiscais } from "@/lib/tax/perOrder";
 import { supabase } from "@/integrations/supabase/client";
 
 // Helper: build tooltip string from glossary key
@@ -74,6 +78,10 @@ interface OrderRow {
   pis_cofins_debito:      number | null;
   credito_pc_comissao:    number | null;
   credito_pc_frete:       number | null;
+  /** Crédito de ICMS sobre o frete (D-10.2). Entra na tela no Quick 260820-ikj:
+   *  sem ele a decomposição exibida fica MENOR que os créditos reais e desmente
+   *  a frase "os créditos superaram os débitos" na célula ao lado. */
+  credito_icms_frete:     number | null;
   difal_amount:           number | null;
   fcp_amount:             number | null;
   difal_fonte:            string | null;
@@ -125,6 +133,33 @@ interface ProcessedOrder {
   difal_fonte:            string | null;
   /** true quando o pedido foi gravado pela régua anterior à Fase 222 (tax_versao nulo ou < 2). */
   regua_antiga:           boolean;
+  /**
+   * Quick 260820-ikj — os créditos superaram os débitos e o imposto foi
+   * LANÇADO como zero pela régua que a contadora aprovou. Nesses pedidos a soma
+   * das partes deliberadamente NÃO reconstrói o total, e a tela tem de dizer
+   * isso: sem o nome, a decomposição do tooltip desmente o total em silêncio.
+   */
+  posicao_credora:        boolean;
+  /** `débitos − créditos` CRU (sem clamp), para dizer de QUANTO os créditos superaram. */
+  liquido_bruto:          number | null;
+}
+
+/**
+ * Os cinco componentes fiscais da linha, no formato que o dono único da conta
+ * (`liquidoSemDifalBruto` / `ehPosicaoCredora`) consome.
+ *
+ * ⚠️ `strictNullChecks: false` neste projeto: cada componente é convertido com
+ * a checagem explícita `!= null`, nunca por coalescência sobre um campo que o
+ * tipo afirma existir. Ausência permanece `null` — nunca vira zero.
+ */
+function componentesFiscaisDaLinha(r: OrderRow): ComponentesFiscais {
+  return {
+    icmsDebito:         r.icms_debito         != null ? Number(r.icms_debito)         : null,
+    pisCofinsDebito:    r.pis_cofins_debito   != null ? Number(r.pis_cofins_debito)   : null,
+    creditoPcComissao:  r.credito_pc_comissao != null ? Number(r.credito_pc_comissao) : null,
+    creditoPcFrete:     r.credito_pc_frete    != null ? Number(r.credito_pc_frete)    : null,
+    creditoIcmsFrete:   r.credito_icms_frete  != null ? Number(r.credito_icms_frete)  : null,
+  };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -513,7 +548,7 @@ export default function MLPedidos() {
               // Fase 222 (222-07): decomposição fiscal + Flex
               "logistic_type", "bonus_envio", "custo_entrega",
               "icms_debito", "pis_cofins_debito",
-              "credito_pc_comissao", "credito_pc_frete",
+              "credito_pc_comissao", "credito_pc_frete", "credito_icms_frete",
               "difal_amount", "fcp_amount", "difal_fonte", "tax_versao",
             ].join(", "),
           )
@@ -725,10 +760,15 @@ export default function MLPedidos() {
       pis_cofins_debito:   r.pis_cofins_debito    != null ? Number(r.pis_cofins_debito)    : null,
       credito_pc_comissao: r.credito_pc_comissao  != null ? Number(r.credito_pc_comissao)  : null,
       credito_pc_frete:    r.credito_pc_frete     != null ? Number(r.credito_pc_frete)     : null,
+      credito_icms_frete:  r.credito_icms_frete   != null ? Number(r.credito_icms_frete)   : null,
       difal_amount:        r.difal_amount         != null ? Number(r.difal_amount)         : null,
       fcp_amount:          r.fcp_amount           != null ? Number(r.fcp_amount)           : null,
       difal_fonte:         r.difal_fonte ?? null,
       regua_antiga:        r.tax_versao == null || r.tax_versao < 2,
+      // Quick 260820-ikj — o predicado vem da FÓRMULA (via @/lib/tax/perOrder),
+      // não de uma segunda cópia da subtração escrita aqui.
+      posicao_credora:     ehPosicaoCredora(componentesFiscaisDaLinha(r)),
+      liquido_bruto:       liquidoSemDifalBruto(componentesFiscaisDaLinha(r)),
     })),
   [rows]);
 
@@ -1321,7 +1361,21 @@ export default function MLPedidos() {
                                   ? <span className="text-kpi-negative font-mono">−{currFmt(order.cost_total)}</span>
                                   : <span className="text-muted-foreground/60" title="Custo não configurado">—</span>}
                               </td>
-                              <td className="px-3 py-3 text-right text-xs">
+                              {/* Quick 260820-ikj: quando os créditos superam os débitos, o
+                                  imposto é LANÇADO como zero pela régua aprovada pela contadora,
+                                  e os componentes ficam CRUS — a soma das partes deliberadamente
+                                  não reconstrói o total nesta linha. A célula DIZ isso; sem o
+                                  aviso, o tooltip do DIFAL ao lado desmentiria o total. */}
+                              <td
+                                className="px-3 py-3 text-right text-xs"
+                                title={
+                                  order.posicao_credora && order.liquido_bruto != null
+                                    ? `Posição credora: os créditos superaram os débitos em ${currFmt(Math.abs(order.liquido_bruto))}. ` +
+                                      `O imposto é lançado como zero pela régua aprovada pela contadora — por isso a ` +
+                                      `soma das partes não reconstrói o total nesta linha.`
+                                    : undefined
+                                }
+                              >
                                 {order.tax_total != null
                                   ? (
                                     <>
@@ -1344,6 +1398,10 @@ export default function MLPedidos() {
                                       `PIS/COFINS débito ${order.pis_cofins_debito != null ? currFmt(order.pis_cofins_debito) : "—"} · ` +
                                       `crédito comissão ${order.credito_pc_comissao != null ? currFmt(order.credito_pc_comissao) : "—"} · ` +
                                       `crédito frete ${order.credito_pc_frete != null ? currFmt(order.credito_pc_frete) : "—"} · ` +
+                                      // Quick 260820-ikj: sem esta parcela a decomposição exibida fica
+                                      // MENOR que os créditos reais, e a frase "os créditos superaram
+                                      // os débitos" da célula ao lado pareceria falsa na própria tela.
+                                      `crédito ICMS frete ${order.credito_icms_frete != null ? currFmt(order.credito_icms_frete) : "—"} · ` +
                                       `FCP ${order.fcp_amount != null ? currFmt(order.fcp_amount) : "—"}`
                                 }
                               >
