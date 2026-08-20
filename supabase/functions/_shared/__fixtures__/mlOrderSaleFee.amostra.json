@@ -1,0 +1,1638 @@
+{
+  "medido_em": "2026-08-20",
+  "endpoint": "GET https://api.mercadolibre.com/billing/integration/group/ML/order/details?order_ids={ids}",
+  "conta": "Pé Vermeio (seller 1639558873)",
+  "higienizacao": "removidos os blocos com identificacao de comprador, mais item_title e item_category",
+  "results": [
+    {
+      "details": [
+        {
+          "items_info": [
+            {
+              "item_id": "MLB4851068132",
+              "order_id": 2000017193192024,
+              "item_type": "gold_special",
+              "item_price": 75.04,
+              "item_amount": 6,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017193192024,
+              "state_name": "São Paulo",
+              "operation_id": 165807712629,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-07-01T10:18:47",
+              "wholesale_price": "Não",
+              "transaction_amount": 450.24,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 66208800211,
+            "detail_type": "CHARGE",
+            "detail_amount": 0.45,
+            "detail_sub_type": "CVVPRC",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-07-01T11:19:03",
+            "status_description": null,
+            "transaction_detail": "Custo por cobrar no Mercado Pago",
+            "legal_document_number": "00000000000015738173",
+            "legal_document_status": "PROCESSED",
+            "debited_from_operation": "YES",
+            "legal_document_status_description": "Processado",
+            "debited_from_operation_description": "Sim"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": null
+          },
+          "document_info": {
+            "document_id": 4887099854
+          },
+          "shipping_info": {
+            "pack_id": "2000013786978545",
+            "shipping_id": "47419980310",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "CORE"
+          }
+        },
+        {
+          "items_info": [
+            {
+              "item_id": "MLB4851068132",
+              "order_id": 2000017193192024,
+              "item_type": "gold_special",
+              "item_price": 75.04,
+              "item_amount": 6,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017193192024,
+              "state_name": "São Paulo",
+              "operation_id": 165807712629,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-07-01T10:18:47",
+              "wholesale_price": "Não",
+              "transaction_amount": 450.24,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 66208800219,
+            "detail_type": "CHARGE",
+            "detail_amount": 62.61,
+            "detail_sub_type": "CVVML",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-07-01T11:19:03",
+            "status_description": null,
+            "transaction_detail": "Custo por vender no Mercado Livre",
+            "legal_document_number": "00000000000009526005",
+            "legal_document_status": "PROCESSED",
+            "debited_from_operation": "YES",
+            "legal_document_status_description": "Processado",
+            "debited_from_operation_description": "Sim"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": null
+          },
+          "document_info": {
+            "document_id": 4887099841
+          },
+          "shipping_info": {
+            "pack_id": "2000013786978545",
+            "shipping_id": "47419980310",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "CORE"
+          }
+        },
+        {
+          "items_info": [
+            {
+              "item_id": "MLB4851068132",
+              "order_id": 2000017193192024,
+              "item_type": "gold_special",
+              "item_price": 75.04,
+              "item_amount": 6,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017193192024,
+              "state_name": "São Paulo",
+              "operation_id": 165807712629,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-07-01T10:18:47",
+              "wholesale_price": "Não",
+              "transaction_amount": 450.24,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 66292480607,
+            "detail_type": "CHARGE",
+            "detail_amount": 47.71,
+            "detail_sub_type": "CFFE",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-07-02T14:13:15",
+            "status_description": null,
+            "transaction_detail": "Tarifa de envio extra ou intermunicipal",
+            "legal_document_number": null,
+            "legal_document_status": "NOT_APPLICABLE",
+            "debited_from_operation": "YES",
+            "legal_document_status_description": "NF-e não aplicável",
+            "debited_from_operation_description": "Sim"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": "Desconto geral",
+            "charge_amount_without_discount": 68.16
+          },
+          "document_info": {
+            "document_id": 4886842134
+          },
+          "shipping_info": {
+            "pack_id": "2000013786978545",
+            "shipping_id": "47419980310",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "SHIPPING"
+          }
+        }
+      ],
+      "order_id": 2000017193192024,
+      "sale_fee": {
+        "net": 63.06,
+        "gross": 63.06,
+        "rebate": 0,
+        "discount": 0,
+        "discount_reason": null
+      }
+    },
+    {
+      "details": [
+        {
+          "items_info": [
+            {
+              "item_id": "MLB7070651566",
+              "order_id": 2000017323487432,
+              "item_type": "gold_special",
+              "item_price": 570.59,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017323487432,
+              "state_name": "Rio de Janeiro",
+              "operation_id": 167045256205,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-07-08T19:11:41",
+              "wholesale_price": "Não",
+              "transaction_amount": 570.59,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 66723253749,
+            "detail_type": "CHARGE",
+            "detail_amount": 0.57,
+            "detail_sub_type": "CVVPRC",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-07-08T20:14:14",
+            "status_description": null,
+            "transaction_detail": "Custo por cobrar no Mercado Pago",
+            "legal_document_number": "00000000000015923487",
+            "legal_document_status": "PROCESSED",
+            "debited_from_operation": "YES",
+            "legal_document_status_description": "Processado",
+            "debited_from_operation_description": "Sim"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": null
+          },
+          "document_info": {
+            "document_id": 4988518325
+          },
+          "shipping_info": {
+            "pack_id": null,
+            "shipping_id": "47481062948",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "CORE"
+          }
+        },
+        {
+          "items_info": [
+            {
+              "item_id": "MLB7070651566",
+              "order_id": 2000017323487432,
+              "item_type": "gold_special",
+              "item_price": 570.59,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017323487432,
+              "state_name": "Rio de Janeiro",
+              "operation_id": 167045256205,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-07-08T19:11:41",
+              "wholesale_price": "Não",
+              "transaction_amount": 570.59,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 66723253754,
+            "detail_type": "CHARGE",
+            "detail_amount": 62.19,
+            "detail_sub_type": "CVVML",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-07-08T20:14:14",
+            "status_description": null,
+            "transaction_detail": "Custo por vender no Mercado Livre",
+            "legal_document_number": "00000000000009655939",
+            "legal_document_status": "PROCESSED",
+            "debited_from_operation": "YES",
+            "legal_document_status_description": "Processado",
+            "debited_from_operation_description": "Sim"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": null
+          },
+          "document_info": {
+            "document_id": 4988518334
+          },
+          "shipping_info": {
+            "pack_id": null,
+            "shipping_id": "47481062948",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "CORE"
+          }
+        },
+        {
+          "items_info": [
+            {
+              "item_id": "MLB7070651566",
+              "order_id": 2000017323487432,
+              "item_type": "gold_special",
+              "item_price": 570.59,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017323487432,
+              "state_name": "Rio de Janeiro",
+              "operation_id": 167898067212,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-07-08T19:11:41",
+              "wholesale_price": "Não",
+              "transaction_amount": 570.59,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 66819050704,
+            "detail_type": "CHARGE",
+            "detail_amount": 39.75,
+            "detail_sub_type": "CFFE",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-07-10T11:39:14",
+            "status_description": null,
+            "transaction_detail": "Tarifa de envio extra ou intermunicipal",
+            "legal_document_number": null,
+            "legal_document_status": "NOT_APPLICABLE",
+            "debited_from_operation": "YES",
+            "legal_document_status_description": "NF-e não aplicável",
+            "debited_from_operation_description": "Sim"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": "Desconto geral",
+            "charge_amount_without_discount": 79.5
+          },
+          "document_info": {
+            "document_id": 4987545425
+          },
+          "shipping_info": {
+            "pack_id": null,
+            "shipping_id": "47481062948",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "SHIPPING"
+          }
+        }
+      ],
+      "order_id": 2000017323487432,
+      "sale_fee": {
+        "net": 62.76,
+        "gross": 62.76,
+        "rebate": 0,
+        "discount": 0,
+        "discount_reason": null
+      }
+    },
+    {
+      "details": [
+        {
+          "items_info": [
+            {
+              "item_id": "MLB7159819994",
+              "order_id": 2000017530819962,
+              "item_type": "gold_special",
+              "item_price": 159.99,
+              "item_amount": 2,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017530819962,
+              "state_name": "São Paulo",
+              "operation_id": 169047620437,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-07-21T19:29:40",
+              "wholesale_price": "Não",
+              "transaction_amount": 319.98,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 67566340086,
+            "detail_type": "CHARGE",
+            "detail_amount": 36.48,
+            "detail_sub_type": "CVVML",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-07-21T20:29:57",
+            "status_description": null,
+            "transaction_detail": "Custo por vender no Mercado Livre",
+            "legal_document_number": "00000000000009655939",
+            "legal_document_status": "PROCESSED",
+            "debited_from_operation": "YES",
+            "legal_document_status_description": "Processado",
+            "debited_from_operation_description": "Sim"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": null
+          },
+          "document_info": {
+            "document_id": 4988518334
+          },
+          "shipping_info": {
+            "pack_id": "2000014135217843",
+            "shipping_id": "47578673978",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "CORE"
+          }
+        },
+        {
+          "items_info": [
+            {
+              "item_id": "MLB7159819994",
+              "order_id": 2000017530819962,
+              "item_type": "gold_special",
+              "item_price": 159.99,
+              "item_amount": 2,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017530819962,
+              "state_name": "São Paulo",
+              "operation_id": 169047620437,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-07-21T19:29:40",
+              "wholesale_price": "Não",
+              "transaction_amount": 319.98,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 67566340092,
+            "detail_type": "CHARGE",
+            "detail_amount": 0.32,
+            "detail_sub_type": "CVVPRC",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-07-21T20:29:57",
+            "status_description": null,
+            "transaction_detail": "Custo por cobrar no Mercado Pago",
+            "legal_document_number": "00000000000015923487",
+            "legal_document_status": "PROCESSED",
+            "debited_from_operation": "YES",
+            "legal_document_status_description": "Processado",
+            "debited_from_operation_description": "Sim"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": null
+          },
+          "document_info": {
+            "document_id": 4988518325
+          },
+          "shipping_info": {
+            "pack_id": "2000014135217843",
+            "shipping_id": "47578673978",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "CORE"
+          }
+        },
+        {
+          "items_info": [
+            {
+              "item_id": "MLB7159819994",
+              "order_id": 2000017530819962,
+              "item_type": "gold_special",
+              "item_price": 159.99,
+              "item_amount": 2,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017530819962,
+              "state_name": "São Paulo",
+              "operation_id": 169047620437,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-07-21T19:29:40",
+              "wholesale_price": "Não",
+              "transaction_amount": 319.98,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 67635652294,
+            "detail_type": "CHARGE",
+            "detail_amount": 41.5,
+            "detail_sub_type": "CFFE",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-07-22T22:09:27",
+            "status_description": null,
+            "transaction_detail": "Tarifa de envio extra ou intermunicipal",
+            "legal_document_number": null,
+            "legal_document_status": "NOT_APPLICABLE",
+            "debited_from_operation": "YES",
+            "legal_document_status_description": "NF-e não aplicável",
+            "debited_from_operation_description": "Sim"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": "Desconto geral",
+            "charge_amount_without_discount": 83
+          },
+          "document_info": {
+            "document_id": 4987545425
+          },
+          "shipping_info": {
+            "pack_id": "2000014135217843",
+            "shipping_id": "47578673978",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "SHIPPING"
+          }
+        }
+      ],
+      "order_id": 2000017530819962,
+      "sale_fee": {
+        "net": 36.8,
+        "gross": 36.8,
+        "rebate": 0,
+        "discount": 0,
+        "discount_reason": null
+      }
+    },
+    {
+      "details": [
+        {
+          "items_info": [
+            {
+              "item_id": "MLB6977801882",
+              "order_id": 2000017605774432,
+              "item_type": "gold_special",
+              "item_price": 672.99,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017605774432,
+              "state_name": "Minas Gerais",
+              "operation_id": 170692481766,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-07-26T19:49:50",
+              "wholesale_price": "Não",
+              "transaction_amount": 672.99,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": "BONUS_ON_BILL",
+            "detail_id": 67872068641,
+            "detail_type": "CHARGE",
+            "detail_amount": 0.67,
+            "detail_sub_type": "CVVPRC",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-07-26T20:50:02",
+            "status_description": "Cancelado neste mes",
+            "transaction_detail": "Custo por cobrar no Mercado Pago",
+            "legal_document_number": "00000000000015923487",
+            "legal_document_status": "PROCESSED",
+            "debited_from_operation": "INAPPLICABLE",
+            "legal_document_status_description": "Processado",
+            "debited_from_operation_description": "Não se aplica"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": null
+          },
+          "document_info": {
+            "document_id": 4988518325
+          },
+          "shipping_info": {
+            "pack_id": null,
+            "shipping_id": "47613975124",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "CORE"
+          }
+        },
+        {
+          "items_info": [
+            {
+              "item_id": "MLB6977801882",
+              "order_id": 2000017605774432,
+              "item_type": "gold_special",
+              "item_price": 672.99,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017605774432,
+              "state_name": "Minas Gerais",
+              "operation_id": 170692481766,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-07-26T19:49:50",
+              "wholesale_price": "Não",
+              "transaction_amount": 672.99,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": "BONUS_ON_BILL",
+            "detail_id": 67872068647,
+            "detail_type": "CHARGE",
+            "detail_amount": 69.99,
+            "detail_sub_type": "CVVML",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-07-26T20:50:02",
+            "status_description": "Cancelado neste mes",
+            "transaction_detail": "Custo por vender no Mercado Livre",
+            "legal_document_number": "00000000000009655939",
+            "legal_document_status": "PROCESSED",
+            "debited_from_operation": "INAPPLICABLE",
+            "legal_document_status_description": "Processado",
+            "debited_from_operation_description": "Não se aplica"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": null
+          },
+          "document_info": {
+            "document_id": 4988518334
+          },
+          "shipping_info": {
+            "pack_id": null,
+            "shipping_id": "47613975124",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "CORE"
+          }
+        },
+        {
+          "items_info": [
+            {
+              "item_id": "MLB6977801882",
+              "order_id": 2000017605774432,
+              "item_type": "gold_special",
+              "item_price": 672.99,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017605774432,
+              "state_name": "Minas Gerais",
+              "operation_id": 170692481766,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-07-26T19:49:50",
+              "transaction_amount": 672.99,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 67885304813,
+            "detail_type": "BONUS",
+            "detail_amount": 69.99,
+            "detail_sub_type": "BVVML",
+            "charge_bonified_id": 67872068647,
+            "creation_date_time": "2026-07-27T06:25:35",
+            "status_description": null,
+            "transaction_detail": "Cancelamento do Custo por vender no Mercado Livre",
+            "legal_document_number": "00000000000009655939",
+            "legal_document_status": "PROCESSED",
+            "debited_from_operation": "INAPPLICABLE",
+            "legal_document_status_description": "Processado",
+            "debited_from_operation_description": "Não se aplica"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": null
+          },
+          "document_info": {
+            "document_id": 4988518334
+          },
+          "shipping_info": {
+            "pack_id": null,
+            "shipping_id": "47613975124",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "CORE"
+          }
+        },
+        {
+          "items_info": [
+            {
+              "item_id": "MLB6977801882",
+              "order_id": 2000017605774432,
+              "item_type": "gold_special",
+              "item_price": 672.99,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017605774432,
+              "state_name": "Minas Gerais",
+              "operation_id": 170692481766,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-07-26T19:49:50",
+              "transaction_amount": 672.99,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 67885304815,
+            "detail_type": "BONUS",
+            "detail_amount": 0.67,
+            "detail_sub_type": "BVVPRC",
+            "charge_bonified_id": 67872068641,
+            "creation_date_time": "2026-07-27T06:25:35",
+            "status_description": null,
+            "transaction_detail": "Cancelamento do Custo por cobrar no Mercado Pago",
+            "legal_document_number": "00000000000015923487",
+            "legal_document_status": "PROCESSED",
+            "debited_from_operation": "INAPPLICABLE",
+            "legal_document_status_description": "Processado",
+            "debited_from_operation_description": "Não se aplica"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": null
+          },
+          "document_info": {
+            "document_id": 4988518325
+          },
+          "shipping_info": {
+            "pack_id": null,
+            "shipping_id": "47613975124",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "CORE"
+          }
+        }
+      ],
+      "order_id": 2000017605774432,
+      "sale_fee": {
+        "net": 70.66,
+        "gross": 70.66,
+        "rebate": 0,
+        "discount": 0,
+        "discount_reason": null
+      }
+    },
+    {
+      "details": [
+        {
+          "items_info": [
+            {
+              "item_id": "MLB7070651566",
+              "order_id": 2000017687408928,
+              "item_type": "gold_special",
+              "item_price": 369.99,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017687408928,
+              "state_name": "Tocantins",
+              "operation_id": 171422888616,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-07-31T15:07:51",
+              "wholesale_price": "Não",
+              "transaction_amount": 369.99,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 68174643135,
+            "detail_type": "CHARGE",
+            "detail_amount": 30.53,
+            "detail_sub_type": "CVVML",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-07-31T16:08:09",
+            "status_description": null,
+            "transaction_detail": "Custo por vender no Mercado Livre",
+            "legal_document_number": "00000000000009655939",
+            "legal_document_status": "PROCESSED",
+            "debited_from_operation": "YES",
+            "legal_document_status_description": "Processado",
+            "debited_from_operation_description": "Sim"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": null
+          },
+          "document_info": {
+            "document_id": 4988518334
+          },
+          "shipping_info": {
+            "pack_id": null,
+            "shipping_id": "47653090238",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "CORE"
+          }
+        },
+        {
+          "items_info": [
+            {
+              "item_id": "MLB7070651566",
+              "order_id": 2000017687408928,
+              "item_type": "gold_special",
+              "item_price": 369.99,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017687408928,
+              "state_name": "Tocantins",
+              "operation_id": 171422888616,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-07-31T15:07:51",
+              "wholesale_price": "Não",
+              "transaction_amount": 369.99,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 68174643150,
+            "detail_type": "CHARGE",
+            "detail_amount": 10.17,
+            "detail_sub_type": "CVVPRC",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-07-31T16:08:09",
+            "status_description": null,
+            "transaction_detail": "Custo por cobrar no Mercado Pago",
+            "legal_document_number": "00000000000015923487",
+            "legal_document_status": "PROCESSED",
+            "debited_from_operation": "YES",
+            "legal_document_status_description": "Processado",
+            "debited_from_operation_description": "Sim"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": null
+          },
+          "document_info": {
+            "document_id": 4988518325
+          },
+          "shipping_info": {
+            "pack_id": null,
+            "shipping_id": "47653090238",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "CORE"
+          }
+        },
+        {
+          "items_info": [
+            {
+              "item_id": "MLB7070651566",
+              "order_id": 2000017687408928,
+              "item_type": "gold_special",
+              "item_price": 369.99,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017687408928,
+              "state_name": "Tocantins",
+              "operation_id": 171422888616,
+              "financing_fee": 37.22,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-07-31T15:07:51",
+              "wholesale_price": "Não",
+              "transaction_amount": 369.99,
+              "financing_transfer_total": 407.21
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 68174651814,
+            "detail_type": "CHARGE",
+            "detail_amount": 37.22,
+            "detail_sub_type": "CFONPN",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-07-31T16:08:07",
+            "status_description": null,
+            "transaction_detail": "Taxa de parcelamento (equivalente ao acréscimo no preço pago pelo comprador)",
+            "legal_document_number": null,
+            "legal_document_status": "NOT_APPLICABLE",
+            "debited_from_operation": "YES",
+            "legal_document_status_description": "NF-e não aplicável",
+            "debited_from_operation_description": "Sim"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": 37.22
+          },
+          "document_info": {
+            "document_id": 4988518297
+          },
+          "shipping_info": {
+            "pack_id": null,
+            "shipping_id": "47653090238",
+            "receiver_shipping_cost": null
+          },
+          "marketplace_info": {
+            "marketplace": "MP"
+          }
+        },
+        {
+          "items_info": [
+            {
+              "item_id": "MLB7070651566",
+              "order_id": 2000017687408928,
+              "item_type": "gold_special",
+              "item_price": 369.99,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017687408928,
+              "state_name": "Tocantins",
+              "operation_id": 171422888616,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-07-31T15:07:51",
+              "wholesale_price": "Não",
+              "transaction_amount": 369.99,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 68218629316,
+            "detail_type": "CHARGE",
+            "detail_amount": 39.75,
+            "detail_sub_type": "CFFE",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-08-01T07:14:09",
+            "status_description": null,
+            "transaction_detail": "Tarifa de envio extra ou intermunicipal",
+            "legal_document_number": null,
+            "legal_document_status": "NOT_APPLICABLE",
+            "debited_from_operation": "YES",
+            "legal_document_status_description": "NF-e não aplicável",
+            "debited_from_operation_description": "Sim"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": "Desconto geral",
+            "charge_amount_without_discount": 79.5
+          },
+          "document_info": {
+            "document_id": 4987545425
+          },
+          "shipping_info": {
+            "pack_id": null,
+            "shipping_id": "47653090238",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "SHIPPING"
+          }
+        }
+      ],
+      "order_id": 2000017687408928,
+      "sale_fee": {
+        "net": 40.7,
+        "gross": 40.7,
+        "rebate": 0,
+        "discount": 0,
+        "discount_reason": null
+      }
+    },
+    {
+      "details": [
+        {
+          "items_info": [
+            {
+              "item_id": "MLB7070651566",
+              "order_id": 2000017757292324,
+              "item_type": "gold_special",
+              "item_price": 358.89,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017757292324,
+              "state_name": "São Paulo",
+              "operation_id": 172085142022,
+              "financing_fee": 24.98,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-08-04T18:08:47",
+              "wholesale_price": "Não",
+              "transaction_amount": 358.89,
+              "financing_transfer_total": 383.87
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 68461908537,
+            "detail_type": "CHARGE",
+            "detail_amount": 24.98,
+            "detail_sub_type": "CFONPN",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-08-04T19:08:59",
+            "status_description": null,
+            "transaction_detail": "Taxa de parcelamento (equivalente ao acréscimo no preço pago pelo comprador)",
+            "legal_document_number": null,
+            "legal_document_status": "NOT_APPLICABLE",
+            "debited_from_operation": "YES",
+            "legal_document_status_description": "NF-e não aplicável",
+            "debited_from_operation_description": "Sim"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": 24.98
+          },
+          "document_info": {
+            "document_id": 4988518297
+          },
+          "shipping_info": {
+            "pack_id": null,
+            "shipping_id": "47685672056",
+            "receiver_shipping_cost": null
+          },
+          "marketplace_info": {
+            "marketplace": "MP"
+          }
+        },
+        {
+          "items_info": [
+            {
+              "item_id": "MLB7070651566",
+              "order_id": 2000017757292324,
+              "item_type": "gold_special",
+              "item_price": 358.89,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017757292324,
+              "state_name": "São Paulo",
+              "operation_id": 172085142022,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-08-04T18:08:47",
+              "wholesale_price": "Não",
+              "transaction_amount": 358.89,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 68461918311,
+            "detail_type": "CHARGE",
+            "detail_amount": 16.88,
+            "detail_sub_type": "CVVML",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-08-04T19:09:02",
+            "status_description": null,
+            "transaction_detail": "Custo por vender no Mercado Livre",
+            "legal_document_number": "00000000000009655939",
+            "legal_document_status": "PROCESSED",
+            "debited_from_operation": "YES",
+            "legal_document_status_description": "Processado",
+            "debited_from_operation_description": "Sim"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": null
+          },
+          "document_info": {
+            "document_id": 4988518334
+          },
+          "shipping_info": {
+            "pack_id": null,
+            "shipping_id": "47685672056",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "CORE"
+          }
+        },
+        {
+          "items_info": [
+            {
+              "item_id": "MLB7070651566",
+              "order_id": 2000017757292324,
+              "item_type": "gold_special",
+              "item_price": 358.89,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017757292324,
+              "state_name": "São Paulo",
+              "operation_id": 172085142022,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-08-04T18:08:47",
+              "wholesale_price": "Não",
+              "transaction_amount": 358.89,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 68461918324,
+            "detail_type": "CHARGE",
+            "detail_amount": 5.02,
+            "detail_sub_type": "CVVPRC",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-08-04T19:09:02",
+            "status_description": null,
+            "transaction_detail": "Custo por cobrar no Mercado Pago",
+            "legal_document_number": "00000000000015923487",
+            "legal_document_status": "PROCESSED",
+            "debited_from_operation": "YES",
+            "legal_document_status_description": "Processado",
+            "debited_from_operation_description": "Sim"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": null
+          },
+          "document_info": {
+            "document_id": 4988518325
+          },
+          "shipping_info": {
+            "pack_id": null,
+            "shipping_id": "47685672056",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "CORE"
+          }
+        },
+        {
+          "items_info": [
+            {
+              "item_id": "MLB7070651566",
+              "order_id": 2000017757292324,
+              "item_type": "gold_special",
+              "item_price": 358.89,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017757292324,
+              "state_name": "São Paulo",
+              "operation_id": 172085142022,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-08-04T18:08:47",
+              "wholesale_price": "Não",
+              "transaction_amount": 358.89,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 68518084804,
+            "detail_type": "CHARGE",
+            "detail_amount": 39.75,
+            "detail_sub_type": "CFFE",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-08-05T15:44:25",
+            "status_description": null,
+            "transaction_detail": "Tarifa de envio extra ou intermunicipal",
+            "legal_document_number": null,
+            "legal_document_status": "NOT_APPLICABLE",
+            "debited_from_operation": "YES",
+            "legal_document_status_description": "NF-e não aplicável",
+            "debited_from_operation_description": "Sim"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": "Desconto geral",
+            "charge_amount_without_discount": 79.5
+          },
+          "document_info": {
+            "document_id": 4987545425
+          },
+          "shipping_info": {
+            "pack_id": null,
+            "shipping_id": "47685672056",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "SHIPPING"
+          }
+        }
+      ],
+      "order_id": 2000017757292324,
+      "sale_fee": {
+        "net": 21.9,
+        "gross": 43.07,
+        "rebate": 21.17,
+        "discount": 0,
+        "discount_reason": null
+      }
+    },
+    {
+      "details": [
+        {
+          "items_info": [
+            {
+              "item_id": "MLB7070651566",
+              "order_id": 2000017822557678,
+              "item_type": "gold_special",
+              "item_price": 358.89,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017822557678,
+              "state_name": null,
+              "operation_id": 172702290590,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-08-08T08:16:30",
+              "wholesale_price": "Não",
+              "transaction_amount": 358.89,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": "BONUS_ON_BILL",
+            "detail_id": 68723958774,
+            "detail_type": "CHARGE",
+            "detail_amount": 0.18,
+            "detail_sub_type": "CVVPRC",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-08-08T09:20:35",
+            "status_description": "Cancelado neste mes",
+            "transaction_detail": "Custo por cobrar no Mercado Pago",
+            "legal_document_number": null,
+            "legal_document_status": "PROCESSING",
+            "debited_from_operation": "INAPPLICABLE",
+            "legal_document_status_description": "Em processamento",
+            "debited_from_operation_description": "Não se aplica"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": null
+          },
+          "document_info": {
+            "document_id": 5098302005
+          },
+          "shipping_info": {
+            "pack_id": null,
+            "shipping_id": "47716699027",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "CORE"
+          }
+        },
+        {
+          "items_info": [
+            {
+              "item_id": "MLB7070651566",
+              "order_id": 2000017822557678,
+              "item_type": "gold_special",
+              "item_price": 358.89,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017822557678,
+              "state_name": null,
+              "operation_id": 172702290590,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-08-08T08:16:30",
+              "wholesale_price": "Não",
+              "transaction_amount": 358.89,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": "BONUS_ON_BILL",
+            "detail_id": 68723958781,
+            "detail_type": "CHARGE",
+            "detail_amount": 21.72,
+            "detail_sub_type": "CVVML",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-08-08T09:20:35",
+            "status_description": "Cancelado neste mes",
+            "transaction_detail": "Custo por vender no Mercado Livre",
+            "legal_document_number": null,
+            "legal_document_status": "PROCESSING",
+            "debited_from_operation": "INAPPLICABLE",
+            "legal_document_status_description": "Em processamento",
+            "debited_from_operation_description": "Não se aplica"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": null
+          },
+          "document_info": {
+            "document_id": 5098302093
+          },
+          "shipping_info": {
+            "pack_id": null,
+            "shipping_id": "47716699027",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "CORE"
+          }
+        },
+        {
+          "items_info": [
+            {
+              "item_id": "MLB7070651566",
+              "order_id": 2000017822557678,
+              "item_type": "gold_special",
+              "item_price": 358.89,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017822557678,
+              "state_name": null,
+              "operation_id": 172702290590,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-08-08T08:16:30",
+              "transaction_amount": 358.89,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 68739224404,
+            "detail_type": "BONUS",
+            "detail_amount": 21.72,
+            "detail_sub_type": "BVVML",
+            "charge_bonified_id": 68723958781,
+            "creation_date_time": "2026-08-08T13:02:03",
+            "status_description": null,
+            "transaction_detail": "Cancelamento do Custo por vender no Mercado Livre",
+            "legal_document_number": null,
+            "legal_document_status": "PROCESSING",
+            "debited_from_operation": "INAPPLICABLE",
+            "legal_document_status_description": "Em processamento",
+            "debited_from_operation_description": "Não se aplica"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": null
+          },
+          "document_info": {
+            "document_id": 5098302093
+          },
+          "shipping_info": {
+            "pack_id": null,
+            "shipping_id": "47716699027",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "CORE"
+          }
+        },
+        {
+          "items_info": [
+            {
+              "item_id": "MLB7070651566",
+              "order_id": 2000017822557678,
+              "item_type": "gold_special",
+              "item_price": 358.89,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000017822557678,
+              "state_name": null,
+              "operation_id": 172702290590,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-08-08T08:16:30",
+              "transaction_amount": 358.89,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 68739224408,
+            "detail_type": "BONUS",
+            "detail_amount": 0.18,
+            "detail_sub_type": "BVVPRC",
+            "charge_bonified_id": 68723958774,
+            "creation_date_time": "2026-08-08T13:02:03",
+            "status_description": null,
+            "transaction_detail": "Cancelamento do Custo por cobrar no Mercado Pago",
+            "legal_document_number": null,
+            "legal_document_status": "PROCESSING",
+            "debited_from_operation": "INAPPLICABLE",
+            "legal_document_status_description": "Em processamento",
+            "debited_from_operation_description": "Não se aplica"
+          },
+          "currency_info": {
+            "currency_id": "BRL"
+          },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": null
+          },
+          "document_info": {
+            "document_id": 5098302005
+          },
+          "shipping_info": {
+            "pack_id": null,
+            "shipping_id": "47716699027",
+            "receiver_shipping_cost": 0
+          },
+          "marketplace_info": {
+            "marketplace": "CORE"
+          }
+        }
+      ],
+      "order_id": 2000017822557678,
+      "sale_fee": {
+        "net": 21.9,
+        "gross": 43.07,
+        "rebate": 21.17,
+        "discount": 0,
+        "discount_reason": null
+      }
+    }
+  ]
+}
