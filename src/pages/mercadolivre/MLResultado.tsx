@@ -67,6 +67,14 @@ import {
   type LinhaCenariosResult,
 } from "@/lib/mcoLinhaCenarios";
 import { useDifalRegimeAplicavel } from "@/hooks/useDifalRegimeAplicavel";
+import {
+  RebateDoisCenarios,
+  RebateDoisCenariosCabecalho,
+} from "@/components/mercadolivre/RebateDoisCenarios";
+import {
+  resolveLinhaRebate,
+  type LinhaRebateResult,
+} from "@/lib/rebateLinhaCenarios";
 import { KPI_GLOSSARY } from "@/lib/kpi-glossary";
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
@@ -245,6 +253,40 @@ function cenariosPreAds(item: PvMcoItem, regimeAplicaDifal?: boolean): LinhaCena
   });
 }
 
+/**
+ * [223-06] Os dois cenários de REBATE do item — régua INDEPENDENTE do DIFAL
+ * acima (uma é imposto, a outra é desconto de comissão medido na fatura do
+ * ML). Nada é recalculado aqui: os oito campos já vieram prontos da RPC
+ * (223-05), a Task 1 só os carregou até o item/grupo sem tocar em nenhum.
+ */
+function cenariosRebatePosAds(item: PvMcoItem): LinhaRebateResult {
+  return resolveLinhaRebate({
+    comRebate: { valor: item.mcoReais, pct: item.mcoPct },
+    semRebate:
+      item.mcoSemRebateReais != null
+        ? { valor: item.mcoSemRebateReais, pct: item.mcoPctSemRebate }
+        : null,
+    rebateEfeito: item.rebateEfeito,
+    rebateBruto: item.rebateBruto,
+    pedidosSemCaptura: item.pedidosSemCapturaRebate,
+    pedidosNaoConferidos: item.pedidosRebateNaoConferido,
+  });
+}
+
+function cenariosRebatePreAds(item: PvMcoItem): LinhaRebateResult {
+  return resolveLinhaRebate({
+    comRebate: { valor: item.mcoPreAdsReais ?? 0, pct: item.mcoPreAdsPct },
+    semRebate:
+      item.mcoPreAdsSemRebateReais != null
+        ? { valor: item.mcoPreAdsSemRebateReais, pct: item.mcoPreAdsPctSemRebate }
+        : null,
+    rebateEfeito: item.rebateEfeito,
+    rebateBruto: item.rebateBruto,
+    pedidosSemCaptura: item.pedidosSemCapturaRebate,
+    pedidosNaoConferidos: item.pedidosRebateNaoConferido,
+  });
+}
+
 function McoCell({
   item,
   regimeAplicaDifal,
@@ -264,14 +306,25 @@ function McoCell({
         <span className="inline-flex items-center gap-1.5 cursor-default">
           <span className={`w-2 h-2 rounded-full shrink-0 ${cls.dot}`} aria-hidden="true" />
           {item.hasCmv ? (
-            <McoDoisCenarios
-              cenarios={cenariosPosAds(item, regimeAplicaDifal)}
-              densidade="celula"
-              role={role}
-              ressalvaNoCabecalho
-              rotuloSemDifal=""
-              rotuloComDifal="c/ DIFAL"
-            />
+            <span className="inline-flex flex-col items-end gap-0.5">
+              <McoDoisCenarios
+                cenarios={cenariosPosAds(item, regimeAplicaDifal)}
+                densidade="celula"
+                role={role}
+                ressalvaNoCabecalho
+                rotuloSemDifal=""
+                rotuloComDifal="c/ DIFAL"
+              />
+              {/* [223-06] Régua independente: quanto da margem depende da
+                  promoção. Nunca substitui o par de DIFAL, os dois convivem. */}
+              <RebateDoisCenarios
+                cenarios={cenariosRebatePosAds(item)}
+                densidade="celula"
+                role={role}
+                ressalvaNoCabecalho
+                rotuloComRebate=""
+              />
+            </span>
           ) : (
             <span className={`text-xs font-medium tabular-nums ${cls.text}`}>—</span>
           )}
@@ -327,13 +380,20 @@ function PreAdsCell({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="cursor-default">
+        <span className="cursor-default inline-flex flex-col items-end gap-0.5">
           <McoDoisCenarios
             cenarios={cenariosPreAds(item, regimeAplicaDifal)}
             densidade="celula"
             ressalvaNoCabecalho
             rotuloSemDifal=""
             rotuloComDifal="c/ DIFAL"
+          />
+          {/* [223-06] Mesma régua independente do rebate, no cenário pré-ads. */}
+          <RebateDoisCenarios
+            cenarios={cenariosRebatePreAds(item)}
+            densidade="celula"
+            ressalvaNoCabecalho
+            rotuloComRebate=""
           />
         </span>
       </TooltipTrigger>
@@ -379,18 +439,39 @@ function GroupMcoBadge({
     regimeAplicaDifal,
   });
 
+  // [223-06] O par de rebate do grupo — régua independente da fiscal acima.
+  // Mesma razão de somas travada na Task 1: nunca média dos percentuais.
+  const cenariosRebate = resolveLinhaRebate({
+    comRebate: { valor: group.revenue * ((group.mcoPct ?? 0) / 100), pct: group.mcoPct },
+    semRebate:
+      group.mcoSemRebateReais != null
+        ? { valor: group.mcoSemRebateReais, pct: group.mcoPctSemRebate }
+        : null,
+    rebateEfeito: group.rebateEfeito,
+    pedidosSemCaptura: group.pedidosSemCapturaRebate,
+    pedidosNaoConferidos: group.pedidosRebateNaoConferido,
+  });
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <span className="inline-flex items-center gap-1 cursor-default">
           <span className={`w-2 h-2 rounded-full shrink-0 ${cls.dot}`} aria-hidden="true" />
-          <McoDoisCenarios
-            cenarios={cenarios}
-            densidade={size === "md" ? "bloco" : "celula"}
-            role={role}
-            rotuloSemDifal=""
-            rotuloComDifal="c/ DIFAL"
-          />
+          <span className="inline-flex flex-col items-end gap-0.5">
+            <McoDoisCenarios
+              cenarios={cenarios}
+              densidade={size === "md" ? "bloco" : "celula"}
+              role={role}
+              rotuloSemDifal=""
+              rotuloComDifal="c/ DIFAL"
+            />
+            <RebateDoisCenarios
+              cenarios={cenariosRebate}
+              densidade="celula"
+              role={role}
+              rotuloComRebate=""
+            />
+          </span>
           {group.hasMissingCost && (
             <AlertCircle className="w-2.5 h-2.5 text-muted-foreground shrink-0" aria-hidden="true" />
           )}
@@ -430,14 +511,17 @@ function SortHead({
   onSort,
   tooltip,
   ressalvaDifal = false,
+  ressalvaRebate = false,
 }: {
   sortKey: SortKey;
   currentKey: SortKey;
   currentDir: SortDir;
   onSort: (k: SortKey) => void;
   tooltip?: string;
-  /** Coluna que exibe os dois cenários: carrega a ressalva UMA vez. */
+  /** Coluna que exibe os dois cenários de DIFAL: carrega a ressalva UMA vez. */
   ressalvaDifal?: boolean;
+  /** Coluna que exibe os dois cenários de rebate: carrega a ressalva UMA vez. */
+  ressalvaRebate?: boolean;
 }) {
   const isActive = currentKey === key;
   const label = COLUMN_LABEL[key];
@@ -448,7 +532,10 @@ function SortHead({
       className="inline-flex items-center gap-1 justify-end cursor-pointer select-none group"
       onClick={() => onSort(key)}
     >
-      {ressalvaDifal ? <McoDoisCenariosCabecalho titulo={label} /> : label}
+      <span className="inline-flex flex-col items-end">
+        {ressalvaDifal ? <McoDoisCenariosCabecalho titulo={label} /> : label}
+        {ressalvaRebate && <RebateDoisCenariosCabecalho />}
+      </span>
       <SortIndicator active={isActive} dir={currentDir} />
     </span>
   );
@@ -813,6 +900,9 @@ export default function MLResultado() {
                                  repetida em cada uma das centenas de linhas. A
                                  palavra tem de informar, não virar ruído. */
                               ressalvaDifal={k === "mcoPct" || k === "mcoPreAdsPct"}
+                              /* [223-06] Mesma ideia para o rebate — régua
+                                 independente, ressalva própria no cabeçalho. */
+                              ressalvaRebate={k === "mcoPct" || k === "mcoPreAdsPct"}
                             />
                           ))}
                         </tr>
