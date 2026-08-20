@@ -236,8 +236,8 @@ describe("cenariosRebateMargemReal — projeção de linha de RPC, sem aritméti
     lucro_pct_pos_ads_sem_rebate: 2.9,
     rebate_efeito: 50.71,
     rebate_bruto: 55.0,
-    pedidos_rebate_sem_captura: 0,
-    pedidos_rebate_nao_conferidos: 0,
+    pedidos_sem_captura_rebate: 0,
+    pedidos_rebate_nao_conferido: 0,
   };
 
   it("modo preAds: os valores saem iguais aos campos de entrada, zero aritmética", () => {
@@ -261,5 +261,22 @@ describe("cenariosRebateMargemReal — projeção de linha de RPC, sem aritméti
 
     expect(r.motivo).toBe("indisponivel");
     expect(r.semRebate).toBeNull();
+  });
+
+  // [223-06] Guarda de regressão: os nomes de campo de `LinhaMargemComRebate`
+  // divergiam dos nomes reais da RPC (`pedidos_rebate_sem_captura` em vez de
+  // `pedidos_sem_captura_rebate`, e a mesma inversão no outro campo) — as duas
+  // contagens de lacuna caíam silenciosamente para zero em qualquer linha de
+  // verdade, porque o campo lido nunca existia no objeto. Este teste propaga
+  // um valor NÃO-zero pelas duas contagens para provar que o nome lido é o
+  // nome escrito.
+  it("propaga as duas contagens de lacuna sem perdê-las por nome de campo divergente", () => {
+    const r = cenariosRebateMargemReal(
+      { ...linha, pedidos_sem_captura_rebate: 4, pedidos_rebate_nao_conferido: 7 },
+      "preAds",
+    );
+
+    expect(r.pedidosSemCaptura).toBe(4);
+    expect(r.pedidosNaoConferidos).toBe(7);
   });
 });

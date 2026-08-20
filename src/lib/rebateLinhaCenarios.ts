@@ -274,8 +274,22 @@ export interface LinhaMargemComRebate {
   lucro_pct_pos_ads_sem_rebate?: number | null;
   rebate_efeito?: number | null;
   rebate_bruto?: number | null;
-  pedidos_rebate_sem_captura?: number | null;
-  pedidos_rebate_nao_conferidos?: number | null;
+  /**
+   * 🔴 [223-06] Nome IDÊNTICO à coluna real de `get_margin_with_ads_by_product`
+   * (223-05) — `pedidos_sem_captura_rebate`, nunca `pedidos_rebate_sem_captura`.
+   * As duas ordens de palavra existiram neste tipo por uma janela: este módulo
+   * (223-02) nasceu antes de a RPC (223-05) fixar o nome final, e ficou com o
+   * nome errado. `useMLMarginWithAds.ts`, as duas migrations e a agregação de
+   * `soldProductsMcoAgg.ts` usam o nome certo — só este tipo divergia, e a
+   * divergência é muda: como o campo é opcional e `strictNullChecks` está
+   * desligado, `linha?.pedidos_rebate_sem_captura` nunca lançava erro de
+   * compilação nem em runtime — só devolvia sempre `undefined`, e a contagem
+   * de lacuna caía silenciosamente para zero nas três telas que chamam
+   * `cenariosRebateMargemReal` com uma linha de verdade (Task 3, 223-06).
+   */
+  pedidos_sem_captura_rebate?: number | null;
+  /** Mesmo motivo do campo acima — nome idêntico à coluna real da RPC. */
+  pedidos_rebate_nao_conferido?: number | null;
 }
 
 /**
@@ -303,7 +317,7 @@ export function cenariosRebateMargemReal(
     semRebate: semValor != null ? { valor: semValor, pct: semPct ?? null } : null,
     rebateEfeito: linha?.rebate_efeito,
     rebateBruto: linha?.rebate_bruto,
-    pedidosSemCaptura: linha?.pedidos_rebate_sem_captura,
-    pedidosNaoConferidos: linha?.pedidos_rebate_nao_conferidos,
+    pedidosSemCaptura: linha?.pedidos_sem_captura_rebate,
+    pedidosNaoConferidos: linha?.pedidos_rebate_nao_conferido,
   });
 }
