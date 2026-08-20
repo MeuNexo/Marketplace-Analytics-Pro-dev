@@ -23,6 +23,11 @@ import {
   cenariosMargemReal,
   regimeAplicaDifalNasLojas,
 } from "@/lib/mcoLinhaCenarios";
+import {
+  RebateDoisCenarios,
+  RebateDoisCenariosCabecalho,
+} from "@/components/mercadolivre/RebateDoisCenarios";
+import { cenariosRebateMargemReal } from "@/lib/rebateLinhaCenarios";
 // AV-03: a ausência de CMV é contada e declarada em agregado, em vez de virar
 // um traço solto célula a célula. Ver o cabeçalho de custoFaltante.ts.
 import { contarSemCusto } from "@/lib/custoFaltante";
@@ -1354,26 +1359,45 @@ export default function MLAnunciosPage() {
                                numa régua diferente da outra — foi exatamente o
                                defeito CR-08 desta página. O cartão não comporta
                                duas linhas por métrica, então o par vira uma
-                               linha só, com os dois números. */
+                               linha só, com os dois números.
+                               [223-06] O par de rebate segue a MESMA promessa —
+                               é a régua independente, empilhada abaixo do par de
+                               DIFAL na mesma célula, nunca em um ramo só. */
                             ["Mg. Op.",
                               mgOp != null && mads !== undefined ? (
-                                <McoDoisCenarios
-                                  cenarios={cenariosMargemReal(mads, "preAds", regimeAplicaDifal)}
-                                  densidade="celula"
-                                  role={mgOp >= 0 ? "good" : "critical"}
-                                  rotuloSemDifal=""
-                                  rotuloComDifal="c/ DIFAL"
-                                />
+                                <span className="inline-flex flex-col items-end gap-0.5">
+                                  <McoDoisCenarios
+                                    cenarios={cenariosMargemReal(mads, "preAds", regimeAplicaDifal)}
+                                    densidade="celula"
+                                    role={mgOp >= 0 ? "good" : "critical"}
+                                    rotuloSemDifal=""
+                                    rotuloComDifal="c/ DIFAL"
+                                  />
+                                  <RebateDoisCenarios
+                                    cenarios={cenariosRebateMargemReal(mads, "preAds")}
+                                    densidade="celula"
+                                    role={mgOp >= 0 ? "good" : "critical"}
+                                    rotuloComRebate=""
+                                  />
+                                </span>
                               ) : "—"],
                             ["Mg. Pós-Ads",
                               mgPosAds != null && mads !== undefined ? (
-                                <McoDoisCenarios
-                                  cenarios={cenariosMargemReal(mads, "posAds", regimeAplicaDifal)}
-                                  densidade="celula"
-                                  role={mgPosAds >= 0 ? "good" : "critical"}
-                                  rotuloSemDifal=""
-                                  rotuloComDifal="c/ DIFAL"
-                                />
+                                <span className="inline-flex flex-col items-end gap-0.5">
+                                  <McoDoisCenarios
+                                    cenarios={cenariosMargemReal(mads, "posAds", regimeAplicaDifal)}
+                                    densidade="celula"
+                                    role={mgPosAds >= 0 ? "good" : "critical"}
+                                    rotuloSemDifal=""
+                                    rotuloComDifal="c/ DIFAL"
+                                  />
+                                  <RebateDoisCenarios
+                                    cenarios={cenariosRebateMargemReal(mads, "posAds")}
+                                    densidade="celula"
+                                    role={mgPosAds >= 0 ? "good" : "critical"}
+                                    rotuloComRebate=""
+                                  />
+                                </span>
                               ) : "—"],
                           ] as [string, React.ReactNode][] : []),
                         ] as [string, React.ReactNode][]).map(([label, val]) => (
@@ -1428,6 +1452,8 @@ export default function MLAnunciosPage() {
                               <TooltipTrigger asChild>
                                 <span className="cursor-help border-b border-dashed border-muted-foreground/40">
                                   <McoDoisCenariosCabecalho titulo="Mg. Op." />
+                                  {/* [223-06] Ressalva do rebate, régua independente. */}
+                                  <RebateDoisCenariosCabecalho />
                                   {/* CR-09: a janela que a coluna cobre, em datas. Sem
                                       isso, uma coluna de margem ao lado de um seletor de
                                       período é um convite ao engano. */}
@@ -1447,6 +1473,7 @@ export default function MLAnunciosPage() {
                               <TooltipTrigger asChild>
                                 <span className="cursor-help border-b border-dashed border-muted-foreground/40">
                                   <McoDoisCenariosCabecalho titulo="Mg. Pós-Ads" />
+                                  <RebateDoisCenariosCabecalho />
                                   <span className="block text-[9px] font-normal text-muted-foreground tabular-nums">
                                     {janelaMargemLabel}
                                   </span>
@@ -1624,15 +1651,26 @@ export default function MLAnunciosPage() {
                                               </TooltipContent>
                                             </Tooltip>
                                           ) : (
-                                            /* [222-15-R2] Os dois cenários, na mesma régua do banco. */
-                                            <McoDoisCenarios
-                                              cenarios={cenariosMargemReal(mads, "preAds", regimeAplicaDifal)}
-                                              densidade="celula"
-                                              role={roleFor(mgOp)}
-                                              ressalvaNoCabecalho
-                                              rotuloSemDifal=""
-                                              rotuloComDifal="c/ DIFAL"
-                                            />
+                                            /* [222-15-R2] Os dois cenários, na mesma régua do banco.
+                                               [223-06] O par de rebate empilha abaixo — régua
+                                               independente, mesma célula, nunca no lugar do DIFAL. */
+                                            <span className="inline-flex flex-col items-end gap-0.5">
+                                              <McoDoisCenarios
+                                                cenarios={cenariosMargemReal(mads, "preAds", regimeAplicaDifal)}
+                                                densidade="celula"
+                                                role={roleFor(mgOp)}
+                                                ressalvaNoCabecalho
+                                                rotuloSemDifal=""
+                                                rotuloComDifal="c/ DIFAL"
+                                              />
+                                              <RebateDoisCenarios
+                                                cenarios={cenariosRebateMargemReal(mads, "preAds")}
+                                                densidade="celula"
+                                                role={roleFor(mgOp)}
+                                                ressalvaNoCabecalho
+                                                rotuloComRebate=""
+                                              />
+                                            </span>
                                           )}
                                         </TableCell>
                                         <TableCell className="text-right">
@@ -1646,14 +1684,23 @@ export default function MLAnunciosPage() {
                                               </TooltipContent>
                                             </Tooltip>
                                           ) : (
-                                            <McoDoisCenarios
-                                              cenarios={cenariosMargemReal(mads, "posAds", regimeAplicaDifal)}
-                                              densidade="celula"
-                                              role={roleFor(mgPosAds)}
-                                              ressalvaNoCabecalho
-                                              rotuloSemDifal=""
-                                              rotuloComDifal="c/ DIFAL"
-                                            />
+                                            <span className="inline-flex flex-col items-end gap-0.5">
+                                              <McoDoisCenarios
+                                                cenarios={cenariosMargemReal(mads, "posAds", regimeAplicaDifal)}
+                                                densidade="celula"
+                                                role={roleFor(mgPosAds)}
+                                                ressalvaNoCabecalho
+                                                rotuloSemDifal=""
+                                                rotuloComDifal="c/ DIFAL"
+                                              />
+                                              <RebateDoisCenarios
+                                                cenarios={cenariosRebateMargemReal(mads, "posAds")}
+                                                densidade="celula"
+                                                role={roleFor(mgPosAds)}
+                                                ressalvaNoCabecalho
+                                                rotuloComRebate=""
+                                              />
+                                            </span>
                                           )}
                                         </TableCell>
                                       </>

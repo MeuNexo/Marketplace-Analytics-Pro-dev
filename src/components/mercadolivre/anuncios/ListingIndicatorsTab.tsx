@@ -1,6 +1,8 @@
 import { Package } from "lucide-react";
 import { McoDoisCenarios } from "@/components/mercadolivre/McoDoisCenarios";
 import { cenariosMargemReal } from "@/lib/mcoLinhaCenarios";
+import { RebateDoisCenarios } from "@/components/mercadolivre/RebateDoisCenarios";
+import { cenariosRebateMargemReal } from "@/lib/rebateLinhaCenarios";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import type { ProductItem } from "@/contexts/MLInventoryContext";
@@ -130,12 +132,22 @@ export function ListingIndicatorsTab({ item, margin }: ListingIndicatorsTabProps
     // [222-15-R2] Os dois cenários também aqui: o modal é a superfície teórica
     // que sobrou em /anuncios depois de a margem teórica migrar para
     // /precificacao (RE-05), e era a única que ainda mostrava um número só.
+    // [223-06] O par de rebate acompanha, régua independente do DIFAL — as
+    // duas convivem na mesma densidade de célula, nenhuma no lugar da outra.
     return (
-      <McoDoisCenarios
-        cenarios={cenariosMargemReal(margin, posAds ? "posAds" : "preAds")}
-        densidade="celula"
-        role={pct >= 0 ? "good" : "critical"}
-      />
+      <span className="inline-flex flex-col items-end gap-0.5">
+        <McoDoisCenarios
+          cenarios={cenariosMargemReal(margin, posAds ? "posAds" : "preAds")}
+          densidade="celula"
+          role={pct >= 0 ? "good" : "critical"}
+        />
+        <RebateDoisCenarios
+          cenarios={cenariosRebateMargemReal(margin, posAds ? "posAds" : "preAds")}
+          densidade="celula"
+          role={pct >= 0 ? "good" : "critical"}
+          rotuloComRebate=""
+        />
+      </span>
     );
   };
 
