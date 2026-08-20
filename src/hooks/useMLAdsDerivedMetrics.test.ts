@@ -67,7 +67,8 @@ function makeProduct(overrides: Partial<AdsProductStat> = {}): AdsProductStat {
 }
 
 /** Linha de margem completa — a RPC devolve todos os campos; cada teste só
- *  sobrescreve o que importa para o caso (has_cmv, lucro_pct, sku). */
+ *  sobrescreve o que importa para o caso (has_cmv, lucro_pct, sku,
+ *  lucro_pct_sem_rebate — 223-07). */
 function makeMarginRow(overrides: Partial<ProductMarginWithAds> = {}): ProductMarginWithAds {
   return {
     item_id: "MLB111",
@@ -90,6 +91,22 @@ function makeMarginRow(overrides: Partial<ProductMarginWithAds> = {}): ProductMa
     lucro_pct_pos_ads: null,
     ads_no_sale: false,
     marca: null,
+    // ── DIFAL (222-15-R2) — required no tipo, sem consumidor neste hook. ──
+    difal_efeito: null,
+    pedidos_difal_indefinido: 0,
+    lucro_com_difal: null,
+    lucro_pct_com_difal: null,
+    lucro_pos_ads_com_difal: null,
+    lucro_pct_pos_ads_com_difal: null,
+    // ── Rebate (223-05/223-07) — o que este hook consome no breakeven. ──
+    rebate_bruto: null,
+    rebate_efeito: null,
+    pedidos_sem_captura_rebate: 0,
+    pedidos_rebate_nao_conferido: 0,
+    lucro_sem_rebate: null,
+    lucro_pct_sem_rebate: null,
+    lucro_pos_ads_sem_rebate: null,
+    lucro_pct_pos_ads_sem_rebate: null,
     ...overrides,
   };
 }
@@ -275,6 +292,188 @@ describe("useMLAdsDerivedMetrics — AV-10: share de gasto por produto", () => {
       const p = result.current.enriched[0];
       expect(p.spend_share_pct).toBe(5); // 500 / 10.000 × 100
       expect(p).not.toHaveProperty("tacos"); // o campo com nome trocado não existe mais
+    });
+  });
+});
+
+// ─── Fase 223, plano 223-07: break-even nos DOIS cenários de rebate ────────
+// (fecha a D-218-03, aberta desde 06/08: o ROAS de equilíbrio muda de lugar
+// quando a comissão é a cheia e não a promocional).
+
+describe("useMLAdsDerivedMetrics — 223-07: break-even sem rebate (tarifa cheia)", () => {
+  it("com margem apurada e custo cadastrado, o ACoS de equilíbrio do segundo cenário sai da margem pré-ads sem rebate da mesma linha", async () => {
+    const products = [
+      makeProduct({ item_id: "MLB700", spend: 200, attributed_revenue: 1000, attributed_orders: 10 }),
+    ];
+    const marginByItem = new Map<string, ProductMarginWithAds>([
+      [
+        "MLB700",
+        makeMarginRow({
+          item_id: "MLB700", has_cmv: true, receita: 1000,
+          lucro_pct: 30, lucro_pct_sem_rebate: 18,
+        }),
+      ],
+    ]);
+
+    const { result } = renderHook(
+      () => useMLAdsDerivedMetrics(products, 200, "2026-08-01", "2026-08-31", marginByItem),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => {
+      const p = result.current.enriched[0];
+      expect(p.acos_breakeven).toBe(30);
+      expect(p.acos_breakeven_sem_rebate).toBe(18);
+      expect(p.acos_breakeven_sem_rebate).not.toBe(p.acos_breakeven);
+    });
+  });
+
+  it("sem custo cadastrado, os DOIS break-evens ficam indefinidos — nunca zero, nunca só um deles definido", async () => {
+    const products = [
+      makeProduct({ item_id: "MLB701", spend: 100, attributed_revenue: 500, attributed_orders: 5 }),
+    ];
+    const marginByItem = new Map<string, ProductMarginWithAds>([
+      [
+        "MLB701",
+        makeMarginRow({
+          item_id: "MLB701", has_cmv: false, receita: 500,
+          lucro_pct: 90, lucro_pct_sem_rebate: 60,
+        }),
+      ],
+    ]);
+
+    const { result } = renderHook(
+      () => useMLAdsDerivedMetrics(products, 100, "2026-08-01", "2026-08-31", marginByItem),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => {
+      const p = result.current.enriched[0];
+      expect(p.acos_breakeven).toBeNull();
+      expect(p.acos_breakeven_sem_rebate).toBeNull();
+    });
+  });
+
+  it("sem apuração de rebate, só o break-even do primeiro cenário existe; o segundo é ausente", async () => {
+    const products = [
+      makeProduct({ item_id: "MLB702", spend: 50, attributed_revenue: 400, attributed_orders: 4 }),
+    ];
+    const marginByItem = new Map<string, ProductMarginWithAds>([
+      [
+        "MLB702",
+        makeMarginRow({
+          item_id: "MLB702", has_cmv: true, receita: 400,
+          lucro_pct: 20, lucro_pct_sem_rebate: null,
+        }),
+      ],
+    ]);
+
+    const { result } = renderHook(
+      () => useMLAdsDerivedMetrics(products, 50, "2026-08-01", "2026-08-31", marginByItem),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => {
+      const p = result.current.enriched[0];
+      expect(p.acos_breakeven).toBe(20);
+      expect(p.acos_breakeven_sem_rebate).toBeNull();
+    });
+  });
+
+  it("o ROAS de equilíbrio é o inverso do ACoS de equilíbrio, nos dois cenários, e é indefinido quando o ACoS de equilíbrio é indefinido ou não positivo", async () => {
+    const products = [
+      makeProduct({ item_id: "MLB703", spend: 100, attributed_revenue: 1000, attributed_orders: 10 }),
+      makeProduct({ item_id: "MLB704", spend: 100, attributed_revenue: 1000, attributed_orders: 10 }),
+      makeProduct({ item_id: "MLB705", spend: 100, attributed_revenue: 1000, attributed_orders: 10 }),
+    ];
+    const marginByItem = new Map<string, ProductMarginWithAds>([
+      // ACoS de equilíbrio positivo nos dois cenários (25% e 20%) → ROAS = 4 e 5.
+      ["MLB703", makeMarginRow({ item_id: "MLB703", has_cmv: true, receita: 1000, lucro_pct: 25, lucro_pct_sem_rebate: 20 })],
+      // Margem negativa (ACoS de equilíbrio negativo) → ROAS indefinido.
+      ["MLB704", makeMarginRow({ item_id: "MLB704", has_cmv: true, receita: 1000, lucro_pct: -5, lucro_pct_sem_rebate: -10 })],
+      // Sem custo cadastrado → os dois ACoS de equilíbrio são null → os dois ROAS também.
+      ["MLB705", makeMarginRow({ item_id: "MLB705", has_cmv: false, receita: 1000, lucro_pct: 50, lucro_pct_sem_rebate: 40 })],
+    ]);
+
+    const { result } = renderHook(
+      () => useMLAdsDerivedMetrics(products, 300, "2026-08-01", "2026-08-31", marginByItem),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => {
+      const [a, b, c] = result.current.enriched;
+      expect(a.roas_breakeven).toBeCloseTo(4, 5); // 100/25
+      expect(a.roas_breakeven_sem_rebate).toBeCloseTo(5, 5); // 100/20
+      expect(b.acos_breakeven).toBe(-5);
+      expect(b.roas_breakeven).toBeNull();
+      expect(b.roas_breakeven_sem_rebate).toBeNull();
+      expect(c.acos_breakeven).toBeNull();
+      expect(c.roas_breakeven).toBeNull();
+      expect(c.roas_breakeven_sem_rebate).toBeNull();
+    });
+  });
+
+  it("um anúncio cujo ACoS real fica entre os dois break-evens é identificável — só fecha a conta enquanto a promoção durar", async () => {
+    // ACoS observado 20%: passa no breakeven REAL (30%) mas NÃO passa no
+    // breakeven da tarifa cheia (15%) — é exatamente o anúncio que a D-218-03
+    // existe para sinalizar.
+    const products = [
+      makeProduct({ item_id: "MLB706", spend: 200, attributed_revenue: 1000, attributed_orders: 10 }),
+    ];
+    const marginByItem = new Map<string, ProductMarginWithAds>([
+      [
+        "MLB706",
+        makeMarginRow({
+          item_id: "MLB706", has_cmv: true, receita: 1000,
+          lucro_pct: 30, lucro_pct_sem_rebate: 15,
+        }),
+      ],
+    ]);
+
+    const { result } = renderHook(
+      () => useMLAdsDerivedMetrics(products, 200, "2026-08-01", "2026-08-31", marginByItem),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => {
+      const p = result.current.enriched[0];
+      expect(p.acos).toBe(20);
+      expect(p.acos_breakeven).toBe(30);
+      expect(p.acos_breakeven_sem_rebate).toBe(15);
+      // Passa no real, não passa na tarifa cheia — a régua de cor (MLPublicidade.tsx)
+      // continua contra o real (T-223-63); é a informação, não o alerta, que muda.
+      expect(p.acos! <= p.acos_breakeven!).toBe(true);
+      expect(p.acos! > p.acos_breakeven_sem_rebate!).toBe(true);
+    });
+  });
+
+  it("as duas contagens de lacuna do anúncio atravessam do mapa de margem, null quando o anúncio não tem linha", async () => {
+    const products = [
+      makeProduct({ item_id: "MLB707", spend: 10, attributed_revenue: 100, attributed_orders: 1 }),
+      makeProduct({ item_id: "MLB708", spend: 10, attributed_revenue: 100, attributed_orders: 1 }),
+    ];
+    const marginByItem = new Map<string, ProductMarginWithAds>([
+      [
+        "MLB707",
+        makeMarginRow({
+          item_id: "MLB707", has_cmv: true, receita: 100,
+          pedidos_sem_captura_rebate: 2, pedidos_rebate_nao_conferido: 1,
+        }),
+      ],
+      // MLB708 fica sem entrada no mapa — anúncio sem linha de margem.
+    ]);
+
+    const { result } = renderHook(
+      () => useMLAdsDerivedMetrics(products, 20, "2026-08-01", "2026-08-31", marginByItem),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => {
+      const [a, b] = result.current.enriched;
+      expect(a.pedidos_rebate_sem_captura).toBe(2);
+      expect(a.pedidos_rebate_nao_conferido).toBe(1);
+      expect(b.pedidos_rebate_sem_captura).toBeNull();
+      expect(b.pedidos_rebate_nao_conferido).toBeNull();
     });
   });
 });

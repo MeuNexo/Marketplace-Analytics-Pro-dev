@@ -30,11 +30,19 @@ import { KPICard } from "@/components/dashboard/KPICard";
 import { useMLAds, type AdsCampaign } from "@/hooks/useMLAds";
 import { useMLAdsDerivedMetrics, type EnrichedAdsProduct } from "@/hooks/useMLAdsDerivedMetrics";
 import { useMLMarginWithAds, type ProductMarginWithAds } from "@/hooks/useMLMarginWithAds";
-import { McoDoisCenarios, McoDoisCenariosCabecalho } from "@/components/mercadolivre/McoDoisCenarios";
+import { McoDoisCenarios } from "@/components/mercadolivre/McoDoisCenarios";
 import {
   cenariosMargemReal,
+  DIFAL_ESTIMATIVA_AJUDA,
   DIFAL_ESTIMATIVA_LABEL,
 } from "@/lib/mcoLinhaCenarios";
+import { RebateDoisCenarios } from "@/components/mercadolivre/RebateDoisCenarios";
+import {
+  cenariosRebateMargemReal,
+  fraseMotivoSemRebate,
+  REBATE_CENARIO_AJUDA,
+  resolveLinhaRebate,
+} from "@/lib/rebateLinhaCenarios";
 import { useDifalRegimeAplicavel } from "@/hooks/useDifalRegimeAplicavel";
 import { useMLFilters } from "@/hooks/useMLFilters";
 import { useMLInventory } from "@/contexts/MLInventoryContext";
@@ -931,15 +939,38 @@ export default function MLPublicidadePage() {
                       <span className="inline-flex items-center gap-1">Share Gasto <SortIcon k="spend_share_pct" /></span>
                     </th>
                     <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">
-                      {/* [222-15-R2] A ressalva de estimativa aparece UMA vez
-                          aqui, não repetida em cada linha da tabela. */}
-                      <McoDoisCenariosCabecalho titulo="Mg. Pós-Ads" />
+                      {/* [222-15-R2]/[223-07] As DUAS ressalvas de estimativa
+                          aparecem UMA vez aqui, não repetidas em cada linha —
+                          DIFAL (imposto) e rebate (desconto de comissão) são
+                          réguas independentes, cada uma com a sua linha. */}
+                      <span className="inline-flex flex-col items-end leading-tight">
+                        <span>Mg. Pós-Ads</span>
+                        <span className="text-[10px] font-normal text-muted-foreground" title={DIFAL_ESTIMATIVA_AJUDA}>
+                          2ª linha: c/ DIFAL ({DIFAL_ESTIMATIVA_LABEL})
+                        </span>
+                        <span className="text-[10px] font-normal text-muted-foreground" title={REBATE_CENARIO_AJUDA}>
+                          3ª linha: tarifa cheia
+                        </span>
+                      </span>
                     </th>
                     {/* Rótulo distinto de "Share Gasto" acima — mesma régua (participação
                         nos pedidos atribuídos a ads), evita duas colunas chamadas "share". */}
                     <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Part. Pedidos</th>
                     <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">
-                      <McoDoisCenariosCabecalho titulo="ACoS BE" />
+                      {/* [223-07] A célula abaixo mostra real + tarifa cheia
+                          visíveis; o cenário com DIFAL foi para a dica de
+                          contexto da célula (3 linhas visíveis estourava a
+                          altura da tabela) — dito em palavras aqui, nunca
+                          omitido em silêncio. */}
+                      <span className="inline-flex flex-col items-end leading-tight">
+                        <span>ACoS BE</span>
+                        <span className="text-[10px] font-normal text-muted-foreground" title={REBATE_CENARIO_AJUDA}>
+                          2ª linha: tarifa cheia
+                        </span>
+                        <span className="text-[10px] font-normal text-muted-foreground" title={DIFAL_ESTIMATIVA_AJUDA}>
+                          c/ DIFAL na dica da célula
+                        </span>
+                      </span>
                     </th>
                     <th
                       onClick={() => toggleSort("stock")}
@@ -1004,14 +1035,29 @@ export default function MLPublicidadePage() {
                           // Nada é recomposto aqui.
                           const linha = marginByItem.get(p.item_id);
                           return (
-                            <McoDoisCenarios
-                              cenarios={cenariosMargemReal(linha, "posAds", regimeAplicaDifal)}
-                              densidade="celula"
-                              role={m >= 0 ? "good" : "critical"}
-                              ressalvaNoCabecalho
-                              rotuloSemDifal=""
-                              rotuloComDifal="c/ DIFAL"
-                            />
+                            <div className="inline-flex flex-col items-end gap-1">
+                              <McoDoisCenarios
+                                cenarios={cenariosMargemReal(linha, "posAds", regimeAplicaDifal)}
+                                densidade="celula"
+                                role={m >= 0 ? "good" : "critical"}
+                                ressalvaNoCabecalho
+                                rotuloSemDifal=""
+                                rotuloComDifal="c/ DIFAL"
+                              />
+                              {/* [223-07] O par de rebate — irmão do par de
+                                  DIFAL acima, régua independente, mesma
+                                  célula. `cenariosRebateMargemReal` só projeta
+                                  os campos já prontos da linha; nenhuma
+                                  aritmética nova aqui. */}
+                              <RebateDoisCenarios
+                                cenarios={cenariosRebateMargemReal(linha, "posAds")}
+                                densidade="celula"
+                                role={m >= 0 ? "good" : "critical"}
+                                ressalvaNoCabecalho
+                                rotuloComRebate=""
+                                rotuloSemRebate="tarifa cheia"
+                              />
+                            </div>
                           );
                         })()}
                       </td>
@@ -1019,10 +1065,12 @@ export default function MLPublicidadePage() {
                         {p.share_ads_pct != null ? pctFmt(p.share_ads_pct) : "—"}
                       </td>
                       <td className="px-4 py-3 text-right text-xs tabular-nums text-muted-foreground">
-                        {/* [222-15-R2] O break-even de ACoS é o que decide
-                            quanto se pode gastar em publicidade. Um break-even
-                            otimista faz gastar demais — por isso o segundo
-                            cenário vem ao lado, com a mesma ressalva. */}
+                        {/* [222-15-R2]/[223-07] O break-even de ACoS é o que
+                            decide quanto se pode gastar em publicidade — é
+                            literalmente a D-218-03, aberta desde 06/08: um
+                            break-even otimista (calculado sobre a comissão
+                            promocional) faz gastar acima do que a tarifa
+                            cheia sustenta assim que a campanha acabar. */}
                         {(() => {
                           if (p.acos_breakeven == null) return "—";
                           const linha = marginByItem.get(p.item_id);
@@ -1030,14 +1078,49 @@ export default function MLPublicidadePage() {
                             linha?.has_cmv && linha.lucro_pct_com_difal != null
                               ? Math.round(linha.lucro_pct_com_difal * 100) / 100
                               : null;
+                          const tituloDifal = beComDifal != null
+                            ? `Break-even c/ DIFAL (${DIFAL_ESTIMATIVA_LABEL}): ${pctFmt(beComDifal)}`
+                            : `Break-even c/ DIFAL: sem cenário (${DIFAL_ESTIMATIVA_LABEL} indisponível)`;
+
+                          // [223-07] O SELETOR (`resolveLinhaRebate`) é o
+                          // mesmo das demais superfícies — só a
+                          // RENDERIZAÇÃO é manual aqui, porque
+                          // `RebateDoisCenarios` formata `valor` como R$
+                          // (par valor+%), e esta célula é 100% PERCENTUAL
+                          // (ACoS de equilíbrio não tem um R$ ao lado).
+                          // Reusar o componente feito para R$ mostraria
+                          // "R$ 30,00" onde deveria ler "30,00%" — o mesmo
+                          // motivo pelo qual esta célula já não usava
+                          // `McoDoisCenarios` para o par de DIFAL antes desta
+                          // fase.
+                          const cenarios = resolveLinhaRebate({
+                            comRebate: { valor: p.acos_breakeven, pct: null },
+                            semRebate:
+                              p.acos_breakeven_sem_rebate != null
+                                ? { valor: p.acos_breakeven_sem_rebate, pct: null }
+                                : null,
+                            rebateEfeito: linha?.rebate_efeito,
+                            pedidosSemCaptura: p.pedidos_rebate_sem_captura,
+                            pedidosNaoConferidos: p.pedidos_rebate_nao_conferido,
+                          });
+                          const fraseAusencia = fraseMotivoSemRebate(
+                            cenarios.motivo,
+                            cenarios.pedidosSemCaptura,
+                            cenarios.pedidosNaoConferidos,
+                          );
+
                           return (
-                            <span className="inline-flex flex-col items-end leading-tight">
+                            <span className="inline-flex flex-col items-end leading-tight" title={tituloDifal}>
                               <span>{pctFmt(p.acos_breakeven)}</span>
-                              <span className="text-[10px]">
-                                {beComDifal != null
-                                  ? `${pctFmt(beComDifal)} c/ DIFAL`
-                                  : `sem cenário c/ DIFAL (${DIFAL_ESTIMATIVA_LABEL} indisponível)`}
-                              </span>
+                              {cenarios.semRebate ? (
+                                <span className="text-[10px]">
+                                  {pctFmt(cenarios.semRebate.valor)} tarifa cheia
+                                </span>
+                              ) : (
+                                <span className="text-[10px] max-w-[160px] text-right">
+                                  {fraseAusencia}
+                                </span>
+                              )}
                             </span>
                           );
                         })()}
