@@ -490,3 +490,225 @@ describe("computeWaterfallCard — cenário com DIFAL", () => {
     expect(card.mcoPctComDifal).toBeNull();
   });
 });
+
+// ─── Terceiro cenário: SEM REBATE / tarifa cheia (Fase 223, plano 223-07) ────
+//
+// 🔴 O ponto que estes testes defendem: o segundo cenário é `computeMco`
+// chamado de novo com a COMISSÃO acrescida do rebate BRUTO e o IMPOSTO
+// reduzido da compensação de PIS/COFINS (rebate bruto − rebate efeito) — as
+// duas parcelas do efeito ficam visíveis nas linhas certas do waterfall,
+// nunca o efeito líquido subtraído do MCO já pronto por fora do módulo.
+// Ver 223-07-PLAN.md <as_duas_parcelas_do_efeito>.
+
+describe("computePrecoMcoSeries — cenário sem rebate (tarifa cheia)", () => {
+  const opts = { adsDaily: [], incluirAds: false, granularity: "day" as const };
+
+  const linha = (over: Partial<PrecoSeriesRow> = {}): PrecoSeriesRow => ({
+    bucket: "2026-08-01",
+    qtd: 10,
+    total: 1000,
+    cmv: 400,
+    comissao: 150,
+    frete: 50,
+    qtd_sem_custo: 0,
+    impostos: 120,
+    qtd_sem_imposto: 0,
+    ...over,
+  });
+
+  it("compõe o segundo ponto chamando o módulo de MCO de novo, com a comissão e o imposto trocados", () => {
+    // rebate_bruto=40 (o que o ML deixou de cobrar), rebate_efeito=25 (o
+    // efeito líquido — o crédito de PIS/COFINS de 15 abate parte do golpe).
+    const [ponto] = computePrecoMcoSeries(
+      [linha({ rebate_bruto: 40, rebate_efeito: 25 })],
+      opts,
+    );
+
+    // Cenário 1: 1000 − 400 − 200 − 0 − 120 = 280.
+    expect(ponto.mco).toBe(280);
+    // Cenário 2: comissão 150+40=190, imposto 120−(40−25)=105.
+    // 1000 − 400 − (190+50) − 0 − 105 = 255.
+    expect(ponto.mcoSemRebate).toBe(255);
+    expect(ponto.mcoPctSemRebate).toBeCloseTo(25.5, 10);
+  });
+
+  it("a igualdade com a subtração do efeito líquido prova que as duas formas dão o mesmo número, dentro de um centavo", () => {
+    const [ponto] = computePrecoMcoSeries(
+      [linha({ rebate_bruto: 40, rebate_efeito: 25 })],
+      opts,
+    );
+    expect(Math.abs((ponto.mcoSemRebate as number) - (ponto.mco - 25))).toBeLessThan(0.01);
+  });
+
+  it("a comissão por unidade sobe exatamente pelo rebate bruto por unidade, e o imposto desce pela compensação", () => {
+    const [ponto] = computePrecoMcoSeries(
+      [linha({ rebate_bruto: 40, rebate_efeito: 25 })],
+      opts,
+    );
+    // rebate bruto por unidade: 40/10 = 4 ; compensação por unidade: (40-25)/10 = 1.5
+    expect(ponto.comissaoUnitSemRebate).toBeCloseTo(ponto.comissaoUnit + 4, 10);
+    expect(ponto.impostoUnitSemRebate).toBeCloseTo(ponto.impostoUnit - 1.5, 10);
+  });
+
+  it("o break-even do segundo cenário sobe exatamente pela parcela do efeito líquido por unidade", () => {
+    const [ponto] = computePrecoMcoSeries(
+      [linha({ rebate_bruto: 40, rebate_efeito: 25 })],
+      opts,
+    );
+    // rebate_efeito/qtd = 25/10 = 2.5
+    expect(ponto.breakevenUnitSemRebate).toBeCloseTo(ponto.breakevenUnit + 2.5, 10);
+  });
+
+  it("sem o efeito apurado, o segundo cenário é AUSÊNCIA — nunca zero", () => {
+    const [ponto] = computePrecoMcoSeries([linha()], opts);
+
+    expect(ponto.rebateEfeito).toBeNull();
+    expect(ponto.mcoSemRebate).toBeNull();
+    expect(ponto.mcoPctSemRebate).toBeNull();
+    expect(ponto.breakevenUnitSemRebate).toBeNull();
+    expect(ponto.comissaoUnitSemRebate).toBeNull();
+    expect(ponto.impostoUnitSemRebate).toBeNull();
+    // ...e o primeiro cenário segue idêntico ao de antes desta fase.
+    expect(ponto.mco).toBe(280);
+  });
+
+  it("pedidos não conferidos produzem ausência com causa própria, distinta de não capturado", () => {
+    const [semCaptura] = computePrecoMcoSeries(
+      [linha({ pedidos_sem_captura_rebate: 2 })],
+      opts,
+    );
+    const [naoConferido] = computePrecoMcoSeries(
+      [linha({ pedidos_rebate_nao_conferido: 3 })],
+      opts,
+    );
+
+    // As duas causas de ausência não se confundem: cada contagem atravessa
+    // isolada até o ponto, para a tela decidir qual motivo mostrar
+    // (resolveLinhaRebate, 223-02).
+    expect(semCaptura.pedidosRebateSemCaptura).toBe(2);
+    expect(semCaptura.pedidosRebateNaoConferido).toBe(0);
+    expect(naoConferido.pedidosRebateSemCaptura).toBe(0);
+    expect(naoConferido.pedidosRebateNaoConferido).toBe(3);
+    // As duas produzem o mesmo tipo de ausência no ponto (segundo cenário null).
+    expect(semCaptura.mcoSemRebate).toBeNull();
+    expect(naoConferido.mcoSemRebate).toBeNull();
+  });
+
+  it("efeito ZERO é resultado apurado: os dois cenários coincidem, sem virar ausência", () => {
+    const [ponto] = computePrecoMcoSeries(
+      [linha({ rebate_bruto: 0, rebate_efeito: 0 })],
+      opts,
+    );
+
+    expect(ponto.rebateEfeito).toBe(0);
+    expect(ponto.mcoSemRebate).toBe(280);
+    expect(ponto.breakevenUnitSemRebate).toBeCloseTo(ponto.breakevenUnit, 10);
+  });
+
+  it("qtd=0 não produz NaN/Infinity em nenhum campo novo", () => {
+    const [ponto] = computePrecoMcoSeries(
+      [
+        linha({
+          qtd: 0, total: 0, cmv: 0, comissao: 0, frete: 0, impostos: 0,
+          rebate_bruto: 10, rebate_efeito: 8,
+        }),
+      ],
+      opts,
+    );
+    for (const v of [ponto.comissaoUnitSemRebate, ponto.impostoUnitSemRebate, ponto.breakevenUnitSemRebate]) {
+      expect(v === null || Number.isFinite(v)).toBe(true);
+    }
+  });
+
+  it("nenhum número do primeiro cenário mudou: regressão sem campos de rebate", () => {
+    const [ponto] = computePrecoMcoSeries([linha()], opts);
+    expect(ponto.mco).toBe(280);
+    expect(ponto.mcoPct).toBeCloseTo(28, 10);
+    expect(ponto.comissaoUnit).toBeCloseTo(15, 10);
+    expect(ponto.impostoUnit).toBeCloseTo(12, 10);
+  });
+});
+
+describe("computeWaterfallCard — cenário sem rebate (tarifa cheia)", () => {
+  const opts = { adsDaily: [], incluirAds: false, granularity: "day" as const };
+
+  const linha = (over: Partial<PrecoSeriesRow> = {}): PrecoSeriesRow => ({
+    bucket: "2026-08-01",
+    qtd: 10,
+    total: 1000,
+    cmv: 400,
+    comissao: 150,
+    frete: 50,
+    qtd_sem_custo: 0,
+    impostos: 120,
+    qtd_sem_imposto: 0,
+    ...over,
+  });
+
+  it("compõe o par do período com a mesma função de MCO", () => {
+    const card = computeWaterfallCard([linha({ rebate_bruto: 40, rebate_efeito: 25 })], opts);
+
+    expect(card.mcoPct).toBeCloseTo(28, 10);
+    expect(card.mcoSemRebate).toBe(255);
+    expect(card.mcoPctSemRebate).toBeCloseTo(25.5, 10);
+    expect(card.mcoUnitSemRebate).toBeCloseTo(25.5, 10);
+    expect(card.comissaoUnitSemRebate).toBeCloseTo(19, 10);
+    expect(card.impostoUnitSemRebate).toBeCloseTo(10.5, 10);
+  });
+
+  it("um único intervalo sem captura derruba o período inteiro para ausência", () => {
+    // Somar só os intervalos apurados daria um numerador que não corresponde à
+    // receita do denominador — a mesma regra já provada para DIFAL.
+    const card = computeWaterfallCard(
+      [linha({ rebate_bruto: 40, rebate_efeito: 25 }), linha({ bucket: "2026-08-02" })],
+      opts,
+    );
+
+    expect(card.rebateEfeito).toBeNull();
+    expect(card.mcoSemRebate).toBeNull();
+    expect(card.mcoPctSemRebate).toBeNull();
+  });
+
+  it("um único intervalo não conferido também derruba o período — mesma regra, causa distinta", () => {
+    const card = computeWaterfallCard(
+      [
+        linha({ rebate_bruto: 40, rebate_efeito: 25 }),
+        linha({ bucket: "2026-08-02", pedidos_rebate_nao_conferido: 1 }),
+      ],
+      opts,
+    );
+
+    expect(card.mcoSemRebate).toBeNull();
+    expect(card.pedidosRebateNaoConferido).toBe(1);
+    expect(card.pedidosRebateSemCaptura).toBe(0);
+  });
+
+  it("as duas contagens de lacuna somam através do período, mesmo com o par presente", () => {
+    const card = computeWaterfallCard(
+      [
+        linha({ rebate_bruto: 40, rebate_efeito: 25, pedidos_sem_captura_rebate: 1 }),
+        linha({ bucket: "2026-08-02", rebate_bruto: 10, rebate_efeito: 8, pedidos_rebate_nao_conferido: 2 }),
+      ],
+      opts,
+    );
+    // Ambos os intervalos têm efeito apurado, então o par existe...
+    expect(card.mcoSemRebate).not.toBeNull();
+    // ...mas as duas causas de lacuna aparecem separadas, nunca somadas numa
+    // contagem só (mesma disciplina de FRASE_REBATE_PARCIAL, 223-02).
+    expect(card.pedidosRebateSemCaptura).toBe(1);
+    expect(card.pedidosRebateNaoConferido).toBe(2);
+  });
+
+  it("qtd=0 no período não produz NaN/Infinity nos campos novos", () => {
+    const card = computeWaterfallCard(
+      [linha({ qtd: 0, total: 0, cmv: 0, comissao: 0, frete: 0, impostos: 0, rebate_bruto: 10, rebate_efeito: 8 })],
+      opts,
+    );
+    // qtd=0 → por-unidade fica indefinido (mesma disciplina de mcoUnitComDifal
+    // do par de DIFAL), nunca NaN/Infinity.
+    expect(card.mcoUnitSemRebate).toBeNull();
+    for (const v of [card.comissaoUnitSemRebate, card.impostoUnitSemRebate]) {
+      expect(v === null || Number.isFinite(v)).toBe(true);
+    }
+  });
+});

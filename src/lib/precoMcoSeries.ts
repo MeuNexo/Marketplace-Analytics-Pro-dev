@@ -56,6 +56,28 @@ export interface PrecoSeriesRow {
   difal_efeito?: number | null;
   /** Pedidos do intervalo com destino interestadual e sem DIFAL calculado. */
   pedidos_difal_indefinido?: number | null;
+  /**
+   * [223-07] Insumo do TERCEIRO cenário — rebate (tarifa cheia). Valor CRU do
+   * rebate na fatura do ML, TOTAL em R$ do intervalo (não por unidade — a
+   * mesma ressalva de unidade do 223-01/223-05: `sale_fee` é o total do
+   * pedido, `comissao` é por unidade). Exibido só para conferência; não é o
+   * que o segundo cenário usa. `null`/ausente = a RPC ainda não devolve a
+   * coluna, ou nada é afirmável no intervalo.
+   */
+  rebate_bruto?: number | null;
+  /**
+   * [223-07] Efeito LÍQUIDO do rebate do intervalo — TOTAL em R$, já
+   * descontado o crédito maior de PIS/COFINS que a tarifa cheia geraria. É o
+   * que o segundo cenário de MCO usa. `null`/ausente = não apurado.
+   */
+  rebate_efeito?: number | null;
+  /** Pedidos do intervalo ainda não consultados na fatura do Mercado Livre. */
+  pedidos_sem_captura_rebate?: number | null;
+  /**
+   * Pedidos do intervalo cuja tarifa cobrada (`sale_fee`) não bate com a
+   * comissão gravada — erro nosso, causa distinta de "não capturado".
+   */
+  pedidos_rebate_nao_conferido?: number | null;
 }
 
 /** Linha diária de spend de ads (ml_ads_products_cache). */
@@ -106,6 +128,31 @@ export interface McoSeriesPoint {
   impostoUnitComDifal: number | null;
   /** Pedidos do bucket fora da conta por UF não confirmada. */
   pedidosDifalIndefinido: number;
+  // ── Terceiro cenário: SEM REBATE / tarifa cheia (Fase 223, 223-07) ───────
+  //
+  // 🔴 COMPOSTO CHAMANDO `computeMco` UMA TERCEIRA VEZ, com a COMISSÃO
+  // acrescida do rebate BRUTO e o IMPOSTO reduzido da compensação de
+  // PIS/COFINS (rebate bruto − rebate efeito) — NUNCA subtraindo o efeito
+  // líquido do MCO já pronto. As duas parcelas do efeito ficam visíveis nas
+  // linhas certas do waterfall — ver 223-07-PLAN.md
+  // <as_duas_parcelas_do_efeito>. O mesmo atalho errado já custou R$ 3,85 por
+  // pedido no 222-06-R/07-R.
+  /** Efeito líquido do rebate do bucket (R$, TOTAL); null quando não apurado. */
+  rebateEfeito: number | null;
+  /** MCO do bucket na tarifa CHEIA (R$); null quando não apurado. */
+  mcoSemRebate: number | null;
+  /** MCO% do bucket na tarifa CHEIA; null quando não apurado ou sem receita. */
+  mcoPctSemRebate: number | null;
+  /** Break-even por unidade na tarifa CHEIA; null quando não apurado. */
+  breakevenUnitSemRebate: number | null;
+  /** Comissão por unidade na tarifa CHEIA (real + rebate bruto/qtd); null quando não apurado. */
+  comissaoUnitSemRebate: number | null;
+  /** Imposto por unidade na tarifa CHEIA (real − compensação/qtd); null quando não apurado. */
+  impostoUnitSemRebate: number | null;
+  /** Pedidos do bucket ainda não consultados na fatura do Mercado Livre. */
+  pedidosRebateSemCaptura: number;
+  /** Pedidos do bucket cuja tarifa cobrada não bate com a comissão gravada. */
+  pedidosRebateNaoConferido: number;
 }
 
 /**
@@ -209,8 +256,79 @@ export function computePrecoMcoSeries(
       impostoUnitComDifal:
         impostosComDifal != null && qtd > 0 ? impostosComDifal / qtd : null,
       pedidosDifalIndefinido: r.pedidos_difal_indefinido ?? 0,
+      ...computeSemRebatePonto(r, qtd, ads),
     };
   });
+}
+
+/**
+ * [223-07] O TERCEIRO CENÁRIO de um bucket — rebate (tarifa cheia). Extraído
+ * como helper porque é usado tanto por `computePrecoMcoSeries` (por bucket)
+ * quanto teria a mesma forma no card do período, e a composição não pode
+ * divergir entre os dois.
+ *
+ * O gate é `rebate_efeito != null` — o mesmo critério de `resolveLinhaRebate`
+ * (223-02): sem efeito apurado não há segundo cenário, mesmo que `rebate_bruto`
+ * por algum motivo tenha chegado sozinho (não deveria acontecer — as duas
+ * colunas nascem do mesmo SUM(...) sobre as mesmas linhas na RPC, 223-05 —
+ * mas o helper não confia nisso silenciosamente).
+ */
+function computeSemRebatePonto(
+  r: Pick<
+    PrecoSeriesRow,
+    | "total" | "cmv" | "comissao" | "frete" | "impostos"
+    | "rebate_bruto" | "rebate_efeito"
+    | "pedidos_sem_captura_rebate" | "pedidos_rebate_nao_conferido"
+  >,
+  qtd: number,
+  ads: number,
+): Pick<
+  McoSeriesPoint,
+  | "rebateEfeito" | "mcoSemRebate" | "mcoPctSemRebate" | "breakevenUnitSemRebate"
+  | "comissaoUnitSemRebate" | "impostoUnitSemRebate"
+  | "pedidosRebateSemCaptura" | "pedidosRebateNaoConferido"
+> {
+  const rebateEfeito = r.rebate_efeito ?? null;
+  const rebateBruto = r.rebate_bruto ?? 0;
+
+  if (rebateEfeito === null) {
+    return {
+      rebateEfeito: null,
+      mcoSemRebate: null,
+      mcoPctSemRebate: null,
+      breakevenUnitSemRebate: null,
+      comissaoUnitSemRebate: null,
+      impostoUnitSemRebate: null,
+      pedidosRebateSemCaptura: r.pedidos_sem_captura_rebate ?? 0,
+      pedidosRebateNaoConferido: r.pedidos_rebate_nao_conferido ?? 0,
+    };
+  }
+
+  // <as_duas_parcelas_do_efeito>: comissão sobe pelo rebate bruto (o que o ML
+  // deixou de cobrar); imposto desce pela compensação de PIS/COFINS
+  // (rebate bruto − rebate efeito) que a comissão maior teria gerado.
+  const comissaoSemRebate = r.comissao + rebateBruto;
+  const impostoSemRebate = r.impostos - (rebateBruto - rebateEfeito);
+
+  const { mco, pct } = computeMco({
+    grossRevenue: r.total,
+    cmv: r.cmv,
+    platformCost: comissaoSemRebate + r.frete,
+    ads,
+    tax: impostoSemRebate,
+  });
+
+  return {
+    rebateEfeito,
+    mcoSemRebate: mco,
+    mcoPctSemRebate: pct,
+    breakevenUnitSemRebate:
+      qtd > 0 ? (r.cmv + comissaoSemRebate + r.frete + ads + impostoSemRebate) / qtd : null,
+    comissaoUnitSemRebate: qtd > 0 ? comissaoSemRebate / qtd : null,
+    impostoUnitSemRebate: qtd > 0 ? impostoSemRebate / qtd : null,
+    pedidosRebateSemCaptura: r.pedidos_sem_captura_rebate ?? 0,
+    pedidosRebateNaoConferido: r.pedidos_rebate_nao_conferido ?? 0,
+  };
 }
 
 /** Waterfall por unidade, média do período (D-02) — reusa computeMco, sem reinventar a fórmula. */
@@ -244,6 +362,23 @@ export interface WaterfallCard {
   mcoPctComDifal: number | null;
   /** Pedidos do período fora da conta por UF não confirmada. */
   pedidosDifalIndefinido: number;
+  // ── Terceiro cenário: SEM REBATE / tarifa cheia (Fase 223, 223-07) ───────
+  /** Efeito líquido do rebate do período (R$, TOTAL); null quando não apurado. */
+  rebateEfeito: number | null;
+  /** Comissão por unidade na tarifa CHEIA; null quando não apurado. */
+  comissaoUnitSemRebate: number | null;
+  /** Imposto por unidade na tarifa CHEIA; null quando não apurado. */
+  impostoUnitSemRebate: number | null;
+  /** MCO por unidade na tarifa CHEIA; null quando não apurado ou qtd=0. */
+  mcoUnitSemRebate: number | null;
+  /** MCO em R$ do período na tarifa CHEIA; null quando não apurado. */
+  mcoSemRebate: number | null;
+  /** MCO% do período na tarifa CHEIA; null quando não apurado ou sem receita. */
+  mcoPctSemRebate: number | null;
+  /** Pedidos do período ainda não consultados na fatura do Mercado Livre. */
+  pedidosRebateSemCaptura: number;
+  /** Pedidos do período cuja tarifa cobrada não bate com a comissão gravada. */
+  pedidosRebateNaoConferido: number;
 }
 
 /**
@@ -320,6 +455,88 @@ export function computeWaterfallCard(
       (sfx, r) => sfx + (r.pedidos_difal_indefinido ?? 0),
       0,
     ),
+    ...computeSemRebateCard(rows, { comissao, frete, impostos, receita, cmv, adsTotal, qtd }),
+  };
+}
+
+/**
+ * [223-07] O TERCEIRO CENÁRIO do card do período — rebate (tarifa cheia).
+ * Mesma regra de ausência que o par de DIFAL já usa: um único intervalo sem
+ * o efeito apurado (`rebate_efeito == null`) derruba o PERÍODO inteiro para
+ * ausência — somar só os intervalos apurados produziria um numerador que não
+ * corresponde à receita do denominador (D-223-06/223-07, must_have).
+ *
+ * As duas contagens de lacuna (`pedidosRebateSemCaptura`/`NaoConferido`)
+ * somam através do período de qualquer forma — são "sempre exibíveis", ao
+ * contrário do par em si, que é tudo-ou-nada.
+ */
+function computeSemRebateCard(
+  rows: PrecoSeriesRow[],
+  totals: {
+    comissao: number;
+    frete: number;
+    impostos: number;
+    receita: number;
+    cmv: number;
+    adsTotal: number;
+    qtd: number;
+  },
+): Pick<
+  WaterfallCard,
+  | "rebateEfeito" | "comissaoUnitSemRebate" | "impostoUnitSemRebate"
+  | "mcoUnitSemRebate" | "mcoSemRebate" | "mcoPctSemRebate"
+  | "pedidosRebateSemCaptura" | "pedidosRebateNaoConferido"
+> {
+  const { comissao, frete, impostos, receita, cmv, adsTotal, qtd } = totals;
+
+  const pedidosRebateSemCaptura = rows.reduce(
+    (sfx, r) => sfx + (r.pedidos_sem_captura_rebate ?? 0),
+    0,
+  );
+  const pedidosRebateNaoConferido = rows.reduce(
+    (sfx, r) => sfx + (r.pedidos_rebate_nao_conferido ?? 0),
+    0,
+  );
+
+  const algumSemRebate = rows.some((r) => r.rebate_efeito == null);
+  if (algumSemRebate) {
+    return {
+      rebateEfeito: null,
+      comissaoUnitSemRebate: null,
+      impostoUnitSemRebate: null,
+      mcoUnitSemRebate: null,
+      mcoSemRebate: null,
+      mcoPctSemRebate: null,
+      pedidosRebateSemCaptura,
+      pedidosRebateNaoConferido,
+    };
+  }
+
+  const rebateEfeito = rows.reduce((sfx, r) => sfx + (r.rebate_efeito ?? 0), 0);
+  const rebateBruto = rows.reduce((sfx, r) => sfx + (r.rebate_bruto ?? 0), 0);
+
+  // <as_duas_parcelas_do_efeito>: comissão sobe pelo rebate bruto; imposto
+  // desce pela compensação de PIS/COFINS (rebate bruto − rebate efeito).
+  const comissaoSemRebate = comissao + rebateBruto;
+  const impostoSemRebate = impostos - (rebateBruto - rebateEfeito);
+
+  const { mco, pct } = computeMco({
+    grossRevenue: receita,
+    cmv,
+    platformCost: comissaoSemRebate + frete,
+    ads: adsTotal,
+    tax: impostoSemRebate,
+  });
+
+  return {
+    rebateEfeito,
+    comissaoUnitSemRebate: qtd > 0 ? comissaoSemRebate / qtd : null,
+    impostoUnitSemRebate: qtd > 0 ? impostoSemRebate / qtd : null,
+    mcoUnitSemRebate: qtd > 0 ? mco / qtd : null,
+    mcoSemRebate: mco,
+    mcoPctSemRebate: pct,
+    pedidosRebateSemCaptura,
+    pedidosRebateNaoConferido,
   };
 }
 
