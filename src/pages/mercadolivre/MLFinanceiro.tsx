@@ -630,6 +630,16 @@ export default function MLFinanceiro() {
                 <span className="h-0.5 w-4 bg-cyan-500" />
                 Margem %
               </span>
+              {/* [Fase 222, quick 260820-2l7] Declaração: não existe DIFAL
+                  por dia (get_margin_by_day não tem a coluna) — ratear a
+                  alíquota do período dia a dia seria número inventado.
+                  Nenhuma barra ou linha nova entra aqui. */}
+              <span
+                data-difal-declaracao="sem_difal"
+                title={DECLARACAO_REGUA_SEM_DIFAL}
+              >
+                {ROTULO_REGUA_SEM_DIFAL}
+              </span>
             </div>
           </div>
         </div>
@@ -856,9 +866,19 @@ export default function MLFinanceiro() {
 
       {/* ── Tendência de Lucro Bruto % ── */}
       <Card>
-        <div className="px-4 pt-4 pb-3">
+        <div className="px-4 pt-4 pb-3 flex items-center gap-2 flex-wrap">
           <span className="text-sm font-medium">
             Tendência de Lucro Bruto % — {periodLabel}
+          </span>
+          <span className="text-muted-foreground">·</span>
+          {/* [Fase 222, quick 260820-2l7] Mesmo caso do gráfico acima: não
+              há DIFAL por dia — ratear seria número inventado. */}
+          <span
+            data-difal-declaracao="sem_difal"
+            className="text-xs text-muted-foreground"
+            title={DECLARACAO_REGUA_SEM_DIFAL}
+          >
+            {ROTULO_REGUA_SEM_DIFAL}
           </span>
         </div>
         <CardContent className="px-4 pb-2 pt-0">
@@ -919,8 +939,19 @@ export default function MLFinanceiro() {
       <Card>
         <div className="px-4 pt-4 pb-3">
           <div className="flex items-center justify-between flex-wrap gap-3">
-            <span className="text-sm font-medium">
+            <span className="text-sm font-medium inline-flex items-center gap-2 flex-wrap">
               Lucro por Produto ({filteredProducts.length})
+              {/* [Fase 222, quick 260820-2l7] Declaração no cabeçalho do
+                  card, comum aos dois ramos de renderização (móvel e mesa) —
+                  uma edição cobre os dois. Não há coluna de DIFAL por linha
+                  em get_margin_by_product; ratear seria número inventado. */}
+              <span
+                data-difal-declaracao="sem_difal"
+                className="text-xs font-normal text-muted-foreground"
+                title={DECLARACAO_REGUA_SEM_DIFAL}
+              >
+                {ROTULO_REGUA_SEM_DIFAL}
+              </span>
             </span>
             <div className="flex items-center gap-2 flex-wrap">
               {/* Chips ABC */}
@@ -1143,8 +1174,17 @@ export default function MLFinanceiro() {
 
         {/* Lucro por Marca */}
         <Card>
-          <div className="px-4 pt-4 pb-3">
+          <div className="px-4 pt-4 pb-3 flex items-center gap-2 flex-wrap">
             <span className="text-sm font-medium">Lucro por Marca</span>
+            {/* [Fase 222, quick 260820-2l7] get_margin_by_brand não tem
+                coluna de DIFAL — declaração, não par. */}
+            <span
+              data-difal-declaracao="sem_difal"
+              className="text-xs text-muted-foreground"
+              title={DECLARACAO_REGUA_SEM_DIFAL}
+            >
+              {ROTULO_REGUA_SEM_DIFAL}
+            </span>
           </div>
           <CardContent className="p-0">
             {isMobile ? (
@@ -1259,8 +1299,17 @@ export default function MLFinanceiro() {
 
         {/* Lucro por Estado */}
         <Card>
-          <div className="px-4 pt-4 pb-3">
+          <div className="px-4 pt-4 pb-3 flex items-center gap-2 flex-wrap">
             <span className="text-sm font-medium">Lucro por Estado</span>
+            {/* [Fase 222, quick 260820-2l7] get_margin_by_estado não tem
+                coluna de DIFAL — declaração, não par. */}
+            <span
+              data-difal-declaracao="sem_difal"
+              className="text-xs text-muted-foreground"
+              title={DECLARACAO_REGUA_SEM_DIFAL}
+            >
+              {ROTULO_REGUA_SEM_DIFAL}
+            </span>
           </div>
           <CardContent className="p-0">
             {isMobile ? (
