@@ -87,11 +87,36 @@ COMMENT ON VIEW public.ml_difal_cobrado_por_dia IS
 
 GRANT SELECT ON public.ml_difal_cobrado_por_dia TO authenticated;
 
--- ─── get_difal_summary: mesma assinatura, mesmo corpo, dois predicados a mais ─
--- Corpo copiado de `20260812230000_get_difal_summary.sql`. As únicas
--- diferenças são as duas condições de vigência aberta, marcadas abaixo.
--- Assinatura idêntica → `CREATE OR REPLACE FUNCTION` substitui sem tocar na
--- ACL; nenhum `DROP FUNCTION` (regra da casa desde a Fase 220).
+-- ─── get_difal_summary: mesma assinatura, corpo RESSINCRONIZADO com a versão
+-- corrente, dois predicados a mais ──────────────────────────────────────────
+--
+-- Corpo copiado de `20260812230000_get_difal_summary.sql` **na versão dele
+-- pós-222-15-R2** (12 colunas, `receita_base` por último, redução de
+-- PIS/COFINS delegada a `public.difal_efeito_liquido`) — não na versão de
+-- 11 colunas que existia quando este arquivo foi escrito em 14/08. Aquela
+-- versão antiga ficou anterior à correção de origem do 222-15-R2 e teria
+-- falhado com `cannot change return type of existing function` contra a
+-- assinatura já aplicada; a fusão feita aqui em 20/08 elimina essa falha.
+--
+-- A função já está no banco com essas 12 colunas (medido em 20/08, projeto
+-- `ckcdevcxgvueywivefgx`), então `CREATE OR REPLACE FUNCTION` substitui sem
+-- remover — mesmo número, nome, tipo e ordem de colunas — e a ACL
+-- (`GRANT EXECUTE ... TO authenticated`) sobrevive intacta. Nenhum
+-- `DROP FUNCTION` (regra da casa desde a Fase 220).
+--
+-- ORDEM DE APLICAÇÃO: este arquivo depende de `20260812225000`
+-- (`public.difal_efeito_liquido`), de `20260812230000` (a função de 12
+-- colunas) e de `20260814201000` (as colunas de vigência) — todos com
+-- número menor, então a ordem natural do diretório já resolve.
+--
+-- DÍVIDA QUE A FUSÃO CRIA: a partir daqui este arquivo passa a ser o ÚLTIMO
+-- ESCRITOR de `get_difal_summary`. Quem mexer em `20260812230000` de novo
+-- precisa espelhar a mudança aqui — senão a próxima aplicação em ordem
+-- regride a função de volta para o estado deste arquivo, desfazendo o que
+-- quer que tenha sido corrigido na origem.
+--
+-- As únicas diferenças em relação ao corpo de `20260812230000` são as duas
+-- condições de vigência aberta, marcadas abaixo.
 
 CREATE OR REPLACE FUNCTION public.get_difal_summary(
   p_org_id   UUID,
@@ -110,7 +135,8 @@ RETURNS TABLE (
   pedidos_difal_indefinido        BIGINT,
   pedidos_nao_conciliados         BIGINT,
   regua_recolhimento_configurada  BOOLEAN,
-  regua_cobranca_configurada      BOOLEAN
+  regua_cobranca_configurada      BOOLEAN,
+  receita_base                    NUMERIC
 )
 LANGUAGE sql
 STABLE
@@ -137,6 +163,7 @@ AS $$
       o.difal_fonte,
       o.pis_cofins_debito,
       o.pis_cofins_debito_com_difal,
+      o.receita_bruta,
       o.estado,
       o.uf_origem,
       c.difal_ufs_recolhidas
@@ -194,14 +221,26 @@ AS $$
     -- este valor. Sem este campo, quem soma difal_amount por cima de
     -- tax_amount SUPERESTIMA o imposto -- medido no caso-prova: R$ 3,85 por
     -- pedido, imposto maior e MCO menor que o real.
-    -- Positivo por construcao (a base com DIFAL e sempre menor); COALESCE
-    -- protege as linhas que a regua nova ainda nao gravou.
+    -- Positivo por construcao (a base com DIFAL e sempre menor).
+    --
+    -- [222-15-R2] A ARITMETICA NAO MORA MAIS AQUI. A reducao e a DIFERENCA
+    -- entre o DIFAL bruto (DIFAL + FCP) e o custo liquido dele, e o custo
+    -- liquido tem uma definicao so: public.difal_efeito_liquido
+    -- (20260812225000). Escrever a subtracao dos dois debitos aqui de novo
+    -- seria a terceira copia da mesma conta -- e a terceira copia e como o
+    -- defeito de R$ 3,85/pedido volta. A linha que a regua nova ainda nao
+    -- gravou (sem pis_cofins_debito_com_difal) entra com reducao ZERO pela
+    -- propria funcao, o que dispensa o filtro que existia aqui antes.
     COALESCE(
-      SUM(COALESCE(p.pis_cofins_debito, 0) - COALESCE(p.pis_cofins_debito_com_difal, 0))
-        FILTER (
-          WHERE p.difal_fonte IN ('calculado', 'nao_conciliado')
-            AND p.pis_cofins_debito_com_difal IS NOT NULL
-        ),
+      SUM(
+        (COALESCE(p.difal_amount, 0) + COALESCE(p.fcp_amount, 0))
+        - public.difal_efeito_liquido(
+            p.difal_amount,
+            p.fcp_amount,
+            p.pis_cofins_debito,
+            p.pis_cofins_debito_com_difal
+          )
+      ) FILTER (WHERE p.difal_fonte IN ('calculado', 'nao_conciliado')),
       0
     )                                                                      AS reducao_pc_por_difal,
     count(*) FILTER (WHERE p.difal_amount IS NOT NULL)                    AS pedidos_com_difal,
@@ -215,7 +254,19 @@ AS $$
     (SELECT total_lojas > 0 AND lojas_recolhimento_config = total_lojas FROM cfg_check)
                                                                             AS regua_recolhimento_configurada,
     (SELECT total_lojas > 0 AND lojas_cobranca_config = total_lojas FROM cfg_check)
-                                                                            AS regua_cobranca_configurada
+                                                                            AS regua_cobranca_configurada,
+    -- [222-15-R2] O DENOMINADOR da aliquota de REFERENCIA das telas teoricas
+    -- (/precificacao aba Margem Teorica, colunas teoricas de /anuncios e o
+    -- modal do anuncio). Elas nao conhecem pedido nenhum -- usam a aliquota
+    -- INTRAESTADUAL, que por definicao nao tem DIFAL. O segundo cenario delas
+    -- e a razao entre o efeito liquido do DIFAL e esta receita, medida na
+    -- mistura de UFs realmente vendidas numa janela declarada.
+    --
+    -- POR QUE SAI DAQUI, E NAO DE OUTRA CONSULTA: numerador e denominador
+    -- precisam vir do MESMO conjunto de pedidos. Buscar a receita em outro
+    -- recorte de status ou de data produziria uma razao que nao e razao de
+    -- nada -- e ela vira ponto percentual somado a uma aliquota.
+    COALESCE(SUM(p.receita_bruta), 0)                                      AS receita_base
   FROM pedidos p;
 $$;
 
