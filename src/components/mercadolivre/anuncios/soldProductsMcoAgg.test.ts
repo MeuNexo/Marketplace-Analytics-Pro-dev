@@ -760,3 +760,279 @@ describe("aggregateMcoItems — cenário com DIFAL", () => {
     expect(item.mcoReais).toBe(120);
   });
 });
+
+// ─── Terceiro cenário: SEM REBATE, tarifa cheia (Fase 223, plano 223-06) ─────
+//
+// Mesma disciplina travada do par de DIFAL: o percentual do GRUPO é razão de
+// somas, nunca média simples dos percentuais dos itens; ausência de QUALQUER
+// item propaga para o grupo inteiro (um agregado parcial é indistinguível de
+// um agregado completo); zero aritmética de margem — os oito campos já vêm
+// prontos da RPC (223-05), a agregação só soma e divide pela receita.
+//
+// Duas contagens de lacuna, NUNCA misturadas: pedidos sem captura (não
+// sabemos ainda) e pedidos com conferência que não fecha (sabemos, e o erro é
+// nosso) — 223-CONTRATO-SALE-FEE.md.
+
+describe("aggregateMcoItems — cenário sem rebate (tarifa cheia)", () => {
+  it("linha sem os campos de rebate produz item com o par ausente — nunca zero", () => {
+    const rows: McoProductRow[] = [
+      makeRow({
+        item_id: "MLB001",
+        marca: "Marca A",
+        receita: 1000,
+        unidades: 1,
+        lucro_pos_ads: 120,
+        lucro_pct_pos_ads: 12,
+      }),
+    ];
+
+    const [item] = aggregateMcoItems(rows, "Marca A", "marca", new Map());
+
+    expect(item.mcoSemRebateReais).toBeNull();
+    expect(item.mcoPctSemRebate).toBeNull();
+    expect(item.mcoPreAdsSemRebateReais).toBeNull();
+    expect(item.mcoPreAdsPctSemRebate).toBeNull();
+    expect(item.breakevenAcosPctSemRebate).toBeNull();
+    expect(item.rebateEfeito).toBeNull();
+    expect(item.rebateBruto).toBeNull();
+    expect(item.pedidosSemCapturaRebate).toBe(0);
+    expect(item.pedidosRebateNaoConferido).toBe(0);
+    // ...e o primeiro cenário segue intacto.
+    expect(item.mcoReais).toBe(120);
+  });
+
+  it("item com rebate apurado produz margem pré e pós-ads na tarifa cheia, e o breakeven do segundo cenário sai do pré-ads sem rebate", () => {
+    const rows: McoProductRow[] = [
+      makeRow({
+        item_id: "MLB001",
+        marca: "Marca A",
+        receita: 1000,
+        unidades: 5,
+        lucro: 150,
+        lucro_pct: 15,
+        lucro_pos_ads: 120,
+        lucro_pct_pos_ads: 12,
+        lucro_sem_rebate: 100,
+        lucro_pct_sem_rebate: 10,
+        lucro_pos_ads_sem_rebate: 70,
+        lucro_pct_pos_ads_sem_rebate: 7,
+        rebate_efeito: 50,
+        rebate_bruto: 55,
+        has_cmv: true,
+      }),
+    ];
+
+    const [item] = aggregateMcoItems(rows, "Marca A", "marca", new Map());
+
+    expect(item.mcoSemRebateReais).toBe(70);
+    expect(item.mcoPctSemRebate).toBe(7);
+    expect(item.mcoPreAdsSemRebateReais).toBe(100);
+    expect(item.mcoPreAdsPctSemRebate).toBe(10);
+    // Breakeven do segundo cenário = margem PRÉ-ads sem rebate, nunca o pós-ads.
+    expect(item.breakevenAcosPctSemRebate).toBe(10);
+    expect(item.breakevenAcosPctSemRebate).not.toBe(item.mcoPctSemRebate);
+    expect(item.rebateEfeito).toBe(50);
+    expect(item.rebateBruto).toBe(55);
+  });
+
+  it("item sem custo cadastrado tem breakeven indefinido nos DOIS cenários — a disciplina de custo ausente não muda por causa do rebate", () => {
+    const rows: McoProductRow[] = [
+      makeRow({
+        item_id: "MLB001",
+        marca: "Marca A",
+        receita: 1000,
+        lucro_pct: 15,
+        lucro_pct_sem_rebate: 10,
+        has_cmv: false,
+      }),
+    ];
+
+    const [item] = aggregateMcoItems(rows, "Marca A", "marca", new Map());
+
+    expect(item.mcoPreAdsPct).toBeNull();
+    expect(item.breakevenAcosPct).toBeNull();
+    expect(item.mcoPreAdsPctSemRebate).toBeNull();
+    expect(item.breakevenAcosPctSemRebate).toBeNull();
+  });
+
+  it("linha vinda da RPC antiga não inventa terceiro cenário", () => {
+    const rows: McoProductRow[] = [
+      makeRow({ item_id: "MLB001", marca: "Marca A", receita: 1000, lucro_pos_ads: 120 }),
+    ];
+
+    const [item] = aggregateMcoItems(rows, "Marca A", "marca", new Map());
+
+    expect(item.mcoSemRebateReais).toBeNull();
+    expect(item.mcoPctSemRebate).toBeNull();
+    expect(item.rebateEfeito).toBeNull();
+    expect(item.rebateBruto).toBeNull();
+    expect(item.pedidosSemCapturaRebate).toBe(0);
+    expect(item.pedidosRebateNaoConferido).toBe(0);
+    // ...e o primeiro cenário segue intacto.
+    expect(item.mcoReais).toBe(120);
+  });
+});
+
+describe("aggregateMcoGroups — cenário sem rebate (tarifa cheia)", () => {
+  it("o MCO% do grupo no cenário sem rebate é RAZÃO DE SOMAS, não média de percentuais", () => {
+    const rows: McoProductRow[] = [
+      makeRow({
+        item_id: "MLB001",
+        marca: "Marca A",
+        receita: 100,
+        lucro_pos_ads: 20,
+        lucro_pct_pos_ads: 20,
+        lucro_pos_ads_sem_rebate: 10,
+        lucro_pct_pos_ads_sem_rebate: 10,
+        rebate_efeito: 10,
+      }),
+      makeRow({
+        item_id: "MLB002",
+        marca: "Marca A",
+        receita: 900,
+        lucro_pos_ads: 90,
+        lucro_pct_pos_ads: 10,
+        lucro_pos_ads_sem_rebate: 45,
+        lucro_pct_pos_ads_sem_rebate: 5,
+        rebate_efeito: 45,
+      }),
+    ];
+
+    const [grupo] = aggregateMcoGroups(rows, "marca", new Map());
+
+    // Razão de somas: (10 + 45) ÷ (100 + 900) × 100 = 5,5%.
+    expect(grupo.mcoSemRebateReais).toBe(55);
+    expect(grupo.mcoPctSemRebate).toBeCloseTo(5.5, 10);
+    // A média simples dos percentuais dos itens daria 7,5% — o número que um
+    // anúncio de R$ 100 e um de R$ 900 não têm direito de produzir juntos.
+    expect(grupo.mcoPctSemRebate).not.toBeCloseTo(7.5, 3);
+    expect(grupo.rebateEfeito).toBe(55);
+  });
+
+  it("o primeiro cenário do grupo continua sendo razão de somas, inalterado por rebate", () => {
+    const rows: McoProductRow[] = [
+      makeRow({ item_id: "MLB001", marca: "Marca A", receita: 100, lucro_pos_ads: 20, lucro_pct_pos_ads: 20 }),
+      makeRow({ item_id: "MLB002", marca: "Marca A", receita: 900, lucro_pos_ads: 90, lucro_pct_pos_ads: 10 }),
+    ];
+
+    const [grupo] = aggregateMcoGroups(rows, "marca", new Map());
+
+    expect(grupo.mcoPct).toBeCloseTo(11, 10);
+  });
+
+  it("um item não apurado derruba o grupo para AUSÊNCIA, nunca para zero, e soma a contagem de sem-captura dos itens", () => {
+    // Somar só os itens apurados produziria um numerador que não corresponde
+    // ao denominador — um percentual otimista e inexplicável.
+    const rows: McoProductRow[] = [
+      makeRow({
+        item_id: "MLB001",
+        marca: "Marca A",
+        receita: 100,
+        lucro_pos_ads: 20,
+        lucro_pos_ads_sem_rebate: 10,
+        pedidos_sem_captura_rebate: 2,
+      }),
+      makeRow({
+        item_id: "MLB002",
+        marca: "Marca A",
+        receita: 900,
+        lucro_pos_ads: 90,
+        pedidos_sem_captura_rebate: 3,
+      }),
+    ];
+
+    const [grupo] = aggregateMcoGroups(rows, "marca", new Map());
+
+    expect(grupo.mcoPctSemRebate).toBeNull();
+    expect(grupo.mcoSemRebateReais).toBeNull();
+    expect(grupo.rebateEfeito).toBeNull();
+    expect(grupo.pedidosSemCapturaRebate).toBe(5);
+  });
+
+  it("a soma de rebate do grupo é soma dos efeitos dos itens, e as duas contagens de lacuna somam sem se misturar", () => {
+    const rows: McoProductRow[] = [
+      makeRow({
+        item_id: "MLB001",
+        marca: "Marca A",
+        receita: 100,
+        lucro_pos_ads_sem_rebate: 10,
+        rebate_efeito: 10,
+        pedidos_sem_captura_rebate: 2,
+        pedidos_rebate_nao_conferido: 1,
+      }),
+      makeRow({
+        item_id: "MLB002",
+        marca: "Marca A",
+        receita: 900,
+        lucro_pos_ads_sem_rebate: 45,
+        rebate_efeito: 45,
+        pedidos_sem_captura_rebate: 0,
+        pedidos_rebate_nao_conferido: 4,
+      }),
+    ];
+
+    const [grupo] = aggregateMcoGroups(rows, "marca", new Map());
+
+    expect(grupo.rebateEfeito).toBe(55);
+    expect(grupo.pedidosSemCapturaRebate).toBe(2);
+    expect(grupo.pedidosRebateNaoConferido).toBe(5);
+  });
+
+  it("efeito de rebate igual a zero é RESULTADO apurado, não ausência", () => {
+    const rows: McoProductRow[] = [
+      makeRow({
+        item_id: "MLB001",
+        marca: "Marca A",
+        receita: 100,
+        lucro_pos_ads: 20,
+        lucro_pos_ads_sem_rebate: 20,
+        lucro_pct_pos_ads_sem_rebate: 20,
+        rebate_efeito: 0,
+      }),
+    ];
+
+    const [grupo] = aggregateMcoGroups(rows, "marca", new Map());
+
+    expect(grupo.rebateEfeito).toBe(0);
+    expect(grupo.mcoPctSemRebate).toBeCloseTo(20, 10);
+  });
+});
+
+describe("regressão — entrada sem campos de rebate produz os mesmos números de hoje (Fase 222)", () => {
+  it("itens e grupos do primeiro cenário não mudam quando a linha não tem os oito campos novos", () => {
+    const rows: McoProductRow[] = [
+      makeRow({
+        item_id: "MLB001",
+        marca: "Marca A",
+        receita: 100,
+        unidades: 1,
+        lucro: 5,
+        lucro_pct: 5,
+        lucro_pos_ads: 3,
+        lucro_pct_pos_ads: 3,
+      }),
+      makeRow({
+        item_id: "MLB002",
+        marca: "Marca A",
+        receita: 900,
+        unidades: 3,
+        lucro: 100,
+        lucro_pct: 11.11,
+        lucro_pos_ads: 90,
+        lucro_pct_pos_ads: 10,
+      }),
+    ];
+
+    const grupos = aggregateMcoGroups(rows, "marca", new Map());
+    const itens = aggregateMcoItems(rows, "Marca A", "marca", new Map());
+
+    expect(grupos[0].revenue).toBe(1000);
+    expect(grupos[0].mcoPct).toBeCloseTo(9.3, 5);
+    expect(itens.find((i) => i.item_id === "MLB002")!.mcoReais).toBe(90);
+    expect(itens.find((i) => i.item_id === "MLB001")!.mcoReais).toBe(3);
+
+    // O terceiro cenário existe no tipo, mas AUSENTE — não contamina o primeiro.
+    expect(grupos[0].mcoSemRebateReais).toBeNull();
+    expect(itens[0].mcoSemRebateReais).toBeNull();
+  });
+});

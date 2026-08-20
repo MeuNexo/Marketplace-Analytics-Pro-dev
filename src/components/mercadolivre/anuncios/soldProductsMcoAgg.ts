@@ -94,6 +94,30 @@ export interface McoProductRow {
   lucro_pos_ads_com_difal?: number | null;
   /** Margem pós-ads COM DIFAL (%); null quando receita = 0 ou não apurado. */
   lucro_pct_pos_ads_com_difal?: number | null;
+
+  // ── Terceiro cenário: SEM REBATE, tarifa cheia (Fase 223, 223-05/223-06) ──
+  // Mesma disciplina do par de DIFAL acima: opcionais de propósito, porque uma
+  // linha vinda de uma RPC que ainda não devolve as colunas novas (janela de
+  // publicação) chega sem eles, e a agregação responde com ausência
+  // declarada, nunca com zero. Nomes IDÊNTICOS às colunas de
+  // get_margin_with_ads_by_product (223-05) — useMLMarginWithAds.ts repassa
+  // sem tradução, então este tipo não pode inventar nomes novos.
+  /** Soma do rebate afirmável do anúncio, TOTAL em R$ (conferência, não é o que a margem usa); null = nada afirmável. */
+  rebate_bruto?: number | null;
+  /** Soma do efeito líquido do rebate, TOTAL em R$; null = nada afirmável. */
+  rebate_efeito?: number | null;
+  /** Pedidos do anúncio ainda não consultados (sem captura ou captura não final). */
+  pedidos_sem_captura_rebate?: number | null;
+  /** Pedidos capturados mas não afirmáveis (conferência não fecha ou estorno) — erro nosso. */
+  pedidos_rebate_nao_conferido?: number | null;
+  /** Lucro operacional na tarifa CHEIA (pré-ads, R$); null/ausente = não apurado. */
+  lucro_sem_rebate?: number | null;
+  /** Margem operacional na tarifa CHEIA (%); null quando receita = 0 ou não apurado. */
+  lucro_pct_sem_rebate?: number | null;
+  /** Lucro pós-ads na tarifa CHEIA (R$); null/ausente = não apurado. */
+  lucro_pos_ads_sem_rebate?: number | null;
+  /** Margem pós-ads na tarifa CHEIA (%); null quando receita = 0 ou não apurado. */
+  lucro_pct_pos_ads_sem_rebate?: number | null;
 }
 
 /** Um grupo de vendas por marca ou categoria, com saúde de MCO agregada. */
@@ -127,6 +151,25 @@ export interface PvMcoGroup {
   difalEfeito: number | null;
   /** Soma dos pedidos do grupo fora da conta por UF não confirmada. */
   pedidosDifalIndefinido: number;
+
+  // ── Terceiro cenário do grupo: SEM REBATE, tarifa cheia (223-06) ──────────
+  //
+  // 🔴 MESMA REGRA TRAVADA: o percentual do grupo é RAZÃO DE SOMAS
+  // (Σlucro_pos_ads_sem_rebate ÷ Σreceita × 100), nunca a média simples dos
+  // percentuais dos itens. E ausência de QUALQUER item propaga para o grupo
+  // inteiro — um agregado parcial é indistinguível de um agregado completo
+  // (T-223-51): somar só os itens apurados produziria um numerador que não
+  // corresponde ao denominador.
+  /** MCO em R$ pós-ads na tarifa CHEIA; null quando algum item não foi apurado. */
+  mcoSemRebateReais: number | null;
+  /** MCO% pós-ads na tarifa CHEIA = razão de somas; null sem receita ou apuração. */
+  mcoPctSemRebate: number | null;
+  /** Soma dos efeitos líquidos de rebate dos itens (R$); null se não apurado. */
+  rebateEfeito: number | null;
+  /** Soma dos pedidos do grupo ainda sem captura de rebate — "não sabemos". */
+  pedidosSemCapturaRebate: number;
+  /** Soma dos pedidos do grupo com conferência de rebate que não fecha — erro nosso. */
+  pedidosRebateNaoConferido: number;
 }
 
 /**
@@ -191,6 +234,26 @@ export interface PvMcoItem {
   difalEfeito: number | null;
   /** Pedidos do anúncio fora da conta por UF não confirmada. */
   pedidosDifalIndefinido: number;
+
+  // ── Terceiro cenário do item: SEM REBATE, tarifa cheia (223-06) ──────────
+  /** MCO em R$ pós-ads na tarifa CHEIA; null quando não apurado. */
+  mcoSemRebateReais: number | null;
+  /** MCO% pós-ads na tarifa CHEIA; null quando não apurado ou sem receita. */
+  mcoPctSemRebate: number | null;
+  /** MCO em R$ PRÉ-ads na tarifa CHEIA; null sem custo cadastrado ou não apurado. */
+  mcoPreAdsSemRebateReais: number | null;
+  /** MCO% PRÉ-ads na tarifa CHEIA; null sem custo cadastrado ou não apurado. */
+  mcoPreAdsPctSemRebate: number | null;
+  /** Breakeven de ACoS no cenário SEM REBATE (%); null pela mesma disciplina do primeiro. */
+  breakevenAcosPctSemRebate: number | null;
+  /** Efeito líquido do rebate do anúncio (R$); null quando não apurado. */
+  rebateEfeito: number | null;
+  /** Valor cru do rebate na fatura (R$), só para conferência; null quando não apurado. */
+  rebateBruto: number | null;
+  /** Pedidos do anúncio ainda sem captura de rebate — "não sabemos". */
+  pedidosSemCapturaRebate: number;
+  /** Pedidos do anúncio com conferência de rebate que não fecha — erro nosso. */
+  pedidosRebateNaoConferido: number;
 }
 
 // ─── Helpers internos ─────────────────────────────────────────────────────────
@@ -261,6 +324,12 @@ export function aggregateMcoGroups(
       pedidosDifalIndefinido: number;
       /** Algum item do grupo não teve o segundo cenário apurado. */
       algumSemSegundoCenario: boolean;
+      lucroPosAdsSemRebateSum: number;
+      rebateEfeitoSum: number;
+      pedidosSemCapturaRebate: number;
+      pedidosRebateNaoConferido: number;
+      /** Algum item do grupo não teve o terceiro cenário (rebate) apurado. */
+      algumSemTerceiroCenario: boolean;
     }
   >();
 
@@ -276,10 +345,16 @@ export function aggregateMcoGroups(
       difalEfeitoSum: 0,
       pedidosDifalIndefinido: 0,
       algumSemSegundoCenario: false,
+      lucroPosAdsSemRebateSum: 0,
+      rebateEfeitoSum: 0,
+      pedidosSemCapturaRebate: 0,
+      pedidosRebateNaoConferido: 0,
+      algumSemTerceiroCenario: false,
     };
 
     const health = itemHealth(row);
     const semSegundo = row.lucro_pos_ads_com_difal == null;
+    const semTerceiro = row.lucro_pos_ads_sem_rebate == null;
 
     map.set(key, {
       revenue: prev.revenue + row.receita,
@@ -295,12 +370,26 @@ export function aggregateMcoGroups(
       pedidosDifalIndefinido:
         prev.pedidosDifalIndefinido + (row.pedidos_difal_indefinido ?? 0),
       algumSemSegundoCenario: prev.algumSemSegundoCenario || semSegundo,
+      // Mesma regra do segundo cenário, para o terceiro (rebate): um item sem
+      // apuração CONTAMINA o grupo inteiro — nunca soma só os apurados.
+      lucroPosAdsSemRebateSum:
+        prev.lucroPosAdsSemRebateSum + (row.lucro_pos_ads_sem_rebate ?? 0),
+      rebateEfeitoSum: prev.rebateEfeitoSum + (row.rebate_efeito ?? 0),
+      // As duas contagens de lacuna SEMPRE somam, mesmo quando o par do grupo
+      // sai ausente — é o que permite a tela dizer "faltam N pedidos" mesmo
+      // sem o percentual do grupo.
+      pedidosSemCapturaRebate:
+        prev.pedidosSemCapturaRebate + (row.pedidos_sem_captura_rebate ?? 0),
+      pedidosRebateNaoConferido:
+        prev.pedidosRebateNaoConferido + (row.pedidos_rebate_nao_conferido ?? 0),
+      algumSemTerceiroCenario: prev.algumSemTerceiroCenario || semTerceiro,
     });
   }
 
   return Array.from(map.entries())
     .map(([key, d]) => {
       const temSegundoCenario = !d.algumSemSegundoCenario;
+      const temTerceiroCenario = !d.algumSemTerceiroCenario;
       return {
         key,
         name: key || (pvView === "marca" ? "Sem marca" : "Sem categoria"),
@@ -317,6 +406,15 @@ export function aggregateMcoGroups(
             : null,
         difalEfeito: temSegundoCenario ? d.difalEfeitoSum : null,
         pedidosDifalIndefinido: d.pedidosDifalIndefinido,
+        mcoSemRebateReais: temTerceiroCenario ? d.lucroPosAdsSemRebateSum : null,
+        // Razão de somas, mesma regra travada — nunca média de %.
+        mcoPctSemRebate:
+          temTerceiroCenario && d.revenue > 0
+            ? (d.lucroPosAdsSemRebateSum / d.revenue) * 100
+            : null,
+        rebateEfeito: temTerceiroCenario ? d.rebateEfeitoSum : null,
+        pedidosSemCapturaRebate: d.pedidosSemCapturaRebate,
+        pedidosRebateNaoConferido: d.pedidosRebateNaoConferido,
       };
     })
     .sort((a, b) => b.revenue - a.revenue);
@@ -358,6 +456,12 @@ export function aggregateMcoItems(
       const preAdsPctComDifal =
         row.has_cmv && row.lucro_pct_com_difal != null ? row.lucro_pct_com_difal : null;
 
+      // [223-06] O terceiro cenário (sem rebate, tarifa cheia) obedece a mesma
+      // disciplina: sem CMV o pré-ads sai inflado, e trocar um número errado
+      // por outro não é ganho — fica indefinido nos DOIS cenários.
+      const preAdsPctSemRebate =
+        row.has_cmv && row.lucro_pct_sem_rebate != null ? row.lucro_pct_sem_rebate : null;
+
       return {
         item_id: row.item_id,
         title,
@@ -387,6 +491,17 @@ export function aggregateMcoItems(
           preAdsPctComDifal != null ? round2(preAdsPctComDifal) : null,
         difalEfeito: row.difal_efeito ?? null,
         pedidosDifalIndefinido: row.pedidos_difal_indefinido ?? 0,
+        mcoSemRebateReais: row.lucro_pos_ads_sem_rebate ?? null,
+        mcoPctSemRebate: row.lucro_pct_pos_ads_sem_rebate ?? null,
+        mcoPreAdsSemRebateReais:
+          row.has_cmv && row.lucro_sem_rebate != null ? row.lucro_sem_rebate : null,
+        mcoPreAdsPctSemRebate: preAdsPctSemRebate,
+        breakevenAcosPctSemRebate:
+          preAdsPctSemRebate != null ? round2(preAdsPctSemRebate) : null,
+        rebateEfeito: row.rebate_efeito ?? null,
+        rebateBruto: row.rebate_bruto ?? null,
+        pedidosSemCapturaRebate: row.pedidos_sem_captura_rebate ?? 0,
+        pedidosRebateNaoConferido: row.pedidos_rebate_nao_conferido ?? 0,
       };
     })
     .sort((a, b) => b.revenue - a.revenue);
