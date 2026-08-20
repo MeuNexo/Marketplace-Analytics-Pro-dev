@@ -14,6 +14,9 @@ import {
   computeOrderTax,
   isReducedInterstateDest,
   UF_REGION,
+  reguaApurouNestaRodada,
+  camposFiscaisParaUpsert,
+  TAX_VERSAO_REGUA_NOVA,
   type OrderTaxConfig,
   type OrderTaxInput,
   type OrderTaxBreakdown,
@@ -1165,5 +1168,89 @@ describe("computeOrderTax — a ÂNCORA de produção e a não-regressão dos ou
     expect(r.icmsRefComissao).toBeNull();
     expect(r.creditoComissaoBase).toBeNull();
     expect(r.baseIncompleta).toBe(false);
+  });
+});
+
+// ── Sentinela de intenção do upsert incremental (Quick 260820-3aa) ────────────
+//
+// O defeito medido em produção em 20/08: uma rodada incremental sem endereço
+// (destino desconhecido) apagava os 11 campos fiscais que o backfill já tinha
+// gravado, porque a atribuição direta no DO UPDATE SET não distinguia "não
+// apurei" de "apurei e o valor é null". Estes testes provam o predicado e o
+// molde que fecham o buraco do lado CLIENTE — a metade SQL é a migration
+// 20260820210000.
+describe("reguaApurouNestaRodada / camposFiscaisParaUpsert — a sentinela de intenção (Quick 260820-3aa)", () => {
+  it("destino_desconhecido: não apurou — camposFiscaisParaUpsert devolve objeto vazio, nenhuma chave presente", () => {
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, ufDestino: null });
+    expect(r.motivo).toBe("destino_desconhecido");
+    expect(reguaApurouNestaRodada(r)).toBe(false);
+
+    const campos = camposFiscaisParaUpsert(r);
+    expect(Object.keys(campos)).toHaveLength(0);
+    expect(Object.prototype.hasOwnProperty.call(campos, "tax_versao")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(campos, "icms_debito")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(campos, "difal_amount")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(campos, "credito_pc_frete")).toBe(false);
+  });
+
+  it("sem_config: não apurou — objeto vazio", () => {
+    const r = computeOrderTax({ ...INPUT_CASO_PROVA_DIFAL, config: null });
+    expect(r.motivo).toBe("sem_config");
+    expect(reguaApurouNestaRodada(r)).toBe(false);
+    expect(Object.keys(camposFiscaisParaUpsert(r))).toHaveLength(0);
+  });
+
+  it("Lucro Real com destino resolvido: apurou — as chaves fiscais estão presentes com os valores do breakdown, marcador vale a constante exportada", () => {
+    const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
+    expect(reguaApurouNestaRodada(r)).toBe(true);
+
+    const campos = camposFiscaisParaUpsert(r);
+    expect(campos.tax_versao).toBe(TAX_VERSAO_REGUA_NOVA);
+    expect(campos.icms_debito).toBe(r.icmsDebito);
+    expect(campos.pis_cofins_debito).toBe(r.pisCofinsDebito);
+    expect(campos.pis_cofins_debito_com_difal).toBe(r.pisCofinsDebitoComDifal);
+    expect(campos.credito_pc_comissao).toBe(r.creditoPcComissao);
+    expect(campos.credito_pc_frete).toBe(r.creditoPcFrete);
+    expect(campos.credito_icms_frete).toBe(r.creditoIcmsFrete);
+    expect(campos.difal_base).toBe(r.difalBase);
+    expect(campos.difal_amount).toBe(r.difalAmount);
+    expect(campos.fcp_amount).toBe(r.fcpAmount);
+    expect(campos.difal_fonte).toBe(r.difalFonte);
+  });
+
+  it("Simples Nacional (regime fixo) com ufDestino null: APUROU mesmo sem destino — trava da conta do Junior, ela não pode se mover", () => {
+    const cfgSimples: OrderTaxConfig = {
+      regime: "simples_nacional",
+      uf_origem: null,
+      sn_aliquota_efetiva: 4,
+      lp_pis: null, lp_cofins: null, lp_irpj: null, lp_csll: null,
+      lr_icms_aliquota_intra: null, lr_icms_aliquota_inter_sul_sudeste: null,
+      lr_icms_aliquota_inter_norte_nordeste: null, lr_icms_debito: null,
+    };
+    const r = computeOrderTax({
+      config: cfgSimples,
+      ufDestino: null,
+      receitaBruta: 500,
+      comissao: 40,
+      frete: 20,
+      tabelaUf: null,
+    });
+    expect(r.motivo).toBe("regime_fixo");
+    expect(r.taxAmount).not.toBeNull();
+    expect(reguaApurouNestaRodada(r)).toBe(true);
+
+    const campos = camposFiscaisParaUpsert(r);
+    // Presente e marcador vale a constante — idêntico ao comportamento de hoje.
+    expect(campos.tax_versao).toBe(TAX_VERSAO_REGUA_NOVA);
+    // Presente e NULA: componente do regime fixo é ausência LEGÍTIMA, mas a
+    // CHAVE existe — presente-e-nula é diferente de ausente (é o que faz a
+    // sentinela SQL preservar corretamente linhas de outro regime na mesma
+    // tabela sem tocar nesta).
+    expect(Object.prototype.hasOwnProperty.call(campos, "icms_debito")).toBe(true);
+    expect(campos.icms_debito).toBeNull();
+    expect(Object.prototype.hasOwnProperty.call(campos, "difal_amount")).toBe(true);
+    expect(campos.difal_amount).toBeNull();
+    expect(Object.prototype.hasOwnProperty.call(campos, "credito_pc_comissao")).toBe(true);
+    expect(campos.credito_pc_comissao).toBeNull();
   });
 });

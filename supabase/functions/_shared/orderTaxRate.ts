@@ -816,3 +816,91 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
     baseIncompleta,
   };
 }
+
+// ── Sentinela de intenção do upsert incremental (Quick 260820-3aa) ────────────
+//
+// O DEFEITO QUE ESTA SEÇÃO FECHA (medido em produção em 20/08/2026): uma
+// rodada INCREMENTAL de sync-ml-orders (pedido já completo no banco, detalhe
+// do envio não rebuscado) chega aqui com `estado` ausente, `computeOrderTax`
+// devolve `motivo: "destino_desconhecido"` e os 11 campos fiscais (10
+// componentes + o marcador `tax_versao`) saem todos `null` do breakdown. Até
+// aqui, `sync-ml-orders` gravava esses `null` por ATRIBUIÇÃO DIRETA no record
+// do upsert — e `batch_upsert_orders` escrevia por cima dos componentes que o
+// backfill já tinha calculado. 103 linhas foram marcadas `tax_versao = 2` com
+// componente ausente numa única rodada que respondeu 65 pedidos e buscou
+// ZERO envios.
+//
+// A CORREÇÃO é de duas metades. Esta é a metade CLIENTE: em vez de o record
+// sempre carregar as 11 chaves (com valor `null` quando não apurou), ele
+// passa a carregar as chaves SÓ quando a rodada apurou. A metade SQL mora na
+// migration `20260820210000`, no `DO UPDATE SET` de `batch_upsert_orders`:
+// chave AUSENTE no payload jsonb devolve `NULL` no operador `->>`, e é essa
+// ausência — não o valor — que o SQL lê para decidir entre escrever e
+// preservar a linha.
+
+/**
+ * Valor do marcador `orders.tax_versao` que sinaliza "esta linha foi gravada
+ * pela régua decomposta de `computeOrderTax`" (Fase 222). É o MESMO número
+ * que o COMMENT da coluna homônima em `orders` já descreve — as duas portas
+ * de escrita (`sync-ml-orders`, `recalc-order-costs`) passam a ler esta
+ * constante em vez de repetir o literal `2`.
+ */
+export const TAX_VERSAO_REGUA_NOVA = 2;
+
+/**
+ * "Esta rodada teve insumo para apurar a régua nesta passada?" — o predicado
+ * único do qual as duas portas de escrita passam a ler, em vez de cada uma
+ * decidir por conta própria. `recalc-order-costs` já aplicava esta mesma
+ * condição informalmente (governando a dupla `tax_amount` + `tax_versao`);
+ * ganha aqui um dono só.
+ *
+ * Responde "a régua teve insumo para rodar nesta passada", e **não** "o
+ * resultado tem componentes": regime fixo (Simples Nacional, Lucro
+ * Presumido) APURA e não tem nenhum dos 10 componentes — `taxAmount` vem
+ * preenchido, os componentes vêm `null` por DESENHO do regime, não por falta
+ * de insumo. É essa distinção que mantém a conta do Junior parada: o Simples
+ * sempre apurou, mesmo com `ufDestino: null` — o destino não entra na conta
+ * dele.
+ *
+ * Toda guarda de ausência da fórmula já converge para `taxAmount === null`,
+ * então o predicado cobre destino desconhecido, ausência de vigência,
+ * ausência de config e receita ausente sem precisar enumerá-los um a um.
+ */
+export function reguaApurouNestaRodada(breakdown: OrderTaxBreakdown): boolean {
+  return breakdown.taxAmount !== null;
+}
+
+/**
+ * Molde dos 11 campos fiscais (10 componentes do breakdown decomposto + o
+ * marcador `tax_versao`), no formato de COLUNA, pronto para `...spread` num
+ * record de upsert ou num patch de update.
+ *
+ * Quando `reguaApurouNestaRodada(breakdown)` é falso, devolve `{}` — objeto
+ * VAZIO, nenhuma das 11 chaves presente. Esta é a metade-CLIENTE da
+ * sentinela de intenção: sem a chave marcadora (nem as demais) no payload,
+ * `batch_upsert_orders` preserva a linha inteira em vez de gravar ausência
+ * por cima de um componente que uma rodada anterior já tinha calculado.
+ *
+ * Quando o predicado é verdadeiro, devolve as 11 chaves com os valores do
+ * breakdown — inclusive quando um componente é legitimamente `null` (regime
+ * fixo: componentes ausentes com `tax_amount` presente). Presente-e-nula é
+ * diferente de ausente: é o que permite ao backfill (que só escreve campo
+ * não nulo) continuar sendo a única porta capaz de LIMPAR um componente
+ * não-nulo errado, sem que esta função precise imitar esse comportamento.
+ */
+export function camposFiscaisParaUpsert(breakdown: OrderTaxBreakdown): Record<string, unknown> {
+  if (!reguaApurouNestaRodada(breakdown)) return {};
+  return {
+    icms_debito: breakdown.icmsDebito,
+    pis_cofins_debito: breakdown.pisCofinsDebito,
+    credito_pc_comissao: breakdown.creditoPcComissao,
+    credito_pc_frete: breakdown.creditoPcFrete,
+    credito_icms_frete: breakdown.creditoIcmsFrete,
+    pis_cofins_debito_com_difal: breakdown.pisCofinsDebitoComDifal,
+    difal_base: breakdown.difalBase,
+    difal_amount: breakdown.difalAmount,
+    fcp_amount: breakdown.fcpAmount,
+    difal_fonte: breakdown.difalFonte,
+    tax_versao: TAX_VERSAO_REGUA_NOVA,
+  };
+}

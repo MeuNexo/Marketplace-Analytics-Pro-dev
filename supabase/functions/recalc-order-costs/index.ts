@@ -1,6 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { computeOrderTax, type TabelaDifal } from "../_shared/orderTaxRate.ts";
+import {
+  computeOrderTax,
+  reguaApurouNestaRodada,
+  TAX_VERSAO_REGUA_NOVA,
+  type TabelaDifal,
+} from "../_shared/orderTaxRate.ts";
 import { montarTabelaAliquotas } from "../_shared/tabelaUf.ts";
 import {
   resolverConfigVigente,
@@ -276,12 +281,15 @@ serve(async (req) => {
         if (taxRate != null) patch.tax_rate = taxRate;
         // Componentes fiscais: mesmo padrão de "só grava campo não nulo" dos
         // demais campos deste patch. tax_versao anda SEMPRE junto de
-        // tax_amount — nunca marcar a linha como régua nova (2) sem
-        // efetivamente gravar o imposto desta rodada, senão a view de saúde
-        // do 222-05 mentiria sobre quanto do passado já migrou.
-        if (taxAmount != null) {
+        // tax_amount — nunca marcar a linha como régua nova sem efetivamente
+        // gravar o imposto desta rodada, senão a view de saúde do 222-05
+        // mentiria sobre quanto do passado já migrou. Quick 260820-3aa: a
+        // condição e o literal passam a vir do predicado/constante
+        // compartilhados com sync-ml-orders — troca semanticamente idêntica,
+        // reguaApurouNestaRodada(breakdown) é exatamente taxAmount != null.
+        if (reguaApurouNestaRodada(breakdown)) {
           patch.tax_amount = taxAmount;
-          patch.tax_versao = 2;
+          patch.tax_versao = TAX_VERSAO_REGUA_NOVA;
         }
         if (breakdown.icmsDebito != null) patch.icms_debito = breakdown.icmsDebito;
         if (breakdown.pisCofinsDebito != null) patch.pis_cofins_debito = breakdown.pisCofinsDebito;

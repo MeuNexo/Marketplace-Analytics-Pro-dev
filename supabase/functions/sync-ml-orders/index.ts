@@ -18,7 +18,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import { computeOrderTax, type TabelaDifal } from "../_shared/orderTaxRate.ts";
+import {
+  computeOrderTax,
+  camposFiscaisParaUpsert,
+  type TabelaDifal,
+} from "../_shared/orderTaxRate.ts";
 import { montarTabelaAliquotas } from "../_shared/tabelaUf.ts";
 import {
   resolverConfigVigente,
@@ -765,23 +769,18 @@ function expandOrder(
       // entra em receita_liquida, em margem nem no MCO (por isso nao aparece
       // na chamada de computeReceitaLiquida acima).
       frete_comprador: freteCompradorItem,
-      // Fase 222 (TAX-01/02): componentes do breakdown decomposto. tax_versao
-      // é gravada SEMPRE (não condicionada a nenhum componente não ser
-      // null) — é o marcador de que esta linha passou pela régua nova nesta
-      // rodada, mesmo quando o resultado é ausência com motivo nomeado
-      // (destino desconhecido, UF não confirmada etc.). A view de saúde do
-      // 222-05 lê esta coluna para separar régua antiga de régua nova.
-      icms_debito:         breakdown.icmsDebito,
-      pis_cofins_debito:   breakdown.pisCofinsDebito,
-      credito_pc_comissao: breakdown.creditoPcComissao,
-      credito_pc_frete:    breakdown.creditoPcFrete,
-      credito_icms_frete:  breakdown.creditoIcmsFrete,
-      pis_cofins_debito_com_difal: breakdown.pisCofinsDebitoComDifal,
-      difal_base:          breakdown.difalBase,
-      difal_amount:        breakdown.difalAmount,
-      fcp_amount:          breakdown.fcpAmount,
-      difal_fonte:         breakdown.difalFonte,
-      tax_versao:          2,
+      // Fase 222 (TAX-01/02) + Quick 260820-3aa: os 11 campos fiscais (10
+      // componentes do breakdown decomposto + o marcador tax_versao) viajam
+      // juntos, e SÓ quando esta rodada teve insumo para apurar a régua —
+      // camposFiscaisParaUpsert devolve {} quando reguaApurouNestaRodada(breakdown)
+      // é falso (destino desconhecido, sem vigência, sem config, receita
+      // ausente), e a AUSÊNCIA das chaves no payload é o sinal que a sentinela
+      // de intenção de batch_upsert_orders (migration 20260820210000) lê para
+      // PRESERVAR a linha em vez de gravar ausência por cima do que uma rodada
+      // anterior já tinha apurado. Regime fixo (Simples Nacional, Lucro
+      // Presumido) sempre apura, mesmo com destino desconhecido — a conta do
+      // Junior não se move por causa desta mudança.
+      ...camposFiscaisParaUpsert(breakdown),
     };
   });
 }
