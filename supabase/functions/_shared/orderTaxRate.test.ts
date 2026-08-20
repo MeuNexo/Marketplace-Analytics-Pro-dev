@@ -17,6 +17,8 @@ import {
   reguaApurouNestaRodada,
   camposFiscaisParaUpsert,
   TAX_VERSAO_REGUA_NOVA,
+  ehPosicaoCredora,
+  liquidoSemDifalBruto,
   type OrderTaxConfig,
   type OrderTaxInput,
   type OrderTaxBreakdown,
@@ -1252,5 +1254,201 @@ describe("reguaApurouNestaRodada / camposFiscaisParaUpsert — a sentinela de in
     expect(campos.difal_amount).toBeNull();
     expect(Object.prototype.hasOwnProperty.call(campos, "credito_pc_comissao")).toBe(true);
     expect(campos.credito_pc_comissao).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Quick 260820-ikj — CLAMP EM ZERO do imposto por pedido.
+//
+// A auditoria independente de 20/08/2026 varreu os 8.544 pedidos da régua nova
+// e achou UMA divergência real: 7 pedidos com imposto NEGATIVO, somando
+// −R$ 9,46 (pior caso −R$ 3,20). A aritmética está certa — é POSIÇÃO CREDORA:
+// em 5 deles o frete que o vendedor absorve supera a própria receita, e os
+// créditos de PIS/COFINS e de ICMS sobre esse frete superam os débitos da
+// venda. O arquivo fiscal que a CONTADORA APROVOU clampa
+// (`netAmount = Math.max(0, totalDebits - totalCredits)`); a nossa régua não.
+// Decisão do Wesley em 20/08: "precisa ser exatamente como está na cópia que
+// te enviei".
+//
+// O pedido-prova deste bloco é REAL: `2000017173622482` — SP→MT, receita
+// R$ 36,85, comissão R$ 2,95, frete R$ 55,74, nacional. Hoje devolve
+// `taxAmount = −3,201086`.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** MT nacional: interestadual 7% (Centro-Oeste), interna 17 → DIFAL 10%, sem FCP. */
+const TABELA_MT_CONFIRMADA: TabelaDifal = {
+  MT: { nacional: { aliqInterestadual: 7, pctDifal: 10, fcp: 0, confirmado: true } },
+};
+
+/** Entrada do pedido REAL `2000017173622482`, medido em produção em 20/08/2026. */
+const INPUT_PEDIDO_CREDOR: OrderTaxInput = {
+  config: CFG_PE_VERMEIO,
+  ufDestino: "MT",
+  receitaBruta: 36.85,
+  comissao: 2.95,
+  frete: 55.74,
+  freteComprador: 0,
+  tabelaUf: TABELA_MT_CONFIRMADA,
+  procedencia: "nacional",
+};
+
+describe("computeOrderTax — clamp em zero (Quick 260820-ikj, pedido real 2000017173622482)", () => {
+  it("TESTE 1 — o caso do Wesley: taxAmount e taxRate saem EXATAMENTE zero, não −3,201086", () => {
+    const r = computeOrderTax(INPUT_PEDIDO_CREDOR);
+    // Zero clampado é valor EXATO, não aproximação de centavo.
+    expect(r.taxAmount).toBe(0);
+    // D-ikj-02: a taxa DERIVA do valor já clampado — nunca um Math.max na
+    // própria taxa, que quebraria a identidade
+    // `tax_amount = preco_unit × quantidade × tax_rate / 100`.
+    expect(r.taxRate).toBe(0);
+  });
+
+  it("TESTE 2 — D-ikj-03: os componentes ficam CRUS; a subtração continua valendo −3,201086 com o total zerado", () => {
+    const r = computeOrderTax(INPUT_PEDIDO_CREDOR);
+    expect(r.icmsDebito).toBeCloseTo(2.5795, 6);
+    expect(r.pisCofinsDebito).toBeCloseTo(3.17002125, 6);
+    expect(r.creditoPcComissao).toBeCloseTo(0.25377375, 6);
+    expect(r.creditoPcFrete).toBeCloseTo(4.7950335, 6);
+    expect(r.creditoIcmsFrete).toBeCloseTo(3.9018, 6);
+
+    // Clampar COMPONENTE inventaria número: se o total zera porque os créditos
+    // superam os débitos, qual crédito seria cortado? Não há resposta fiscal.
+    // O clamp é decisão de LANÇAMENTO sobre o total, não correção dos fatos.
+    const bruto =
+      (r.icmsDebito as number) + (r.pisCofinsDebito as number) - somaCreditos(r);
+    expect(bruto).toBeCloseTo(-3.201086, 6);
+    expect(r.taxAmount).toBe(0);
+  });
+
+  it("TESTE 3 — D-ikj-03: o estado ganha NOME (posicaoCredora), aqui true e no caso-prova false", () => {
+    const credor = computeOrderTax(INPUT_PEDIDO_CREDOR);
+    expect(credor.posicaoCredora).toBe(true);
+
+    // Caso-prova 2000017711929314 (SP→MG): imposto largamente positivo.
+    const positivo = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
+    expect(positivo.posicaoCredora).toBe(false);
+
+    // O mesmo predicado que a fórmula usa é o que a TELA consome — um dono só
+    // da conta "débitos − créditos". Três cópias divergentes dela criaram a
+    // Fase 220.
+    expect(ehPosicaoCredora(credor)).toBe(true);
+    expect(ehPosicaoCredora(positivo)).toBe(false);
+    expect(liquidoSemDifalBruto(credor)).toBeCloseTo(-3.201086, 6);
+    expect(liquidoSemDifalBruto(positivo)).toBeCloseTo(126.88837, 6);
+  });
+
+  it("TESTE 4 — neste pedido o cenário COM DIFAL já é POSITIVO: o clamp é inerte ali, e nada se move", () => {
+    const r = computeOrderTax(INPUT_PEDIDO_CREDOR);
+    // O DIFAL de MT (10% sobre 36,85 = 3,685) cobre a posição credora.
+    expect(r.difalAmount).toBeCloseTo(3.685, 6);
+    expect(r.pisCofinsDebitoComDifal).toBeCloseTo(2.82915875, 6);
+    expect(r.taxAmountComDifal).toBeCloseTo(0.1430515, 6);
+    expect(r.taxRateComDifal).toBeCloseTo(0.38819945725915483, 6);
+    // Positivo não é tocado pelo clamp.
+    expect(r.taxAmountComDifal as number).toBeGreaterThan(0);
+  });
+
+  it("TESTE 5 — D-ikj-01, o caso que decide: com frete R$ 80 os DOIS brutos são negativos e os DOIS clampam", () => {
+    const semClamp = { bruto: -6.9862525, brutoComDifal: -3.642115 };
+    const r = computeOrderTax({ ...INPUT_PEDIDO_CREDOR, frete: 80 });
+
+    // A aritmética crua continua sendo a de sempre — só o lançamento clampa.
+    const bruto =
+      (r.icmsDebito as number) + (r.pisCofinsDebito as number) - somaCreditos(r);
+    expect(bruto).toBeCloseTo(semClamp.bruto, 6);
+    const brutoComDifal =
+      (r.icmsDebito as number) + (r.difalAmount as number) +
+      (r.pisCofinsDebitoComDifal as number) + (r.fcpAmount ?? 0) - somaCreditos(r);
+    expect(brutoComDifal).toBeCloseTo(semClamp.brutoComDifal, 6);
+
+    // Clampar SÓ o cenário sem DIFAL mostraria "sem DIFAL = 0" e
+    // "com DIFAL = −3,64" — o cenário mais caro exibido como o mais barato,
+    // nas duas faixas de MCO que a 222-15 pôs em TODAS as telas.
+    expect(r.taxAmount).toBe(0);
+    expect(r.taxAmountComDifal).toBe(0);
+    expect(r.taxRate).toBe(0);
+    expect(r.taxRateComDifal).toBe(0);
+    expect(r.posicaoCredora).toBe(true);
+  });
+
+  // Grade determinística compartilhada pelos testes 6 e 8. Não é aleatória:
+  // as mesmas 75 combinações rodam em toda execução, sempre.
+  const RECEITAS = [20, 36.85, 100, 400, 692.99];
+  const FRETES = [0, 5, 55.74, 80, 200];
+  const DESTINOS = ["MG", "MT", "SP"];
+  const TABELA_VARREDURA: TabelaDifal = {
+    MG: { nacional: { aliqInterestadual: 12, pctDifal: 6, fcp: 0, confirmado: true } },
+    MT: { nacional: { aliqInterestadual: 7, pctDifal: 10, fcp: 0, confirmado: true } },
+  };
+
+  const varrer = (): OrderTaxBreakdown[] => {
+    const out: OrderTaxBreakdown[] = [];
+    for (const receitaBruta of RECEITAS) {
+      for (const frete of FRETES) {
+        for (const ufDestino of DESTINOS) {
+          out.push(
+            computeOrderTax({
+              config: CFG_PE_VERMEIO,
+              ufDestino,
+              receitaBruta,
+              comissao: receitaBruta * 0.08,
+              frete,
+              freteComprador: 0,
+              tabelaUf: TABELA_VARREDURA,
+              procedencia: "nacional",
+            }),
+          );
+        }
+      }
+    }
+    return out;
+  };
+
+  it("TESTE 6 — invariante de ordem (D-ikj-01): o cenário COM DIFAL nunca fica MENOR que o SEM DIFAL", () => {
+    const linhas = varrer();
+    expect(linhas).toHaveLength(RECEITAS.length * FRETES.length * DESTINOS.length);
+
+    let comparadas = 0;
+    for (const r of linhas) {
+      // SP é intraestadual: o cenário com DIFAL sai nulo por desenho, e a
+      // invariante não se enuncia sobre ele.
+      if (r.taxAmount === null || r.taxAmountComDifal === null) continue;
+      comparadas += 1;
+      expect(r.taxAmountComDifal as number).toBeGreaterThanOrEqual(r.taxAmount as number);
+    }
+    // Math.max é monotônico: clampar os DOIS preserva a ordem. Clampar um só
+    // a destrói — e a comparação abaixo prova que a grade de fato exercitou o
+    // cenário com DIFAL, em vez de pular tudo em silêncio.
+    expect(comparadas).toBe(RECEITAS.length * FRETES.length * 2);
+  });
+
+  it("TESTE 7 — ÂNCORA 2000017711929314: a base NÃO pode se mover (139,568186)", () => {
+    const r = computeOrderTax(INPUT_CASO_PROVA_DIFAL);
+    expect(
+      (r.icmsDebito as number) + (r.pisCofinsDebito as number),
+    ).toBeCloseTo(139.568186, 6);
+    expect(r.taxAmount).toBeCloseTo(126.88837, 6);
+    expect(r.taxAmountComDifal).toBeCloseTo(164.6216755, 6);
+  });
+
+  it("TESTE 8 — NENHUM POSITIVO MUDA: onde o bruto é > 0, taxAmount é igual a ele com 9 casas", () => {
+    const linhas = varrer();
+    let positivos = 0;
+    for (const r of linhas) {
+      if (r.taxAmount === null) continue;
+      // O bruto é RECOMPUTADO dos componentes devolvidos — o teste mede a
+      // fórmula, nunca reimporta a constante interna de PIS/COFINS para
+      // repeti-la.
+      const bruto =
+        (r.icmsDebito as number) + (r.pisCofinsDebito as number) - somaCreditos(r);
+      if (bruto > 0) {
+        positivos += 1;
+        expect(r.taxAmount as number).toBeCloseTo(bruto, 9);
+      } else {
+        expect(r.taxAmount).toBe(0);
+      }
+    }
+    // A grade tem de conter positivos de verdade, senão a trava é vazia.
+    expect(positivos).toBeGreaterThan(30);
   });
 });
