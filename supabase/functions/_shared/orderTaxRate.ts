@@ -87,6 +87,42 @@
  * crédito, a segunda só no cenário COM DIFAL, e a terceira é NEUTRA no cenário
  * sem DIFAL (soma o mesmo valor ao débito e ao crédito).
  *
+ * O QUE MUDOU EM 20/08/2026 (Quick 260820-ikj): o imposto por pedido passa a
+ * CLAMPAR EM ZERO, exatamente como o arquivo aprovado pela contadora faz
+ * (`netAmount = Math.max(0, totalDebits - totalCredits)`). A auditoria
+ * independente da fase varreu os 8.544 pedidos da régua nova e achou 7 com
+ * imposto NEGATIVO, somando −R$ 9,46 (pior caso −R$ 3,20, pedido
+ * `2000017173622482`). A aritmética estava certa — é POSIÇÃO CREDORA: em 5
+ * deles o frete que o vendedor absorve supera a própria receita, e os créditos
+ * de PIS/COFINS e de ICMS sobre esse frete superam os débitos da venda.
+ *
+ * Três consequências de desenho, todas deliberadas:
+ *
+ * a) Clampam os DOIS cenários (`taxAmount` e `taxAmountComDifal`), não só o
+ *    primeiro. Pré-clamp vale sempre
+ *    `taxAmountComDifal − taxAmount = (difal + fcp) × 0,9075 ≥ 0`: o cenário
+ *    com DIFAL nunca é menor que o sem DIFAL. `Math.max` é monotônico, então
+ *    clampar os dois preserva essa ordem — clampar um só a INVERTE, e a tela
+ *    passaria a mostrar o cenário mais caro como o mais barato nas duas faixas
+ *    de MCO que a 222-15 pôs em todas as telas.
+ *
+ * b) As alíquotas DERIVAM do valor já clampado, e nunca são clampadas
+ *    sozinhas. `taxRateDerivado(0, receita)` já devolve 0, então basta a ordem
+ *    das operações. 🔴 Um `Math.max` na TAXA produziria `taxAmount = −3,20` com
+ *    `taxRate = 0` e quebraria a identidade
+ *    `tax_amount = preco_unit × quantidade × tax_rate / 100` que o resto do
+ *    aplicativo usa — é por isso que o clamp mora no VALOR, em um lugar só.
+ *
+ * c) Os COMPONENTES ficam CRUS e o estado ganha NOME (`posicaoCredora`).
+ *    Clampar componente inventaria número: se o total zera porque os créditos
+ *    superam os débitos, qual crédito seria cortado? Não há resposta fiscal —
+ *    qualquer escolha seria arbitrária. O clamp é decisão de LANÇAMENTO sobre
+ *    o total, não correção dos fatos. Nesses pedidos a soma das partes
+ *    deliberadamente NÃO reconstrói o total, e é `posicaoCredora` (mais o
+ *    predicado `ehPosicaoCredora`, que a tela consome) que impede a tela de
+ *    mentir por omissão. É a mesma régua de `icmsRefComissao` e de
+ *    `difalMotivoAusencia`: componente cru + estado nomeado.
+ *
  * O QUE NÃO VEIO DA VERSÃO DELA, deliberadamente: a vigência por competência
  * (`taxConfigVigente.ts`), a procedência nacional × importado (4%, Resolução
  * SF 13/2012) e o `difalFonte` com a régua declarada como ESTIMATIVA. São os
@@ -442,6 +478,87 @@ export interface OrderTaxBreakdown {
    * seria alarme falso.
    */
   baseIncompleta: boolean;
+  /**
+   * Os créditos superaram os débitos e o total foi LANÇADO COMO ZERO
+   * (Quick 260820-ikj). Verdadeiro só no ramo de Lucro Real: é lá que a
+   * apuração funciona por débito/crédito.
+   *
+   * 🔴 Quando é verdadeiro, os componentes devolvidos deliberadamente NÃO
+   * reconstroem `taxAmount` — eles ficam CRUS, e o clamp incide só sobre o
+   * total. Quem exibe o total tem de DIZER isso; sem o nome, a soma das partes
+   * desmente o total em silêncio.
+   *
+   * Um flag basta, e é demonstrável: como `taxAmountComDifal ≥ taxAmount`
+   * sempre (pré-clamp a diferença é `(difal + fcp) × 0,9075 ≥ 0`), um cenário
+   * com DIFAL negativo IMPLICA o sem DIFAL negativo. O flag sobre o cenário sem
+   * DIFAL é superconjunto do outro — dois flags seriam redundância, não
+   * precisão.
+   *
+   * Falso em `breakdownNulo` (nada foi apurado, não há posição a declarar) e
+   * falso nos regimes fixos (Simples Nacional e Lucro Presumido não apuram por
+   * débito/crédito — marcar ali seria alarme falso, e a conta do Junior não
+   * pode se mover).
+   */
+  posicaoCredora: boolean;
+}
+
+/**
+ * Os cinco componentes de que a conta "débitos − créditos" precisa. Estrutural
+ * de propósito: `OrderTaxBreakdown` satisfaz o tipo, e a TELA também o satisfaz
+ * montando o objeto a partir das colunas gravadas em `orders` — assim as duas
+ * chamam a MESMA função em vez de manterem duas cópias da subtração.
+ */
+export interface ComponentesFiscais {
+  icmsDebito: number | null;
+  pisCofinsDebito: number | null;
+  creditoPcComissao: number | null;
+  creditoPcFrete: number | null;
+  creditoIcmsFrete: number | null;
+}
+
+/**
+ * Soma dos créditos que de fato ABATEM o imposto.
+ *
+ * 🔴 `icmsRefComissao` NÃO entra aqui, e a ausência é a decisão: comissão é
+ * prestação de SERVIÇO e não gera crédito de ICMS de fato — somá-lo inventaria
+ * crédito que não existe (D-R2-01; no caso-prova o total saltaria de 12,679816
+ * para 22,242616). Ele existe só para reduzir a base do crédito de PIS/COFINS
+ * sobre a comissão.
+ *
+ * `null` é ausência de crédito, não crédito negativo: conta como zero na soma,
+ * exatamente como a linha `creditosTotais` sempre fez.
+ */
+export function creditosQueAbatem(c: ComponentesFiscais): number {
+  return (c.creditoPcComissao ?? 0) + (c.creditoPcFrete ?? 0) + (c.creditoIcmsFrete ?? 0);
+}
+
+/**
+ * `débitos − créditos` do cenário SEM DIFAL, **SEM CLAMP** — o dono único
+ * dessa conta (Quick 260820-ikj).
+ *
+ * Foram três cópias divergentes desta fórmula que criaram a Fase 220; esta
+ * função existe para que a fórmula, a tela e o teste leiam a MESMA subtração.
+ * Ela devolve o número CRU: é `computeOrderTax` que decide o lançamento
+ * (`Math.max(0, ...)`), e é este valor que a tela usa para dizer de QUANTO os
+ * créditos superaram os débitos.
+ *
+ * `null` quando os dois débitos são nulos — nada foi apurado, e ausência não
+ * vira zero (FISC-05).
+ *
+ * 🔴 `icmsRefComissao` NÃO participa (ver `creditosQueAbatem`).
+ */
+export function liquidoSemDifalBruto(c: ComponentesFiscais): number | null {
+  if (c.icmsDebito === null && c.pisCofinsDebito === null) return null;
+  return (c.icmsDebito ?? 0) + (c.pisCofinsDebito ?? 0) - creditosQueAbatem(c);
+}
+
+/**
+ * "Os créditos superaram os débitos neste pedido?" — o predicado que a fórmula
+ * e a tela compartilham. Ausência de apuração NÃO é posição credora.
+ */
+export function ehPosicaoCredora(c: ComponentesFiscais): boolean {
+  const liquido = liquidoSemDifalBruto(c);
+  return liquido !== null && liquido < 0;
 }
 
 /** Número finito e não negativo, ou `null` — nunca propaga NaN/Infinity para a soma (T-222-14). */
@@ -479,6 +596,8 @@ function breakdownNulo(motivo: MotivoAliquota, difalMotivoAusencia: string): Ord
     difalMotivoAusencia,
     // Nada foi calculado — não existe base para estar incompleta.
     baseIncompleta: false,
+    // Nada foi apurado, logo não há posição credora a declarar.
+    posicaoCredora: false,
   };
 }
 
@@ -639,6 +758,10 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
       // comprador — ela não fica incompleta por ele faltar. Marcar aqui seria
       // alarme falso, e a conta do Junior não pode se mover (T-222-R2-14).
       baseIncompleta: false,
+      // Simples Nacional e Lucro Presumido não apuram por débito/crédito: não
+      // existe posição credora possível, e o clamp não alcança este ramo — a
+      // conta do Junior não pode se mover (T-ikj-05).
+      posicaoCredora: false,
     };
   }
 
@@ -734,11 +857,35 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
     ? null
     : freteLiquido * (PIS_COFINS_LUCRO_REAL / 100);
 
-  // Os TRÊS créditos que de fato abatem o imposto. `icmsRefComissao` está
-  // deliberadamente fora desta soma — ver o bloco acima.
-  const creditosTotais = (creditoPcComissao ?? 0) + (creditoPcFrete ?? 0) + (creditoIcmsFrete ?? 0);
+  // Os TRÊS créditos que de fato abatem o imposto vêm do DONO ÚNICO da conta
+  // (`creditosQueAbatem`), a mesma função que a tela chama — nunca uma segunda
+  // expressão somando os três à mão. `icmsRefComissao` está deliberadamente
+  // fora dessa soma — ver o bloco acima.
+  const componentes: ComponentesFiscais = {
+    icmsDebito,
+    pisCofinsDebito,
+    creditoPcComissao,
+    creditoPcFrete,
+    creditoIcmsFrete,
+  };
+  const creditosTotais = creditosQueAbatem(componentes);
 
-  const taxAmount = icmsDebito + pisCofinsDebito - creditosTotais;
+  // Neste ramo os dois débitos são sempre números, então o líquido bruto nunca
+  // é nulo aqui — a guarda de `null` de `liquidoSemDifalBruto` serve à tela,
+  // que pode receber linha sem componente gravado.
+  const taxAmountBruto = liquidoSemDifalBruto(componentes) ?? 0;
+
+  // CLAMP EM ZERO (Quick 260820-ikj), no molde exato do arquivo que a contadora
+  // aprovou: `netAmount = Math.max(0, totalDebits - totalCredits)`. Quando os
+  // créditos superam os débitos o imposto é LANÇADO como zero — os componentes
+  // acima seguem CRUS, e `posicaoCredora` declara o estado em vez de deixar a
+  // soma das partes desmentir o total em silêncio.
+  const taxAmount = Math.max(0, taxAmountBruto);
+  const posicaoCredora = ehPosicaoCredora(componentes);
+
+  // A taxa DERIVA do valor já clampado — nunca um `Math.max` na própria taxa,
+  // que produziria valor negativo com taxa zero e quebraria a identidade
+  // abaixo. `taxRateDerivado(0, receita)` já devolve exatamente 0.
   // O denominador continua sendo a RECEITA BRUTA do produto, nunca a base
   // tributável: é o que preserva a identidade `tax_amount = preco_unit ×
   // quantidade × tax_rate / 100` que o resto do aplicativo usa. O arquivo
@@ -755,7 +902,7 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
       creditoPcComissao, creditoPcFrete, creditoIcmsFrete, taxAmount, taxRate,
       difalBase: null, difalAmount: null, fcpAmount: null,
       taxAmountComDifal: null, taxRateComDifal: null, difalFonte: null,
-      difalMotivoAusencia: "intraestadual", baseIncompleta,
+      difalMotivoAusencia: "intraestadual", baseIncompleta, posicaoCredora,
     };
   }
 
@@ -771,7 +918,7 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
       creditoPcComissao, creditoPcFrete, creditoIcmsFrete, taxAmount, taxRate,
       difalBase: null, difalAmount: null, fcpAmount: null,
       taxAmountComDifal: null, taxRateComDifal: null, difalFonte: null,
-      difalMotivoAusencia: difal.difalMotivoAusencia, baseIncompleta,
+      difalMotivoAusencia: difal.difalMotivoAusencia, baseIncompleta, posicaoCredora,
     };
   }
 
@@ -789,8 +936,15 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
 
   // Composto POR CIMA, nunca por subtração de taxAmount — é o que mantém as 9
   // RPCs que já leem tax_amount corretas sem uma linha alterada.
-  const taxAmountComDifal =
+  //
+  // D-ikj-01: o CLAMP vale para os DOIS cenários, não só o primeiro. Pré-clamp,
+  // `comDifal − semDifal = (difal + fcp) × 0,9075 ≥ 0` — o cenário com DIFAL
+  // nunca é menor que o sem DIFAL. `Math.max` é monotônico, então clampar os
+  // dois PRESERVA essa ordem; clampar um só a inverte, e a tela exibiria o
+  // cenário mais caro como o mais barato. A composição em si não muda.
+  const taxAmountComDifalBruto =
     icmsDebito + difal.difalAmount + pisCofinsDebitoComDifal + (difal.fcpAmount ?? 0) - creditosTotais;
+  const taxAmountComDifal = Math.max(0, taxAmountComDifalBruto);
   const taxRateComDifal = taxRateDerivado(taxAmountComDifal, receitaBruta);
   const difalFonte = resolverDifalFonte(dest, config.difal_ufs_cobradas_pelo_ml);
 
@@ -814,6 +968,7 @@ export function computeOrderTax(input: OrderTaxInput): OrderTaxBreakdown {
     difalFonte,
     difalMotivoAusencia: null,
     baseIncompleta,
+    posicaoCredora,
   };
 }
 
