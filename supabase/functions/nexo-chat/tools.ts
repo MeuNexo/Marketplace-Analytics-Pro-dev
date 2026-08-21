@@ -203,8 +203,9 @@ export const TOOL_DECLARATIONS: FnDecl[] = [
     description:
       "Projeção FUTURA de fluxo de caixa (entradas/saídas/saldo diário e acumulado), padrão próximos 90 dias. " +
       "saldo_hoje é o saldo do caixa no dia de hoje. " +
-      "ATENÇÃO: inflows projetados existem só até ~+27 dias; o saldo muito à frente é projeção parcial " +
-      "(outflows chegam até 2030, inflows têm cobertura limitada) — o horizon_label indica isso. " +
+      "ATENÇÃO: a agenda do Mercado Pago cobre o dia inteiro só até o nono dia; do décimo em diante " +
+      "a cobertura cai para ~66,7% e continua caindo, e o saldo passa a somar a média de 15 dias " +
+      "como piso (projeção parcial, não confirmado) — o horizon_label indica isso. " +
       "Para visão resumida de caixa e saldo mínimo use get_treasury_panel (horizonte 30d). " +
       "Use para 'meu caixa vai ficar negativo?', liquidez, quando o dinheiro cai/sai, projeção de caixa.",
     parameters: {
@@ -747,8 +748,10 @@ export async function dispatchTool(
     case "get_cashflow": {
       // FIN-3 (D10): PROJEÇÃO FUTURA, default hoje → +90d. Enriquece com saldo_hoje
       // e horizon_label para o modelo não confundir projeção parcial com saldo real.
-      // ATENÇÃO: inflows projetados têm cobertura ~+27d; saldo além disso é artefato
-      // de outflows sem inflows correspondentes (não significa falência).
+      // ATENÇÃO (medido na Fase 224, critério 6): a agenda do Mercado Pago cobre o
+      // dia inteiro até o nono (103% a 112% do confirmado); a partir do décimo a
+      // cobertura cai para ~66,7% e continua caindo — dali em diante get_cashflow
+      // usa a média de 15 dias como piso, e o saldo é projeção parcial, não real.
       const cfFrom = clampDate(args.from) ?? today();
       const cfTo = clampDate(args.to) ?? daysAhead(90);
       const { data: cfData } = await sb.rpc("get_cashflow", {
@@ -770,8 +773,9 @@ export async function dispatchTool(
       const horizon_label =
         `Projeção ${cfFrom} → ${cfTo}. ` +
         "saldo_hoje = saldo do caixa hoje. " +
-        "Inflows projetados cobrem apenas ~+27 dias; o saldo muito à frente é projeção parcial " +
-        "(outflows chegam a 2030, inflows têm cobertura limitada). " +
+        "A agenda do Mercado Pago cobre o dia inteiro até o nono dia; a partir do décimo " +
+        "a cobertura cai para ~66,7% e continua caindo, e o saldo passa a somar a média " +
+        "de 15 dias como piso (projeção parcial, não confirmado). " +
         "Para saldo mínimo nos próximos 30d use get_treasury_panel.";
       return { horizon_label, saldo_hoje, series: cap(rows) };
     }

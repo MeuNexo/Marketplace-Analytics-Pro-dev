@@ -19,7 +19,12 @@ export interface CashFlowDataPoint {
   fullDate: string;
   daily_income: number;
   daily_expense: number;
-  /** Entrada média projetada do dia (v_sma = média de recebimento 15d). Usada na "+ Previsão" do tooltip. */
+  /**
+   * Entrada média projetada do dia (v_sma = média de recebimento 15d). Zero
+   * até o nono dia — a agenda do MP ainda cobre o dia inteiro; a partir do
+   * décimo, o quanto a média acrescenta acima do confirmado (Fase 224,
+   * critério 6). Usada na "+ Previsão" do tooltip.
+   */
   daily_projection: number;
   daily_balance: number;
   /**
@@ -28,12 +33,20 @@ export interface CashFlowDataPoint {
    */
   accumulated_balance: number;
   /**
-   * Saldo projetado acumulado (linha âmbar) — regra combinada (CASHFIX-01):
-   * - Dias 1-7 a partir de hoje(BRT): usa apenas o recebimento CONFIRMADO do dia (d.inc),
-   *   sem aplicar média — a venda de hoje já consta nos recebimentos agendados pelo MP.
-   * - A partir do 8º dia: usa o confirmado nos dias COM recebimento (d.inc > 0);
-   *   aplica a média de recebimento dos últimos 15 dias (v_sma) SOMENTE nos dias SEM
-   *   recebimento confirmado (d.inc = 0), preenchendo os "buracos" futuros.
+   * Saldo projetado acumulado (linha âmbar) — regra vigente desde a Fase 224
+   * (critério 6 do ROADMAP, migration 20260817100000_get_cashflow_corte_d9):
+   * - Dias 1-9 a partir de hoje (BRT): usa só o recebimento CONFIRMADO do dia
+   *   (d.inc), sem aplicar média — a agenda do Mercado Pago cobre 103% a 112%
+   *   do dia nessa janela (224-CONTEXT.md, D-3), então injetar média ali seria
+   *   substituir dado determinístico por estimativa.
+   * - A partir do 10º dia: a média de recebimento dos últimos 15 dias (v_sma)
+   *   entra como PISO — GREATEST(d.inc, v_sma), não soma. A cobertura da
+   *   agenda despenca para 66,7% em D+10, e a Fase 60 (CASHFIX-05) fixou o
+   *   piso para a cauda onde o confirmado ainda é minúsculo.
+   * A regra descrita ANTES desta Fase 224 (média só nos dias SEM recebimento,
+   * a partir do 8º dia) deixou de existir na Fase 60 — a média virou piso, não
+   * preenchimento condicional. Este comentário ficou errado por duas fases;
+   * o que está aqui agora é o que o banco faz.
    * Saídas reais (d.exp) são subtraídas em todos os casos. Cenário "se mantiver a média nos dias vazios".
    */
   accumulated_balance_sma: number;
