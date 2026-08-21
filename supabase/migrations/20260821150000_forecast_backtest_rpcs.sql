@@ -275,6 +275,20 @@ AS $function$
     -- A classe E de Q7 (71 linhas, R$ 61.765,12 em 30 dias) NAO foi triada
     -- linha a linha e por isso NAO e excluida aqui — pendencia declarada em
     -- 224-CURVA.md, nao exclusao silenciosa.
+    --
+    -- 🔴 O FILTRO DE STATUS E O QUE SEPARA "EXCLUIR COPIA" DE "APAGAR
+    -- DESPESA REAL" (medido pelo C-05, 2026-08-21). A mesma dupla de valores
+    -- existe DUAS VEZES na base: 20 linhas 'pending' de 10/09/2026 a
+    -- 10/06/2027, todas criadas em 17/07 (o dia do backfill de Q5), e
+    -- 2 linhas 'paid' de 10/03/2026 — a FATURA VERDADEIRA, competencia
+    -- 03/2026, R$ 16.958,57 que a empresa pagou de fato. Sem
+    -- `status = 'pending'` a regua casava as 22 e apagava a despesa real de
+    -- DENTRO da janela do backtest. Com o filtro: 20 linhas,
+    -- R$ 169.585,70, ZERO dentro do backtest — bate com Q7 ao centavo.
+    --
+    -- Consequencia declarada: a exclusao NAO altera a curva desta fase (as
+    -- copias sao todas futuras e o backtest so olha outflow_date < hoje).
+    -- Ela vale para a PROJECAO do 224-05 e do 224-07.
     SELECT * FROM (VALUES
       ('ADS Mercado Livre',                           13725.27::numeric),
       ('Prestação de serviço do Mercado Envios Full',  3233.30::numeric)
@@ -322,7 +336,8 @@ AS $function$
       AND COALESCE(co.category, '') <> 'Previsões de compra'
       AND NOT EXISTS (
             SELECT 1 FROM fantasmas f
-             WHERE co.source = 'tiny'
+             WHERE co.status = 'pending'   -- a fatura REAL e 'paid' e NUNCA se exclui
+               AND co.source = 'tiny'
                AND co.amount = f.valor
                AND COALESCE(co.supplier, '') ILIKE '%mercado livre%'
                AND (COALESCE(co.category, '') ILIKE '%' || f.rotulo || '%'
@@ -338,7 +353,8 @@ AS $function$
       AND COALESCE(co.category, '') <> 'Previsões de compra'
       AND NOT EXISTS (
             SELECT 1 FROM fantasmas f
-             WHERE co.source = 'tiny'
+             WHERE co.status = 'pending'   -- a fatura REAL e 'paid' e NUNCA se exclui
+               AND co.source = 'tiny'
                AND co.amount = f.valor
                AND COALESCE(co.supplier, '') ILIKE '%mercado livre%'
                AND (COALESCE(co.category, '') ILIKE '%' || f.rotulo || '%'
