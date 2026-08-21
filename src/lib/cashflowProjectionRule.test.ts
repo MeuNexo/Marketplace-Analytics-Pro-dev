@@ -46,19 +46,48 @@ function migrationsDeCashflow(): Array<{ nome: string; sql: string }> {
 }
 
 describe("cashflowProjectionRule — get_cashflow para de injetar média em D+8/D+9", () => {
-  it("Test 1: a migration mais recente que define get_cashflow é a desta fase (corte no nono dia)", () => {
+  it("Test 1: a migration mais recente que define get_cashflow é a do deflator (224-05)", () => {
+    // [224-05] Era a do corte no nono dia (20260821140000). O deflator veio
+    // depois e reescreveu a função inteira A PARTIR DO CORPO VIVO, preservando
+    // o corte — por isso este gate segue apontando para a última, e não para
+    // uma versão escolhida à mão. Ancorar em versão superada foi o defeito que
+    // deixou a regressão de 21/08 passar (ver Test 6).
     const arquivos = migrationsDeCashflow();
     expect(arquivos.length).toBeGreaterThan(0);
     const maisRecente = arquivos[arquivos.length - 1];
-    expect(maisRecente.nome).toBe("20260821140000_get_cashflow_corte_d9.sql");
+    expect(maisRecente.nome).toBe("20260821170000_get_cashflow_deflator.sql");
   });
 
-  it("Test 2: fora de comentário, o corte da projeção aparece com o nono dia, exatamente duas vezes", () => {
+  it("Test 2: o corte do nono dia aparece TRÊS vezes — duas do 224-02 e a fronteira do deflator", () => {
+    // [224-05] Eram duas (daily_projection e accumulated_balance_sma). A
+    // terceira é a fronteira do deflator: ele só se aplica de D+1 a D+9,
+    // porque de D+10 em diante a agenda já subestima e deflacionar aumenta a
+    // falta (R-01: WAPE piora nos seis horizontes seguintes, sem exceção).
     const arquivos = migrationsDeCashflow();
     const atual = arquivos[arquivos.length - 1];
     const semComent = semComentarios(atual.sql);
     const ocorrencias = (semComent.match(/v_today \+ 9\b/g) ?? []).length;
-    expect(ocorrencias).toBe(2);
+    expect(ocorrencias).toBe(3);
+  });
+
+  it("Test 2b: o deflator é chamado, tem clamp, e NÃO toca o piso da média", () => {
+    // [224-05] O dia em que alguém remover a chamada, este teste fica vermelho
+    // — é o requisito do plano de que o gate passe a cobrir o deflator.
+    const arquivos = migrationsDeCashflow();
+    const atual = arquivos[arquivos.length - 1];
+    const semComent = semComentarios(atual.sql);
+
+    // 1. Janela móvel, nunca constante gravada (critério 3 do ROADMAP).
+    expect(semComent).toContain("public.get_estorno_deflator(p_org_id, 30)");
+    // 2. Clamp: estorno nunca AUMENTA o que entra, então 1,0 é teto.
+    expect(semComent).toMatch(/LEAST\(1\.0,\s*GREATEST\(0\.80/);
+    // 3. A multiplicação existe e está atrás da guarda de faixa.
+    expect(semComent).toMatch(/d_date > v_today AND d\.d_date <= v_today \+ 9/);
+    expect(semComent).toContain("* v_deflator");
+    // 4. 🔴 O piso NÃO é deflacionado (M-01: bruto vence em 5 de 6 horizontes;
+    //    deflacioná-lo faria a previsão subestimar o caixa em ~10%).
+    expect(semComent).not.toMatch(/v_sma\s*\*\s*v_deflator/);
+    expect(semComent).toContain("GREATEST(d.inc, v_sma)");
   });
 
   it("Test 3: fora de comentário, o corte antigo do sétimo dia não aparece nenhuma vez", () => {
