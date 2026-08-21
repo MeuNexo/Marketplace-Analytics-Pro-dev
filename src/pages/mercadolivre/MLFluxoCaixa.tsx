@@ -31,6 +31,8 @@ import { TreasuryPanel } from "@/components/financial/TreasuryPanel";
 import { CostCompositionChart } from "@/components/financial/CostCompositionChart";
 import { SupplierExposureChart } from "@/components/financial/SupplierExposureChart";
 import { CashFlowSimulator } from "@/components/financial/CashFlowSimulator";
+import { CashGapTable } from "@/components/financial/CashGapTable";
+import { ForecastErrorCard } from "@/components/financial/ForecastErrorCard";
 import { useCashFlowData } from "@/hooks/useCashFlowData";
 import { useFinancialSettings } from "@/hooks/useFinancialSettings";
 import { useOrganization } from "@/contexts/OrganizationContext";
@@ -264,6 +266,11 @@ export default function MLFluxoCaixa() {
             </div>
           </div>
 
+          {/* ── Vai faltar dinheiro? (Fase 224, ERR-04) ──
+              Vem ANTES do gráfico de propósito: a informação que dispara
+              decisão — pago hoje ou prorrogo? — precede a que ilustra. ── */}
+          <CashGapTable includePurchaseForecasts={includePurchaseForecasts} />
+
           {/* ── Gráfico: Como meu dinheiro vai evoluir? ── */}
           {chartLoading ? (
             <Skeleton className="h-72 rounded-xl" />
@@ -272,6 +279,9 @@ export default function MLFluxoCaixa() {
           ) : (
             <CashFlowEmptyState />
           )}
+
+          {/* ── De quanto esta previsão costuma errar (Fase 224, ERR-04) ── */}
+          <ForecastErrorCard />
 
           {/* ── Composição de Custos e Exposição por Fornecedor ── */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
