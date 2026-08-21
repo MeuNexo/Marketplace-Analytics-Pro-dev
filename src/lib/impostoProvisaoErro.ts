@@ -4,7 +4,7 @@
 // Módulo puro que mede de quanto erra a provisão de imposto que o sistema JÁ
 // FAZ (previsao_calc/get_dre_cash_forecast, Fase 100) contra o que de fato
 // aconteceu — na régua de caixa e na régua de apuração da RPC
-// get_imposto_provisao_erro (migration 20260817120000). Não propõe uma
+// get_imposto_provisao_erro (migration 20260821160000). Não propõe uma
 // previsão melhor: mede o erro da que existe (224-CONTEXT <domain>).
 //
 // DUAS RÉGUAS, cada uma respondendo a sua pergunta:

@@ -1,7 +1,7 @@
 // ============================================================================
 // useImpostoProvisaoErro — Fase 224 Plano 04, Task 2 (ERR-05)
 // Hook TanStack Query que consome a RPC get_imposto_provisao_erro (migration
-// 20260817120000), escopado por org (currentOrg.id do OrganizationContext).
+// 20260821160000), escopado por org (currentOrg.id do OrganizationContext).
 //
 // Padrão clonado de useDreCashForecast.ts (RPC + useOrganization + useQuery).
 // Anti-IDOR é garantido server-side (RPC SECURITY INVOKER + RLS de orders e
