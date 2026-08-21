@@ -290,3 +290,376 @@ describe("cenário com a forma real da curva medida", () => {
     expect(horizonteUtil(curva, 0.15)).toBe(2);
   });
 });
+
+// ============================================================================
+// Fase 224 Plano 07, Task 1 (ERR-04) — as bandas por faixa de horizonte.
+//
+// Nada abaixo desta linha altera os testes do 224-03: eles são o contrato da
+// curva e continuam valendo palavra por palavra.
+//
+// O guardrail que estes testes existem para travar é a INVERSÃO DE SINAL. O
+// erro medido é `previsto − realizado`, então o cenário ruim — a agenda
+// prometeu e não entrou — é o quantil SUPERIOR. Usar o inferior daria o
+// cenário bom com cara de cenário ruim, e a tela viraria máquina de otimismo.
+// O Test 33 existe só para isso, com uma distribuição assimétrica em que os
+// dois quantis têm sinais opostos.
+// ============================================================================
+
+import {
+  quantilEmpirico,
+  bandaPorFaixa,
+  bandaDoSaldo,
+  saldoNoPiorCaso,
+  faixaDoHorizonte,
+  FAIXAS_DE_HORIZONTE,
+  AGREGACAO_DA_BANDA,
+  type ErroBacktestRow,
+  type BandaDaFaixa,
+} from "./forecastErrorCurve";
+
+/** Helper construtor de linha par a par de get_forecast_backtest_errors. */
+function par(
+  horizon_days: number,
+  erro: number | null,
+  campos: Partial<ErroBacktestRow> = {},
+): ErroBacktestRow {
+  return {
+    escopo: "entradas",
+    corrigido: true,
+    agregacao: "acumulado",
+    corte: "2026-07-01",
+    horizon_days,
+    previsto: erro == null ? null : 1000 + erro,
+    realizado: 1000,
+    erro,
+    ...campos,
+  };
+}
+
+/** Gera `quantos` pares no mesmo horizonte, com cortes distintos. */
+function pares(
+  horizon_days: number,
+  erros: Array<number | null>,
+  campos: Partial<ErroBacktestRow> = {},
+): ErroBacktestRow[] {
+  return erros.map((e, i) =>
+    par(horizon_days, e, { corte: `2026-07-${String((i % 28) + 1).padStart(2, "0")}`, ...campos }),
+  );
+}
+
+/** Acha a banda de uma faixa pelo horizonte que ela contém. */
+function bandaDe(bandas: BandaDaFaixa[], horizonte: number): BandaDaFaixa {
+  return bandas.find((b) => horizonte >= b.faixa.inicio && horizonte <= b.faixa.fim)!;
+}
+
+const ENTRADAS = { escopo: "entradas", corrigido: true };
+const SAIDAS = { escopo: "saidas", corrigido: null };
+
+describe("quantilEmpirico", () => {
+  it("Test 27: lista vazia, nula ou indefinida devolve nulo — nunca zero", () => {
+    expect(quantilEmpirico([], 0.95)).toBeNull();
+    expect(quantilEmpirico(null as unknown as number[], 0.95)).toBeNull();
+    expect(quantilEmpirico(undefined as unknown as number[], 0.95)).toBeNull();
+  });
+
+  it("Test 28: p igual a zero devolve o mínimo e p igual a um devolve o máximo", () => {
+    const v = [5, -3, 12, 0, 7];
+    expect(quantilEmpirico(v, 0)).toBe(-3);
+    expect(quantilEmpirico(v, 1)).toBe(12);
+  });
+
+  it("Test 29: usa a convenção de posto inferior — índice floor(p × (n − 1))", () => {
+    // 10 valores: floor(0,95 × 9) = 8 → o nono em ordem crescente, que é 90.
+    const v = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+    expect(quantilEmpirico(v, 0.95)).toBe(90);
+    // floor(0,90 × 9) = 8 → também 90; floor(0,5 × 9) = 4 → 50.
+    expect(quantilEmpirico(v, 0.9)).toBe(90);
+    expect(quantilEmpirico(v, 0.5)).toBe(50);
+  });
+
+  it("Test 30: ordena antes de escolher — a ordem de entrada não muda o resultado", () => {
+    expect(quantilEmpirico([100, 10, 50], 0.5)).toBe(50);
+    expect(quantilEmpirico([50, 100, 10], 0.5)).toBe(50);
+  });
+
+  it("Test 31: valores nulos e não finitos são descartados antes de ordenar", () => {
+    const v = [10, null, 30, undefined, NaN, 20, Infinity] as unknown as number[];
+    expect(quantilEmpirico(v, 1)).toBe(30);
+    expect(quantilEmpirico(v, 0)).toBe(10);
+    // Só sobraram 3 valores: o mediano é o do meio.
+    expect(quantilEmpirico(v, 0.5)).toBe(20);
+  });
+
+  it("Test 32: lista de um elemento devolve esse elemento para qualquer p", () => {
+    expect(quantilEmpirico([42], 0)).toBe(42);
+    expect(quantilEmpirico([42], 0.5)).toBe(42);
+    expect(quantilEmpirico([42], 0.95)).toBe(42);
+    expect(quantilEmpirico([42], 1)).toBe(42);
+  });
+});
+
+describe("bandaPorFaixa — o SINAL do pior caso", () => {
+  it("Test 33: o pior caso é o quantil SUPERIOR — o inferior daria sinal oposto", () => {
+    // Distribuição assimétrica: 40 observações, 36 negativas (a agenda
+    // prometeu MENOS do que entrou — o cenário bom) e 4 muito positivas
+    // (a agenda prometeu e não entrou — o cenário ruim).
+    const erros = [...Array(36).fill(-500), 8000, 9000, 10000, 11000];
+    const bandas = bandaPorFaixa(pares(1, erros), ENTRADAS);
+    const b = bandaDe(bandas, 1);
+
+    expect(b.n).toBe(40);
+    // Superior: positivo, e é ele que sai como pior caso.
+    expect(b.erroNoPiorCaso).toBeGreaterThan(0);
+    // Inferior seria negativo — sinal OPOSTO. Se algum dia esta linha
+    // quebrar porque o pior caso ficou negativo aqui, o quantil foi trocado.
+    expect(quantilEmpirico(erros, 0.05)).toBeLessThan(0);
+    // Mediano continua no lado negativo, provando que a distribuição é
+    // assimétrica de verdade e o teste não é trivial.
+    expect(b.erroMediano).toBeLessThan(0);
+  });
+
+  it("Test 34: n ≥ 40 aplica o percentil 95 e a banda não é provisória", () => {
+    const erros = Array.from({ length: 40 }, (_, i) => i * 100); // 0..3900
+    const b = bandaDe(bandaPorFaixa(pares(2, erros), ENTRADAS), 2);
+    expect(b.n).toBe(40);
+    expect(b.regua).toBe("p95");
+    expect(b.quantilAplicado).toBeCloseTo(0.95, 10);
+    expect(b.provisorio).toBe(false);
+    // floor(0,95 × 39) = 37 → o 38º em ordem crescente = 3700.
+    expect(b.erroNoPiorCaso).toBe(3700);
+  });
+
+  it("Test 35: n entre 20 e 39 cai para o percentil 90, e segue não provisória", () => {
+    const erros = Array.from({ length: 20 }, (_, i) => i * 100); // 0..1900
+    const b = bandaDe(bandaPorFaixa(pares(2, erros), ENTRADAS), 2);
+    expect(b.n).toBe(20);
+    expect(b.regua).toBe("p90");
+    expect(b.quantilAplicado).toBeCloseTo(0.9, 10);
+    expect(b.provisorio).toBe(false);
+    // floor(0,90 × 19) = 17 → 1700.
+    expect(b.erroNoPiorCaso).toBe(1700);
+  });
+
+  it("Test 36: n abaixo de 20 cai para o MÁXIMO observado e a banda sai PROVISÓRIA", () => {
+    const erros = [100, 900, 400, 250];
+    const b = bandaDe(bandaPorFaixa(pares(2, erros), ENTRADAS), 2);
+    expect(b.n).toBe(4);
+    expect(b.regua).toBe("maximo");
+    expect(b.erroNoPiorCaso).toBe(900);
+    expect(b.provisorio).toBe(true);
+  });
+
+  it("Test 37: n igual a zero devolve todos os números nulos e provisório verdadeiro", () => {
+    const b = bandaDe(bandaPorFaixa([], ENTRADAS), 1);
+    expect(b.n).toBe(0);
+    expect(b.erroNoPiorCaso).toBeNull();
+    expect(b.erroMediano).toBeNull();
+    expect(b.quantilAplicado).toBeNull();
+    expect(b.provisorio).toBe(true);
+  });
+
+  it("Test 38: faixa sem nenhuma observação continua na lista com números nulos — não some", () => {
+    // Só a primeira faixa tem observação. As outras três continuam lá.
+    const bandas = bandaPorFaixa(pares(1, [10, 20, 30]), ENTRADAS);
+    expect(bandas).toHaveLength(FAIXAS_DE_HORIZONTE.length);
+    expect(bandas).toHaveLength(4);
+    expect(bandaDe(bandas, 1).n).toBe(3);
+    for (const h of [4, 7, 12]) {
+      expect(bandaDe(bandas, h).n).toBe(0);
+      expect(bandaDe(bandas, h).erroNoPiorCaso).toBeNull();
+    }
+  });
+
+  it("Test 39: linhas com erro nulo são descartadas e NÃO contam para o n", () => {
+    const b = bandaDe(bandaPorFaixa(pares(1, [100, null, 200, null]), ENTRADAS), 1);
+    expect(b.n).toBe(2);
+    expect(b.erroNoPiorCaso).toBe(200);
+  });
+
+  it("Test 40: agrega os horizontes de dentro da faixa — D+1, D+2 e D+3 entram na mesma", () => {
+    const linhas = [
+      ...pares(1, [100, 200]),
+      ...pares(2, [300, 400]),
+      ...pares(3, [500, 600]),
+    ];
+    const b = bandaDe(bandaPorFaixa(linhas, ENTRADAS), 2);
+    expect(b.n).toBe(6);
+    expect(b.erroNoPiorCaso).toBe(600);
+  });
+});
+
+describe("bandaPorFaixa — os filtros que, errados, medem outra coisa", () => {
+  it("Test 41: só a agregação ACUMULADA entra — o diário mede outra pergunta", () => {
+    expect(AGREGACAO_DA_BANDA).toBe("acumulado");
+    const linhas = [
+      ...pares(1, [100, 200]),
+      ...pares(1, [90000], { agregacao: "diario" }),
+    ];
+    const b = bandaDe(bandaPorFaixa(linhas, ENTRADAS), 1);
+    expect(b.n).toBe(2);
+    expect(b.erroNoPiorCaso).toBe(200);
+  });
+
+  it("Test 42: entradas corrigidas e não corrigidas NÃO se misturam", () => {
+    const linhas = [
+      ...pares(1, [100, 200]),
+      ...pares(1, [90000], { corrigido: false }),
+    ];
+    expect(bandaDe(bandaPorFaixa(linhas, ENTRADAS), 1).n).toBe(2);
+    expect(bandaDe(bandaPorFaixa(linhas, { escopo: "entradas", corrigido: false }), 1).n).toBe(1);
+  });
+
+  it("Test 43: o escopo saídas casa com corrigido NULO — filtrar por verdadeiro elide as saídas inteiras", () => {
+    const linhas = [
+      ...pares(1, [100, 200], { escopo: "saidas", corrigido: null }),
+      ...pares(1, [90000]),
+    ];
+    const b = bandaDe(bandaPorFaixa(linhas, SAIDAS), 1);
+    expect(b.n).toBe(2);
+    expect(b.erroNoPiorCaso).toBe(200);
+    // E o inverso: pedir saídas corrigidas devolve faixa vazia, não as saídas.
+    expect(bandaDe(bandaPorFaixa(linhas, { escopo: "saidas", corrigido: true }), 1).n).toBe(0);
+  });
+
+  it("Test 44: entrada nula, indefinida ou não-lista devolve as quatro faixas vazias, sem lançar", () => {
+    for (const entrada of [null, undefined, {} as unknown]) {
+      const bandas = bandaPorFaixa(entrada as ErroBacktestRow[], ENTRADAS);
+      expect(bandas).toHaveLength(4);
+      expect(bandas.every((b) => b.n === 0 && b.erroNoPiorCaso === null)).toBe(true);
+    }
+  });
+
+  it("Test 45: horizonte fora de D+1 a D+15 não entra em faixa nenhuma", () => {
+    const linhas = [...pares(1, [100]), ...pares(0, [50000]), ...pares(16, [70000])];
+    const bandas = bandaPorFaixa(linhas, ENTRADAS);
+    expect(bandas.reduce((soma, b) => soma + b.n, 0)).toBe(1);
+  });
+});
+
+describe("bandaDoSaldo — o erro do saldo é o das entradas MENOS o das saídas", () => {
+  it("Test 46: casa entradas e saídas pelo par (corte, horizonte) e subtrai", () => {
+    const linhas = [
+      par(1, 1000, { corte: "2026-07-01" }),
+      par(1, 300, { corte: "2026-07-01", escopo: "saidas", corrigido: null }),
+      par(1, 500, { corte: "2026-07-02" }),
+      par(1, -100, { corte: "2026-07-02", escopo: "saidas", corrigido: null }),
+    ];
+    const b = bandaDe(bandaDoSaldo(linhas), 1);
+    expect(b.n).toBe(2);
+    // 1000 − 300 = 700 e 500 − (−100) = 600. O pior caso é o maior.
+    expect(b.erroNoPiorCaso).toBe(700);
+  });
+
+  it("Test 47: par sem o lado das saídas é DESCARTADO — não vira saldo com saída zero", () => {
+    const linhas = [
+      par(1, 1000, { corte: "2026-07-01" }),
+      par(1, 900, { corte: "2026-07-02" }),
+      par(1, 300, { corte: "2026-07-02", escopo: "saidas", corrigido: null }),
+    ];
+    const b = bandaDe(bandaDoSaldo(linhas), 1);
+    expect(b.n).toBe(1);
+    expect(b.erroNoPiorCaso).toBe(600);
+  });
+
+  it("Test 48: usa a entrada CORRIGIDA — a bruta não entra no saldo", () => {
+    const linhas = [
+      par(1, 1000, { corte: "2026-07-01" }),
+      par(1, 50000, { corte: "2026-07-01", corrigido: false }),
+      par(1, 300, { corte: "2026-07-01", escopo: "saidas", corrigido: null }),
+    ];
+    const b = bandaDe(bandaDoSaldo(linhas), 1);
+    expect(b.n).toBe(1);
+    expect(b.erroNoPiorCaso).toBe(700);
+  });
+});
+
+describe("saldoNoPiorCaso", () => {
+  it("Test 49: subtrai o erro do pior caso do saldo projetado", () => {
+    const banda: BandaDaFaixa = {
+      faixa: FAIXAS_DE_HORIZONTE[0],
+      n: 40,
+      erroNoPiorCaso: 11_000,
+      erroMediano: 2_000,
+      regua: "p95",
+      quantilAplicado: 0.95,
+      provisorio: false,
+    };
+    expect(saldoNoPiorCaso(4_200, banda)).toBe(-6_800);
+  });
+
+  it("Test 50: banda nula, ou com pior caso nulo, devolve NULO — jamais o saldo projetado", () => {
+    const semMedida: BandaDaFaixa = {
+      faixa: FAIXAS_DE_HORIZONTE[0],
+      n: 0,
+      erroNoPiorCaso: null,
+      erroMediano: null,
+      regua: "maximo",
+      quantilAplicado: null,
+      provisorio: true,
+    };
+    expect(saldoNoPiorCaso(4_200, null)).toBeNull();
+    expect(saldoNoPiorCaso(4_200, undefined as unknown as BandaDaFaixa)).toBeNull();
+    expect(saldoNoPiorCaso(4_200, semMedida)).toBeNull();
+  });
+
+  it("Test 51: saldo projetado nulo devolve nulo", () => {
+    const banda: BandaDaFaixa = {
+      faixa: FAIXAS_DE_HORIZONTE[0],
+      n: 40,
+      erroNoPiorCaso: 11_000,
+      erroMediano: 2_000,
+      regua: "p95",
+      quantilAplicado: 0.95,
+      provisorio: false,
+    };
+    expect(saldoNoPiorCaso(null, banda)).toBeNull();
+    expect(saldoNoPiorCaso(undefined as unknown as number, banda)).toBeNull();
+    // Zero é MEDIDO e igual a zero — não é ausência.
+    expect(saldoNoPiorCaso(0, banda)).toBe(-11_000);
+  });
+
+  it("Test 52: erro do pior caso NEGATIVO aumenta o saldo — o cenário bom não é censurado", () => {
+    const banda: BandaDaFaixa = {
+      faixa: FAIXAS_DE_HORIZONTE[0],
+      n: 40,
+      erroNoPiorCaso: -1_000,
+      erroMediano: -2_000,
+      regua: "p95",
+      quantilAplicado: 0.95,
+      provisorio: false,
+    };
+    expect(saldoNoPiorCaso(4_200, banda)).toBe(5_200);
+  });
+});
+
+describe("faixaDoHorizonte e FAIXAS_DE_HORIZONTE", () => {
+  it("Test 53: as quatro faixas cobrem D+1 a D+15 sem buraco e sem sobreposição", () => {
+    expect(FAIXAS_DE_HORIZONTE.map((f) => [f.inicio, f.fim])).toEqual([
+      [1, 3],
+      [4, 6],
+      [7, 9],
+      [10, 15],
+    ]);
+    for (let h = 1; h <= 15; h++) {
+      const achadas = FAIXAS_DE_HORIZONTE.filter((f) => h >= f.inicio && h <= f.fim);
+      expect(achadas).toHaveLength(1);
+    }
+  });
+
+  it("Test 54: devolve a faixa que contém o horizonte", () => {
+    expect(faixaDoHorizonte(1)).toBe(FAIXAS_DE_HORIZONTE[0]);
+    expect(faixaDoHorizonte(3)).toBe(FAIXAS_DE_HORIZONTE[0]);
+    expect(faixaDoHorizonte(4)).toBe(FAIXAS_DE_HORIZONTE[1]);
+    expect(faixaDoHorizonte(9)).toBe(FAIXAS_DE_HORIZONTE[2]);
+    expect(faixaDoHorizonte(15)).toBe(FAIXAS_DE_HORIZONTE[3]);
+  });
+
+  it("Test 55: fora de D+1 a D+15 devolve nulo — inclusive hoje (D+0) e valor inválido", () => {
+    expect(faixaDoHorizonte(0)).toBeNull();
+    expect(faixaDoHorizonte(16)).toBeNull();
+    expect(faixaDoHorizonte(-1)).toBeNull();
+    expect(faixaDoHorizonte(1.5)).toBeNull();
+    expect(faixaDoHorizonte(null as unknown as number)).toBeNull();
+    expect(faixaDoHorizonte(NaN)).toBeNull();
+  });
+});
