@@ -48,6 +48,18 @@ import {
 } from "@/lib/mcoLinhaCenarios";
 import { RebateDoisCenarios } from "@/components/mercadolivre/RebateDoisCenarios";
 import { resolveLinhaRebate } from "@/lib/rebateLinhaCenarios";
+// [Quick 260821-nof, D-selo-03] Este card é DETALHE (densidade `bloco`, com
+// rótulo em cada linha) — o par continua valendo aqui, mas a margem real
+// deixa de se repetir três vezes (linha de resultado + 1º cenário de cada
+// par). `SeloPromo` e a data de início saem da MESMA série diária que a
+// aba já busca (`dailyRows`) — custo de rede zero.
+import { SeloPromo } from "@/components/mercadolivre/SeloPromo";
+import {
+  estadoAtualDaSerie,
+  inicioPromocaoVigente,
+  resolveSeloPromo,
+  type PontoSerieRebate,
+} from "@/lib/seloPromo";
 import {
   computePrecoFaixas,
   computeVeredicto,
@@ -708,6 +720,53 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
     [waterfallCard, targetMcoPct],
   );
 
+  // ── [Quick 260821-nof, D-selo-03/04] Selo de estado atual + data de início ──
+  //
+  // Calculados sobre `dailyRows` — a série diária que esta aba JÁ BUSCA para o
+  // histograma de faixas — custo de rede ZERO. `PrecoSeriesRow` (nomes da RPC)
+  // → `PontoSerieRebate` (nomes que `seloPromo.ts` consome), mesma conversão
+  // de `ListingIndicatorsTab.tsx`.
+  const pontosSerieDiaria = useMemo<PontoSerieRebate[]>(
+    () =>
+      (dailyRows ?? []).map((r) => ({
+        bucket: r.bucket,
+        qtd: r.qtd,
+        comissao: r.comissao,
+        rebateBruto: r.rebate_bruto ?? null,
+        pedidosSemCaptura: r.pedidos_sem_captura_rebate ?? null,
+        pedidosNaoConferidos: r.pedidos_rebate_nao_conferido ?? null,
+      })),
+    [dailyRows],
+  );
+
+  /** A média do período — soma dos MESMOS pontos diários, reusando `resolveSeloPromo`. */
+  const mediaPeriodoPct = useMemo(() => {
+    if (pontosSerieDiaria.length === 0) return null;
+    let comissaoSum = 0;
+    let rebateBrutoSum = 0;
+    let algumSemRebate = false;
+    for (const p of pontosSerieDiaria) {
+      comissaoSum += p.comissao;
+      if (p.rebateBruto == null) algumSemRebate = true;
+      else rebateBrutoSum += p.rebateBruto;
+    }
+    return resolveSeloPromo({
+      comissao: comissaoSum,
+      rebateBruto: algumSemRebate ? null : rebateBrutoSum,
+      semVendaNaJanela: false,
+    }).pct;
+  }, [pontosSerieDiaria]);
+
+  const seloAtual = useMemo(() => {
+    if (!hasDailyData || !fromDate || !toDate) return null;
+    return estadoAtualDaSerie(pontosSerieDiaria, { from: fromDate, to: toDate }, mediaPeriodoPct);
+  }, [hasDailyData, pontosSerieDiaria, fromDate, toDate, mediaPeriodoPct]);
+
+  const inicioPromoAtual = useMemo(() => {
+    if (!hasDailyData) return null;
+    return inicioPromocaoVigente(pontosSerieDiaria);
+  }, [hasDailyData, pontosSerieDiaria]);
+
   // ── Simulador manual de MCO (Phase 102) ──────────────────────────────────
   // "E se" ephemeral, 100% component-local (D-01..D-05). computeMcoRecommendation
   // acima SEMPRE recebe waterfallCard REAL — invariante D-04, nunca simCard.
@@ -1300,9 +1359,32 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                         accent={mcoRole === "good"}
                         danger={mcoRole === "critical"}
                       />
+                      {/* 🔴 [21/08/2026, D-selo-03] O selo de estado atual +
+                          a data de início — insumo de `dailyRows`, a série
+                          diária que esta aba JÁ BUSCA (custo de rede zero).
+                          Este card CONTINUA sendo detalhe (densidade bloco,
+                          rótulo em cada linha) — o par abaixo não sai daqui,
+                          só para de repetir o número real que a linha "=
+                          MCO/un" acima já mostrou. */}
+                      {seloAtual && (
+                        <div className="pt-1.5 flex items-center gap-2">
+                          <SeloPromo selo={seloAtual} densidade="bloco" />
+                          {inicioPromoAtual?.data && (
+                            <span className="text-[10px] text-muted-foreground">
+                              {inicioPromoAtual.truncada
+                                ? `promoção ativa desde pelo menos ${format(parseISO(inicioPromoAtual.data), "dd/MM/yy")}`
+                                : `promoção ativa desde ${format(parseISO(inicioPromoAtual.data), "dd/MM/yy")}`}
+                            </span>
+                          )}
+                        </div>
+                      )}
                       {/* [222-15-R2] O par de cenários pelo componente único —
                           o segundo composto por `computeMco` chamado de novo,
-                          nunca por DIFAL somado sobre o MCO já pronto. */}
+                          nunca por DIFAL somado sobre o MCO já pronto.
+                          🔴 [21/08/2026, D-selo-03] `omitirCenarioReal`: a
+                          margem real já apareceu na linha "= MCO/un" acima —
+                          antes desta emenda ela se repetia aqui pela terceira
+                          vez (a mesma, de novo, como "1º cenário"). */}
                       <div className="pt-2 mt-1 border-t border-border/40">
                         <McoDoisCenarios
                           cenarios={resolveLinhaCenarios({
@@ -1322,7 +1404,7 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                           })}
                           densidade="bloco"
                           role={mcoRole}
-                          rotuloSemDifal="MCO/un sem DIFAL"
+                          omitirCenarioReal
                           rotuloComDifal="MCO/un com DIFAL"
                         />
                       </div>
@@ -1351,7 +1433,7 @@ export function PrecoPraticadoReport({ products, mlUserIds, fromDate, toDate, re
                           })}
                           densidade="bloco"
                           role={mcoRole}
-                          rotuloComRebate="MCO/un com rebate"
+                          omitirCenarioReal
                           rotuloSemRebate="MCO/un tarifa cheia"
                         />
                       </div>

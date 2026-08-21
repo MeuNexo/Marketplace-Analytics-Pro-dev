@@ -22,6 +22,17 @@
  * papel de cor nunca muda de base aqui — colorir pela tarifa cheia seria
  * alertar por um cenário hipotético.
  *
+ * 🔴 **EMENDA 21/08/2026 (Quick 260821-nof, D-selo-02) — o critério "sempre
+ * visível" acima foi REVERTIDO nas telas de LISTA.** Medido na tela real com
+ * a Fase 223 somando este par ao de DIFAL já existente: quatro números
+ * empilhados por linha, densidade ilegível (Wesley, 21/08). `/resultado`,
+ * `/anuncios` (dois ramos) e `/publicidade` passam a mostrar a margem real
+ * mais um selo compacto (`SeloPromo`); o par completo aqui descrito
+ * **continua valendo no DETALHE** (modal do anúncio, `/analise-precos`), via
+ * `omitirCenarioReal`. Restaurar o par nas listas não é correção de
+ * regressão — ver o cabeçalho de `McoDoisCenarios.tsx` para o registro
+ * completo.
+ *
  * Este componente é de APRESENTAÇÃO PURA: não decide régua (isso é
  * `resolveLinhaRebate`), não calcula margem (isso é o banco) e não recalcula
  * semáforo (recebe o papel de cor por propriedade).
@@ -75,6 +86,15 @@ export interface RebateDoisCenariosProps {
    * linhas.
    */
   ressalvaNoCabecalho?: boolean;
+  /**
+   * [Quick 260821-nof, D-selo-03] Quando `true`, pula a renderização do
+   * PRIMEIRO cenário (com rebate — a margem real) e mantém o segundo
+   * rotulado, a frase de motivo e a de lacuna. Mesma disciplina de
+   * `McoDoisCenarios.omitirCenarioReal` — quem chama já renderizou o real
+   * fora deste componente. Padrão `false`: quem não passa nada continua
+   * idêntico a antes desta fase.
+   */
+  omitirCenarioReal?: boolean;
   className?: string;
 }
 
@@ -106,6 +126,7 @@ export function RebateDoisCenarios({
   rotuloSemRebate,
   role = "neutral",
   ressalvaNoCabecalho = false,
+  omitirCenarioReal = false,
   className,
 }: RebateDoisCenariosProps) {
   const { comRebate, semRebate, motivo, pedidosSemCaptura, pedidosNaoConferidos } = cenarios;
@@ -129,15 +150,19 @@ export function RebateDoisCenarios({
         className,
       )}
     >
-      {/* ── Cenário 1: com rebate. É ele que o semáforo colore. ── */}
-      <span className={cn("inline-flex items-baseline gap-1", compacto ? "text-xs" : "text-sm")}>
-        <span className={cn("font-semibold tabular-nums", ROLE_CLASSES[role])}>
-          {valorEPct(comRebate)}
+      {/* ── Cenário 1: com rebate. É ele que o semáforo colore. ──
+          [Quick 260821-nof, D-selo-03] Omitido quando `omitirCenarioReal` —
+          o chamador (detalhe) já renderizou o real uma vez, fora daqui. */}
+      {!omitirCenarioReal && (
+        <span className={cn("inline-flex items-baseline gap-1", compacto ? "text-xs" : "text-sm")}>
+          <span className={cn("font-semibold tabular-nums", ROLE_CLASSES[role])}>
+            {valorEPct(comRebate)}
+          </span>
+          <span className={cn("text-muted-foreground", compacto ? "text-[10px]" : "text-xs")}>
+            {rotuloComRebate}
+          </span>
         </span>
-        <span className={cn("text-muted-foreground", compacto ? "text-[10px]" : "text-xs")}>
-          {rotuloComRebate}
-        </span>
-      </span>
+      )}
 
       {/* ── Cenário 2: sem rebate (tarifa cheia) — número, ou o motivo em palavras. ── */}
       {semRebate ? (
@@ -156,8 +181,8 @@ export function RebateDoisCenarios({
       ) : (
         <span
           className={cn(
-            "text-muted-foreground",
-            compacto ? "text-[10px] max-w-[220px] text-right" : "text-xs",
+            "text-muted-foreground break-words",
+            compacto ? "text-[10px] max-w-[220px] text-right" : "text-xs max-w-[320px]",
           )}
         >
           {frase}
@@ -166,9 +191,18 @@ export function RebateDoisCenarios({
 
       {/* A lacuna aparece MESMO quando há segundo cenário: parte dos pedidos
           pode estar fora da conta por falta de captura ou por conferência
-          que não fecha — as duas causas nomeadas separadamente. */}
+          que não fecha — as duas causas nomeadas separadamente.
+          🔴 [Quick 260821-nof] Esta era a ÚNICA frase do componente sem
+          limite de largura nem quebra — numa célula estreita ela escapava
+          do bloco e passava por cima do conteúdo vizinho. Mesmo tratamento
+          da frase de ausência acima. */}
       {semRebate && fraseLacuna && (
-        <span className={cn("text-muted-foreground", compacto ? "text-[10px]" : "text-xs")}>
+        <span
+          className={cn(
+            "text-muted-foreground break-words",
+            compacto ? "text-[10px] max-w-[220px] text-right" : "text-xs max-w-[320px]",
+          )}
+        >
           {fraseLacuna}
         </span>
       )}

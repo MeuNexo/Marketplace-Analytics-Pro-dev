@@ -229,6 +229,79 @@ describe("RebateDoisCenarios — lacuna parcial aparece MESMO com segundo cenár
   });
 });
 
+describe("RebateDoisCenarios — omitirCenarioReal (Quick 260821-nof, D-selo-03)", () => {
+  it("com omitirCenarioReal, NÃO renderiza o valor com rebate, mas continua renderizando a tarifa cheia", () => {
+    const { container } = render(
+      <RebateDoisCenarios cenarios={CENARIOS_OK} densidade="bloco" omitirCenarioReal />,
+    );
+
+    expect(container.textContent).not.toContain("21,90");
+    expect(container.textContent).toContain("43,07");
+  });
+
+  it("com omitirCenarioReal e tarifa cheia ausente, continua mostrando a frase do motivo", () => {
+    const cenarios = resolveLinhaRebate({
+      comRebate: { valor: 62.76, pct: 12.0 },
+      semRebate: null,
+      rebateEfeito: null,
+      rebateBruto: null,
+      pedidosSemCaptura: 0,
+      pedidosNaoConferidos: 6,
+    });
+    const { container } = render(
+      <RebateDoisCenarios cenarios={cenarios} densidade="bloco" omitirCenarioReal />,
+    );
+
+    expect(container.textContent).not.toContain("62,76");
+    expect(container.textContent).toMatch(/nosso/i);
+  });
+
+  it("sem a propriedade (padrão false), rende exatamente o que rendia antes — regressão", () => {
+    const { container } = render(<RebateDoisCenarios cenarios={CENARIOS_OK} densidade="bloco" />);
+
+    expect(container.textContent).toContain("21,90");
+    expect(container.textContent).toContain("43,07");
+  });
+});
+
+describe("RebateDoisCenarios — frases longas cabem no bloco (Quick 260821-nof)", () => {
+  it("a frase de lacuna (o defeito relatado) tem limite de largura e quebra de palavra", () => {
+    const cenarios = resolveLinhaRebate({
+      comRebate: { valor: 62.76, pct: 12.0 },
+      semRebate: { valor: 62.76, pct: 12.0 },
+      rebateEfeito: 0,
+      rebateBruto: 0,
+      pedidosSemCaptura: 3,
+      pedidosNaoConferidos: 0,
+    });
+    const { container } = render(<RebateDoisCenarios cenarios={cenarios} densidade="bloco" />);
+    const alvo = Array.from(container.querySelectorAll("span")).find(
+      (s) => s.children.length === 0 && (s.textContent ?? "").match(/ainda não consultado/i),
+    );
+
+    expect(alvo?.className).toMatch(/max-w-/);
+    expect(alvo?.className).toContain("break-words");
+  });
+
+  it("a frase de ausência também tem limite de largura e quebra de palavra", () => {
+    const cenarios = resolveLinhaRebate({
+      comRebate: { valor: 62.76, pct: 12.0 },
+      semRebate: null,
+      rebateEfeito: null,
+      rebateBruto: null,
+      pedidosSemCaptura: 0,
+      pedidosNaoConferidos: 6,
+    });
+    const { container } = render(<RebateDoisCenarios cenarios={cenarios} densidade="bloco" />);
+    const alvo = Array.from(container.querySelectorAll("span")).find(
+      (s) => s.children.length === 0 && (s.textContent ?? "").match(/nosso/i),
+    );
+
+    expect(alvo?.className).toMatch(/max-w-/);
+    expect(alvo?.className).toContain("break-words");
+  });
+});
+
 describe("RebateDoisCenarios — densidade de célula", () => {
   it("mostra valor e percentual nos DOIS cenários também na tabela densa", () => {
     const { container } = render(<RebateDoisCenarios cenarios={CENARIOS_OK} densidade="celula" />);

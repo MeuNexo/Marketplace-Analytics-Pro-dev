@@ -203,6 +203,100 @@ describe("McoDoisCenarios — ausência aparece em palavras, nunca como zero", (
   });
 });
 
+describe("McoDoisCenarios — omitirCenarioReal (Quick 260821-nof, D-selo-03)", () => {
+  it("com omitirCenarioReal, NÃO renderiza o valor do cenário sem DIFAL, mas continua renderizando o cenário com DIFAL", () => {
+    const { container } = render(
+      <McoDoisCenarios cenarios={CENARIOS_OK} densidade="bloco" omitirCenarioReal />,
+    );
+
+    expect(container.textContent).not.toContain("84,20");
+    expect(container.textContent).toContain("33,49");
+  });
+
+  it("com omitirCenarioReal e cenário com DIFAL ausente, continua mostrando a frase do motivo", () => {
+    const cenarios = resolveLinhaCenarios({
+      semDifal: { valor: 84.2, pct: 12.15 },
+      comDifal: null,
+      difalEfeito: null,
+      pedidosDifalIndefinido: 0,
+      temOperacaoInterestadual: true,
+      regimeAplicaDifal: false,
+    });
+    const { container } = render(
+      <McoDoisCenarios cenarios={cenarios} densidade="bloco" omitirCenarioReal />,
+    );
+
+    expect(container.textContent).not.toContain("84,20");
+    expect(container.textContent).toMatch(/regime/i);
+  });
+
+  it("sem a propriedade (padrão false), rende exatamente o que rendia antes — regressão", () => {
+    const { container } = render(<McoDoisCenarios cenarios={CENARIOS_OK} densidade="bloco" />);
+
+    expect(container.textContent).toContain("84,20");
+    expect(container.textContent).toContain("33,49");
+  });
+});
+
+describe("McoDoisCenarios — frases longas cabem no bloco (Quick 260821-nof)", () => {
+  it("a frase de ausência tem limite de largura e quebra de palavra", () => {
+    const cenarios = resolveLinhaCenarios({
+      semDifal: { valor: 84.2, pct: 12.15 },
+      comDifal: null,
+      difalEfeito: null,
+      pedidosDifalIndefinido: 7,
+      temOperacaoInterestadual: true,
+      regimeAplicaDifal: true,
+    });
+    const { container } = render(<McoDoisCenarios cenarios={cenarios} densidade="bloco" />);
+    const alvo = Array.from(container.querySelectorAll("span")).find((s) =>
+      s.children.length === 0 &&
+      (s.textContent ?? "").match(/alíquota|confirmad/i),
+    );
+
+    expect(alvo?.className).toMatch(/max-w-/);
+    expect(alvo?.className).toContain("break-words");
+  });
+
+  it("a frase de efeito nulo tem limite de largura e quebra de palavra", () => {
+    const cenarios = resolveLinhaCenarios({
+      semDifal: { valor: 84.2, pct: 12.15 },
+      comDifal: { valor: 84.2, pct: 12.15 },
+      difalEfeito: 0,
+      pedidosDifalIndefinido: 0,
+      temOperacaoInterestadual: true,
+      regimeAplicaDifal: true,
+    });
+    const { container } = render(<McoDoisCenarios cenarios={cenarios} densidade="bloco" />);
+    const alvo = Array.from(container.querySelectorAll("span")).find((s) =>
+      s.children.length === 0 &&
+      (s.textContent ?? "").match(/não muda|sem efeito/i),
+    );
+
+    expect(alvo?.className).toMatch(/max-w-/);
+    expect(alvo?.className).toContain("break-words");
+  });
+
+  it("a frase de pedidos com UF indefinida tem limite de largura e quebra de palavra", () => {
+    const cenarios = resolveLinhaCenarios({
+      semDifal: { valor: 84.2, pct: 12.15 },
+      comDifal: { valor: 84.2, pct: 12.15 },
+      difalEfeito: 10,
+      pedidosDifalIndefinido: 7,
+      temOperacaoInterestadual: true,
+      regimeAplicaDifal: true,
+    });
+    const { container } = render(<McoDoisCenarios cenarios={cenarios} densidade="bloco" />);
+    const alvo = Array.from(container.querySelectorAll("span")).find((s) =>
+      s.children.length === 0 &&
+      (s.textContent ?? "").includes("fora da conta"),
+    );
+
+    expect(alvo?.className).toMatch(/max-w-/);
+    expect(alvo?.className).toContain("break-words");
+  });
+});
+
 describe("McoDoisCenarios — o semáforo não é recalculado aqui", () => {
   it("aceita o papel de cor por propriedade e o aplica ao PRIMEIRO cenário", () => {
     const { container } = render(

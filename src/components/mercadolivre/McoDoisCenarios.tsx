@@ -16,6 +16,23 @@
  *      superfícies dizendo a mesma coisa do mesmo jeito, com a ressalva de
  *      estimativa saindo de UMA constante.
  *
+ * 🔴 **EMENDA 21/08/2026 (Quick 260821-nof, D-selo-02) — LEIA ANTES DE
+ * "CORRIGIR" UMA TELA DE LISTA QUE SÓ MOSTRA UM NÚMERO.** O parágrafo acima
+ * descrevia SETE superfícies sempre mostrando os dois números. Isso deixou
+ * de ser verdade: medido na tela real em 21/08/2026, com a Fase 223 somando
+ * um TERCEIRO e um QUARTO número (o par de rebate) ao lado deste, a
+ * densidade ficou ilegível — Wesley, olhando a tela: *"ficou muita
+ * informação, já estava muita com o DIFAL, agora fica mais difícil ainda de
+ * entender"*. Por decisão dele, o critério visual foi revertido nas telas de
+ * **LISTA** (`/resultado`, `/anuncios` nos dois ramos, `/publicidade`): cada
+ * linha passa a mostrar a margem REAL mais um **selo compacto** do estado
+ * atual da promoção (`SeloPromo`, `src/lib/seloPromo.ts`), nunca o par
+ * completo. O par sempre-visível descrito acima **continua valendo no
+ * DETALHE** — modal do anúncio (`ListingIndicatorsTab`) e `/analise-precos`
+ * (`PrecoPraticadoReport`) — que é onde este componente ainda é chamado sem
+ * `omitirCenarioReal`. **Restaurar o par nas listas NÃO é correção de
+ * regressão** — é desfazer uma decisão de produto documentada.
+ *
  * Na densidade `celula`, a ressalva de estimativa aparece UMA vez no cabeçalho
  * da coluna (`McoDoisCenariosCabecalho`), não repetida em centenas de linhas —
  * a palavra tem de informar, não virar ruído.
@@ -74,6 +91,19 @@ export interface McoDoisCenariosProps {
    * coluna. Evita repetir a palavra em cada uma das centenas de linhas.
    */
   ressalvaNoCabecalho?: boolean;
+  /**
+   * [Quick 260821-nof, D-selo-03] Quando `true`, o componente pula a
+   * renderização do PRIMEIRO cenário (sem DIFAL — a margem real) e mantém
+   * tudo o mais: o segundo cenário rotulado, a frase de motivo, a de efeito
+   * nulo e a contagem de UF indefinida. Existe para o DETALHE (modal do
+   * anúncio, `/analise-precos`) não repetir o número real que já apareceu
+   * uma vez fora deste componente — quem renderiza o real é o chamador.
+   *
+   * 🔴 Padrão `false`: as superfícies que não passam nada continuam
+   * IDÊNTICAS a antes desta fase — é isso que protege `/precificacao`,
+   * `/financeiro` e o simulador, que não pediram nenhuma mudança.
+   */
+  omitirCenarioReal?: boolean;
   className?: string;
 }
 
@@ -105,6 +135,7 @@ export function McoDoisCenarios({
   rotuloComDifal = "com DIFAL",
   role = "neutral",
   ressalvaNoCabecalho = false,
+  omitirCenarioReal = false,
   className,
 }: McoDoisCenariosProps) {
   const { semDifal, comDifal, motivo, pedidosDifalIndefinido, efeitoNulo } = cenarios;
@@ -126,15 +157,19 @@ export function McoDoisCenarios({
         className,
       )}
     >
-      {/* ── Cenário 1: sem DIFAL. É ele que o semáforo colore. ── */}
-      <span className={cn("inline-flex items-baseline gap-1", compacto ? "text-xs" : "text-sm")}>
-        <span className={cn("font-semibold tabular-nums", ROLE_CLASSES[role])}>
-          {valorEPct(semDifal)}
+      {/* ── Cenário 1: sem DIFAL. É ele que o semáforo colore. ──
+          [Quick 260821-nof, D-selo-03] Omitido quando `omitirCenarioReal` —
+          o chamador (detalhe) já renderizou o real uma vez, fora daqui. */}
+      {!omitirCenarioReal && (
+        <span className={cn("inline-flex items-baseline gap-1", compacto ? "text-xs" : "text-sm")}>
+          <span className={cn("font-semibold tabular-nums", ROLE_CLASSES[role])}>
+            {valorEPct(semDifal)}
+          </span>
+          <span className={cn("text-muted-foreground", compacto ? "text-[10px]" : "text-xs")}>
+            {rotuloSemDifal}
+          </span>
         </span>
-        <span className={cn("text-muted-foreground", compacto ? "text-[10px]" : "text-xs")}>
-          {rotuloSemDifal}
-        </span>
-      </span>
+      )}
 
       {/* ── Cenário 2: com DIFAL — número, ou o motivo em palavras. ── */}
       {comDifal ? (
@@ -154,17 +189,25 @@ export function McoDoisCenarios({
       ) : (
         <span
           className={cn(
-            "text-muted-foreground",
-            compacto ? "text-[10px] max-w-[220px] text-right" : "text-xs",
+            "text-muted-foreground break-words",
+            compacto ? "text-[10px] max-w-[220px] text-right" : "text-xs max-w-[320px]",
           )}
         >
           {frase}
         </span>
       )}
 
-      {/* Dois números iguais nunca ficam mudos: o efeito nulo se declara. */}
+      {/* Dois números iguais nunca ficam mudos: o efeito nulo se declara.
+          [Quick 260821-nof] Mesmo tratamento de largura/quebra da frase de
+          ausência acima — sem isso, esta era a única frase do componente
+          que escapava do bloco numa célula estreita. */}
       {comDifal && efeitoNulo && (
-        <span className={cn("text-muted-foreground", compacto ? "text-[10px]" : "text-xs")}>
+        <span
+          className={cn(
+            "text-muted-foreground break-words",
+            compacto ? "text-[10px] max-w-[220px]" : "text-xs max-w-[320px]",
+          )}
+        >
           {FRASE_EFEITO_NULO}
         </span>
       )}
@@ -172,7 +215,12 @@ export function McoDoisCenarios({
       {/* A lacuna aparece MESMO quando há segundo cenário: parte dos pedidos
           pode estar fora da conta por UF ainda não confirmada. */}
       {comDifal && pedidosDifalIndefinido > 0 && (
-        <span className={cn("text-muted-foreground", compacto ? "text-[10px]" : "text-xs")}>
+        <span
+          className={cn(
+            "text-muted-foreground break-words",
+            compacto ? "text-[10px] max-w-[220px]" : "text-xs max-w-[320px]",
+          )}
+        >
           {pedidosDifalIndefinido} pedido(s) fora da conta — alíquota da UF não confirmada.
         </span>
       )}
