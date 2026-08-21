@@ -74,17 +74,61 @@
 --
 -- AUSENCIA. Mes sem base suficiente devolve taxa e provisao NULAS, nunca
 -- zero. Do lado do REALIZADO (guia_caixa e guia_apuracao), ausencia
--- TAMBEM e NULL, nunca zero: um mes sem NENHUMA linha de guia (nem paga,
--- nem pendente, nem cancelada) e uma LACUNA, distinta de um mes com
--- 100% de credito (todas as linhas canceladas), que e legitimamente ZERO
--- de imposto reconhecido (dreRegime.ts: "Mes 100% credito -> 0, nao null").
+-- TAMBEM e NULL, nunca zero.
+--
+-- 🔴 CORRECAO (achado da 1a rodada de I-01, medido pelo orquestrador em
+-- producao, 21/08/2026): a versao anterior detectava lacuna por "nenhuma
+-- LINHA no mes, seja qual for o status" — e isso deixava passar um 0,00
+-- fantasma sempre que existia uma linha 'cancelled' (ou 'pending') mas
+-- NENHUMA 'paid'/nao-cancelada. Prova ao vivo: 11/2025 tem uma linha
+-- `cancelled` (R$ 15.673,84) e NENHUMA `paid` -> a versao anterior via
+-- "existe linha" e somava o FILTER de paid, que dava 0 -> guia_caixa =
+-- 0,00 (ERRADO, produziu um erro_regua_caixa de +R$ 13.154,79 que nao
+-- existe). 12/2025 nao tem NENHUMA linha em nenhum estado -> a mesma
+-- versao anterior corretamente dava NULL. Os dois meses sao a MESMA
+-- lacuna (nao ha guia paga) e tinham que dar o MESMO resultado.
+--
+-- A lacuna agora e detectada pelo status que CADA lado realmente soma —
+-- nao pela existencia de QUALQUER linha:
+--   guia_caixa    -> lacuna quando nao ha NENHUMA linha 'paid' no mes
+--                    (uma linha 'cancelled' ou 'pending' sozinha nao
+--                    conta como guia realizada no caixa).
+--   guia_apuracao -> lacuna quando nao ha NENHUMA linha 'paid' ou
+--                    'pending' na competencia (uma competencia 100%
+--                    'cancelled' e, para efeito desta MEDICAO DE ERRO,
+--                    tratada como lacuna, nao como zero reconhecido).
+--
+-- ⚠️ Isto DIVERGE, de proposito e so aqui, da regra de dreRegime.ts
+-- ("Mes 100% credito -> 0, nao null") para a TELA de Fechar o Mes. La,
+-- 0 e uma resposta operacional legitima (nao ha imposto a pagar). Aqui a
+-- pergunta e outra: "o erro da provisao contra este mes e confiavel?" —
+-- e um mes 100% cancelado NAO tem guia real para comparar contra a
+-- provisao, entao vira ausencia declarada, nunca um erro artificialmente
+-- pequeno. Nao redecide a soma (cancelled continua fora do total nos
+-- dois lados) — so redecide QUANDO o total e NULL em vez de 0.
+--
 -- Medido em Q-B: 11/2025 e 12/2025 sao lacunas reais (11/25 so tem
--- `cancelled`; 12/25 nao aparece em nenhum estado) e precisam ser NULL, nao
--- 0,00 — um 0,00 pareceria "provisao perfeita" quando na verdade nao ha
--- dado para comparar. 11/2024 tem guia paga de R$ 0,02 (credito quase
--- total, legitimo nesta operacao) — isso E dado, fica como esta, mas
--- explode qualquer razao percentual sobre ele; 224-IMPOSTO.md declara o
--- mes explicitamente.
+-- `cancelled`; 12/25 nao aparece em nenhum estado) e agora as DUAS
+-- devolvem NULL, nao 0,00 — um 0,00 pareceria "provisao perfeita" quando
+-- na verdade nao ha dado para comparar. 11/2024 tem guia PAGA de R$ 0,02
+-- (credito quase total, legitimo nesta operacao) — isso E dado (existe
+-- linha 'paid'), fica como esta e NAO vira lacuna, mas explode qualquer
+-- razao percentual sobre ele; 224-IMPOSTO.md declara o mes explicitamente.
+--
+-- 🔴 SEGUNDA CORRECAO (mesma rodada): `guia_caixa_no_mes` e
+-- `guia_apuracao_m_mais_1` saiam IDENTICOS nas 11 linhas medidas. Isso e
+-- ESPERADO nesta janela, nao um bug: guia_caixa soma so 'paid' dentro do
+-- mes (clone de imposto_guia_mes); guia_apuracao soma 'paid'+'pending' na
+-- MESMA competencia via RPC. As duas coincidem sempre que a competencia
+-- nao tem NENHUMA linha 'pending' — e, medido em Q-B, todo o historico
+-- passado so tem 'pending' a partir de 09/2026 (sao as projecoes
+-- replicadas do Tiny, fora do escopo desta medicao). As duas colunas
+-- DIVERGEM no momento em que uma competencia tiver guia 'pending' real
+-- (reconhecida mas ainda nao paga) — sao perguntas diferentes que so
+-- coincidem por ausencia de 'pending' no periodo medido, e ficam as duas
+-- porque cada uma responde a sua pergunta (ver rotulo acima). Nao
+-- colapsar as colunas: colapsar perderia a distincao no dia em que
+-- divergirem.
 --
 -- Projeto: ckcdevcxgvueywivefgx (NAO usar gionpsuunfkkzzjdubfy).
 -- Aplicar via MCP apply_migration. NUNCA `supabase db push`.
@@ -133,14 +177,15 @@ AS $function$
     GROUP BY m.mes_ini
   ),
   -- REGUA DE CAIXA: o que saiu no mes. Clone de imposto_guia_mes.
-  -- Ausencia (nenhuma linha de cash_outflows no bloco fiscal, no mes
-  -- inteiro) devolve NULL, nao 0 — COUNT(co.id) = 0 detecta a lacuna;
-  -- quando existem linhas mas nenhuma 'paid' (ex.: so pending/cancelled
-  -- no mes), o total soma 0 legitimamente.
+  -- Lacuna = NENHUMA linha 'paid' no mes (uma linha 'cancelled' ou
+  -- 'pending' sozinha NAO conta como guia realizada) -> NULL. Quando ha
+  -- ao menos uma linha 'paid' (mesmo que de valor pequeno, ex. credito
+  -- quase total), soma normalmente, mesmo que a soma de coincidencia
+  -- desse exatamente 0.
   guia_caixa AS MATERIALIZED (
     SELECT m.mes_ini,
-           CASE WHEN COUNT(co.id) = 0 THEN NULL
-                ELSE COALESCE(SUM(co.amount) FILTER (WHERE co.status = 'paid'), 0)
+           CASE WHEN COUNT(co.id) FILTER (WHERE co.status = 'paid') = 0 THEN NULL
+                ELSE SUM(co.amount) FILTER (WHERE co.status = 'paid')
            END                                                    AS total,
            COUNT(co.id) FILTER (WHERE co.status = 'paid')::int    AS n
     FROM meses m
@@ -154,16 +199,16 @@ AS $function$
   -- REGUA DE APURACAO (Fase 94 respeitada, conteudo M+1 REFUTADO por Q-B
   -- para esta categoria nesta conta — ver cabecalho). A guia da venda do
   -- mes M e lida na MESMA competencia M, via RPC viva, agregacao identica
-  -- a dreRegime.ts:121-135 — cancelled nao soma, paid e pending somam.
-  -- Ausencia (RPC nao devolve NENHUMA linha para a competencia) devolve
-  -- NULL, nao 0 — COUNT(g.status) = 0 detecta a lacuna via LEFT JOIN
-  -- LATERAL; um mes com linhas 100% canceladas soma 0 legitimamente
-  -- (credito reconhecido, sem imposto a pagar).
+  -- a dreRegime.ts:121-135 na soma (cancelled nao soma, paid e pending
+  -- somam). Lacuna = NENHUMA linha 'paid' NEM 'pending' na competencia
+  -- (uma competencia 100% 'cancelled' e, so para esta MEDICAO DE ERRO,
+  -- tratada como lacuna — diverge de proposito da regra de dreRegime.ts
+  -- para a tela de Fechar o Mes, ver cabecalho) -> NULL.
   guia_apuracao AS MATERIALIZED (
     SELECT m.mes_ini,
            m.mes_ini                                                          AS competencia,
-           CASE WHEN COUNT(g.status) = 0 THEN NULL
-                ELSE COALESCE(SUM(g.total) FILTER (WHERE g.status <> 'cancelled'), 0)
+           CASE WHEN COUNT(g.status) FILTER (WHERE g.status <> 'cancelled') = 0 THEN NULL
+                ELSE SUM(g.total) FILTER (WHERE g.status <> 'cancelled')
            END                                                                AS total,
            COALESCE(SUM(g.n) FILTER (WHERE g.status <> 'cancelled'), 0)::int  AS n
     FROM meses m
