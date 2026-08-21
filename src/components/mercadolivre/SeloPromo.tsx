@@ -31,13 +31,15 @@ export interface SeloPromoProps {
 /**
  * Cor por estado. É um selo de RISCO, não de saúde: promoção ativa entra em
  * tom de alerta suave (essa margem depende de a campanha continuar), a
- * conferência que não fecha em tom destrutivo (erro nosso, acionável), os
- * demais em tom apagado. Sem ícone e sem emoji.
+ * demais em tom apagado. Sem ícone e sem emoji. [260821-qps] Estado sem texto
+ * (`sem_venda_recente`) não renderiza nada — célula vazia.
  */
 const ESTADO_CLASSES: Record<EstadoSelo, string> = {
   com_promo: "text-warning",
   com_promo_parcial: "text-warning",
-  conferencia_nao_fecha: "text-destructive",
+  // 🔴 [260821-qps] Deixou de ser vermelho: conferência pendente é fato de
+  // processo, não alarme para quem está decidindo preço. Ver `seloPromo.ts`.
+  conferencia_nao_fecha: "text-muted-foreground",
   nao_capturado: "text-muted-foreground",
   indisponivel: "text-muted-foreground",
   sem_promo: "text-muted-foreground",
@@ -46,6 +48,11 @@ const ESTADO_CLASSES: Record<EstadoSelo, string> = {
 
 export function SeloPromo({ selo, densidade = "bloco", className }: SeloPromoProps) {
   const compacto = densidade === "celula";
+
+  // 🔴 [260821-qps] Texto vazio = célula vazia. Um anúncio que não vendeu na
+  // janela recente não recebe marca nenhuma; nada a dizer é melhor que dizer
+  // que não se sabe.
+  if (selo.texto === "") return null;
 
   return (
     <span

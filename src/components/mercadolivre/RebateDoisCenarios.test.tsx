@@ -107,7 +107,7 @@ describe("RebateDoisCenarios — ausência aparece em palavras, nunca como zero"
         pedidosSemCaptura: 15,
         pedidosNaoConferidos: 0,
       },
-      frase: /ainda não consultado/i,
+      frase: /ainda não vieram na fatura/i,
     },
     {
       motivo: "conferencia_nao_fecha",
@@ -119,7 +119,7 @@ describe("RebateDoisCenarios — ausência aparece em palavras, nunca como zero"
         pedidosSemCaptura: 0,
         pedidosNaoConferidos: 4,
       },
-      frase: /nosso/i,
+      frase: /conciliada/i,
     },
     {
       motivo: "indisponivel",
@@ -184,7 +184,7 @@ describe("RebateDoisCenarios — ausência aparece em palavras, nunca como zero"
       />,
     );
 
-    expect(container.textContent).toMatch(/nosso/i);
+    expect(container.textContent).toMatch(/conciliada/i);
     expect(container.textContent).toContain("6");
   });
 });
@@ -205,7 +205,7 @@ describe("RebateDoisCenarios — lacuna parcial aparece MESMO com segundo cenár
     const texto = container.textContent ?? "";
 
     expect(texto).toContain("62,76");
-    expect(texto).toMatch(/ainda não consultado/i);
+    expect(texto).toMatch(/fatura/i);
     expect(texto).toContain("3");
   });
 
@@ -224,7 +224,7 @@ describe("RebateDoisCenarios — lacuna parcial aparece MESMO com segundo cenár
     const texto = container.textContent ?? "";
 
     expect(texto).toContain("62,76");
-    expect(texto).toMatch(/erro nosso/i);
+    expect(texto).toMatch(/conciliada/i);
     expect(texto).toContain("2");
   });
 });
@@ -253,7 +253,7 @@ describe("RebateDoisCenarios — omitirCenarioReal (Quick 260821-nof, D-selo-03)
     );
 
     expect(container.textContent).not.toContain("62,76");
-    expect(container.textContent).toMatch(/nosso/i);
+    expect(container.textContent).toMatch(/conciliada/i);
   });
 
   it("sem a propriedade (padrão false), rende exatamente o que rendia antes — regressão", () => {
@@ -276,7 +276,7 @@ describe("RebateDoisCenarios — frases longas cabem no bloco (Quick 260821-nof)
     });
     const { container } = render(<RebateDoisCenarios cenarios={cenarios} densidade="bloco" />);
     const alvo = Array.from(container.querySelectorAll("span")).find(
-      (s) => s.children.length === 0 && (s.textContent ?? "").match(/ainda não consultado/i),
+      (s) => s.children.length === 0 && (s.textContent ?? "").match(/fora desta conta/i),
     );
 
     expect(alvo?.className).toMatch(/max-w-/);
@@ -294,7 +294,7 @@ describe("RebateDoisCenarios — frases longas cabem no bloco (Quick 260821-nof)
     });
     const { container } = render(<RebateDoisCenarios cenarios={cenarios} densidade="bloco" />);
     const alvo = Array.from(container.querySelectorAll("span")).find(
-      (s) => s.children.length === 0 && (s.textContent ?? "").match(/nosso/i),
+      (s) => s.children.length === 0 && (s.textContent ?? "").match(/conciliada/i),
     );
 
     expect(alvo?.className).toMatch(/max-w-/);

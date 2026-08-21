@@ -223,12 +223,12 @@ export function fraseMotivoSemRebate(
       return "Nenhum pedido do recorte teve rebate no período — a margem já é por mérito próprio.";
     case "nao_capturado":
       return pedidosSemCaptura > 0
-        ? `${pedidosSemCaptura} pedido(s) ainda não consultado(s) na fatura do Mercado Livre — o cenário sem rebate não pode ser estimado.`
-        : "Pedidos ainda não consultados na fatura do Mercado Livre — o cenário sem rebate não pode ser estimado.";
+        ? `${pedidosSemCaptura} pedido(s) ainda não vieram na fatura do Mercado Livre — o ML fatura com alguns dias de atraso, e a tarifa cheia entra na conta quando a fatura chegar.`
+        : "Pedidos ainda não vieram na fatura do Mercado Livre — o ML fatura com alguns dias de atraso, e a tarifa cheia entra na conta quando a fatura chegar.";
     case "conferencia_nao_fecha":
       return pedidosNaoConferidos > 0
-        ? `A tarifa cobrada não bate com a comissão gravada em ${pedidosNaoConferidos} pedido(s) — o erro é nosso, e o rebate deles não pode ser afirmado.`
-        : "A tarifa cobrada não bate com a comissão gravada — o erro é nosso, e o rebate não pode ser afirmado.";
+        ? `${pedidosNaoConferidos} pedido(s) ficaram fora desta conta: a tarifa cobrada pelo Mercado Livre ainda não foi conciliada com a comissão gravada.`
+        : "Pedidos ficaram fora desta conta: a tarifa cobrada pelo Mercado Livre ainda não foi conciliada com a comissão gravada.";
     case "indisponivel":
       return "O cenário sem rebate não carregou.";
   }
@@ -249,10 +249,10 @@ export function FRASE_REBATE_PARCIAL(
 
   const partes: string[] = [];
   if (pedidosSemCaptura > 0) {
-    partes.push(`${pedidosSemCaptura} pedido(s) ainda não consultado(s)`);
+    partes.push(`${pedidosSemCaptura} pedido(s) ainda não faturado(s) pelo Mercado Livre`);
   }
   if (pedidosNaoConferidos > 0) {
-    partes.push(`${pedidosNaoConferidos} pedido(s) com tarifa que não confere (erro nosso)`);
+    partes.push(`${pedidosNaoConferidos} pedido(s) com tarifa ainda não conciliada`);
   }
   return `${partes.join(" e ")} ficaram fora desta conta.`;
 }

@@ -104,10 +104,19 @@ const TEXTO_POR_ESTADO: Record<
   Exclude<EstadoSelo, "com_promo" | "com_promo_parcial">,
   string
 > = {
-  sem_venda_recente: "sem venda 7d",
-  conferencia_nao_fecha: "erro nosso",
-  nao_capturado: "não sei",
-  indisponivel: "não carregou",
+  // 🔴 [260821-qps] Célula VAZIA, não selo: um anúncio que não vendeu na
+  // semana não é lacuna nem erro — não merece marca nenhuma na tela. O estado
+  // continua existindo por dentro (`data-selo-promo="sem_venda_recente"`) e o
+  // `titulo` continua carregando a ressalva; só a marca visível saiu.
+  sem_venda_recente: "",
+  // 🔴 [260821-qps] Os três estados de ausência convergem para o mesmo traço
+  // discreto — decisão do Wesley em 21/08 com a tela na frente: "o sistema não
+  // pode dizer 'não sei' nem 'erro nosso'". A DISTINÇÃO NÃO FOI PERDIDA: cada
+  // um mantém seu `estado`, seu `data-selo-promo` e seu `titulo` com o motivo
+  // real. O que saiu foi a confissão vaga na célula onde se decide preço.
+  conferencia_nao_fecha: "—",
+  nao_capturado: "—",
+  indisponivel: "—",
   sem_promo: "—",
 };
 

@@ -72,7 +72,8 @@ describe("resolveSeloPromo", () => {
 
     expect(resultado.estado).toBe("sem_venda_recente");
     expect(resultado.pct).toBeNull();
-    expect(resultado.texto).toBe("sem venda 7d");
+    // [260821-qss] Célula vazia — o estado e o título sobrevivem, a marca não.
+    expect(resultado.texto).toBe("");
     expect(resultado.texto).not.toMatch(/%/);
     expect(resultado.titulo).toContain("19.2%");
     expect(resultado.titulo).toMatch(/desconhecid/i);
@@ -88,8 +89,8 @@ describe("resolveSeloPromo", () => {
     });
     expect(resultado.estado).toBe("conferencia_nao_fecha");
     expect(resultado.pct).toBeNull();
-    expect(resultado.texto).toBe("erro nosso");
-    expect(resultado.titulo).toMatch(/nosso/i);
+    expect(resultado.texto).toBe("—");
+    expect(resultado.titulo).toMatch(/conciliada/i);
   });
 
   it("(c) insumo ausente com pedido sem captura: nao_capturado", () => {
@@ -102,7 +103,8 @@ describe("resolveSeloPromo", () => {
     });
     expect(resultado.estado).toBe("nao_capturado");
     expect(resultado.pct).toBeNull();
-    expect(resultado.texto).toBe("não sei");
+    expect(resultado.texto).toBe("—");
+    expect(resultado.titulo).toMatch(/fatura/i);
   });
 
   it("(d) insumo ausente, sem contagem nenhuma: indisponivel", () => {
@@ -113,7 +115,7 @@ describe("resolveSeloPromo", () => {
     });
     expect(resultado.estado).toBe("indisponivel");
     expect(resultado.pct).toBeNull();
-    expect(resultado.texto).toBe("não carregou");
+    expect(resultado.texto).toBe("—");
   });
 
   it("(e) comissaoCheia <= 0: indisponivel", () => {
@@ -181,7 +183,7 @@ describe("resolveSeloPromo", () => {
     expect(resultado.estado).toBe("com_promo_parcial");
     expect(resultado.texto.endsWith("*")).toBe(true);
     expect(resultado.titulo).toContain("3");
-    expect(resultado.titulo).toMatch(/ainda não consultado/i);
+    expect(resultado.titulo).toMatch(/ainda não faturado/i);
   });
 
   it("(j) rebate positivo, sem lacuna: com_promo", () => {

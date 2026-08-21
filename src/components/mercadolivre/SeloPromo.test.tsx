@@ -38,12 +38,25 @@ const SETE_ESTADOS: SeloPromoResult[] = [
 ];
 
 describe("SeloPromo — os sete estados", () => {
-  it("os sete estados rendem sete textos distintos", () => {
-    const textos = new Set(SETE_ESTADOS.map((s) => s.texto));
-    expect(textos.size).toBe(7);
+  it("os SETE estados internos continuam distintos, mesmo com quatro deles compartilhando o traço na tela", () => {
+    // 🔴 [260821-qps] Antes eram sete textos distintos, um por estado. O
+    // Wesley tirou da tela a confissão vaga ("não sei", "erro nosso") e o
+    // selo do anúncio que não vendeu: sobram QUATRO aparências. A distinção
+    // entre os estados não foi perdida — ela vive no `estado`, no
+    // `data-selo-promo` e no `titulo`, que continuam sete.
+    expect(new Set(SETE_ESTADOS.map((s) => s.estado)).size).toBe(7);
+    expect(new Set(SETE_ESTADOS.map((s) => s.titulo)).size).toBe(7);
+    expect(new Set(SETE_ESTADOS.map((s) => s.texto)).size).toBe(4);
   });
 
-  it.each(SETE_ESTADOS)(
+  it("'sem_venda_recente' não renderiza NADA — célula vazia, não selo", () => {
+    const semVenda = SETE_ESTADOS.find((s) => s.estado === "sem_venda_recente")!;
+    const { container } = render(<SeloPromo selo={semVenda} />);
+    expect(container.querySelector("[data-selo-promo]")).toBeNull();
+    expect(container.textContent).toBe("");
+  });
+
+  it.each(SETE_ESTADOS.filter((s) => s.texto !== ""))(
     "estado $estado: carrega data-selo-promo e title não vazio",
     (selo) => {
       const { container } = render(<SeloPromo selo={selo} />);

@@ -89,9 +89,12 @@ describe("resolveLinhaRebate — um teste por motivo de ausência", () => {
     expect(r.pedidosNaoConferidos).toBe(5);
     const frase = fraseMotivoSemRebate("conferencia_nao_fecha", 0, 5);
     expect(frase).toContain("5");
-    // O erro é nosso — a frase não pode culpar o Mercado Livre.
+    // A causa segue sendo a NOSSA conciliação — a frase não pode culpar o
+    // Mercado Livre. [260821-qps] Deixou de dizer "erro nosso" na tela: o que
+    // interessa a quem decide preço é que o pedido ficou fora da conta.
     expect(frase).not.toMatch(/Mercado Livre errou|culpa do ML/i);
-    expect(frase).toMatch(/nosso/i);
+    expect(frase).toMatch(/conciliada/i);
+    expect(frase).toMatch(/fora desta conta/i);
   });
 
   it("conferência que não fecha ganha PRECEDÊNCIA sobre captura ausente", () => {

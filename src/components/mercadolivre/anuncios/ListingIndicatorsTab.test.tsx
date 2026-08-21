@@ -200,7 +200,7 @@ describe("ListingIndicatorsTab — os dois cenários hipotéticos, rotulados", (
     render(<ListingIndicatorsTab item={BASE_ITEM} margin={margin} />);
     await waitFor(() => expect(rpcMock).toHaveBeenCalled());
 
-    expect(screen.getByText(/nosso/i)).toBeInTheDocument();
+    expect(screen.getByText(/conciliada/i)).toBeInTheDocument();
   });
 });
 
@@ -218,18 +218,21 @@ describe("ListingIndicatorsTab — o selo do estado atual (D-selo-04)", () => {
     );
   });
 
-  it("sem venda na janela recente, o selo é sem_venda_recente — nunca a média do período", async () => {
+  it("sem venda na janela recente, NENHUM selo aparece — e a média do período continua fora dele", async () => {
     // Só um ponto há 20 dias — fora da janela recente de 7 dias.
+    // 🔴 [260821-qps] Antes este caso rendia o selo "sem venda 7d". Não é
+    // lacuna nem erro — é um anúncio que não vendeu na semana, e não merece
+    // marca nenhuma. O que a regra de ouro da D-selo-04 proíbe continua
+    // proibido: a média do período NUNCA se apresenta como estado atual.
     rpcRows = [rpcRow(20, { comissao: 90, rebateBruto: 10 })];
     const margin = makeMargin({ comissao: 500, rebate_bruto: 100, rebate_efeito: 80 });
     const { container } = render(<ListingIndicatorsTab item={BASE_ITEM} margin={margin} />);
 
-    await waitFor(() => {
-      expect(container.querySelector("[data-selo-promo]")).not.toBeNull();
-    });
-    expect(container.querySelector("[data-selo-promo]")?.getAttribute("data-selo-promo")).toBe(
-      "sem_venda_recente",
-    );
+    await waitFor(() => expect(rpcMock).toHaveBeenCalled());
+    expect(container.querySelector("[data-selo-promo]")).toBeNull();
+    // O detalhe pode exibir a média — desde que ROTULADA como do período, e
+    // nunca vestida de estado atual (que é o selo, e ele não está aqui).
+    expect(container.textContent).toMatch(/Média do período/i);
   });
 
   it("enquanto a série não chega, o selo NÃO aparece (nunca um estado provisório)", async () => {
