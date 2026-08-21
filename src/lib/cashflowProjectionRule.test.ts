@@ -86,16 +86,29 @@ describe("cashflowProjectionRule — get_cashflow para de injetar média em D+8/
     );
   });
 
-  it("Test 6: a expressão da linha confirmada (accumulated_balance) continua idêntica à de 20260660000000_cashflow_dfc_alignment.sql", () => {
-    const linhaConfirmada = "(v_initial + SUM(d.inc - d.exp) OVER (ORDER BY d.d_date ASC))::NUMERIC";
-    const base = readFileSync(
-      resolve(MIGRATIONS_DIR, "20260660000000_cashflow_dfc_alignment.sql"),
-      "utf-8",
-    );
+  it("Test 6: a linha confirmada preserva o saldo ROLADO e não conta o dia corrente duas vezes", () => {
+    // 🔴 [21/08/2026] Este teste ancorava em 20260660000000_cashflow_dfc_alignment.sql
+    // e por isso NÃO pegou a regressão que chegou a produção: aquela migration é
+    // ANTERIOR a 20260713132524_cashflow_anchor_absolute_today, que trocou
+    // `financial_settings.initial_balance` por `get_rolled_opening_balance()` e
+    // passou a excluir o dia corrente das somas acumuladas (o saldo rolado já o
+    // inclui). Ancorar o gate numa versão superada é o mesmo que não ter gate:
+    // ele aprovava exatamente a expressão que a correção de julho tinha aposentado.
+    // Medido ao vivo: o saldo confirmado em D+30 saltou R$ 30.372,11.
     const arquivos = migrationsDeCashflow();
     const atual = arquivos[arquivos.length - 1];
-    expect(base).toContain(linhaConfirmada);
-    expect(atual.sql).toContain(linhaConfirmada);
+    const corpo = semComentarios(atual.sql);
+
+    // 1. O saldo inicial vem do saldo rolado, nunca da leitura crua da tabela.
+    expect(corpo).toContain("public.get_rolled_opening_balance(p_org_id)");
+    expect(corpo).not.toMatch(/financial_settings/);
+
+    // 2. As DUAS somas acumuladas excluem o dia corrente.
+    const guardaDiaCorrente = (corpo.match(/CASE WHEN d\.d_date > v_today/g) ?? []).length;
+    expect(guardaDiaCorrente).toBe(2);
+
+    // 3. A linha confirmada segue sendo (inc - exp), sem termo de média.
+    expect(corpo).toContain("THEN (d.inc - d.exp) ELSE 0 END");
   });
 
   it("Test 7: o arquivo não contém SECURITY DEFINER", () => {

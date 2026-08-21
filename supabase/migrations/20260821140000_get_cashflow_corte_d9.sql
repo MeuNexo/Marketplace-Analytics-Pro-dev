@@ -59,19 +59,37 @@
 -- Projeto: ckcdevcxgvueywivefgx (NAO usar gionpsuunfkkzzjdubfy).
 -- Aplicar via MCP apply_migration. NUNCA `supabase db push`.
 -- ============================================================
+-- ============================================================
+-- ⚠️ CORRIGIDO EM 21/08/2026, DEPOIS DE UMA REGRESSAO EM PRODUCAO
+-- ============================================================
+-- A primeira versao deste arquivo clonou o corpo de uma migration ANTIGA do
+-- repositorio e, ao aplicar, regrediu DUAS correcoes que estavam vivas desde
+-- 13/07 (20260713132524_cashflow_anchor_absolute_today):
+--
+--   1. `v_initial` voltou a ler `financial_settings.initial_balance` em vez de
+--      `public.get_rolled_opening_balance(p_org_id)`
+--   2. as duas somas acumuladas perderam o `CASE WHEN d.d_date > v_today`, que
+--      impede o dia CORRENTE de ser contado duas vezes (o saldo rolado ja o
+--      inclui)
+--
+-- Medido ao vivo: o saldo confirmado em D+30 saltou de -111.298,29 para
+-- -80.926,18 — R$ 30.372,11 numa expressao que o proprio cabecalho declarava
+-- INALTERADA. Restaurado pela migration `get_cashflow_corte_d9_sobre_corpo_vivo`
+-- e o saldo voltou ao centavo.
+--
+-- 🔴 LICAO: clonar o corpo de uma RPC a partir do repositorio NAO e seguro.
+-- O corpo vivo tem de vir de `supabase_migrations.schema_migrations`, filtrando
+-- pela ultima versao que define a funcao. Foi assim que este arquivo foi
+-- reconstruido.
+-- ============================================================
 
 CREATE OR REPLACE FUNCTION public.get_cashflow(
   p_org_id UUID, p_start_date DATE, p_end_date DATE,
   p_include_purchase_forecasts BOOLEAN DEFAULT false
 )
 RETURNS TABLE (
-  date DATE,
-  daily_income NUMERIC,
-  daily_expense NUMERIC,
-  daily_projection NUMERIC,
-  daily_balance NUMERIC,
-  accumulated_balance NUMERIC,
-  accumulated_balance_sma NUMERIC
+  date DATE, daily_income NUMERIC, daily_expense NUMERIC, daily_projection NUMERIC,
+  daily_balance NUMERIC, accumulated_balance NUMERIC, accumulated_balance_sma NUMERIC
 )
 LANGUAGE plpgsql SECURITY INVOKER SET search_path = 'public'
 AS $$
@@ -81,9 +99,8 @@ DECLARE
   v_start   DATE;
   v_sma     NUMERIC := 0;
 BEGIN
-  v_initial := COALESCE((SELECT fs.initial_balance FROM financial_settings fs WHERE fs.organization_id = p_org_id LIMIT 1), 0);
+  v_initial := public.get_rolled_opening_balance(p_org_id);
   v_start := GREATEST(p_start_date, v_today);
-
   v_sma := COALESCE((
     SELECT SUM(o.receita_bruta - COALESCE(o.comissao, 0) - COALESCE(o.frete, 0)) / 15.0
     FROM orders o
@@ -91,11 +108,9 @@ BEGIN
       AND o.status IN ('paid','shipped','delivered')
       AND LEFT(o.data_pedido, 10)::date BETWEEN v_today - 15 AND v_today - 1
   ), 0);
-
   RETURN QUERY
   WITH days AS (
-    SELECT gs::date AS d_date
-    FROM generate_series(v_start, p_end_date, INTERVAL '1 day') gs
+    SELECT gs::date AS d_date FROM generate_series(v_start, p_end_date, INTERVAL '1 day') gs
   ),
   inc AS (
     SELECT ci.release_date AS d_date, SUM(ci.net_amount) AS amt
@@ -108,40 +123,34 @@ BEGIN
     FROM cash_outflows co
     WHERE co.organization_id = p_org_id
       AND co.outflow_date BETWEEN v_start AND p_end_date
-      AND co.status = 'pending'   -- CASHFIX-04: so contas a pagar EM ABERTO
+      AND co.status = 'pending'
       AND (p_include_purchase_forecasts OR COALESCE(co.category, '') <> 'Previsões de compra')
     GROUP BY co.outflow_date
   ),
   daily AS (
-    SELECT d.d_date,
-           COALESCE(i.amt, 0) AS inc,
-           COALESCE(e.amt, 0) AS exp
+    SELECT d.d_date, COALESCE(i.amt, 0) AS inc, COALESCE(e.amt, 0) AS exp
     FROM days d
     LEFT JOIN inc i ON i.d_date = d.d_date
     LEFT JOIN exp e ON e.d_date = d.d_date
   )
-  SELECT d.d_date,
-         d.inc,
-         d.exp,
+  SELECT d.d_date, d.inc, d.exp,
          -- daily_projection: zero enquanto a agenda do MP cobre o dia (ate o
          -- nono); do decimo em diante, o quanto a media acrescenta acima do
          -- confirmado. Fase 224, criterio 6.
-         (CASE
-            WHEN d.d_date <= v_today + 9 THEN 0::NUMERIC
-            ELSE GREATEST(0, v_sma - d.inc)::NUMERIC
-          END),
+         (CASE WHEN d.d_date <= v_today + 9 THEN 0::NUMERIC
+               ELSE GREATEST(0, v_sma - d.inc)::NUMERIC END),
          (d.inc - d.exp),
-         -- accumulated_balance: linha confirmada. EXPRESSAO INALTERADA.
-         (v_initial + SUM(d.inc - d.exp) OVER (ORDER BY d.d_date ASC))::NUMERIC,
-         -- accumulated_balance_sma:
-         --   dias 1 a 9  : confirmado-only (d.inc) — a agenda cobre 103% a 112%
-         --   dia 10+     : GREATEST(d.inc, v_sma) — a media de 15d vira piso
+         -- accumulated_balance: EXPRESSAO INALTERADA em relacao ao corpo VIVO.
          (v_initial + SUM(
-           (CASE
-              WHEN d.d_date <= v_today + 9 THEN d.inc
-              ELSE GREATEST(d.inc, v_sma)
-            END) - d.exp
-         ) OVER (ORDER BY d.d_date ASC))::NUMERIC
+            CASE WHEN d.d_date > v_today THEN (d.inc - d.exp) ELSE 0 END
+          ) OVER (ORDER BY d.d_date ASC))::NUMERIC,
+         -- accumulated_balance_sma: dias 1 a 9 confirmado-only; do 10 em
+         -- diante a media de 15d vira piso.
+         (v_initial + SUM(
+            CASE WHEN d.d_date > v_today
+                 THEN (CASE WHEN d.d_date <= v_today + 9 THEN d.inc ELSE GREATEST(d.inc, v_sma) END) - d.exp
+                 ELSE 0 END
+          ) OVER (ORDER BY d.d_date ASC))::NUMERIC
   FROM daily d
   ORDER BY d.d_date ASC;
 END;
