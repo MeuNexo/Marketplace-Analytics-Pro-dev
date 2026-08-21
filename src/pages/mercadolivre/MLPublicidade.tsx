@@ -30,19 +30,32 @@ import { KPICard } from "@/components/dashboard/KPICard";
 import { useMLAds, type AdsCampaign } from "@/hooks/useMLAds";
 import { useMLAdsDerivedMetrics, type EnrichedAdsProduct } from "@/hooks/useMLAdsDerivedMetrics";
 import { useMLMarginWithAds, type ProductMarginWithAds } from "@/hooks/useMLMarginWithAds";
-import { McoDoisCenarios } from "@/components/mercadolivre/McoDoisCenarios";
+// [Quick 260821-nof, D-selo-01/02] `McoDoisCenarios`/`RebateDoisCenarios` (o
+// par sempre visível) SAÍRAM da célula de margem — ver o comentário datado
+// 21/08/2026 no ponto de renderização abaixo. O detalhe rotulado (DIFAL,
+// tarifa cheia, motivos) migrou para o `title` das duas células que perdem o
+// par — esta tela não tem modal.
 import {
   cenariosMargemReal,
   DIFAL_ESTIMATIVA_AJUDA,
   DIFAL_ESTIMATIVA_LABEL,
+  fraseMotivoSemDifal,
+  type LinhaCenariosResult,
 } from "@/lib/mcoLinhaCenarios";
-import { RebateDoisCenarios } from "@/components/mercadolivre/RebateDoisCenarios";
 import {
   cenariosRebateMargemReal,
   fraseMotivoSemRebate,
   REBATE_CENARIO_AJUDA,
+  REBATE_CENARIO_LABEL,
   resolveLinhaRebate,
+  type LinhaRebateResult,
 } from "@/lib/rebateLinhaCenarios";
+import { SeloPromo } from "@/components/mercadolivre/SeloPromo";
+import {
+  janelaEstadoAtual,
+  resolveSeloPromo,
+  SELO_RECORTE_AJUDA,
+} from "@/lib/seloPromo";
 import { useDifalRegimeAplicavel } from "@/hooks/useDifalRegimeAplicavel";
 import { useMLFilters } from "@/hooks/useMLFilters";
 import { useMLInventory } from "@/contexts/MLInventoryContext";
@@ -61,6 +74,64 @@ function adProductLabel(p: { item_id: string; seller_sku: string | null }) {
 
 const currFmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const numFmt  = (v: number) => v.toLocaleString("pt-BR");
+
+// ─── [Quick 260821-nof, D-selo-04] O selo do item ──────────────────────────────
+//
+// A média do período reusa `resolveSeloPromo` sobre os totais do período —
+// NÃO uma segunda conta. O selo em si vem da linha da JANELA RECENTE; item
+// ausente dela vira `sem_venda_recente`, nunca a média.
+
+function pctMedioPeriodoRebate(linha: ProductMarginWithAds | undefined): number | null {
+  if (!linha) return null;
+  return resolveSeloPromo({
+    comissao: linha.comissao,
+    rebateBruto: linha.rebate_bruto,
+    pedidosSemCaptura: linha.pedidos_sem_captura_rebate,
+    pedidosNaoConferidos: linha.pedidos_rebate_nao_conferido,
+    semVendaNaJanela: false,
+  }).pct;
+}
+
+function seloDoItem(
+  itemId: string,
+  linha: ProductMarginWithAds | undefined,
+  recenteByItem: Map<string, ProductMarginWithAds>,
+) {
+  const recente = recenteByItem.get(itemId);
+  const mediaPeriodoPct = pctMedioPeriodoRebate(linha);
+
+  if (!recente) {
+    return resolveSeloPromo({ comissao: 0, rebateBruto: null, semVendaNaJanela: true, mediaPeriodoPct });
+  }
+
+  return resolveSeloPromo({
+    comissao: recente.comissao,
+    rebateBruto: recente.rebate_bruto,
+    pedidosSemCaptura: recente.pedidos_sem_captura_rebate,
+    pedidosNaoConferidos: recente.pedidos_rebate_nao_conferido,
+    semVendaNaJanela: false,
+    mediaPeriodoPct,
+  });
+}
+
+const pctFmtOuTraco = (v: number | null) => (v != null ? pctFmt(v) : "—");
+
+/** A frase do cenário DIFAL, rotulada, para o `title` da célula (D-selo-03). */
+function fraseDifalTooltip(cenarios: LinhaCenariosResult): string {
+  if (cenarios.comDifal) {
+    return `Com DIFAL (${DIFAL_ESTIMATIVA_LABEL}): ${pctFmtOuTraco(cenarios.comDifal.pct)} · efeito ${currFmt(cenarios.difalEfeito ?? 0)}.`;
+  }
+  return fraseMotivoSemDifal(cenarios.motivo, cenarios.pedidosDifalIndefinido) ?? DIFAL_ESTIMATIVA_AJUDA;
+}
+
+/** A frase do cenário de rebate (tarifa cheia), rotulada, com a média do período. */
+function fraseRebateTooltip(cenarios: LinhaRebateResult, mediaPeriodoPct: number | null): string {
+  const media = mediaPeriodoPct != null ? ` Média do período: ${mediaPeriodoPct.toFixed(1)}%.` : "";
+  if (cenarios.semRebate) {
+    return `${REBATE_CENARIO_LABEL}: ${pctFmtOuTraco(cenarios.semRebate.pct)} · efeito ${currFmt(cenarios.rebateEfeito ?? 0)}.${media}`;
+  }
+  return `${fraseMotivoSemRebate(cenarios.motivo, cenarios.pedidosSemCaptura, cenarios.pedidosNaoConferidos) ?? REBATE_CENARIO_AJUDA}${media}`;
+}
 const pctFmt  = (v: number) => `${v.toFixed(2)}%`;
 
 function roasBadge(roas: number) {
@@ -130,6 +201,20 @@ export default function MLPublicidadePage() {
   // e recalcula com a fatura do ML rateada — a mesma régua de `/anuncios` e
   // `/produtos-vendidos`. É essa convergência que o CR-01 promete.
   const { data: margem } = useMLMarginWithAds(currentFrom, currentTo);
+
+  // ── [Quick 260821-nof, D-selo-04] SEGUNDA janela — o insumo do selo ────────
+  // Uma consulta A MAIS por tela (nunca por linha), na MESMA RPC, com a
+  // MESMA assinatura — só a janela muda. `useMLMarginWithAds` não é tocado.
+  const janelaRecente = useMemo(
+    () => janelaEstadoAtual({ from: currentFrom, to: currentTo }),
+    [currentFrom, currentTo],
+  );
+  const { data: margemRecente } = useMLMarginWithAds(janelaRecente.from, janelaRecente.to);
+  const marginRecenteByItem = useMemo(() => {
+    const map = new Map<string, ProductMarginWithAds>();
+    for (const r of margemRecente?.rows ?? []) map.set(r.item_id, r);
+    return map;
+  }, [margemRecente]);
 
   // [222-15-R2] O recorte recolhe DIFAL? `false` só com TODAS as lojas no
   // Simples Nacional — aí a coluna diz "regime não aplicável", não dois
@@ -938,39 +1023,26 @@ export default function MLPublicidadePage() {
                           TACoS (métrica global, KPI do topo). Nome e semáforo trocados. */}
                       <span className="inline-flex items-center gap-1">Share Gasto <SortIcon k="spend_share_pct" /></span>
                     </th>
-                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">
-                      {/* [222-15-R2]/[223-07] As DUAS ressalvas de estimativa
-                          aparecem UMA vez aqui, não repetidas em cada linha —
-                          DIFAL (imposto) e rebate (desconto de comissão) são
-                          réguas independentes, cada uma com a sua linha. */}
-                      <span className="inline-flex flex-col items-end leading-tight">
-                        <span>Mg. Pós-Ads</span>
-                        <span className="text-[10px] font-normal text-muted-foreground" title={DIFAL_ESTIMATIVA_AJUDA}>
-                          2ª linha: c/ DIFAL ({DIFAL_ESTIMATIVA_LABEL})
-                        </span>
-                        <span className="text-[10px] font-normal text-muted-foreground" title={REBATE_CENARIO_AJUDA}>
-                          3ª linha: tarifa cheia
-                        </span>
-                      </span>
+                    {/* 🔴 [21/08/2026, D-selo-02] As DUAS ressalvas de par
+                        (2ª/3ª linha de DIFAL e rebate) SAÍRAM deste
+                        cabeçalho — reversão deliberada do critério visual da
+                        Fase 222/223 nas LISTAS. Restaurar não é correção de
+                        regressão. Os dois cenários seguem rotulados no
+                        `title` de cada célula (nunca apagados). */}
+                    <th
+                      className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-help"
+                      title={`Margem real após publicidade, mais o selo de estado atual do rebate. ${SELO_RECORTE_AJUDA}`}
+                    >
+                      Mg. Pós-Ads
                     </th>
                     {/* Rótulo distinto de "Share Gasto" acima — mesma régua (participação
                         nos pedidos atribuídos a ads), evita duas colunas chamadas "share". */}
                     <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Part. Pedidos</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">
-                      {/* [223-07] A célula abaixo mostra real + tarifa cheia
-                          visíveis; o cenário com DIFAL foi para a dica de
-                          contexto da célula (3 linhas visíveis estourava a
-                          altura da tabela) — dito em palavras aqui, nunca
-                          omitido em silêncio. */}
-                      <span className="inline-flex flex-col items-end leading-tight">
-                        <span>ACoS BE</span>
-                        <span className="text-[10px] font-normal text-muted-foreground" title={REBATE_CENARIO_AJUDA}>
-                          2ª linha: tarifa cheia
-                        </span>
-                        <span className="text-[10px] font-normal text-muted-foreground" title={DIFAL_ESTIMATIVA_AJUDA}>
-                          c/ DIFAL na dica da célula
-                        </span>
-                      </span>
+                    <th
+                      className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap cursor-help"
+                      title="ACoS máximo antes de a publicidade comer toda a margem REAL. O cenário com DIFAL, a tarifa cheia e o motivo de ausência estão no title de cada célula — o selo da coluna Mg. Pós-Ads já avisa quando esse número depende de promoção."
+                    >
+                      ACoS BE
                     </th>
                     <th
                       onClick={() => toggleSort("stock")}
@@ -1030,33 +1102,25 @@ export default function MLPublicidadePage() {
                         {(() => {
                           const m = marginMap?.get(p.item_id);
                           if (m == null) return <span className="text-muted-foreground">—</span>;
-                          // [222-15-R2] Os dois cenários vêm PRONTOS da RPC, da
-                          // mesma expressão, com o termo de imposto trocado.
-                          // Nada é recomposto aqui.
                           const linha = marginByItem.get(p.item_id);
+                          // 🔴 [21/08/2026, D-selo-02] O par de DIFAL/rebate
+                          // (McoDoisCenarios/RebateDoisCenarios) SAIU desta
+                          // célula — reversão deliberada do critério visual
+                          // da Fase 222/223 nas LISTAS. Restaurar não é
+                          // correção de regressão. Os dois cenários e a
+                          // média do período seguem no `title` — nada foi
+                          // apagado; esta tela não tem modal.
+                          const cenariosDifal = cenariosMargemReal(linha, "posAds", regimeAplicaDifal);
+                          const cenariosRebate = cenariosRebateMargemReal(linha, "posAds");
+                          const mediaPeriodoPct = pctMedioPeriodoRebate(linha);
+                          const titulo = `${fraseDifalTooltip(cenariosDifal)} ${fraseRebateTooltip(cenariosRebate, mediaPeriodoPct)}`;
+                          const selo = seloDoItem(p.item_id, linha, marginRecenteByItem);
                           return (
-                            <div className="inline-flex flex-col items-end gap-1">
-                              <McoDoisCenarios
-                                cenarios={cenariosMargemReal(linha, "posAds", regimeAplicaDifal)}
-                                densidade="celula"
-                                role={m >= 0 ? "good" : "critical"}
-                                ressalvaNoCabecalho
-                                rotuloSemDifal=""
-                                rotuloComDifal="c/ DIFAL"
-                              />
-                              {/* [223-07] O par de rebate — irmão do par de
-                                  DIFAL acima, régua independente, mesma
-                                  célula. `cenariosRebateMargemReal` só projeta
-                                  os campos já prontos da linha; nenhuma
-                                  aritmética nova aqui. */}
-                              <RebateDoisCenarios
-                                cenarios={cenariosRebateMargemReal(linha, "posAds")}
-                                densidade="celula"
-                                role={m >= 0 ? "good" : "critical"}
-                                ressalvaNoCabecalho
-                                rotuloComRebate=""
-                                rotuloSemRebate="tarifa cheia"
-                              />
+                            <div className="inline-flex flex-col items-end gap-0.5" title={titulo}>
+                              <span className={m >= 0 ? "text-success font-semibold" : "text-destructive font-semibold"}>
+                                {currFmt(linha?.lucro_pos_ads ?? 0)} ({pctFmt(m)})
+                              </span>
+                              <SeloPromo selo={selo} densidade="celula" />
                             </div>
                           );
                         })()}
@@ -1108,19 +1172,22 @@ export default function MLPublicidadePage() {
                             cenarios.pedidosSemCaptura,
                             cenarios.pedidosNaoConferidos,
                           );
+                          // 🔴 [21/08/2026, D-selo-02] A tarifa cheia e a
+                          // frase de ausência SAÍRAM da célula (a coluna só
+                          // mostra o break-even REAL) e migraram para o
+                          // `title`, junto com o cenário com DIFAL — a
+                          // D-218-03 (o break-even na tarifa cheia) segue
+                          // acessível, nunca apagada. O selo que avisa a
+                          // dependência de promoção mora na coluna Mg.
+                          // Pós-Ads — não se repete aqui.
+                          const tituloRebate = cenarios.semRebate
+                            ? `${REBATE_CENARIO_LABEL}: ${pctFmt(cenarios.semRebate.valor)}.`
+                            : fraseAusencia ?? REBATE_CENARIO_AJUDA;
+                          const titulo = `${tituloDifal}. ${tituloRebate}`;
 
                           return (
-                            <span className="inline-flex flex-col items-end leading-tight" title={tituloDifal}>
-                              <span>{pctFmt(p.acos_breakeven)}</span>
-                              {cenarios.semRebate ? (
-                                <span className="text-[10px]">
-                                  {pctFmt(cenarios.semRebate.valor)} tarifa cheia
-                                </span>
-                              ) : (
-                                <span className="text-[10px] max-w-[160px] text-right">
-                                  {fraseAusencia}
-                                </span>
-                              )}
+                            <span className="text-xs tabular-nums" title={titulo}>
+                              {pctFmt(p.acos_breakeven)}
                             </span>
                           );
                         })()}

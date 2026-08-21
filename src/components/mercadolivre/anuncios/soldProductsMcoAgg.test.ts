@@ -998,6 +998,113 @@ describe("aggregateMcoGroups — cenário sem rebate (tarifa cheia)", () => {
   });
 });
 
+// ─── Insumo do selo de estado atual do grupo (Quick 260821-nof) ──────────────
+//
+// O grupo passa a carregar `comissao` (denominador, sempre existe) e
+// `rebateBruto` (numerador, propaga ausência) — o insumo que alimenta o selo
+// do painel de marca/categoria em `/resultado`, calculado sobre as linhas da
+// JANELA RECENTE (a mesma função, rodada duas vezes com períodos diferentes).
+
+describe("aggregateMcoGroups — insumo do selo (comissao/rebateBruto do grupo)", () => {
+  it("comissao do grupo é soma simples dos itens", () => {
+    const rows: McoProductRow[] = [
+      makeRow({ item_id: "MLB001", marca: "Marca A", receita: 100, comissao: 12 }),
+      makeRow({ item_id: "MLB002", marca: "Marca A", receita: 900, comissao: 88 }),
+    ];
+    const [grupo] = aggregateMcoGroups(rows, "marca", new Map());
+
+    expect(grupo.comissao).toBe(100);
+  });
+
+  it("um item com rebate_bruto ausente derruba o rebateBruto do grupo para nulo — nunca soma só os apurados", () => {
+    const rows: McoProductRow[] = [
+      makeRow({ item_id: "MLB001", marca: "Marca A", receita: 100, comissao: 10, rebate_bruto: 5 }),
+      makeRow({ item_id: "MLB002", marca: "Marca A", receita: 900, comissao: 90 }), // sem rebate_bruto
+    ];
+    const [grupo] = aggregateMcoGroups(rows, "marca", new Map());
+
+    expect(grupo.rebateBruto).toBeNull();
+    // ...e comissao continua sendo denominador — nunca derrubado por ausência de rebate.
+    expect(grupo.comissao).toBe(100);
+  });
+
+  it("com todos os itens apurados, rebateBruto do grupo é a soma", () => {
+    const rows: McoProductRow[] = [
+      makeRow({ item_id: "MLB001", marca: "Marca A", receita: 100, comissao: 10, rebate_bruto: 5 }),
+      makeRow({ item_id: "MLB002", marca: "Marca A", receita: 900, comissao: 90, rebate_bruto: 20 }),
+    ];
+    const [grupo] = aggregateMcoGroups(rows, "marca", new Map());
+
+    expect(grupo.rebateBruto).toBe(25);
+    expect(grupo.comissao).toBe(100);
+  });
+
+  it("as duas contagens de lacuna continuam somando mesmo quando rebateBruto sai nulo (223-06, provado de novo aqui)", () => {
+    const rows: McoProductRow[] = [
+      makeRow({
+        item_id: "MLB001",
+        marca: "Marca A",
+        receita: 100,
+        comissao: 10,
+        pedidos_sem_captura_rebate: 2,
+        pedidos_rebate_nao_conferido: 1,
+      }),
+      makeRow({
+        item_id: "MLB002",
+        marca: "Marca A",
+        receita: 900,
+        comissao: 90,
+        rebate_bruto: 20,
+        pedidos_sem_captura_rebate: 0,
+        pedidos_rebate_nao_conferido: 3,
+      }),
+    ];
+    const [grupo] = aggregateMcoGroups(rows, "marca", new Map());
+
+    expect(grupo.rebateBruto).toBeNull(); // MLB001 sem rebate_bruto contamina
+    expect(grupo.pedidosSemCapturaRebate).toBe(2);
+    expect(grupo.pedidosRebateNaoConferido).toBe(4);
+  });
+
+  it("grupo com um item em promoção e outro sem: rebateBruto é a soma — o selo do grupo lê promoção diluída", () => {
+    const rows: McoProductRow[] = [
+      makeRow({ item_id: "MLB001", marca: "Marca A", receita: 100, comissao: 90, rebate_bruto: 10 }), // em promoção
+      makeRow({ item_id: "MLB002", marca: "Marca A", receita: 900, comissao: 90, rebate_bruto: 0 }), // sem promoção, mas apurado
+    ];
+    const [grupo] = aggregateMcoGroups(rows, "marca", new Map());
+
+    expect(grupo.rebateBruto).toBe(10);
+    expect(grupo.comissao).toBe(180);
+  });
+
+  it("rodar a MESMA função sobre linhas de uma janela recente (subconjunto) devolve os agregados daquela janela — a agregação não conhece período", () => {
+    const linhasDoPeriodo: McoProductRow[] = [
+      makeRow({ item_id: "MLB001", marca: "Marca A", receita: 500, comissao: 50, rebate_bruto: 10 }),
+      makeRow({ item_id: "MLB002", marca: "Marca A", receita: 500, comissao: 50, rebate_bruto: 30 }),
+    ];
+    // A "janela recente" é só um subconjunto das MESMAS linhas — a função não
+    // sabe a diferença entre "período inteiro" e "recorte curto".
+    const linhasDaJanelaRecente: McoProductRow[] = [linhasDoPeriodo[1]];
+
+    const grupoPeriodo = aggregateMcoGroups(linhasDoPeriodo, "marca", new Map())[0];
+    const grupoJanela = aggregateMcoGroups(linhasDaJanelaRecente, "marca", new Map())[0];
+
+    expect(grupoPeriodo.rebateBruto).toBe(40);
+    expect(grupoJanela.rebateBruto).toBe(30);
+    expect(grupoJanela.comissao).toBe(50);
+  });
+
+  it("grupo sem nenhuma linha de rebate (RPC antiga) tem rebateBruto nulo, nunca zero", () => {
+    const rows: McoProductRow[] = [
+      makeRow({ item_id: "MLB001", marca: "Marca A", receita: 100, comissao: 10 }),
+    ];
+    const [grupo] = aggregateMcoGroups(rows, "marca", new Map());
+
+    expect(grupo.rebateBruto).toBeNull();
+    expect(grupo.comissao).toBe(10);
+  });
+});
+
 describe("regressão — entrada sem campos de rebate produz os mesmos números de hoje (Fase 222)", () => {
   it("itens e grupos do primeiro cenário não mudam quando a linha não tem os oito campos novos", () => {
     const rows: McoProductRow[] = [

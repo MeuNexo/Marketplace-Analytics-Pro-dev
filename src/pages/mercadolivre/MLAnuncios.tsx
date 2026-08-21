@@ -18,16 +18,18 @@ import {
 // e a sub-tabela de variações chamam os dois helpers abaixo, nunca aritmética
 // de margem inline. Ver o cabeçalho de anuncioMargens.ts para a régua completa.
 import { calcularMargensDoAnuncio, precoPromocionalAplicavel } from "@/lib/anuncioMargens";
-import { McoDoisCenarios, McoDoisCenariosCabecalho } from "@/components/mercadolivre/McoDoisCenarios";
+// [Quick 260821-nof, D-selo-01/02] `McoDoisCenarios`/`RebateDoisCenarios` (o
+// par sempre visível) SAÍRAM das duas colunas de vendas reais desta lista —
+// ver o comentário datado 21/08/2026 nos dois pontos de renderização abaixo.
+// O detalhe rotulado (par com DIFAL/rebate) migrou para o modal do anúncio
+// (Task 3, `ListingIndicatorsTab.tsx`) — esta tela não tem mais o dado local.
+import { SeloPromo } from "@/components/mercadolivre/SeloPromo";
 import {
-  cenariosMargemReal,
-  regimeAplicaDifalNasLojas,
-} from "@/lib/mcoLinhaCenarios";
-import {
-  RebateDoisCenarios,
-  RebateDoisCenariosCabecalho,
-} from "@/components/mercadolivre/RebateDoisCenarios";
-import { cenariosRebateMargemReal } from "@/lib/rebateLinhaCenarios";
+  janelaEstadoAtual,
+  resolveSeloPromo,
+  SELO_RECORTE_AJUDA,
+  type SeloPromoResult,
+} from "@/lib/seloPromo";
 // AV-03: a ausência de CMV é contada e declarada em agregado, em vez de virar
 // um traço solto célula a célula. Ver o cabeçalho de custoFaltante.ts.
 import { contarSemCusto } from "@/lib/custoFaltante";
@@ -246,6 +248,32 @@ function InlineEditCell({
       )}
       <Pencil className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-60 transition-opacity shrink-0" />
     </div>
+  );
+}
+
+// ─── [Quick 260821-nof] Célula de margem REAL — UM número (D-selo-01) ─────────
+//
+// Reusada nos DOIS ramos de renderização (móvel/desktop) para nunca divergir
+// entre eles — foi divergir entre ramos que produziu o defeito CR-08 desta
+// página. `valor`/`pct` já vêm prontos da RPC (`mads.lucro`/`lucro_pct` ou
+// `lucro_pos_ads`/`lucro_pct_pos_ads`) — zero aritmética aqui.
+
+function MargemRealCelula({
+  valor,
+  pct,
+  role,
+}: {
+  valor: number;
+  pct: number | null;
+  role: "good" | "critical" | "neutral";
+}) {
+  const cls =
+    role === "good" ? "text-success" : role === "critical" ? "text-destructive" : "text-foreground";
+  return (
+    <span className={`text-xs font-semibold tabular-nums ${cls}`}>
+      {currencyFmt(valor)}
+      {pct != null ? ` (${pct.toFixed(1)}%)` : ""}
+    </span>
   );
 }
 
@@ -713,17 +741,6 @@ export default function MLAnunciosPage() {
     [marginWithAds],
   );
 
-  // [222-15-R2] O recorte de lojas recolhe DIFAL? `false` só quando TODAS são
-  // do Simples Nacional — aí as colunas dizem "regime não aplicável" em vez de
-  // exibir dois números iguais e mudos.
-  const regimeAplicaDifal = useMemo(
-    () =>
-      taxMap
-        ? regimeAplicaDifalNasLojas(resolvedMLUserIds.map((id) => taxMap.get(id)?.regime ?? null))
-        : undefined,
-    [taxMap, resolvedMLUserIds],
-  );
-
   // ── CR-09: os metadados de publicidade deixam de ser descartados ───────────
   // O hook devolve `{ rows, ads }` e esta tela só lia `.rows`, apesar de as
   // colunas Mg. Pós-Ads consumirem a régua da fatura. `/produtos-vendidos` já
@@ -731,6 +748,66 @@ export default function MLAnunciosPage() {
   // da fatura que não achou dono sumia sem ninguém saber que a soma das colunas
   // não fecha com a fatura.
   const adsMeta = marginWithAds?.ads ?? null;
+
+  // ── [Quick 260821-nof, D-selo-04] SEGUNDA janela — o insumo do selo ────────
+  // Uma consulta A MAIS por tela (nunca por linha), na MESMA RPC, com a
+  // MESMA assinatura — só a janela muda. `useMLMarginWithAds` não é tocado:
+  // já é parametrizado por datas, e a chave de react-query já as inclui, de
+  // modo que as duas janelas cacheiam em separado sozinhas.
+  const janelaRecente = useMemo(
+    () => janelaEstadoAtual({ from: vendasFrom, to: vendasTo }),
+    [vendasFrom, vendasTo],
+  );
+  const { data: marginRecente } = useMLMarginWithAds(janelaRecente.from, janelaRecente.to);
+  const marginRecenteByItem = useMemo(
+    () => new Map((marginRecente?.rows ?? []).map((m) => [m.item_id, m])),
+    [marginRecente],
+  );
+
+  /**
+   * O percentual médio de rebate do PERÍODO INTEIRO — reusa a MESMA fórmula
+   * de `resolveSeloPromo` (não uma segunda conta), só que sobre os totais do
+   * período em vez da janela recente. Vai só para o `titulo` do selo (nunca
+   * para o `texto`) e para o `titulo` de `sem_venda_recente` — é o número que
+   * a D-selo-04 tirou do selo em si.
+   */
+  const pctMedioPeriodo = useCallback((mads: ReturnType<typeof marginByItem.get>): number | null => {
+    if (!mads) return null;
+    return resolveSeloPromo({
+      comissao: mads.comissao,
+      rebateBruto: mads.rebate_bruto,
+      pedidosSemCaptura: mads.pedidos_sem_captura_rebate,
+      pedidosNaoConferidos: mads.pedidos_rebate_nao_conferido,
+      semVendaNaJanela: false,
+    }).pct;
+  }, []);
+
+  /** O selo do anúncio: estado atual (janela recente), nunca a média do período. */
+  const seloDoItem = useCallback(
+    (itemId: string, mads: ReturnType<typeof marginByItem.get>): SeloPromoResult => {
+      const recente = marginRecenteByItem.get(itemId);
+      const mediaPeriodoPct = pctMedioPeriodo(mads);
+
+      if (!recente) {
+        return resolveSeloPromo({
+          comissao: 0,
+          rebateBruto: null,
+          semVendaNaJanela: true,
+          mediaPeriodoPct,
+        });
+      }
+
+      return resolveSeloPromo({
+        comissao: recente.comissao,
+        rebateBruto: recente.rebate_bruto,
+        pedidosSemCaptura: recente.pedidos_sem_captura_rebate,
+        pedidosNaoConferidos: recente.pedidos_rebate_nao_conferido,
+        semVendaNaJanela: false,
+        mediaPeriodoPct,
+      });
+    },
+    [marginRecenteByItem, pctMedioPeriodo],
+  );
 
   /**
    * O intervalo efetivo que as colunas Mg. Op. e Mg. Pós-Ads cobrem, em datas.
@@ -1354,49 +1431,35 @@ export default function MLAnunciosPage() {
                             // reais, que é o que permite agir sem sair da tela.
                             ["Imposto",  margens.impostoValor != null ? currencyFmt(margens.impostoValor) : "—"],
                             ["Comissão", `−${currencyFmt(margens.comissaoValor)}`],
-                            /* [222-15-R2] 🔴 O ramo móvel recebe o MESMO par do
-                               ramo de mesa. Ligar um só deixaria metade da tela
-                               numa régua diferente da outra — foi exatamente o
-                               defeito CR-08 desta página. O cartão não comporta
-                               duas linhas por métrica, então o par vira uma
-                               linha só, com os dois números.
-                               [223-06] O par de rebate segue a MESMA promessa —
-                               é a régua independente, empilhada abaixo do par de
-                               DIFAL na mesma célula, nunca em um ramo só. */
+                            /* 🔴 [21/08/2026, D-selo-02] O par de DIFAL/rebate
+                               foi RETIRADO desta célula — reversão deliberada
+                               do critério visual da Fase 222 nas LISTAS,
+                               medido na tela real com a 223 somando um
+                               terceiro e um quarto número ao lado do real.
+                               Restaurar o par aqui NÃO é correção de
+                               regressão. O detalhe rotulado (DIFAL, tarifa
+                               cheia, motivos de ausência) migrou para o modal
+                               do anúncio (ListingIndicatorsTab, Task 3).
+                               🔴 O ramo móvel recebe o MESMO tratamento do
+                               ramo de mesa — ligar um só é o defeito CR-08
+                               desta página, já cometido aqui uma vez. */
                             ["Mg. Op.",
                               mgOp != null && mads !== undefined ? (
-                                <span className="inline-flex flex-col items-end gap-0.5">
-                                  <McoDoisCenarios
-                                    cenarios={cenariosMargemReal(mads, "preAds", regimeAplicaDifal)}
-                                    densidade="celula"
-                                    role={mgOp >= 0 ? "good" : "critical"}
-                                    rotuloSemDifal=""
-                                    rotuloComDifal="c/ DIFAL"
-                                  />
-                                  <RebateDoisCenarios
-                                    cenarios={cenariosRebateMargemReal(mads, "preAds")}
-                                    densidade="celula"
-                                    role={mgOp >= 0 ? "good" : "critical"}
-                                    rotuloComRebate=""
-                                  />
-                                </span>
+                                <MargemRealCelula
+                                  valor={mads.lucro}
+                                  pct={mgOp}
+                                  role={mgOp >= 0 ? "good" : "critical"}
+                                />
                               ) : "—"],
                             ["Mg. Pós-Ads",
                               mgPosAds != null && mads !== undefined ? (
                                 <span className="inline-flex flex-col items-end gap-0.5">
-                                  <McoDoisCenarios
-                                    cenarios={cenariosMargemReal(mads, "posAds", regimeAplicaDifal)}
-                                    densidade="celula"
+                                  <MargemRealCelula
+                                    valor={mads.lucro_pos_ads}
+                                    pct={mgPosAds}
                                     role={mgPosAds >= 0 ? "good" : "critical"}
-                                    rotuloSemDifal=""
-                                    rotuloComDifal="c/ DIFAL"
                                   />
-                                  <RebateDoisCenarios
-                                    cenarios={cenariosRebateMargemReal(mads, "posAds")}
-                                    densidade="celula"
-                                    role={mgPosAds >= 0 ? "good" : "critical"}
-                                    rotuloComRebate=""
-                                  />
+                                  <SeloPromo selo={seloDoItem(item.id, mads)} densidade="celula" />
                                 </span>
                               ) : "—"],
                           ] as [string, React.ReactNode][] : []),
@@ -1447,13 +1510,16 @@ export default function MLAnunciosPage() {
                               /precificacao. Ficam Custo, Impostos e Comissão, que
                               são contexto do cadastro e da conferência, e as duas
                               colunas de vendas reais abaixo. */}
+                          {/* 🔴 [21/08/2026, D-selo-02] As ressalvas de par
+                              (McoDoisCenariosCabecalho/RebateDoisCenariosCabecalho)
+                              saíram dos dois cabeçalhos abaixo — reversão
+                              deliberada do critério visual da Fase 222 nas
+                              LISTAS. Restaurar não é correção de regressão. */}
                           <TableHead className="text-xs text-right w-28">
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <span className="cursor-help border-b border-dashed border-muted-foreground/40">
-                                  <McoDoisCenariosCabecalho titulo="Mg. Op." />
-                                  {/* [223-06] Ressalva do rebate, régua independente. */}
-                                  <RebateDoisCenariosCabecalho />
+                                  Mg. Op.
                                   {/* CR-09: a janela que a coluna cobre, em datas. Sem
                                       isso, uma coluna de margem ao lado de um seletor de
                                       período é um convite ao engano. */}
@@ -1472,8 +1538,7 @@ export default function MLAnunciosPage() {
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <span className="cursor-help border-b border-dashed border-muted-foreground/40">
-                                  <McoDoisCenariosCabecalho titulo="Mg. Pós-Ads" />
-                                  <RebateDoisCenariosCabecalho />
+                                  Mg. Pós-Ads
                                   <span className="block text-[9px] font-normal text-muted-foreground tabular-nums">
                                     {janelaMargemLabel}
                                   </span>
@@ -1482,7 +1547,7 @@ export default function MLAnunciosPage() {
                               <TooltipContent className="text-xs max-w-[220px]">
                                 Margem de {janelaMargemLabel} após descontar a publicidade do
                                 anúncio — na régua da fatura do Mercado Livre rateada, não do
-                                relatório de publicidade.
+                                relatório de publicidade. {SELO_RECORTE_AJUDA}
                               </TooltipContent>
                             </Tooltip>
                           </TableHead>
@@ -1651,26 +1716,18 @@ export default function MLAnunciosPage() {
                                               </TooltipContent>
                                             </Tooltip>
                                           ) : (
-                                            /* [222-15-R2] Os dois cenários, na mesma régua do banco.
-                                               [223-06] O par de rebate empilha abaixo — régua
-                                               independente, mesma célula, nunca no lugar do DIFAL. */
-                                            <span className="inline-flex flex-col items-end gap-0.5">
-                                              <McoDoisCenarios
-                                                cenarios={cenariosMargemReal(mads, "preAds", regimeAplicaDifal)}
-                                                densidade="celula"
-                                                role={roleFor(mgOp)}
-                                                ressalvaNoCabecalho
-                                                rotuloSemDifal=""
-                                                rotuloComDifal="c/ DIFAL"
-                                              />
-                                              <RebateDoisCenarios
-                                                cenarios={cenariosRebateMargemReal(mads, "preAds")}
-                                                densidade="celula"
-                                                role={roleFor(mgOp)}
-                                                ressalvaNoCabecalho
-                                                rotuloComRebate=""
-                                              />
-                                            </span>
+                                            /* 🔴 [21/08/2026, D-selo-02] O par de
+                                               DIFAL/rebate saiu desta célula —
+                                               reversão deliberada do critério
+                                               visual da Fase 222 nas LISTAS.
+                                               Restaurar não é correção de
+                                               regressão; o detalhe rotulado
+                                               vive no modal (Task 3). */
+                                            <MargemRealCelula
+                                              valor={mads.lucro}
+                                              pct={mgOp}
+                                              role={roleFor(mgOp)}
+                                            />
                                           )}
                                         </TableCell>
                                         <TableCell className="text-right">
@@ -1685,21 +1742,12 @@ export default function MLAnunciosPage() {
                                             </Tooltip>
                                           ) : (
                                             <span className="inline-flex flex-col items-end gap-0.5">
-                                              <McoDoisCenarios
-                                                cenarios={cenariosMargemReal(mads, "posAds", regimeAplicaDifal)}
-                                                densidade="celula"
+                                              <MargemRealCelula
+                                                valor={mads.lucro_pos_ads}
+                                                pct={mgPosAds}
                                                 role={roleFor(mgPosAds)}
-                                                ressalvaNoCabecalho
-                                                rotuloSemDifal=""
-                                                rotuloComDifal="c/ DIFAL"
                                               />
-                                              <RebateDoisCenarios
-                                                cenarios={cenariosRebateMargemReal(mads, "posAds")}
-                                                densidade="celula"
-                                                role={roleFor(mgPosAds)}
-                                                ressalvaNoCabecalho
-                                                rotuloComRebate=""
-                                              />
+                                              <SeloPromo selo={seloDoItem(item.id, mads)} densidade="celula" />
                                             </span>
                                           )}
                                         </TableCell>

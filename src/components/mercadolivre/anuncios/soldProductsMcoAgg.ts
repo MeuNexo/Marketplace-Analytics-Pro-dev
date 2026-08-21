@@ -170,6 +170,18 @@ export interface PvMcoGroup {
   pedidosSemCapturaRebate: number;
   /** Soma dos pedidos do grupo com conferência de rebate que não fecha — erro nosso. */
   pedidosRebateNaoConferido: number;
+
+  // ── Insumo do selo de estado atual do grupo (Quick 260821-nof) ────────────
+  //
+  // 🔴 Denominador SEMPRE existe — soma simples de `row.comissao`, nunca
+  // derrubada por ausência de rebate. `rebateBruto` segue a MESMA disciplina
+  // do terceiro cenário acima: um item sem apuração contamina o grupo
+  // inteiro (nunca soma só os apurados) — um numerador parcial sobre um
+  // denominador cheio inventaria um percentual.
+  /** Soma de `comissao` (com rebate) dos itens do grupo, R$ — denominador do selo. */
+  comissao: number;
+  /** Soma de `rebate_bruto` dos itens do grupo, R$; `null` quando algum item não foi apurado. */
+  rebateBruto: number | null;
 }
 
 /**
@@ -330,6 +342,11 @@ export function aggregateMcoGroups(
       pedidosRebateNaoConferido: number;
       /** Algum item do grupo não teve o terceiro cenário (rebate) apurado. */
       algumSemTerceiroCenario: boolean;
+      // ── Insumo do selo de estado atual (Quick 260821-nof) ──────────────────
+      comissaoSum: number;
+      rebateBrutoSum: number;
+      /** Algum item do grupo não teve `rebate_bruto` apurado — contamina o grupo. */
+      algumSemRebateBruto: boolean;
     }
   >();
 
@@ -350,11 +367,20 @@ export function aggregateMcoGroups(
       pedidosSemCapturaRebate: 0,
       pedidosRebateNaoConferido: 0,
       algumSemTerceiroCenario: false,
+      comissaoSum: 0,
+      rebateBrutoSum: 0,
+      algumSemRebateBruto: false,
     };
 
     const health = itemHealth(row);
     const semSegundo = row.lucro_pos_ads_com_difal == null;
     const semTerceiro = row.lucro_pos_ads_sem_rebate == null;
+    // 🔴 [Quick 260821-nof] `row.rebate_bruto` — nome EXATO da coluna,
+    // conferido contra `McoProductRow` acima. Com `strictNullChecks`
+    // desligado, um nome trocado devolveria `undefined` calado e zeraria o
+    // selo do grupo inteiro (foi assim que a 223-02 perdeu duas contagens de
+    // lacuna em três telas).
+    const semRebateBruto = row.rebate_bruto == null;
 
     map.set(key, {
       revenue: prev.revenue + row.receita,
@@ -383,6 +409,12 @@ export function aggregateMcoGroups(
       pedidosRebateNaoConferido:
         prev.pedidosRebateNaoConferido + (row.pedidos_rebate_nao_conferido ?? 0),
       algumSemTerceiroCenario: prev.algumSemTerceiroCenario || semTerceiro,
+      // [Quick 260821-nof] comissão é denominador — soma simples, sempre
+      // existe. rebate bruto segue a mesma disciplina do terceiro cenário:
+      // um item sem apuração contamina o grupo inteiro.
+      comissaoSum: prev.comissaoSum + row.comissao,
+      rebateBrutoSum: prev.rebateBrutoSum + (row.rebate_bruto ?? 0),
+      algumSemRebateBruto: prev.algumSemRebateBruto || semRebateBruto,
     });
   }
 
@@ -415,6 +447,8 @@ export function aggregateMcoGroups(
         rebateEfeito: temTerceiroCenario ? d.rebateEfeitoSum : null,
         pedidosSemCapturaRebate: d.pedidosSemCapturaRebate,
         pedidosRebateNaoConferido: d.pedidosRebateNaoConferido,
+        comissao: d.comissaoSum,
+        rebateBruto: d.algumSemRebateBruto ? null : d.rebateBrutoSum,
       };
     })
     .sort((a, b) => b.revenue - a.revenue);

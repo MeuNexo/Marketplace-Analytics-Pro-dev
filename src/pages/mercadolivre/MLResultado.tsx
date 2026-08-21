@@ -56,25 +56,35 @@ import {
 } from "@/components/mercadolivre/anuncios/soldProductsMcoAgg";
 import type { CurvaAbc } from "@/lib/curvaAbc";
 import { classifyMcoHealth, mcoHealthRole, type McoHealth, type McoColorRole } from "@/lib/mcoHealth";
-import {
-  McoDoisCenarios,
-  McoDoisCenariosCabecalho,
-} from "@/components/mercadolivre/McoDoisCenarios";
+// [Quick 260821-nof, D-selo-01/02/03] `McoDoisCenarios`/`RebateDoisCenarios`
+// SAÍRAM das três células desta tela (par sempre visível, herdado da Fase
+// 222/223) — ver o comentário datado 21/08/2026 em cada ponto de remoção.
+// `/resultado` NÃO TEM modal nem gaveta de detalhe (verificado: nenhum
+// Dialog/Sheet/Modal no arquivo) — por isso o cenário com DIFAL, o cenário na
+// tarifa cheia e a frase de motivo quando ausentes seguem rotulados, mas
+// migram para o `title` de cada célula, junto com a média do período.
 import {
   DIFAL_ESTIMATIVA_AJUDA,
   DIFAL_ESTIMATIVA_LABEL,
+  fraseMotivoSemDifal,
   resolveLinhaCenarios,
   type LinhaCenariosResult,
 } from "@/lib/mcoLinhaCenarios";
 import { useDifalRegimeAplicavel } from "@/hooks/useDifalRegimeAplicavel";
 import {
-  RebateDoisCenarios,
-  RebateDoisCenariosCabecalho,
-} from "@/components/mercadolivre/RebateDoisCenarios";
-import {
+  fraseMotivoSemRebate,
+  REBATE_CENARIO_AJUDA,
+  REBATE_CENARIO_LABEL,
   resolveLinhaRebate,
   type LinhaRebateResult,
 } from "@/lib/rebateLinhaCenarios";
+import { SeloPromo } from "@/components/mercadolivre/SeloPromo";
+import {
+  janelaEstadoAtual,
+  resolveSeloPromo,
+  SELO_RECORTE_AJUDA,
+  type SeloPromoResult,
+} from "@/lib/seloPromo";
 import { KPI_GLOSSARY } from "@/lib/kpi-glossary";
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
@@ -287,18 +297,124 @@ function cenariosRebatePreAds(item: PvMcoItem): LinhaRebateResult {
   });
 }
 
+// ─── [Quick 260821-nof] Selo de estado atual + frases rotuladas do detalhe ────
+//
+// D-selo-01/02: as células passam a mostrar UM número + o selo de estado
+// atual. D-selo-03: o cenário com DIFAL, o cenário na tarifa cheia e os
+// motivos de ausência não desaparecem — migram para o `title` de cada
+// célula, porque `/resultado` NÃO TEM modal nem gaveta de detalhe (verificado:
+// nenhum Dialog/Sheet/Modal neste arquivo).
+
+/** A média do período do rebate — reusa `resolveSeloPromo`, não uma segunda conta. */
+function pctMedioPeriodoRebate(
+  comissao: number,
+  rebateBruto: number | null,
+  pedidosSemCaptura: number,
+  pedidosNaoConferidos: number,
+): number | null {
+  return resolveSeloPromo({
+    comissao,
+    rebateBruto,
+    pedidosSemCaptura,
+    pedidosNaoConferidos,
+    semVendaNaJanela: false,
+  }).pct;
+}
+
+/** O selo do item — estado ATUAL (janela recente), nunca a média do período. */
+function seloItem(item: PvMcoItem, recente: McoProductRow | undefined): SeloPromoResult {
+  const mediaPeriodoPct = pctMedioPeriodoRebate(
+    item.comissao,
+    item.rebateBruto,
+    item.pedidosSemCapturaRebate,
+    item.pedidosRebateNaoConferido,
+  );
+
+  if (!recente) {
+    return resolveSeloPromo({ comissao: 0, rebateBruto: null, semVendaNaJanela: true, mediaPeriodoPct });
+  }
+
+  return resolveSeloPromo({
+    comissao: recente.comissao,
+    rebateBruto: recente.rebate_bruto ?? null,
+    pedidosSemCaptura: recente.pedidos_sem_captura_rebate,
+    pedidosNaoConferidos: recente.pedidos_rebate_nao_conferido,
+    semVendaNaJanela: false,
+    mediaPeriodoPct,
+  });
+}
+
+/** O selo do grupo — a mesma disciplina do item, sobre os agregados do grupo. */
+function seloGrupo(group: PvMcoGroup, recente: PvMcoGroup | undefined): SeloPromoResult {
+  const mediaPeriodoPct = pctMedioPeriodoRebate(
+    group.comissao,
+    group.rebateBruto,
+    group.pedidosSemCapturaRebate,
+    group.pedidosRebateNaoConferido,
+  );
+
+  if (!recente) {
+    return resolveSeloPromo({ comissao: 0, rebateBruto: null, semVendaNaJanela: true, mediaPeriodoPct });
+  }
+
+  return resolveSeloPromo({
+    comissao: recente.comissao,
+    rebateBruto: recente.rebateBruto,
+    pedidosSemCaptura: recente.pedidosSemCapturaRebate,
+    pedidosNaoConferidos: recente.pedidosRebateNaoConferido,
+    semVendaNaJanela: false,
+    mediaPeriodoPct,
+  });
+}
+
+/** A frase do cenário DIFAL, rotulada, para o `title` da célula (D-selo-03). */
+function fraseDifalTooltip(cenarios: LinhaCenariosResult): string {
+  if (cenarios.comDifal) {
+    return `Com DIFAL (${DIFAL_ESTIMATIVA_LABEL}): ${brl(cenarios.comDifal.valor)} (${pctFmt(cenarios.comDifal.pct)}) · efeito ${brl(cenarios.difalEfeito ?? 0)}.`;
+  }
+  return fraseMotivoSemDifal(cenarios.motivo, cenarios.pedidosDifalIndefinido) ?? DIFAL_ESTIMATIVA_AJUDA;
+}
+
+/** A frase do cenário de rebate (tarifa cheia), rotulada, com a média do período. */
+function fraseRebateTooltip(cenarios: LinhaRebateResult, mediaPeriodoPct: number | null): string {
+  const media = mediaPeriodoPct != null ? ` Média do período: ${mediaPeriodoPct.toFixed(1)}%.` : "";
+  if (cenarios.semRebate) {
+    return `${REBATE_CENARIO_LABEL}: ${brl(cenarios.semRebate.valor)} (${pctFmt(cenarios.semRebate.pct)}) · efeito ${brl(cenarios.rebateEfeito ?? 0)}.${media}`;
+  }
+  return `${fraseMotivoSemRebate(cenarios.motivo, cenarios.pedidosSemCaptura, cenarios.pedidosNaoConferidos) ?? REBATE_CENARIO_AJUDA}${media}`;
+}
+
 function McoCell({
   item,
   regimeAplicaDifal,
+  seloRecente,
 }: {
   item: PvMcoItem;
   regimeAplicaDifal?: boolean;
+  /** Linha da JANELA RECENTE (mesmo item_id) — insumo do selo, D-selo-04. */
+  seloRecente: McoProductRow | undefined;
 }) {
   // 🔴 O SEMÁFORO CONTINUA LENDO O CENÁRIO SEM DIFAL. Trocar a base de uma cor
   // é decisão de negócio que ninguém tomou — o Wesley pediu para VER os dois
   // cenários, não para realertar por outro.
   const role = mcoHealthRole(item.health);
   const cls = MCO_ROLE_CLASSES[role];
+
+  // 🔴 [21/08/2026, D-selo-02] O par de DIFAL/rebate (`McoDoisCenarios` +
+  // `RebateDoisCenarios`) SAIU desta célula — reversão deliberada do
+  // critério visual da Fase 222 nas LISTAS, medido na tela real com a 223
+  // somando um terceiro e um quarto número. Restaurar aqui NÃO é correção de
+  // regressão. Nada foi apagado: os dois cenários e os motivos de ausência
+  // seguem no `title` abaixo, rotulados — `/resultado` não tem modal.
+  const cenariosDifal = cenariosPosAds(item, regimeAplicaDifal);
+  const cenariosRebate = cenariosRebatePosAds(item);
+  const selo = seloItem(item, seloRecente);
+  const mediaPeriodoPct = pctMedioPeriodoRebate(
+    item.comissao,
+    item.rebateBruto,
+    item.pedidosSemCapturaRebate,
+    item.pedidosRebateNaoConferido,
+  );
 
   return (
     <Tooltip>
@@ -307,23 +423,10 @@ function McoCell({
           <span className={`w-2 h-2 rounded-full shrink-0 ${cls.dot}`} aria-hidden="true" />
           {item.hasCmv ? (
             <span className="inline-flex flex-col items-end gap-0.5">
-              <McoDoisCenarios
-                cenarios={cenariosPosAds(item, regimeAplicaDifal)}
-                densidade="celula"
-                role={role}
-                ressalvaNoCabecalho
-                rotuloSemDifal=""
-                rotuloComDifal="c/ DIFAL"
-              />
-              {/* [223-06] Régua independente: quanto da margem depende da
-                  promoção. Nunca substitui o par de DIFAL, os dois convivem. */}
-              <RebateDoisCenarios
-                cenarios={cenariosRebatePosAds(item)}
-                densidade="celula"
-                role={role}
-                ressalvaNoCabecalho
-                rotuloComRebate=""
-              />
+              <span className={`text-xs font-semibold tabular-nums ${cls.text}`}>
+                {brl(item.mcoReais)} ({pctFmt(item.mcoPct)})
+              </span>
+              <SeloPromo selo={selo} densidade="celula" />
             </span>
           ) : (
             <span className={`text-xs font-medium tabular-nums ${cls.text}`}>—</span>
@@ -341,10 +444,12 @@ function McoCell({
           MCO {brl(item.mcoReais)} · Ads {brl(item.adsSpend)} · Comissão {brl(item.comissao)} · Frete{" "}
           {brl(item.frete)} · Imposto {brl(item.impostos)}
         </p>
+        <p className="border-t border-border/50 pt-1">{fraseDifalTooltip(cenariosDifal)}</p>
         <p className="border-t border-border/50 pt-1">
-          {item.mcoComDifalReais != null
-            ? `Com DIFAL (${DIFAL_ESTIMATIVA_LABEL}): ${brl(item.mcoComDifalReais)} · efeito do DIFAL ${brl(item.difalEfeito ?? 0)}. ${DIFAL_ESTIMATIVA_AJUDA}`
-            : DIFAL_ESTIMATIVA_AJUDA}
+          {fraseRebateTooltip(cenariosRebate, mediaPeriodoPct)}
+        </p>
+        <p className="text-[10px] text-muted-foreground border-t border-border/50 pt-1">
+          {SELO_RECORTE_AJUDA}
         </p>
       </TooltipContent>
     </Tooltip>
@@ -377,24 +482,25 @@ function PreAdsCell({
     );
   }
 
+  // 🔴 [21/08/2026, D-selo-01/02] O par de DIFAL/rebate SAIU desta célula —
+  // reversão deliberada do critério visual da Fase 222 nas LISTAS. Esta
+  // célula NÃO ganha selo próprio: o selo é o mesmo da linha (mora na coluna
+  // pós-ads, ao lado) e repeti-lo aqui é a densidade que a D-selo-01 veio
+  // remover. Os dois cenários seguem rotulados no `title` — nada foi apagado.
+  const cenariosDifal = cenariosPreAds(item, regimeAplicaDifal);
+  const cenariosRebate = cenariosRebatePreAds(item);
+  const mediaPeriodoPct = pctMedioPeriodoRebate(
+    item.comissao,
+    item.rebateBruto,
+    item.pedidosSemCapturaRebate,
+    item.pedidosRebateNaoConferido,
+  );
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="cursor-default inline-flex flex-col items-end gap-0.5">
-          <McoDoisCenarios
-            cenarios={cenariosPreAds(item, regimeAplicaDifal)}
-            densidade="celula"
-            ressalvaNoCabecalho
-            rotuloSemDifal=""
-            rotuloComDifal="c/ DIFAL"
-          />
-          {/* [223-06] Mesma régua independente do rebate, no cenário pré-ads. */}
-          <RebateDoisCenarios
-            cenarios={cenariosRebatePreAds(item)}
-            densidade="celula"
-            ressalvaNoCabecalho
-            rotuloComRebate=""
-          />
+        <span className="cursor-default text-xs font-medium tabular-nums">
+          {brl(item.mcoPreAdsReais ?? 0)} ({pctFmt(item.mcoPreAdsPct)})
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="text-xs max-w-[260px] space-y-1">
@@ -403,7 +509,10 @@ function PreAdsCell({
           {item.mcoPreAdsReais !== null ? `: ${brl(item.mcoPreAdsReais)}` : ""}. Depois dos{" "}
           {brl(item.adsSpend)} de ads, sobra {pctFmt(item.mcoPct)}.
         </p>
-        <p className="border-t border-border/50 pt-1">{DIFAL_ESTIMATIVA_AJUDA}</p>
+        <p className="border-t border-border/50 pt-1">{fraseDifalTooltip(cenariosDifal)}</p>
+        <p className="border-t border-border/50 pt-1">
+          {fraseRebateTooltip(cenariosRebate, mediaPeriodoPct)}
+        </p>
       </TooltipContent>
     </Tooltip>
   );
@@ -415,10 +524,13 @@ function GroupMcoBadge({
   group,
   size = "sm",
   regimeAplicaDifal,
+  seloRecente,
 }: {
   group: PvMcoGroup;
   size?: "sm" | "md";
   regimeAplicaDifal?: boolean;
+  /** O MESMO grupo (mesma chave), agregado sobre a JANELA RECENTE — D-selo-04. */
+  seloRecente: PvMcoGroup | undefined;
 }) {
   // Semáforo do grupo continua na régua SEM DIFAL — ver a nota em McoCell.
   const health: McoHealth = classifyMcoHealth(group.mcoPct);
@@ -452,25 +564,29 @@ function GroupMcoBadge({
     pedidosNaoConferidos: group.pedidosRebateNaoConferido,
   });
 
+  // 🔴 [21/08/2026, D-selo-02] O par de DIFAL/rebate SAIU do badge do grupo —
+  // reversão deliberada do critério visual da Fase 222 nas LISTAS. Os dois
+  // cenários seguem rotulados no `title` — nada foi apagado, `/resultado`
+  // não tem modal.
+  const selo = seloGrupo(group, seloRecente);
+  const mediaPeriodoPct = pctMedioPeriodoRebate(
+    group.comissao,
+    group.rebateBruto,
+    group.pedidosSemCapturaRebate,
+    group.pedidosRebateNaoConferido,
+  );
+  const valorReal = group.revenue * ((group.mcoPct ?? 0) / 100);
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <span className="inline-flex items-center gap-1 cursor-default">
           <span className={`w-2 h-2 rounded-full shrink-0 ${cls.dot}`} aria-hidden="true" />
           <span className="inline-flex flex-col items-end gap-0.5">
-            <McoDoisCenarios
-              cenarios={cenarios}
-              densidade={size === "md" ? "bloco" : "celula"}
-              role={role}
-              rotuloSemDifal=""
-              rotuloComDifal="c/ DIFAL"
-            />
-            <RebateDoisCenarios
-              cenarios={cenariosRebate}
-              densidade="celula"
-              role={role}
-              rotuloComRebate=""
-            />
+            <span className={`font-semibold tabular-nums ${size === "md" ? "text-sm" : "text-xs"} ${cls.text}`}>
+              {brl(valorReal)} ({pctFmt(group.mcoPct)})
+            </span>
+            <SeloPromo selo={selo} densidade="celula" />
           </span>
           {group.hasMissingCost && (
             <AlertCircle className="w-2.5 h-2.5 text-muted-foreground shrink-0" aria-hidden="true" />
@@ -483,7 +599,13 @@ function GroupMcoBadge({
             ? "MCO% inclui anúncios sem custo cadastrado — pode estar impreciso."
             : "MCO% médio pós-ads do grupo (Σlucro pós-ads ÷ Σreceita)."}
         </p>
-        <p className="border-t border-border/50 pt-1">{DIFAL_ESTIMATIVA_AJUDA}</p>
+        <p className="border-t border-border/50 pt-1">{fraseDifalTooltip(cenarios)}</p>
+        <p className="border-t border-border/50 pt-1">
+          {fraseRebateTooltip(cenariosRebate, mediaPeriodoPct)}
+        </p>
+        <p className="text-[10px] text-muted-foreground border-t border-border/50 pt-1">
+          {SELO_RECORTE_AJUDA}
+        </p>
       </TooltipContent>
     </Tooltip>
   );
@@ -510,43 +632,45 @@ function SortHead({
   currentDir,
   onSort,
   tooltip,
-  ressalvaDifal = false,
-  ressalvaRebate = false,
+  comSelo = false,
 }: {
   sortKey: SortKey;
   currentKey: SortKey;
   currentDir: SortDir;
   onSort: (k: SortKey) => void;
   tooltip?: string;
-  /** Coluna que exibe os dois cenários de DIFAL: carrega a ressalva UMA vez. */
-  ressalvaDifal?: boolean;
-  /** Coluna que exibe os dois cenários de rebate: carrega a ressalva UMA vez. */
-  ressalvaRebate?: boolean;
+  /**
+   * 🔴 [21/08/2026, D-selo-02] As propriedades `ressalvaDifal`/`ressalvaRebate`
+   * (que chamavam `McoDoisCenariosCabecalho`/`RebateDoisCenariosCabecalho`)
+   * SAÍRAM — reversão deliberada do critério visual da Fase 222 nas LISTAS.
+   * `comSelo` substitui as duas: acrescenta a frase do recorte do selo
+   * (`SELO_RECORTE_AJUDA`) ao tooltip que a coluna já tem, em vez de repetir
+   * a ressalva do par em cada cabeçalho.
+   */
+  comSelo?: boolean;
 }) {
   const isActive = currentKey === key;
   const label = COLUMN_LABEL[key];
   const hint = tooltip ?? COLUMN_TOOLTIP[key];
+  const hintComSelo = comSelo && hint ? `${hint} ${SELO_RECORTE_AJUDA}` : hint;
 
   const content = (
     <span
       className="inline-flex items-center gap-1 justify-end cursor-pointer select-none group"
       onClick={() => onSort(key)}
     >
-      <span className="inline-flex flex-col items-end">
-        {ressalvaDifal ? <McoDoisCenariosCabecalho titulo={label} /> : label}
-        {ressalvaRebate && <RebateDoisCenariosCabecalho />}
-      </span>
+      <span className="inline-flex flex-col items-end">{label}</span>
       <SortIndicator active={isActive} dir={currentDir} />
     </span>
   );
 
   return (
     <th className="py-2 text-right font-medium pr-4">
-      {hint ? (
+      {hintComSelo ? (
         <Tooltip>
           <TooltipTrigger asChild>{content}</TooltipTrigger>
           <TooltipContent side="top" className="text-xs max-w-[240px]">
-            {hint}
+            {hintComSelo}
           </TooltipContent>
         </Tooltip>
       ) : (
@@ -588,6 +712,16 @@ export default function MLResultado() {
   // Fase 212: a publicidade destas linhas é a fatura do ML rateada por anúncio,
   // não mais o gasto do relatório de publicidade. `margem.ads` diz a origem.
   const { data: margem, isLoading } = useMLMarginWithAds(currentFrom, currentTo);
+
+  // ── [Quick 260821-nof, D-selo-04] SEGUNDA janela — o insumo do selo ────────
+  // Uma consulta A MAIS por tela (nunca por linha), na MESMA RPC, com a
+  // MESMA assinatura — só a janela muda, ancorada no FIM do período exibido.
+  // `useMLMarginWithAds` não é tocado.
+  const janelaRecente = useMemo(
+    () => janelaEstadoAtual({ from: currentFrom, to: currentTo }),
+    [currentFrom, currentTo],
+  );
+  const { data: margemRecente } = useMLMarginWithAds(janelaRecente.from, janelaRecente.to);
 
   // [222-15-R2] O recorte de lojas recolhe DIFAL? `false` só quando TODAS são
   // do Simples Nacional — aí as células dizem "regime não aplicável" em vez de
@@ -640,6 +774,28 @@ export default function MLResultado() {
     () => (pvSelected !== null ? aggregateMcoItems(rows, pvSelected, pvView, itemsMap) : []),
     [rows, pvSelected, pvView, itemsMap],
   );
+
+  // ── [Quick 260821-nof, D-selo-04] Insumo do selo — a MESMA agregação rodada
+  // sobre as linhas da janela recente. A agregação não conhece período: é
+  // isso que permite reusá-la aqui sem duplicar nenhuma conta.
+  const rowsRecentes: McoProductRow[] = useMemo(
+    () => (margemRecente?.rows ?? []).filter((r) => r.unidades > 0),
+    [margemRecente],
+  );
+  const recentePorItemId = useMemo(() => {
+    const m = new Map<string, McoProductRow>();
+    rowsRecentes.forEach((r) => m.set(r.item_id, r));
+    return m;
+  }, [rowsRecentes]);
+  const pvGroupsRecentes: PvMcoGroup[] = useMemo(
+    () => aggregateMcoGroups(rowsRecentes, pvView, itemsMap),
+    [rowsRecentes, pvView, itemsMap],
+  );
+  const recenteGrupoPorChave = useMemo(() => {
+    const m = new Map<string, PvMcoGroup>();
+    pvGroupsRecentes.forEach((g) => m.set(g.key, g));
+    return m;
+  }, [pvGroupsRecentes]);
 
   // ── Custo ausente: contagem sobre o PERÍODO INTEIRO, não sobre o grupo ─────
   // O aviso é sobre a confiabilidade da tela toda: contar só o grupo aberto
@@ -809,7 +965,11 @@ export default function MLResultado() {
                             <span className="font-medium text-foreground">
                               {brl(g.revenue)}
                             </span>
-                            <GroupMcoBadge group={g} regimeAplicaDifal={regimeAplicaDifal} />
+                            <GroupMcoBadge
+                              group={g}
+                              regimeAplicaDifal={regimeAplicaDifal}
+                              seloRecente={recenteGrupoPorChave.get(g.key)}
+                            />
                             <span>{intFmt(g.qty)} un.</span>
                           </span>
                         </span>
@@ -858,6 +1018,7 @@ export default function MLResultado() {
                           group={selectedGroup}
                           size="md"
                           regimeAplicaDifal={regimeAplicaDifal}
+                          seloRecente={recenteGrupoPorChave.get(selectedGroup.key)}
                         />
                       </div>
                       <div>
@@ -895,14 +1056,13 @@ export default function MLResultado() {
                               currentKey={sortKey}
                               currentDir={sortDir}
                               onSort={onSortClick}
-                              /* [222-15-R2] A ressalva de estimativa aparece UMA
-                                 vez, no cabeçalho das duas colunas de MCO — não
-                                 repetida em cada uma das centenas de linhas. A
-                                 palavra tem de informar, não virar ruído. */
-                              ressalvaDifal={k === "mcoPct" || k === "mcoPreAdsPct"}
-                              /* [223-06] Mesma ideia para o rebate — régua
-                                 independente, ressalva própria no cabeçalho. */
-                              ressalvaRebate={k === "mcoPct" || k === "mcoPreAdsPct"}
+                              /* 🔴 [21/08/2026, D-selo-02] As ressalvas de par
+                                 (McoDoisCenariosCabecalho/RebateDoisCenariosCabecalho)
+                                 SAÍRAM dos dois cabeçalhos de MCO — reversão
+                                 deliberada do critério visual da Fase 222 nas
+                                 LISTAS. `comSelo` acrescenta a frase do
+                                 recorte do selo ao tooltip no lugar delas. */
+                              comSelo={k === "mcoPct" || k === "mcoPreAdsPct"}
                             />
                           ))}
                         </tr>
@@ -942,7 +1102,11 @@ export default function MLResultado() {
                                 <PreAdsCell item={item} regimeAplicaDifal={regimeAplicaDifal} />
                               </td>
                               <td className="py-2.5 text-right pr-4">
-                                <McoCell item={item} regimeAplicaDifal={regimeAplicaDifal} />
+                                <McoCell
+                                  item={item}
+                                  regimeAplicaDifal={regimeAplicaDifal}
+                                  seloRecente={recentePorItemId.get(item.item_id)}
+                                />
                               </td>
                               <td className="py-2.5 text-right pr-4 text-xs tabular-nums text-muted-foreground">
                                 {pctFmt(item.acosPct)}
@@ -1042,7 +1206,11 @@ export default function MLResultado() {
                             <div>
                               <span className="text-muted-foreground">MCO pós-ads</span>
                               <p className="font-medium tabular-nums">
-                                <McoCell item={item} regimeAplicaDifal={regimeAplicaDifal} />
+                                <McoCell
+                                  item={item}
+                                  regimeAplicaDifal={regimeAplicaDifal}
+                                  seloRecente={recentePorItemId.get(item.item_id)}
+                                />
                               </p>
                             </div>
                             <div>
