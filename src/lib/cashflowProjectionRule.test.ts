@@ -50,7 +50,7 @@ describe("cashflowProjectionRule — get_cashflow para de injetar média em D+8/
     const arquivos = migrationsDeCashflow();
     expect(arquivos.length).toBeGreaterThan(0);
     const maisRecente = arquivos[arquivos.length - 1];
-    expect(maisRecente.nome).toBe("20260817100000_get_cashflow_corte_d9.sql");
+    expect(maisRecente.nome).toBe("20260821140000_get_cashflow_corte_d9.sql");
   });
 
   it("Test 2: fora de comentário, o corte da projeção aparece com o nono dia, exatamente duas vezes", () => {

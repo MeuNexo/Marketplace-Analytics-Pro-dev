@@ -34,7 +34,7 @@ export interface CashFlowDataPoint {
   accumulated_balance: number;
   /**
    * Saldo projetado acumulado (linha âmbar) — regra vigente desde a Fase 224
-   * (critério 6 do ROADMAP, migration 20260817100000_get_cashflow_corte_d9):
+   * (critério 6 do ROADMAP, migration 20260821140000_get_cashflow_corte_d9):
    * - Dias 1-9 a partir de hoje (BRT): usa só o recebimento CONFIRMADO do dia
    *   (d.inc), sem aplicar média — a agenda do Mercado Pago cobre 103% a 112%
    *   do dia nessa janela (224-CONTEXT.md, D-3), então injetar média ali seria
