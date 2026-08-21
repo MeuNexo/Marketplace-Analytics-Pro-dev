@@ -147,3 +147,10 @@ verify_jwt = true
 # ml-claim-action: executa ação do vendedor em reclamação (refund/open_dispute). JWT + anti-IDOR.
 [functions.ml-claim-action]
 verify_jwt = true
+
+# Fase 224 (ERR-02) — congelamento diário da previsão de caixa.
+# verify_jwt=false: disparada por pg_cron (Pattern B) com service_role_key
+# (sb_secret_, não JWT). Auth interna via requireServiceRole(): Bearer
+# service_role_key | 401 — mesmo arranjo de sync-mp-releases.
+[functions.snapshot-cashflow-forecast]
+verify_jwt = false
