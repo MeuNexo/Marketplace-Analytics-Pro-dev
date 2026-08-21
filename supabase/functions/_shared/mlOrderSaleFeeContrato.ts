@@ -53,6 +53,18 @@
  * não confundir com `discount_info.discount_reason`, que existe por LINHA
  * dentro de `details[]` e às vezes traz texto ("Desconto geral" nas linhas
  * de frete) mesmo quando o pedido não tem rebate.
+ *
+ * 🔴 `discount` É PARCELA DA IDENTIDADE, NÃO DECORAÇÃO (medido em 21/08,
+ * quick 260821-inn): na amostra de 20/08 `discount` valia zero em 7/7 —
+ * parecia decoração porque a parcela que faltava era zero em toda a
+ * amostra. Contraexemplo, pedido `2000015317143520`: `gross 49,00 · rebate
+ * 0 · discount 2,45 · net 46,55`. A identidade correta tem TRÊS parcelas —
+ * `gross - rebate - COALESCE(discount, 0) == net` — e a regra de duas
+ * (`gross - rebate == net`) que ignorava `discount` era FALSA, não uma
+ * simplificação válida; ela travou o backfill de 6.295 pedidos até ser
+ * corrigida. `discount` NÃO é `rebate`: é redução geral da tarifa
+ * ("Desconto geral"), não desconto por campanha comercial — os dois nunca
+ * se somam.
  */
 export interface SaleFee {
   gross: number | null;

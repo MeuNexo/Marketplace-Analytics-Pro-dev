@@ -98,15 +98,22 @@ describe("lerPedidos — um registro por pedido, sale_fee da raiz, linhas à par
     expect(agregarPorPedido).toBe(lerPedidos);
   });
 
+  // Identidade de TRÊS parcelas (quick 260821-inn): gross - rebate -
+  // COALESCE(discount, 0) == net. Nos 7 pedidos desta amostra `discount`
+  // vale 0 (223-01) — mesma conta da regra de duas parcelas aqui; o
+  // contraexemplo que separa as duas regras mora em
+  // `mlOrderSaleFeeIdentidade.test.ts`.
   it.each(Object.keys(ORDERS_COMISSAO_QUANTIDADE))(
-    "pedido %s: sale_fee lido da RAIZ, gross − rebate == net",
+    "pedido %s: sale_fee lido da RAIZ, gross − rebate − COALESCE(discount, 0) == net",
     (id) => {
       const pedido = mapa.get(id) as PedidoSaleFee;
       expect(pedido.saleFee.gross).not.toBeNull();
       expect(pedido.saleFee.net).not.toBeNull();
       expect(pedido.saleFee.rebate).not.toBeNull();
       closeCents(
-        (pedido.saleFee.gross as number) - (pedido.saleFee.rebate as number),
+        (pedido.saleFee.gross as number) -
+          (pedido.saleFee.rebate as number) -
+          (pedido.saleFee.discount ?? 0),
         pedido.saleFee.net as number,
       );
     },

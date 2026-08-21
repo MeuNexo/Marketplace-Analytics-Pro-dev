@@ -130,13 +130,20 @@ describe("amostra medida — forma e higienização (must_haves da Task 1)", () 
 });
 
 describe("sale_fee da raiz — gross, net, rebate (Q1, Q4)", () => {
+  // Identidade de TRÊS parcelas (quick 260821-inn): gross - rebate -
+  // COALESCE(discount, 0) == net. Nos 7 pedidos desta amostra `discount`
+  // vale exatamente 0 (223-01/D-inn-01) — é a mesma conta da regra de DUAS
+  // parcelas apenas porque a terceira parcela é zero aqui; o contraexemplo
+  // que prova as duas regras DIVERGEM mora em
+  // `mlOrderSaleFeeIdentidade.test.ts` (fixture do desconto, pedido
+  // 2000015317143520).
   it.each(amostra.results)(
-    "pedido $order_id: gross - rebate == net, dentro de um centavo",
+    "pedido $order_id: gross - rebate - COALESCE(discount, 0) == net, dentro de um centavo",
     (r: ResultadoPedidoSaleFee) => {
-      const { gross, net, rebate }: SaleFee = r.sale_fee;
+      const { gross, net, rebate, discount }: SaleFee = r.sale_fee;
       expect(gross).not.toBeNull();
       expect(rebate).not.toBeNull();
-      closeCents(net, (gross as number) - (rebate as number));
+      closeCents(net, (gross as number) - (rebate as number) - (discount ?? 0));
     },
   );
 

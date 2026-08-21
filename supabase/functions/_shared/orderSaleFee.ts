@@ -42,17 +42,29 @@
  * módulo só o RESPEITA: toda função que compara `net` com `comissao` recebe a
  * `quantidade` como multiplicador explícito, nunca compara as duas cruas.
  *
- * AS DUAS IDENTIDADES MEDIDAS (7 de 7, ao centavo — 223-CONTRATO-SALE-FEE.md):
+ * AS TRÊS IDENTIDADES MEDIDAS (223-CONTRATO-SALE-FEE.md + quick 260821-inn):
  *
- *   (I)  sale_fee.net == Σ detail_amount das linhas CHARGE de subtipo CVV*
- *   (II) sale_fee.net == orders.comissao × orders.quantidade
+ *   (I)   sale_fee.net == Σ detail_amount das linhas CHARGE de subtipo CVV*
+ *   (II)  sale_fee.net == orders.comissao × orders.quantidade
+ *   (III) sale_fee.gross - sale_fee.rebate - COALESCE(sale_fee.discount, 0) == sale_fee.net
  *
- * (I) é interna à resposta do ML — prova que lemos as linhas certas, sem
- * tocar em `orders`. (II) é o GATE do critério 3 da fase: autoriza afirmar
- * rebate naquele pedido. Prova mais eloquente de (II): pedido
- * `2000017193192024`, `net` 63,06 contra `orders.comissao` 10,51 × 6 = 63,06
- * — omitir o multiplicador acusaria 62 pedidos bons como divergentes só na
- * Pé Vermeio (223-CONTRATO-SALE-FEE.md).
+ * (I) e (II) foram medidas nos mesmos 7 pedidos de 20/08 em que a parcela do
+ * desconto (a terceira, (III)) valia ZERO nos 7 — a amostra que escondeu o
+ * defeito de (III) é a mesma que sustenta (I) e (II). (I) é interna à
+ * resposta do ML — prova que lemos as linhas certas, sem tocar em `orders`.
+ * (II) é o GATE do critério 3 da fase: autoriza afirmar rebate naquele
+ * pedido. Prova mais eloquente de (II): pedido `2000017193192024`, `net`
+ * 63,06 contra `orders.comissao` 10,51 × 6 = 63,06 — omitir o multiplicador
+ * acusaria 62 pedidos bons como divergentes só na Pé Vermeio
+ * (223-CONTRATO-SALE-FEE.md).
+ *
+ * (III) É A CORREÇÃO DO QUICK 260821-inn: a restrição de banco original
+ * exigia `gross - rebate == net` (DUAS parcelas) e travou o backfill de
+ * 6.295 pedidos porque `discount` NÃO é sempre zero — contraexemplo medido
+ * ao vivo, pedido `2000015317143520`: `gross 49,00 · rebate 0 · discount
+ * 2,45 · net 46,55`. `discount` NÃO é `rebate`: é redução geral da tarifa
+ * ("Desconto geral"), outro fato, outra origem — as duas parcelas nunca se
+ * somam, entram separadas na identidade.
  *
  * CANCELAMENTO: `BONUS` ESTORNA, E O `sale_fee` NÃO ENXERGA (Q4) — pedido
  * cancelado ganha linhas extras `detail_type: "BONUS"` (`BVVML`/`BVVPRC`) que
