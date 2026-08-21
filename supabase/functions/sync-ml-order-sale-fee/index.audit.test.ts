@@ -46,31 +46,58 @@ function semComentarios(ts: string): string {
 const fonte = ler(ARQ_FONTE);
 const corpo = semComentarios(fonte);
 
-// ─── O fonte não decide nada: usa as três funções do núcleo puro ───────────
+// ─── O fonte não decide nada: delega ao núcleo puro e ao módulo de lote ────
+// (260821-hap: a decisão de captura/truncamento migrou para
+// resolverLoteComTruncamento, orderSaleFeeLote.ts — lerPedidos e
+// classificarCaptura deixam de ser chamados diretamente por esta edge
+// function, que agora só injeta a chamada de rede e persiste o resultado.)
 
-describe("o fonte importa o núcleo puro e usa as três funções dele — a decisão não é reescrita aqui", () => {
-  it("importa lerPedidos, classificarCaptura e selecionarLote de orderSaleFee.ts (não reimplementa a decisão de captura)", () => {
+describe("o fonte importa selecionarLote/TAMANHO_MAXIMO_LOTE do núcleo puro, e delega a decisão de captura/truncamento a resolverLoteComTruncamento", () => {
+  it("importa selecionarLote e TAMANHO_MAXIMO_LOTE de orderSaleFee.ts (não reimplementa a seleção de lote)", () => {
     const importOrderSaleFee = /import\s*\{([^}]*)\}\s*from\s*["']\.\.\/_shared\/orderSaleFee\.ts["']/;
     const m = importOrderSaleFee.exec(corpo);
     expect(m, "import de orderSaleFee.ts não encontrado").not.toBeNull();
     const nomesImportados = (m as RegExpExecArray)[1];
-    expect(nomesImportados).toContain("lerPedidos");
-    expect(nomesImportados).toContain("classificarCaptura");
     expect(nomesImportados).toContain("selecionarLote");
+    expect(nomesImportados).toContain("TAMANHO_MAXIMO_LOTE");
   });
 
-  it("chama lerPedidos, classificarCaptura e selecionarLote como funções — não só importa, USA (protege contra o núcleo puro virar import morto)", () => {
-    expect(/\blerPedidos\s*\(/.test(corpo)).toBe(true);
-    expect(/\bclassificarCaptura\s*\(/.test(corpo)).toBe(true);
+  it("NÃO importa lerPedidos nem classificarCaptura de orderSaleFee.ts — essa decisão foi delegada a resolverLoteComTruncamento (260821-hap, D-hap-02/03)", () => {
+    const importOrderSaleFee = /import\s*\{([^}]*)\}\s*from\s*["']\.\.\/_shared\/orderSaleFee\.ts["']/;
+    const m = importOrderSaleFee.exec(corpo);
+    expect(m).not.toBeNull();
+    const nomesImportados = (m as RegExpExecArray)[1];
+    expect(nomesImportados).not.toContain("lerPedidos");
+    expect(nomesImportados).not.toContain("classificarCaptura");
+  });
+
+  it("lerPedidos não aparece em ponto nenhum do fonte — a leitura de sale_fee da raiz do pedido é responsabilidade exclusiva do módulo de lote/núcleo puro", () => {
+    expect(/\blerPedidos\b/.test(corpo)).toBe(false);
+  });
+
+  it("chama selecionarLote como função — não só importa, USA (protege contra o núcleo puro virar import morto)", () => {
     expect(/\bselecionarLote\s*\(/.test(corpo)).toBe(true);
   });
 
+  it("importa resolverLoteComTruncamento de orderSaleFeeLote.ts e chama como função", () => {
+    const importLote = /import\s*\{([^}]*)\}\s*from\s*["']\.\.\/_shared\/orderSaleFeeLote\.ts["']/;
+    const m = importLote.exec(corpo);
+    expect(m, "import de orderSaleFeeLote.ts não encontrado").not.toBeNull();
+    expect((m as RegExpExecArray)[1]).toContain("resolverLoteComTruncamento");
+    expect(/\bresolverLoteComTruncamento\s*\(/.test(corpo)).toBe(true);
+  });
+
+  it("não reimplementa a detecção de truncamento — idsPresentesNaResposta/detectarTruncamento não aparecem no fonte (essa decisão vive só em orderSaleFeeLote.ts, D-hap-03)", () => {
+    expect(/idsPresentesNaResposta|detectarTruncamento/.test(corpo)).toBe(false);
+  });
+
   it("não reescreve o predicado de comissão (CVV*/BONUS) — nenhum subtipo aparece literal no fonte, prova de que a soma passa pelo núcleo puro", () => {
-    // Protege a regra Q2/Q4 (223-CONTRATO-SALE-FEE.md): só o núcleo puro tem
-    // o direito de saber que CVVML/CVVPRC/CVVFNU são comissão e BVVML/BVVPRC
-    // são estorno. Se esses literais aparecerem aqui, a edge function está
-    // decidindo de novo o que já foi decidido em orderSaleFee.ts.
-    expect(/CVVML|CVVPRC|CVVFNU|BVVML|BVVPRC/.test(corpo)).toBe(false);
+    // Protege a regra Q2/Q4 (223-CONTRATO-SALE-FEE.md) e D-hap-05: só o
+    // núcleo puro tem o direito de saber que CVVML/CVVPRC/CVVFNU/CVVFN são
+    // comissão e BVVML/BVVPRC são estorno. Se esses literais aparecerem
+    // aqui, a edge function está decidindo de novo o que já foi decidido em
+    // orderSaleFee.ts/mlOrderSaleFeeContrato.ts.
+    expect(/CVVML|CVVPRC|CVVFNU|CVVFN|BVVML|BVVPRC/.test(corpo)).toBe(false);
   });
 });
 
@@ -92,6 +119,10 @@ describe("o teto do lote vem da constante nomeada do núcleo puro — regra: mai
     // Comentários (explicando "no máximo 60 order_ids") já foram removidos de
     // `corpo` — se "60" ainda aparecer aqui, é porque virou código, não prosa.
     expect(/\b60\b/.test(corpo)).toBe(false);
+  });
+
+  it("o número 25 (novo teto medido, D-hap-01, 260821-hap) também não aparece solto — MAX_SOLO_POR_INVOCACAO deriva de TAMANHO_MAXIMO_LOTE, nunca redigitado", () => {
+    expect(/\b25\b/.test(corpo)).toBe(false);
   });
 });
 
@@ -152,9 +183,9 @@ describe("o estorno (BONUS) é marcado em coluna própria e nunca somado dentro 
 
 // ─── sale_fee é lido do nível do pedido, nunca de dentro de details[] ──────
 
-describe("sale_fee é lido do nível do pedido (raiz do results[]), não de dentro do array de linhas — regra Q1", () => {
-  it("os resultados crus (resposta.results) são entregues inteiros a lerPedidos — não fatiados linha a linha antes disso", () => {
-    expect(/lerPedidos\s*\(\s*resposta\.results\s*\)/.test(corpo)).toBe(true);
+describe("sale_fee é lido do nível do pedido (raiz do results[]) — a leitura crua vive só no módulo de lote/núcleo puro, nunca em index.ts (260821-hap)", () => {
+  it("a leitura crua dos resultados (lerPedidos) não é chamada por index.ts — já coberto acima (lerPedidos ausente do fonte); resolverLoteComTruncamento é quem recebe resposta.results", () => {
+    expect(/\blerPedidos\b/.test(corpo)).toBe(false);
   });
 
   it("nenhum acesso direto a `.sale_fee` (campo cru da API) fora dos nomes de coluna sale_fee_* — a leitura passa só pelo núcleo puro", () => {
@@ -211,5 +242,60 @@ describe("a leitura de pedidos usa paginação explícita — regra: PostgREST t
   it("usa .range() para paginar a consulta de orders e a de ml_order_sale_fee_captura", () => {
     const ocorrencias = corpo.match(/\.range\(/g) ?? [];
     expect(ocorrencias.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// ─── motivo_parada nunca termina calada (260821-hap, D-hap-07) ─────────────
+
+describe("toda invocação declara motivo_parada — nunca termina calada (D-hap-07)", () => {
+  it("motivo_parada aparece em mais de um caminho de retorno da resposta de conta única (early-return de conta desabilitada, e o retorno final da rodada)", () => {
+    const ocorrencias = corpo.match(/motivo_parada:/g) ?? [];
+    expect(ocorrencias.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("o resultado da rodada (contendo motivo_parada) é logado antes do return em executarParaConta — não só no fan-out, que é justamente um dos caminhos que ninguém lê a resposta", () => {
+    expect(/console\.(log|error)\([^)]*resultadoFinal/.test(corpo)).toBe(true);
+  });
+
+  it("ao bater o teto de saltos (MAX_HOPS) a cadeia loga um erro citando quantos pedidos restaram, em vez de sumir calada", () => {
+    const idx = corpo.indexOf("hopAtual < MAX_HOPS");
+    expect(idx, "checagem de hopAtual < MAX_HOPS não encontrada no fonte").toBeGreaterThan(-1);
+    const trecho = corpo.slice(idx, idx + 500);
+    expect(/console\.error\(/.test(trecho)).toBe(true);
+    expect(/restantes/.test(trecho)).toBe(true);
+  });
+});
+
+// ─── max_lotes informado nunca encadeia continuação sozinho (D-hap-06) ─────
+
+describe("a decisão de continuar usa o campo BRUTO do corpo (max_lotes informado ou não), nunca o valor já com padrão aplicado (D-hap-06)", () => {
+  it("maxLotesInformado é calculado a partir de max_lotes !== undefined — o campo cru do corpo, antes do `??` padrão", () => {
+    expect(/maxLotesInformado\s*=\s*max_lotes\s*!==\s*undefined/.test(corpo)).toBe(true);
+  });
+
+  it("a decisão de continuar (podeContinuar) depende de maxLotesInformado/continuarInformado, não do valor maxLotes já com padrão aplicado", () => {
+    const idx = corpo.indexOf("const podeContinuar");
+    expect(idx, "podeContinuar não encontrado no fonte").toBeGreaterThan(-1);
+    const trecho = corpo.slice(idx, idx + 300);
+    expect(/opts\.continuarInformado/.test(trecho)).toBe(true);
+    expect(/opts\.maxLotesInformado/.test(trecho)).toBe(true);
+  });
+});
+
+// ─── mode: "status" nunca gasta chamada ao ML (D-hap-07) ───────────────────
+
+describe("mode: status responde quanto sobrou sem nenhuma chamada ao ML", () => {
+  it("o ramo de status não chama fetchOrderSaleFeeLote nem resolverLoteComTruncamento", () => {
+    const idx = corpo.indexOf('mode === "status"');
+    expect(idx, 'checagem de mode === "status" não encontrada').toBeGreaterThan(-1);
+    const idxExecutarStatus = corpo.indexOf("async function executarStatusConta");
+    expect(idxExecutarStatus).toBeGreaterThan(-1);
+    const fimFuncao = corpo.indexOf("\n}\n", idxExecutarStatus);
+    const corpoFuncao = corpo.slice(idxExecutarStatus, fimFuncao === -1 ? undefined : fimFuncao);
+    expect(/fetchOrderSaleFeeLote|resolverLoteComTruncamento/.test(corpoFuncao)).toBe(false);
+  });
+
+  it("exige ml_user_id para mode: status (mesma checagem de backfill)", () => {
+    expect(/mode === "backfill" \|\| mode === "status"/.test(corpo)).toBe(true);
   });
 });

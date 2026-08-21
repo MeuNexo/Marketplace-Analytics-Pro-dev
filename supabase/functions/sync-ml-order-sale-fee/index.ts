@@ -2,13 +2,12 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import {
-  lerPedidos,
-  classificarCaptura,
   selecionarLote,
   TAMANHO_MAXIMO_LOTE,
   type PedidoSaleFee,
   type CapturaDecidida,
 } from "../_shared/orderSaleFee.ts";
+import { resolverLoteComTruncamento, type ChamarResultado } from "../_shared/orderSaleFeeLote.ts";
 import {
   inicioInclusivoDataPedido,
   fimExclusivoDataPedido,
@@ -16,59 +15,76 @@ import {
 
 /**
  * sync-ml-order-sale-fee/index.ts — a ingestão do rebate por pedido
- * (Fase 223, plano 223-04).
+ * (Fase 223, plano 223-04; corrigida na quick 260821-hap).
  *
  * O QUE ESTA EDGE FUNCTION É, E O QUE ELA NÃO É: ela busca, entrega ao
- * núcleo puro (`orderSaleFee.ts`, 223-03) e grava o que ele decidiu. Nenhuma
- * regra de negócio mora aqui — `lerPedidos`, `classificarCaptura` e
- * `selecionarLote` são quem decide o que é comissão, o que é estorno, o que
- * autoriza afirmar rebate e quantos pedidos cabem num lote. Ver o cabeçalho
- * de `orderSaleFee.ts` para as duas identidades medidas e a armadilha do
- * cancelamento (Q4).
+ * núcleo puro (`orderSaleFee.ts`) e ao módulo de lote (`orderSaleFeeLote.ts`)
+ * e grava o que eles decidiram. Nenhuma regra de negócio mora aqui —
+ * `selecionarLote` decide quantos ids cabem num lote,
+ * `resolverLoteComTruncamento` decide o que é comissão, o que é estorno, o
+ * que autoriza afirmar rebate e o que fazer quando um lote volta truncado.
+ * Ver o cabeçalho de `orderSaleFee.ts`/`orderSaleFeeLote.ts` para as
+ * identidades medidas e a armadilha do cancelamento (Q4).
+ *
+ * 🔴 O TETO REAL É DE LINHAS DE COBRANÇA, NÃO DE PEDIDOS (D-hap-01,
+ * 260821-hap). `/group/ML/order/details` pagina o envelope da resposta por
+ * LINHA de cobrança, teto fixo de 150 — `limit`/`offset` da query string são
+ * IGNORADOS. Medido: 60 `order_ids` enviados → `limit:150 · total:49 ·
+ * results:49 · linhas:150`, 11 pedidos SUMIRAM da resposta.
+ * `TAMANHO_MAXIMO_LOTE` (núcleo puro) caiu de 60 para 25 por causa disso —
+ * mas o teto menor só torna o caso RARO, nunca impossível.
+ *
+ * 🔴 AUSÊNCIA NUM LOTE NUNCA CONCLUI NADA (D-hap-02). O defeito medido em
+ * produção: 327 de 1.560 pedidos (21%) foram gravados `sem_linha` a partir
+ * de um lote truncado — a API os devolvia normalmente, dois com rebate real
+ * de R$ 11,85 e R$ 14,55, descartado como se não existisse. A defesa vive em
+ * `orderSaleFeeLote.ts`: `resolverLoteComTruncamento` só conclui `sem_linha`
+ * a partir de uma chamada com UM ÚNICO `order_id` — lote com mais de um id
+ * que perde pedido reconsulta cada ausente SOZINHO, na MESMA rodada.
  *
  * POR QUE ESTE ENDPOINT EXIGE DISCIPLINA DE LIMITE DE TAXA (D-223-05,
  * ML-BILLING-API-DOC.txt linhas 194-211): `/group/ML/order/details` é o
  * CAMPEÃO de erro 429 no Mercado Livre, e o bloqueio é POR IP — quando ele
  * cai, cai em cima de `sync-ml-orders`, `sync-ml-billing` e da sincronização
- * de ads ao mesmo tempo. As duas causas documentadas são: consulta repetida
- * por pedido já processado, e mais de 60 `order_ids` por chamada. Por isso:
+ * de ads ao mesmo tempo. Por isso:
  *
- *   · nunca mais que `TAMANHO_MAXIMO_LOTE` (60, importado do núcleo puro —
- *     o número não é reescrito aqui);
+ *   · nunca mais que `TAMANHO_MAXIMO_LOTE` (núcleo puro — o número não é
+ *     reescrito aqui);
  *   · a marca de processado vive em `ml_order_sale_fee_captura` — um pedido
  *     capturado (status "ok") nunca reentra num lote seguinte;
  *   · nenhuma chamada de rede em paralelo, em ponto nenhum deste arquivo —
- *     nem entre lotes da mesma conta, nem entre contas no leque diário;
+ *     nem entre lotes da mesma conta, nem entre contas no leque diário, nem
+ *     dentro das reconsultas solo (`orderSaleFeeLote.ts`);
  *   · um 429 interrompe a RODADA INTEIRA desta invocação (todas as contas,
  *     se for o leque) e NÃO dispara continuação — insistir é o que
  *     transforma bloqueio preventivo em bloqueio longo;
- *   · uma resposta 206 (dado incompleto) nunca vira rebate zero — o núcleo
- *     puro marca "parcial" com `saleFee: null`, e a restrição de banco do
- *     223-03 recusa a linha se este arquivo tentar gravar valor mesmo assim.
+ *   · uma resposta 206 (dado incompleto) nunca vira rebate zero.
  *
- * O QUE NÃO FOI COPIADO de `sync-ml-billing/index.ts` (223-PATTERNS.md): a
- * paginação por `from_id`/`ml_billing_page_cursor` — este endpoint não pagina
- * por cursor de página, o "cursor" aqui é "quais order_ids ainda não têm
- * captura", resolvido por consulta ao banco; a agregação de fatura por
- * competência; a resolução de fatura por período; e o staging apagado depois
- * (`limparInsumo`) — D-223-04 é explícita: tabela definitiva, nada de insumo
- * temporário.
+ * 🔴 `max_lotes` INFORMADO NUNCA ENCADEIA CONTINUAÇÃO SOZINHO (D-hap-06).
+ * Defeito medido: uma chamada com `max_lotes: 1` respondeu `lotes:1` e
+ * mesmo assim varreu 1.560 pedidos, encadeando 26 vezes em background até
+ * morrer sozinha, 82% por fazer, SEM sinalizar nada. Agora: a continuação só
+ * dispara quando `max_lotes` NÃO veio no corpo, ou quando `continuar: true`
+ * é passado explicitamente — e mesmo assim, um teto de saltos (`hop`,
+ * `MAX_HOPS`) impede a cadeia de sumir de novo.
+ *
+ * 🔴 TODA INVOCAÇÃO DECLARA `motivo_parada` (D-hap-07) — na resposta E no
+ * log, inclusive nos caminhos de leque diário e de continuação em
+ * background, que são justamente os que ninguém lê a resposta.
+ * `mode: "status"` responde quanto trabalho sobrou lendo só o banco
+ * (`ml_order_sale_fee_captura`), ZERO chamadas ao ML.
  *
  * DUAS FORMAS DE RESPOSTA, no molde do irmão:
  *   · leque diário (mode=daily, sem ml_user_id, só service-role): responde
- *     202 de imediato e roda em `EdgeRuntime.waitUntil` — evita o pg_net do
- *     cron segurar a conexão pela rodada inteira de todas as contas.
- *   · conta única (backfill, ou daily com ml_user_id): processa até
- *     `max_lotes` de forma SÍNCRONA nesta própria invocação (é o que dá ao
- *     portão de produção do 223-08 um corpo de resposta com números
- *     declarados — `restantes`, `interrompido_por_429` — para chamar a
- *     função à mão e saber se o backfill terminou, sem inferir). Só a
- *     PRÓXIMA invocação (quando ainda há pendência não tentada e nenhum 429
- *     ocorreu) é disparada sem esperar, dentro de `EdgeRuntime.waitUntil`.
+ *     202 de imediato e roda em `EdgeRuntime.waitUntil`.
+ *   · conta única (backfill, status, ou daily com ml_user_id): processa até
+ *     `max_lotes` de forma SÍNCRONA nesta própria invocação, com um corpo de
+ *     resposta declarado (`restantes`, `interrompido_por_429`,
+ *     `motivo_parada`, ...).
  *
  * ⚠️ Nada de deploy aqui. Escrever o arquivo é o trabalho desta task;
  * publicar (via MCP `apply_migration`/deploy de function) é portão do
- * orquestrador no 223-08.
+ * orquestrador (260821-hap-PORTAO.md).
  */
 
 // EdgeRuntime é global no runtime Supabase Edge — sem import necessário.
@@ -85,8 +101,29 @@ const ML_API = "https://api.mercadolibre.com";
 /** Padrão do corpo quando `max_lotes` não é informado (D-223-02: custo medido do backfill — 143 chamadas). */
 const MAX_LOTES_PADRAO = 5;
 
-/** Pausa fixa entre lotes da MESMA conta — nunca disparar o próximo lote sem aguardar o anterior. */
+/** Pausa fixa entre lotes da MESMA conta, e entre uma reconsulta solo e a próxima — nunca disparar a próxima chamada sem aguardar a anterior. */
 const PAUSA_ENTRE_LOTES_MS = 1_000;
+
+/**
+ * Orçamento de reconsultas SOLO por INVOCAÇÃO (D-hap-03), não por lote —
+ * decrementado ao longo de toda a rodada e passado a cada lote resolvido.
+ * Dimensionado como UM LOTE INTEIRO de reconsultas: o pior caso plausível é
+ * um lote inteiro voltar truncado e cada id virar uma solo — não faz sentido
+ * orçar mais do que isso, é o próprio custo de reprocessar um lote id-a-id.
+ */
+const MAX_SOLO_POR_INVOCACAO = TAMANHO_MAXIMO_LOTE;
+
+/**
+ * Teto de saltos da cadeia de continuação (D-hap-06). Medido: sem teto, uma
+ * chamada com `max_lotes: 1` encadeou 26 vezes em background até morrer
+ * sozinha às 19h46, 82% do backfill por fazer, sem sinalizar nada. 50 dá
+ * folga generosa mesmo para um backfill grande — com `MAX_LOTES_PADRAO=5` e
+ * `TAMANHO_MAXIMO_LOTE=25`, cada invocação processa até ~125 pedidos sem
+ * truncamento; 50 saltos cobrem um backfill de milhares de pedidos. Ao
+ * bater o teto, a cadeia PARA e GRITA (`console.error` com `restantes`), em
+ * vez de sumir de novo.
+ */
+const MAX_HOPS = 50;
 
 /**
  * Tolerância da conferência interna (Identidade I: soma das linhas de
@@ -130,17 +167,18 @@ interface RespostaLote {
 }
 
 /**
- * `GET /billing/integration/group/ML/order/details?order_ids=<até 60>`, uma
- * chamada por vez, nunca em paralelo com outra. Repetição de até 5
- * tentativas com espera crescente em 429 e 5xx — mesmo molde de
- * `sync-ml-billing/index.ts` (`fetchPage`, linhas 170-211) — e
+ * `GET /billing/integration/group/ML/order/details?order_ids=<até
+ * TAMANHO_MAXIMO_LOTE>`, uma chamada por vez, nunca em paralelo com outra.
+ * Repetição de até 5 tentativas com espera crescente em 429 e 5xx — mesmo
+ * molde de `sync-ml-billing/index.ts` (`fetchPage`, linhas 170-211) — e
  * **try/catch explícito em volta do `fetch`**: `AbortSignal.timeout` lança
  * exceção, não devolve status, e sem este catch o tempo limite escapa do
  * laço de repetição (bug real, corrigido em 06/08 no irmão).
  *
  * Se as 5 tentativas se esgotarem AINDA em 429, o `httpStatus` devolvido é
- * 429 mesmo assim — é o chamador (`processarLote`) quem decide que isso
- * interrompe a rodada inteira, não esta função.
+ * 429 mesmo assim — é quem chama (`resolverLoteComTruncamento`,
+ * `orderSaleFeeLote.ts`) quem decide que isso interrompe a rodada inteira,
+ * não esta função.
  */
 async function fetchOrderSaleFeeLote(
   token: string,
@@ -190,9 +228,9 @@ async function fetchOrderSaleFeeLote(
     }
 
     if (res.status === 404) {
-      // O(s) pedido(s) não existe(m) no faturamento — vira "sem linha de
-      // faturamento" pela regra do núcleo puro (classificarCaptura), não
-      // um erro a reagendar com o mesmo peso de um 5xx.
+      // O(s) pedido(s) não existe(m) no faturamento — normalizado para
+      // "200 vazio" por resolverLoteComTruncamento (D-hap-03), nunca um
+      // erro a reagendar com o mesmo peso de um 5xx.
       return { httpStatus: 404, results: [] };
     }
 
@@ -363,6 +401,8 @@ interface CapturaExistente {
   status: string;
   proxima_tentativa: string | null;
   tentativas: number;
+  /** Usado só por `mode: "status"` — a última vez que este pedido foi tentado. */
+  ultima_tentativa: string | null;
 }
 
 // deno-lint-ignore no-explicit-any
@@ -377,7 +417,7 @@ async function lerCapturaExistente(
   for (let offset = 0; ; offset += PASSO) {
     const { data, error } = await supabaseAdmin
       .from("ml_order_sale_fee_captura")
-      .select("ml_order_id, status, proxima_tentativa, tentativas")
+      .select("ml_order_id, status, proxima_tentativa, tentativas, ultima_tentativa")
       .eq("organization_id", organizationId)
       .eq("ml_user_id", mlUserId)
       .order("ml_order_id", { ascending: true })
@@ -390,6 +430,7 @@ async function lerCapturaExistente(
         status: String(r.status),
         proxima_tentativa: r.proxima_tentativa ?? null,
         tentativas: Number(r.tentativas ?? 0),
+        ultima_tentativa: r.ultima_tentativa ?? null,
       });
     }
     if (lote.length < PASSO) break;
@@ -410,13 +451,24 @@ function hojeUTC(agora: Date): string {
   return agora.toISOString().slice(0, 10);
 }
 
-// ── Um lote: chama, classifica pelo núcleo puro, grava ───────────────────────
+// ── Um lote: resolve com resolverLoteComTruncamento, grava ──────────────────
 
 interface ResultadoLote {
-  httpStatusRecebido: number;
   decisoes: CapturaDecidida[];
+  interrompidoPor429: boolean;
+  truncamentoDetectado: boolean;
+  solosUsados: number;
+  ausentesNaoResolvidos: number;
+  chamadas: number;
 }
 
+/**
+ * Resolve UM lote (até `TAMANHO_MAXIMO_LOTE` ids): a decisão sobre
+ * truncamento, reconsulta solo e classificação de cada pedido é INTEIRA de
+ * `resolverLoteComTruncamento` (`orderSaleFeeLote.ts`, 260821-hap Task 2) —
+ * este arquivo só injeta a chamada de rede (`fetchOrderSaleFeeLote`) e a
+ * pausa, e persiste o resultado.
+ */
 async function processarLote(
   // deno-lint-ignore no-explicit-any
   supabaseAdmin: any,
@@ -426,55 +478,47 @@ async function processarLote(
   lote: readonly string[],
   agora: Date,
   tentativasAtuais: Readonly<Record<string, number>>,
-): Promise<ResultadoLote & { mapaPedidos: ReadonlyMap<string, PedidoSaleFee> | null }> {
-  const resposta = await fetchOrderSaleFeeLote(accessToken, lote);
-
-  if (resposta.httpStatus === 404) {
-    // 404 → "sem linha de faturamento" pela regra do núcleo puro: chamamos
-    // classificarCaptura como se fosse 200 com o mapa de leitura vazio, para
-    // que cada pedido caia no ramo "sem_linha" (nunca "erro" — 404 aqui não
-    // é falha transitória, é ausência confirmada de linha).
-    const decisoes = classificarCaptura({
-      pedidosDoLote: lote,
-      lidos: new Map(),
-      httpStatus: 200,
-      agora,
-      tentativasAtuais,
-    });
-    await gravarCapturas(supabaseAdmin, organizationId, mlUserId, decisoes);
-    return { httpStatusRecebido: 404, decisoes, mapaPedidos: null };
-  }
-
-  if (resposta.httpStatus === 200) {
-    const mapaPedidos = lerPedidos(resposta.results);
-    const decisoes = classificarCaptura({
-      pedidosDoLote: lote,
-      lidos: mapaPedidos,
-      httpStatus: 200,
-      agora,
-      tentativasAtuais,
-    });
-    const idsCapturados = decisoes.filter((d) => d.status === "ok").map((d) => d.ml_order_id);
-    await gravarLinhas(supabaseAdmin, organizationId, mlUserId, mapaPedidos, idsCapturados);
-    await gravarCapturas(supabaseAdmin, organizationId, mlUserId, decisoes);
-    return { httpStatusRecebido: 200, decisoes, mapaPedidos };
-  }
-
-  // 206, 429, 5xx esgotado, ou qualquer outro status: o núcleo puro trata
-  // tudo que não é 200 nem 206 como "erro" (reagenda); 206 vira "parcial"
-  // (saleFee null, nunca zero — D-223-05).
-  const decisoes = classificarCaptura({
-    pedidosDoLote: lote,
-    lidos: new Map(),
-    httpStatus: resposta.httpStatus,
+  maxSolo: number,
+): Promise<ResultadoLote> {
+  const resultado = await resolverLoteComTruncamento({
+    lote,
     agora,
     tentativasAtuais,
+    chamar: (ids): Promise<ChamarResultado> => fetchOrderSaleFeeLote(accessToken, ids),
+    pausar: sleep,
+    pausaMs: PAUSA_ENTRE_LOTES_MS,
+    maxSolo,
   });
-  await gravarCapturas(supabaseAdmin, organizationId, mlUserId, decisoes);
-  return { httpStatusRecebido: resposta.httpStatus, decisoes, mapaPedidos: null };
+
+  const idsCapturados = resultado.decisoes
+    .filter((d) => d.status === "ok")
+    .map((d) => d.ml_order_id);
+  await gravarLinhas(supabaseAdmin, organizationId, mlUserId, resultado.pedidosLidos, idsCapturados);
+  await gravarCapturas(supabaseAdmin, organizationId, mlUserId, resultado.decisoes);
+
+  return {
+    decisoes: resultado.decisoes,
+    interrompidoPor429: resultado.interrompidoPor429,
+    truncamentoDetectado: resultado.truncamentoDetectado,
+    solosUsados: resultado.solosUsados,
+    ausentesNaoResolvidos: resultado.ausentesNaoResolvidos,
+    chamadas: resultado.chamadas,
+  };
 }
 
 // ── Uma conta inteira: até max_lotes, sequencial, sem paralelismo ───────────
+
+/**
+ * Os seis valores declarados de D-hap-07 — toda invocação termina num
+ * destes, nunca calada.
+ */
+type MotivoParada =
+  | "sem_pendencia"
+  | "max_lotes"
+  | "orcamento_solo"
+  | "429"
+  | "max_hops"
+  | "conta_desabilitada";
 
 interface ResultadoConta {
   conta: string;
@@ -489,7 +533,24 @@ interface ResultadoConta {
   erros: number;
   interrompido_por_429: boolean;
   restantes: number;
+  /** Quantas reconsultas solo esta invocação disparou (D-hap-03). */
+  reconsultas_solo: number;
+  /** Em quantos lotes principais o envelope voltou truncado (D-hap-01). */
+  truncamentos_detectados: number;
+  /** Ausentes que sobraram sem resolução nesta invocação (orçamento/429) — nunca sem_linha. */
+  ausentes_nao_resolvidos: number;
+  /** D-hap-07: nunca termina calada. */
+  motivo_parada: MotivoParada;
   motivo?: string;
+}
+
+interface OpcoesContinuacao {
+  /** Verdadeiro quando `max_lotes` veio no CORPO CRU da requisição (antes do padrão) — D-hap-06. */
+  maxLotesInformado: boolean;
+  /** Verdadeiro quando `continuar: true` foi passado explicitamente. */
+  continuarInformado: boolean;
+  /** O `hop` desta invocação (0 na primeira chamada de uma cadeia). */
+  hopAtual: number;
 }
 
 async function executarParaConta(
@@ -500,13 +561,14 @@ async function executarParaConta(
   accessToken: string,
   modo: "daily" | "backfill",
   maxLotes: number,
+  opts: OpcoesContinuacao,
 ): Promise<ResultadoConta> {
   const configRow = await lerConfig(supabaseAdmin, organizationId, mlUserId);
   if (!configRow || !configRow.habilitado) {
     // Quais contas entram vem da tabela de configuração, não de constante no
     // código (D-223-02/D-223-03) — conta ausente ou desabilitada não gasta
     // nenhuma chamada de rede.
-    return {
+    const resultadoDesabilitada: ResultadoConta = {
       conta: mlUserId,
       lotes: 0,
       pedidos_consultados: 0,
@@ -519,8 +581,14 @@ async function executarParaConta(
       erros: 0,
       interrompido_por_429: false,
       restantes: 0,
+      reconsultas_solo: 0,
+      truncamentos_detectados: 0,
+      ausentes_nao_resolvidos: 0,
+      motivo_parada: "conta_desabilitada",
       motivo: "conta nao habilitada em ml_sale_fee_sync_config",
     };
+    console.log(`sync-ml-order-sale-fee: ${JSON.stringify(resultadoDesabilitada)}`);
+    return resultadoDesabilitada;
   }
 
   const agora = new Date();
@@ -564,11 +632,16 @@ async function executarParaConta(
   let interrompidoPor429 = false;
   let capturadosOkCount = 0;
   let desistidosCount = 0;
+  let soloOrcamentoRestante = MAX_SOLO_POR_INVOCACAO;
+  let reconsultasSolo = 0;
+  let truncamentosDetectados = 0;
+  let ausentesNaoResolvidosTotal = 0;
+  let paradaPorOrcamentoSolo = false;
 
   // Guarda de laço: nunca mais que maxLotes rodadas de rede nesta invocação —
   // nunca loopar infinitamente se algo de inesperado vier do banco/API.
   while (lotes < maxLotes && restantesTrabalho.length > 0) {
-    // TAMANHO_MAXIMO_LOTE vem do núcleo puro (223-03) — o teto de 60 nunca é
+    // TAMANHO_MAXIMO_LOTE vem do núcleo puro — o teto medido nunca é
     // reescrito aqui.
     const lote = selecionarLote(restantesTrabalho, TAMANHO_MAXIMO_LOTE);
     if (lote.length === 0) break;
@@ -579,7 +652,7 @@ async function executarParaConta(
       if (c) tentativasAtuais[id] = c.tentativas;
     }
 
-    // Uma chamada de rede por vez, sempre aguardada antes da próxima —
+    // Uma resolução de lote por vez, sempre aguardada antes da próxima —
     // nenhuma agregação de promessas simultâneas em ponto nenhum deste laço.
     const resultado = await processarLote(
       supabaseAdmin,
@@ -589,9 +662,14 @@ async function executarParaConta(
       lote,
       agora,
       tentativasAtuais,
+      soloOrcamentoRestante,
     );
     lotes += 1;
     pedidosConsultados += lote.length;
+    soloOrcamentoRestante = Math.max(0, soloOrcamentoRestante - resultado.solosUsados);
+    reconsultasSolo += resultado.solosUsados;
+    if (resultado.truncamentoDetectado) truncamentosDetectados += 1;
+    ausentesNaoResolvidosTotal += resultado.ausentesNaoResolvidos;
 
     for (const d of resultado.decisoes) {
       if (d.status === "ok") {
@@ -600,7 +678,8 @@ async function executarParaConta(
         linhasGravadas += d.linhas;
         if (d.temEstorno) comEstorno += 1;
         // Identidade (I), só observabilidade: soma das linhas de comissão
-        // contra sale_fee.net da raiz — não depende de orders.
+        // contra sale_fee.net da raiz — não depende de orders. Ignora
+        // comissaoLinhas nulo (D-hap-04: "não confere" não é "diverge").
         if (
           d.saleFee?.net != null &&
           d.comissaoLinhas != null &&
@@ -623,16 +702,26 @@ async function executarParaConta(
         status: d.status,
         proxima_tentativa: d.proximaTentativa ? d.proximaTentativa.toISOString() : null,
         tentativas: d.tentativas,
+        ultima_tentativa: agora.toISOString(),
       });
     }
 
     restantesTrabalho = restantesTrabalho.filter((id) => !lote.includes(id));
 
-    if (resultado.httpStatusRecebido === 429) {
+    if (resultado.interrompidoPor429) {
       // Bloqueio preventivo por IP — interrompe a RODADA INTEIRA desta
       // invocação. Nunca insistir: é isso que transforma bloqueio preventivo
       // em bloqueio longo (D-223-05).
       interrompidoPor429 = true;
+      break;
+    }
+
+    if (soloOrcamentoRestante <= 0 && restantesTrabalho.length > 0) {
+      // Orçamento de solos desta invocação esgotado (D-hap-03): continuar
+      // disparando lotes principais só acumularia mais ausentes não
+      // resolvidos. Para aqui e deixa a próxima invocação (orçamento fresco)
+      // continuar — nunca gravar sem_linha por falta de orçamento.
+      paradaPorOrcamentoSolo = true;
       break;
     }
 
@@ -643,24 +732,53 @@ async function executarParaConta(
   }
 
   // restantes: quantos pedidos AINDA não têm resposta definitiva (nem
-  // capturados, nem desistidos) — número declarado, nunca inferido. Inclui
-  // tanto os que nem chegaram a ser tentados nesta invocação (cortados pelo
-  // teto de maxLotes) quanto os que ficaram "parcial"/"erro"/"sem_linha" e
-  // aguardam a próxima janela de retentativa.
+  // capturados, nem desistidos) — número declarado, nunca inferido.
   const restantes = pendentesIniciais.length - capturadosOkCount - desistidosCount;
 
-  // Continuação: só quando ainda há pendência NÃO TENTADA nesta invocação
-  // (cortada pelo teto de maxLotes) e nenhum 429 ocorreu. Pedidos que
-  // ficaram "parcial"/"erro" já têm `proxima_tentativa` agendada — não
-  // precisam de continuação imediata, o próximo ciclo (cron/backfill) os
-  // pega sozinho.
-  if (restantesTrabalho.length > 0 && !interrompidoPor429) {
-    EdgeRuntime.waitUntil(
-      continuarEmOutraInvocacao({ mode: modo, ml_user_id: mlUserId, max_lotes: maxLotes }),
-    );
+  // motivo_parada (D-hap-07): nunca termina calada. Prioridade: 429 (mais
+  // urgente) > trabalho zerado > parada deliberada por orçamento > teto de
+  // lotes desta invocação.
+  let motivoParada: MotivoParada;
+  if (interrompidoPor429) {
+    motivoParada = "429";
+  } else if (restantesTrabalho.length === 0) {
+    motivoParada = "sem_pendencia";
+  } else if (paradaPorOrcamentoSolo) {
+    motivoParada = "orcamento_solo";
+  } else {
+    motivoParada = "max_lotes";
   }
 
-  return {
+  // Continuação (D-hap-06): só quando ainda há pendência NÃO TENTADA nesta
+  // invocação, nenhum 429 ocorreu, E (max_lotes NÃO veio no corpo CRU, OU
+  // continuar:true foi passado explicitamente). `max_lotes` informado sem
+  // `continuar` é o caminho do portão de produção/chamada à mão: "faça
+  // exatamente isto e devolva" — nunca encadeia sozinho.
+  const podeContinuar =
+    restantesTrabalho.length > 0 && !interrompidoPor429 && (opts.continuarInformado || !opts.maxLotesInformado);
+
+  if (podeContinuar) {
+    if (opts.hopAtual < MAX_HOPS) {
+      EdgeRuntime.waitUntil(
+        continuarEmOutraInvocacao({
+          mode: modo,
+          ml_user_id: mlUserId,
+          max_lotes: maxLotes,
+          continuar: opts.continuarInformado,
+          hop: opts.hopAtual + 1,
+        }),
+      );
+    } else {
+      // Teto de saltos atingido — a cadeia PARA e GRITA, em vez de sumir
+      // calada (era exatamente esse o defeito medido: 26 saltos silenciosos).
+      console.error(
+        `sync-ml-order-sale-fee: MAX_HOPS (${MAX_HOPS}) atingido para ml_user_id=${mlUserId}; restantes=${restantesTrabalho.length}`,
+      );
+      motivoParada = "max_hops";
+    }
+  }
+
+  const resultadoFinal: ResultadoConta = {
     conta: mlUserId,
     lotes,
     pedidos_consultados: pedidosConsultados,
@@ -673,6 +791,107 @@ async function executarParaConta(
     erros,
     interrompido_por_429: interrompidoPor429,
     restantes,
+    reconsultas_solo: reconsultasSolo,
+    truncamentos_detectados: truncamentosDetectados,
+    ausentes_nao_resolvidos: ausentesNaoResolvidosTotal,
+    motivo_parada: motivoParada,
+  };
+
+  // D-hap-07: registrado em log ANTES de retornar — inclusive nos caminhos
+  // (leque diário, continuação em background) que ninguém lê a resposta.
+  console.log(`sync-ml-order-sale-fee: ${JSON.stringify(resultadoFinal)}`);
+
+  return resultadoFinal;
+}
+
+// ── mode: "status" — quanto sobrou, lendo só o banco (D-hap-07) ────────────
+
+interface ResultadoStatus {
+  conta: string;
+  pendentes: number;
+  capturados: number;
+  sem_linha: number;
+  parciais: number;
+  erros: number;
+  desistidos: number;
+  ultima_tentativa: string | null;
+}
+
+/**
+ * Responde quanto trabalho sobrou para uma conta, lendo só
+ * `ml_order_sale_fee_captura` e `orders` (via `listarPedidosNaJanela` e
+ * `lerCapturaExistente`, as MESMAS funções de `executarParaConta`) — ZERO
+ * chamadas de rede ao ML. É também o que o portão de produção usa para
+ * conferir o reparo dos 327 `sem_linha` antes e depois (260821-hap-PORTAO.md).
+ */
+async function executarStatusConta(
+  // deno-lint-ignore no-explicit-any
+  supabaseAdmin: any,
+  organizationId: string,
+  mlUserId: string,
+): Promise<ResultadoStatus> {
+  const vazio: ResultadoStatus = {
+    conta: mlUserId,
+    pendentes: 0,
+    capturados: 0,
+    sem_linha: 0,
+    parciais: 0,
+    erros: 0,
+    desistidos: 0,
+    ultima_tentativa: null,
+  };
+
+  const configRow = await lerConfig(supabaseAdmin, organizationId, mlUserId);
+  if (!configRow) return vazio;
+
+  const agora = new Date();
+  const inicio = inicioInclusivoDataPedido(configRow.backfill_desde);
+  const fim = fimExclusivoDataPedido(hojeUTC(agora));
+  if (inicio === null || fim === null) {
+    throw new Error(`janela invalida para status ml_user_id=${mlUserId}`);
+  }
+
+  const idsNaJanela = await listarPedidosNaJanela(supabaseAdmin, organizationId, mlUserId, inicio, fim);
+  const capturaMap = await lerCapturaExistente(supabaseAdmin, organizationId, mlUserId);
+
+  let pendentes = 0;
+  let capturados = 0;
+  let semLinha = 0;
+  let parciais = 0;
+  let erros = 0;
+  let desistidos = 0;
+  let ultimaTentativa: string | null = null;
+
+  for (const id of idsNaJanela) {
+    const c = capturaMap.get(id);
+    if (!c) {
+      pendentes += 1;
+      continue;
+    }
+    if (c.status === "ok") {
+      capturados += 1;
+    } else if (c.status === "sem_linha") {
+      semLinha += 1;
+      if (c.proxima_tentativa === null) desistidos += 1;
+    } else if (c.status === "parcial") {
+      parciais += 1;
+    } else if (c.status === "erro") {
+      erros += 1;
+    }
+    if (c.ultima_tentativa && (!ultimaTentativa || c.ultima_tentativa > ultimaTentativa)) {
+      ultimaTentativa = c.ultima_tentativa;
+    }
+  }
+
+  return {
+    conta: mlUserId,
+    pendentes,
+    capturados,
+    sem_linha: semLinha,
+    parciais,
+    erros,
+    desistidos,
+    ultima_tentativa: ultimaTentativa,
   };
 }
 
@@ -692,10 +911,8 @@ async function executarFanOutDiario(
   const resultados: ResultadoConta[] = [];
   // Sequencial — uma conta de cada vez, nunca uma agregação de promessas em
   // paralelo. Um 429 numa conta interrompe SÓ a rodada daquela conta
-  // (executarParaConta já para sozinha);
-  // o leque segue para a próxima conta normalmente, porque contas diferentes
-  // não compartilham o mesmo risco imediato de bloqueio — mas continuam
-  // sendo chamadas uma de cada vez, nunca em paralelo.
+  // (executarParaConta já para sozinha); o leque segue para a próxima conta
+  // normalmente.
   // deno-lint-ignore no-explicit-any
   for (const conta of (contas ?? []) as any[]) {
     const organizationId = String(conta.organization_id);
@@ -720,8 +937,14 @@ async function executarFanOutDiario(
         tokenRow.access_token,
         "daily",
         maxLotes,
+        // O leque diário sempre trata como "max_lotes não informado" —
+        // continuação opt-in por padrão para o cron, cadeia sempre nova
+        // (hop 0) a cada disparo diário (D-hap-06).
+        { maxLotesInformado: false, continuarInformado: false, hopAtual: 0 },
       );
       resultados.push(r);
+      // D-hap-07: log do resultado (já inclui motivo_parada) — este é
+      // justamente um dos caminhos que ninguém lê a resposta.
       console.log(`sync-ml-order-sale-fee fan-out: ${JSON.stringify(r)}`);
     } catch (e) {
       console.error(
@@ -736,9 +959,13 @@ async function executarFanOutDiario(
 // ── Body schema ───────────────────────────────────────────────────────────
 
 const BodySchema = z.object({
-  mode: z.enum(["daily", "backfill"]),
+  mode: z.enum(["daily", "backfill", "status"]),
   ml_user_id: z.string().min(1).optional(),
   max_lotes: z.number().int().positive().optional(),
+  /** D-hap-06: opt-in explícito para encadear continuação mesmo com max_lotes informado. */
+  continuar: z.boolean().optional(),
+  /** D-hap-06: contador de saltos da cadeia de continuação — 0 na primeira chamada. */
+  hop: z.number().int().min(0).optional(),
 });
 
 // ── Handler ───────────────────────────────────────────────────────────────
@@ -773,11 +1000,17 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
-    const { mode, ml_user_id, max_lotes } = parsed.data;
+    const { mode, ml_user_id, max_lotes, continuar, hop } = parsed.data;
     const maxLotes = max_lotes ?? MAX_LOTES_PADRAO;
+    // 🔴 D-hap-06: a decisão de continuar lê o campo CRU do corpo
+    // (max_lotes, antes do `??` padrão) — nunca `maxLotes` já com o padrão
+    // aplicado, senão TODA chamada pareceria "max_lotes informado".
+    const maxLotesInformado = max_lotes !== undefined;
+    const continuarInformado = continuar === true;
+    const hopAtual = hop ?? 0;
 
-    if (mode === "backfill" && !ml_user_id) {
-      return new Response(JSON.stringify({ error: "ml_user_id required for backfill" }), {
+    if ((mode === "backfill" || mode === "status") && !ml_user_id) {
+      return new Response(JSON.stringify({ error: "ml_user_id required for " + mode }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -786,7 +1019,7 @@ serve(async (req) => {
     // ── Leque diário (mode=daily, sem ml_user_id) — só service-role, molde
     // do irmão (sync-ml-billing, runAllAccountsDailySync). Responde de
     // imediato e roda em background: evita o pg_net do cron segurar a
-    // conexão pela rodada inteira de todas as contas habilitadas.
+    // conexão pela rodada inteira de todas as contas.
     if (mode === "daily" && !ml_user_id) {
       if (!isServiceRole) {
         return new Response(JSON.stringify({ error: "ml_user_id required" }), {
@@ -811,7 +1044,7 @@ serve(async (req) => {
       );
     }
 
-    // ── Conta única (backfill, ou daily com ml_user_id) ──────────────────
+    // ── Conta única (backfill, status, ou daily com ml_user_id) ──────────
     const { data: tokenRow, error: tokenErr } = await supabaseAdmin
       .from("ml_tokens")
       .select("access_token, organization_id, updated_at")
@@ -848,6 +1081,16 @@ serve(async (req) => {
       }
     }
 
+    // 🔴 mode: "status" — ZERO chamadas ao ML: nada de token usado, nada de
+    // fetchOrderSaleFeeLote/resolverLoteComTruncamento neste ramo.
+    if (mode === "status") {
+      const resultado = await executarStatusConta(supabaseAdmin, organizationId, ml_user_id!);
+      return new Response(JSON.stringify({ ok: true, modo: mode, ...resultado }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const resultado = await executarParaConta(
       supabaseAdmin,
       organizationId,
@@ -855,6 +1098,7 @@ serve(async (req) => {
       accessToken,
       mode,
       maxLotes,
+      { maxLotesInformado, continuarInformado, hopAtual },
     );
 
     return new Response(JSON.stringify({ ok: true, modo: mode, ...resultado }), {
