@@ -1,0 +1,19 @@
+{
+  "medido_em": "2026-08-21",
+  "endpoint": "GET https://api.mercadolibre.com/billing/integration/group/ML/order/details?order_ids={ids}",
+  "conta": "Pé Vermeio (seller 1639558873)",
+  "procedencia": "O bloco sale_fee do pedido 2000015317143520 é resposta AO VIVO do ML medida em 21/08 (quick 260821-inn) — os cinco valores (gross 49,00 · net 46,55 · rebate 0 · discount 2,45 · discount_reason \"Desconto geral\") são medição, não reconstrução. details[] NÃO foi capturado nesta medição e vem vazio de propósito: nenhuma linha de cobrança deste arquivo é medição, só o sale_fee da raiz. Este é o contraexemplo que derrubou a restrição ml_order_sale_fee_captura_identidade_gross_rebate_net — a identidade de DUAS parcelas (gross - rebate == net) falha nele em 2,45; só a de TRÊS (gross - rebate - discount == net) fecha.",
+  "results": [
+    {
+      "order_id": 2000015317143520,
+      "sale_fee": {
+        "gross": 49.0,
+        "net": 46.55,
+        "rebate": 0,
+        "discount": 2.45,
+        "discount_reason": "Desconto geral"
+      },
+      "details": []
+    }
+  ]
+}
