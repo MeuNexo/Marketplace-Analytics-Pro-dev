@@ -2,7 +2,7 @@
 // forecastErrorCurve — Fase 224 Plano 03, Task 2 (ERR-01)
 // Função pura que monta a curva de erro da previsão de caixa por horizonte a
 // partir das linhas cruas da RPC get_forecast_backtest_curve (migration
-// 20260817110000_forecast_backtest_rpcs.sql): WAPE, fator de viés, ME diário,
+// 20260821150000_forecast_backtest_rpcs.sql): WAPE, fator de viés, ME diário,
 // MAE, tracking signal, marcação de provisório, a medida do viés que estava
 // sendo importado do futuro e o horizonte útil dada uma tolerância.
 // Espelho estrutural de src/lib/dreCashForecast.ts (Fase 100).
