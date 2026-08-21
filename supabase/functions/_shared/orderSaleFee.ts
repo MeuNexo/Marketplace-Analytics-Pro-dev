@@ -78,12 +78,33 @@ import {
 // ── O teto do lote (D-223-05) ──────────────────────────────────────────────
 
 /**
- * `/group/ML/order/details` recusa mais de 60 `order_ids` por chamada
- * (ML-BILLING-API-DOC.txt, linha 199) — e é a causa nº 1 de 429 neste
- * endpoint, que bloqueia por IP. `selecionarLote` nunca devolve mais que
- * isto.
+ * O teto real MEDIDO (260821-hap, D-hap-01) não é o de `order_ids` por
+ * chamada (ML-BILLING-API-DOC.txt, linha 199, "no máximo 60") — é o do
+ * ENVELOPE da resposta: `limit` fixo de 150 LINHAS DE COBRANÇA, e a
+ * paginação é por linha, não por pedido. `limit`/`offset` na query string
+ * são IGNORADOS (medido: `limit=1000` volta 150; `offset=150` volta 0) — o
+ * único controle que temos é quantos `order_ids` mandamos.
+ *
+ * Medido, mesma janela de abril/2026 da Pé Vermeio:
+ *   · 60 order_ids -> `limit:150 · total:49 · results:49 · linhas:150` —
+ *     11 pedidos SUMIRAM da resposta.
+ *   · 30 order_ids -> todos os 30 voltaram, 109 linhas.
+ *
+ * 25, não 30: a amostra de 30 devolveu no máximo 4 linhas por pedido
+ * (109/30). O pior caso plausível é 5 linhas (comissão × 3 subtipos + frete
+ * + parcelamento): 25 × 5 = 125, com 25 de folga sob o teto de 150. Com 30 o
+ * pior caso é 150 — sem folga nenhuma. O custo de errar para baixo é uma
+ * chamada a mais; o custo de errar para cima é rebate real descartado como
+ * inexistente (foi o que aconteceu: 327 de 1.560 pedidos gravados
+ * `sem_linha` estando a API respondendo por eles normalmente).
+ *
+ * ⚠️ 25 é uma aposta de forma, não um limite garantido — por isso NÃO é a
+ * defesa contra truncamento. A defesa é `classificarCaptura` nunca concluir
+ * `sem_linha` a partir de um lote com mais de um id (D-hap-02); o teto menor
+ * só torna o caso raro. O teto de 60 `order_ids`/chamada da documentação
+ * segue valendo — nunca mandar mais que isso, independente deste número.
  */
-export const TAMANHO_MAXIMO_LOTE = 60;
+export const TAMANHO_MAXIMO_LOTE = 25;
 
 /**
  * Quantas vezes reconsultar um pedido que voltou "sem linha de faturamento"
@@ -138,8 +159,15 @@ export interface PedidoSaleFee {
   saleFee: SaleFee;
   /** Todas as linhas do pedido, deduplicadas por `detail_id`. */
   linhas: LinhaCobrancaPersistivel[];
-  /** Identidade (I): soma de `detail_amount` das linhas de comissão. TOTAL do pedido. */
-  comissaoLinhas: number;
+  /**
+   * Identidade (I): soma de `detail_amount` das linhas de comissão. TOTAL do
+   * pedido. `null` quando o pedido NÃO tem nenhuma linha de comissão — "não
+   * confere" (260821-hap, D-hap-04). `0` seria "conferiu e deu zero", um
+   * valor medido; `null` nunca é inventado como zero. Mesma distinção que a
+   * fase já usa para `sale_fee_rebate` (NULL é "não sei", zero é "não houve
+   * campanha").
+   */
+  comissaoLinhas: number | null;
   /**
    * Verdadeiro quando o pedido tem ao menos uma linha `detail_type: "BONUS"`
    * — estorno por cancelamento (Q4). NUNCA confundir com `saleFee.rebate`:
@@ -246,11 +274,22 @@ export function somaComissaoDasLinhas(linhas: readonly LinhaCobrancaPersistivel[
  * nunca de dentro de `details`/`sales_info`. Deduplica linhas por
  * `detail_id` — linha repetida no payload é contada uma vez só.
  *
- * 🔴 Pedido que voltou SEM NENHUMA linha de comissão (`comissaoLinhas ===
- * 0`, isto é, zero linhas CHARGE de subtipo CVV*) NÃO autoriza afirmar
- * rebate, e por isso NÃO entra no mapa devolvido — é o insumo de
- * "sem linha de faturamento" que `classificarCaptura` consome: um `order_id`
- * ausente do mapa é, para quem chama, um pedido sem linha de faturamento.
+ * 🔴 CRITÉRIO DE ENTRADA NO MAPA (260821-hap, D-hap-04 — corrige defeito
+ * medido: 2 de 371 pedidos vinham com `sale_fee` completo e ZERO linhas de
+ * cobrança, e eram descartados como se não tivessem rebate nenhum): entra
+ * quem tem AO MENOS UMA linha de comissão OU cujo `sale_fee` tem os TRÊS
+ * campos que autorizam gravar `ok` preenchidos (`gross`, `net`, `rebate` —
+ * a mesma exigência da CHECK `ml_order_sale_fee_captura_ok_tem_sale_fee`).
+ * A comissão e o rebate vêm do `sale_fee` da RAIZ; a soma das linhas
+ * (`comissaoLinhas`) é a Identidade (I), uma CONFERÊNCIA — nunca um gate
+ * duro que descarta o pedido.
+ *
+ * Pedido sem NENHUM dos dois critérios (sem `sale_fee` completo e sem linha
+ * de comissão) não autoriza afirmar rebate nenhum, e por isso NÃO entra no
+ * mapa devolvido — é o insumo de "sem linha de faturamento" que
+ * `classificarCaptura` consome via `idsPresentesNaResposta` (D-hap-02/03):
+ * um `order_id` que voltou na resposta mas não está neste mapa é, para quem
+ * chama, um pedido sem dado suficiente para afirmar rebate.
  */
 export function lerPedidos(results: readonly unknown[]): Map<string, PedidoSaleFee> {
   const mapa = new Map<string, PedidoSaleFee>();
@@ -287,13 +326,18 @@ export function lerPedidos(results: readonly unknown[]): Map<string, PedidoSaleF
         l.detail_type === "CHARGE" &&
         (SUBTIPOS_COMISSAO as readonly string[]).includes(l.detail_sub_type),
     );
-    if (!temLinhaDeComissao) {
-      // Nenhuma linha de comissão neste pedido (só frete/parcelamento/estorno,
-      // ou nenhuma linha nenhuma) — não autoriza afirmar rebate. Fica de fora
-      // do mapa de propósito (ver cabeçalho da função).
+    const saleFeeCompleto =
+      saleFee.gross !== null && saleFee.net !== null && saleFee.rebate !== null;
+
+    if (!temLinhaDeComissao && !saleFeeCompleto) {
+      // Nem linha de comissão nem sale_fee completo — não autoriza afirmar
+      // rebate nenhum. Fica de fora do mapa de propósito (ver cabeçalho).
       continue;
     }
-    const comissaoLinhas = somaComissaoDasLinhas(linhas);
+
+    // comissaoLinhas SÓ é somado quando existe linha de comissão — senão
+    // fica `null` ("não confere"), nunca `0` inventado (D-hap-04).
+    const comissaoLinhas = temLinhaDeComissao ? somaComissaoDasLinhas(linhas) : null;
 
     mapa.set(mlOrderId, { ml_order_id: mlOrderId, saleFee, linhas, comissaoLinhas, temEstorno });
   }
@@ -367,7 +411,70 @@ export function selecionarLote(
   return lote;
 }
 
+// ── Truncamento: o que voltou contra o que foi enviado (260821-hap, D-hap-03) ─
+
+/**
+ * Todo `order_id` CRU de `results[]`, convertido para string, SEM NENHUM
+ * FILTRO de conteúdo — nem de linha de comissão, nem de `sale_fee` completo.
+ *
+ * Por que existe separada de `lerPedidos`: `lerPedidos` mistura dois fatos
+ * diferentes — "o pedido NÃO VOLTOU na resposta" (truncamento; o ML nem
+ * chegou a falar dele) e "o pedido VOLTOU mas sem dado suficiente" (não
+ * autoriza afirmar rebate, mas o ML RESPONDEU). Misturar os dois foi o
+ * defeito de origem: `classificarCaptura` usava só `lidos` para decidir
+ * ausência, e um lote truncado (60 ids enviados, resposta cheia em 150
+ * linhas devolvendo só 49 pedidos) fazia os 11 que sumiram da resposta
+ * parecerem idênticos a "o ML não fatura este pedido" — 327 de 1.560
+ * pedidos gravados `sem_linha` sendo que a API os devolve normalmente. Com
+ * `idsPresentesNaResposta`, "não voltou" (reconsultar) e "voltou sem dado"
+ * (não autoriza, mas confirmado) nunca mais se confundem.
+ */
+export function idsPresentesNaResposta(results: readonly unknown[]): Set<string> {
+  const presentes = new Set<string>();
+  for (const item of results) {
+    if (typeof item !== "object" || item === null) continue;
+    const { order_id } = item as { order_id?: unknown };
+    if (order_id === undefined || order_id === null) continue;
+    presentes.add(String(order_id));
+  }
+  return presentes;
+}
+
+export interface DetectarTruncamentoInput {
+  /** Os `order_id` (como string) enviados nesta chamada. */
+  enviados: readonly string[];
+  /** Saída de `idsPresentesNaResposta` para a MESMA resposta desta chamada. */
+  presentes: ReadonlySet<string>;
+}
+
+export interface DetectarTruncamentoResultado {
+  /** Verdadeiro quando algum `order_id` enviado não voltou na resposta. */
+  truncado: boolean;
+  /** Os ausentes, na MESMA ordem em que foram enviados, sem repetição. */
+  ausentes: string[];
+}
+
+/**
+ * Truncamento é `enviados − presentes`, nunca `enviados − chaves de lidos`
+ * (D-hap-03) — comparar contra `lidos` confundiria "não voltou" com "voltou
+ * sem dado suficiente" (ver `idsPresentesNaResposta`).
+ */
+export function detectarTruncamento({
+  enviados,
+  presentes,
+}: DetectarTruncamentoInput): DetectarTruncamentoResultado {
+  const vistos = new Set<string>();
+  const ausentes: string[] = [];
+  for (const id of enviados) {
+    if (vistos.has(id)) continue;
+    vistos.add(id);
+    if (!presentes.has(id)) ausentes.push(id);
+  }
+  return { truncado: ausentes.length > 0, ausentes };
+}
+
 // ── A decisão de captura (D-223-05: 206 nunca vira zero) ───────────────────
+// ── + D-hap-02 (260821-hap): ausência só conclui a partir de chamada solo ──
 
 /** O que este pedido, dentro deste lote, ficou autorizado a afirmar. */
 export type StatusCaptura = "ok" | "parcial" | "sem_linha" | "erro";
@@ -377,6 +484,12 @@ export interface ClassificarCapturaInput {
   pedidosDoLote: readonly string[];
   /** Saída de `lerPedidos` para a MESMA resposta desta chamada. */
   lidos: ReadonlyMap<string, PedidoSaleFee>;
+  /**
+   * Saída de `idsPresentesNaResposta` para a MESMA resposta desta chamada —
+   * quem voltou, sem filtro de conteúdo (D-hap-02/03). Obrigatório: é o que
+   * separa "não voltou" (reconsultar) de "voltou sem dado" (confirmado).
+   */
+  presentesNaResposta: ReadonlySet<string>;
   /** Código HTTP da resposta do lote inteiro. */
   httpStatus: number;
   /** Relógio injetado — nunca `new Date()` dentro do módulo (pureza). */
@@ -406,29 +519,72 @@ function proximaTentativaPadrao(agora: Date): Date {
 
 /**
  * Decide, para cada pedido do lote, se ele foi CAPTURADO, ficou PARCIAL, não
- * teve linha de faturamento, ou o lote inteiro deu erro — e quando
- * reconsultar. As regras são o coração de D-223-05:
+ * teve linha de faturamento, ou fica pendente de reconsulta — e quando. As
+ * regras são o coração de D-223-05 + D-hap-02 (260821-hap):
  *
  *   · 206 (Partial Content) → TODOS os pedidos do lote saem "parcial", com
  *     `saleFee: null` — NUNCA zero. Gravar zero a partir de resposta
  *     incompleta é exatamente o que esta função proíbe.
- *   · 200 e o pedido está em `lidos` → "ok", capturado, NUNCA reconsultado
- *     (`proximaTentativa: null`).
- *   · 200 e o pedido NÃO está em `lidos` → "sem_linha"; reagenda até
- *     `TENTATIVAS_MAXIMAS_SEM_LINHA`, depois desiste (`proximaTentativa:
- *     null`) — não se reconsulta para sempre um pedido que o ML nunca vai
- *     faturar.
- *   · Qualquer outro status (429, 5xx, ...) → lote inteiro "erro", reagenda,
- *     sem gravar valor nenhum.
+ *   · Qualquer outro status que não seja 200 (429, 5xx, ...) → lote inteiro
+ *     "erro", reagenda, sem gravar valor nenhum.
+ *   · 200 e o `id` está em `presentesNaResposta` E em `lidos` → "ok",
+ *     capturado, NUNCA reconsultado (`proximaTentativa: null`).
+ *   · 200 e o `id` está em `presentesNaResposta` mas NÃO em `lidos` — o ML
+ *     RESPONDEU sobre ele, mas sem linha de comissão nem `sale_fee`
+ *     completo (D-hap-04) → "sem_linha"; reagenda até
+ *     `TENTATIVAS_MAXIMAS_SEM_LINHA`, depois desiste.
+ *   · 200 e o `id` NÃO está em `presentesNaResposta` (não voltou na
+ *     resposta) — 🔴 O CORAÇÃO DE D-hap-02, o defeito medido: 327 de 1.560
+ *     pedidos foram gravados `sem_linha` a partir de um lote truncado (60
+ *     ids enviados, resposta cheia em 150 linhas de cobrança, só 49
+ *     pedidos voltaram — 11 SUMIRAM, dois com rebate real de R$ 11,85 e
+ *     R$ 14,55). Ausência num lote truncado é o SINTOMA do teto de linhas
+ *     do envelope, não "o ML não fatura este pedido". Por isso:
+ *       - `pedidosDoLote.length === 1` (chamada SOLO, "sozinho" é DERIVADO
+ *         do tamanho do lote, nunca informado por quem chama — um parâmetro
+ *         booleano separado seria uma segunda fonte de verdade que
+ *         poderia mentir) → "sem_linha", ausência CONFIRMADA sozinha.
+ *       - `pedidosDoLote.length > 1` → "erro", REAGENDA, NUNCA "sem_linha".
+ *         A reconsulta solo que resolve isso vive em `orderSaleFeeLote.ts`
+ *         (D-hap-03) — este módulo só recusa concluir a partir de lote.
  */
 export function classificarCaptura({
   pedidosDoLote,
   lidos,
+  presentesNaResposta,
   httpStatus,
   agora,
   tentativasAtuais,
 }: ClassificarCapturaInput): CapturaDecidida[] {
   const tentativasDe = (id: string): number => (tentativasAtuais[id] ?? 0) + 1;
+
+  const semLinha = (id: string): CapturaDecidida => {
+    const tentativas = tentativasDe(id);
+    const esgotou = tentativas >= TENTATIVAS_MAXIMAS_SEM_LINHA;
+    return {
+      ml_order_id: id,
+      status: "sem_linha",
+      httpStatus,
+      tentativas,
+      proximaTentativa: esgotou ? null : proximaTentativaPadrao(agora),
+      saleFee: null,
+      comissaoLinhas: null,
+      linhas: 0,
+      temEstorno: false,
+    };
+  };
+
+  const erro = (id: string): CapturaDecidida => ({
+    ml_order_id: id,
+    status: "erro",
+    httpStatus,
+    tentativas: tentativasDe(id),
+    proximaTentativa: proximaTentativaPadrao(agora),
+    saleFee: null,
+    comissaoLinhas: null,
+    linhas: 0,
+    temEstorno: false,
+  });
 
   if (httpStatus === 206) {
     return pedidosDoLote.map((id) => ({
@@ -445,36 +601,25 @@ export function classificarCaptura({
   }
 
   if (httpStatus !== 200) {
-    return pedidosDoLote.map((id) => ({
-      ml_order_id: id,
-      status: "erro",
-      httpStatus,
-      tentativas: tentativasDe(id),
-      proximaTentativa: proximaTentativaPadrao(agora),
-      saleFee: null,
-      comissaoLinhas: null,
-      linhas: 0,
-      temEstorno: false,
-    }));
+    return pedidosDoLote.map((id) => erro(id));
   }
 
-  return pedidosDoLote.map((id) => {
-    const pedido = lidos.get(id);
+  const chamadaSolo = pedidosDoLote.length === 1;
 
+  return pedidosDoLote.map((id): CapturaDecidida => {
+    if (!presentesNaResposta.has(id)) {
+      // Ausente da resposta — a decisão depende SÓ do tamanho do lote
+      // (D-hap-02), nunca de um sinalizador informado à parte.
+      return chamadaSolo ? semLinha(id) : erro(id);
+    }
+
+    const pedido = lidos.get(id);
     if (!pedido) {
-      const tentativas = tentativasDe(id);
-      const esgotou = tentativas >= TENTATIVAS_MAXIMAS_SEM_LINHA;
-      return {
-        ml_order_id: id,
-        status: "sem_linha",
-        httpStatus,
-        tentativas,
-        proximaTentativa: esgotou ? null : proximaTentativaPadrao(agora),
-        saleFee: null,
-        comissaoLinhas: null,
-        linhas: 0,
-        temEstorno: false,
-      };
+      // Voltou na resposta (o ML respondeu sobre ele), mas sem linha de
+      // comissão nem sale_fee completo — confirmado, não autoriza afirmar
+      // rebate (D-hap-04). Diferente do ramo acima: aqui não há truncamento
+      // a suspeitar, o ML já falou.
+      return semLinha(id);
     }
 
     return {

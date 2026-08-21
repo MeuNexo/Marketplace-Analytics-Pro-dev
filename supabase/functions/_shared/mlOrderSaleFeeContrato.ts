@@ -167,15 +167,26 @@ export interface ResultadoPedidoSaleFee {
 // ── Subtipos de comissão e o predicado que separa comissão de estorno ─────
 
 /**
- * Subtipos de `charge_info.detail_sub_type` que são comissão, medidos no
- * período fechado de julho/2026 (223-CONTRATO-SALE-FEE.md, Q2). `CVVML`
- * ("custo por vender no Mercado Livre") e `CVVPRC` ("custo por cobrar no
- * Mercado Pago") foram observados em 7/7 pedidos da amostra; `CVVFNU` é
- * mantido pela documentação do ML mas NÃO foi observado nesta amostra — ver
- * SUMMARY. O código genérico `CV`, sozinho, da doc oficial, nunca aparece
- * neste seller e devolveria zero linhas se usado como filtro.
+ * Subtipos de `charge_info.detail_sub_type` que são comissão. Medidos nos
+ * 371 pedidos de 21/08 (quick 260821-hap): `CVVFNU` em 95 linhas, `CVVFN` em
+ * 5 — os DOIS existem, `CVVFN` NÃO é erro de digitação de `CVVFNU`. Prova ao
+ * centavo, pedido `2000014566978158`: `CVVPRC` 9,09 + `CVVML` 32,09 = 41,18
+ * contra `sale_fee.net` 68,26; com `CVVFN` 27,08 a conta fecha exata
+ * (41,18 + 27,08 = 68,26). Fechar essa identidade corrigiu 5 das 7
+ * divergências da identidade interna medidas nos 371 pedidos.
+ *
+ * `CVVML` ("custo por vender no Mercado Livre") e `CVVPRC` ("custo por
+ * cobrar no Mercado Pago") foram observados em 7/7 pedidos da amostra
+ * original (223-01). O código genérico `CV`, sozinho, da doc oficial, nunca
+ * aparece neste seller e devolveria zero linhas se usado como filtro.
+ *
+ * ⚠️ `CFFI` (1 linha, R$ 44,45, nos 371 medidos) NÃO entra — é frete, irmã
+ * de `CFFE` ("tarifa de envio extra ou intermunicipal"). Somá-la inflaria a
+ * comissão em R$ 44,45 num pedido só. Provado por teste negativo em
+ * `mlOrderSaleFeeContrato.test.ts` — não "completar a lista" com `CFFI` no
+ * futuro sem medir de novo.
  */
-export const SUBTIPOS_COMISSAO = ["CVVML", "CVVPRC", "CVVFNU"] as const;
+export const SUBTIPOS_COMISSAO = ["CVVML", "CVVPRC", "CVVFNU", "CVVFN"] as const;
 
 /**
  * Verdadeiro só para uma linha de COBRANÇA (`charge_info.detail_type ===

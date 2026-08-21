@@ -1,0 +1,239 @@
+{
+  "medido_em": "2026-08-21",
+  "endpoint": "GET https://api.mercadolibre.com/billing/integration/group/ML/order/details?order_ids={ids}",
+  "conta": "Pé Vermeio (seller 1639558873)",
+  "procedencia": "RECONSTRUÍDO a partir dos valores medidos em 21/08 (quick 260821-hap), NÃO uma captura crua higienizada como mlOrderSaleFee.amostra.json. Pedido 2000014566978158: as quatro linhas de details[] (CVVPRC 9,09 · CVVML 32,09 · CVVFN 27,08 · CFFI 44,45) e sale_fee.net (68,26) são os valores medidos ao vivo, provando CVVPRC 9,09 + CVVML 32,09 + CVVFN 27,08 = 68,26 com CFFI de fora. sale_fee.gross e sale_fee.rebate deste pedido NÃO foram medidos — estão no valor mínimo consistente com a identidade gross - rebate == net (gross=68,26, rebate=0), para este arquivo não sugerir uma medição de rebate que não houve. O segundo item de results[] é um pedido SINTÉTICO representando o caso de 2 em 371 pedidos medidos: sale_fee completo (gross/net/rebate preenchidos e coerentes) e details[] vazio — nenhum valor deste segundo pedido corresponde a um order_id real.",
+  "results": [
+    {
+      "order_id": 2000014566978158,
+      "sale_fee": {
+        "net": 68.26,
+        "gross": 68.26,
+        "rebate": 0,
+        "discount": 0,
+        "discount_reason": null
+      },
+      "details": [
+        {
+          "items_info": [
+            {
+              "item_id": "MLB4851068132",
+              "order_id": 2000014566978158,
+              "item_type": "gold_special",
+              "item_price": 358.89,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000014566978158,
+              "state_name": "São Paulo",
+              "operation_id": 160000000001,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-08-01T10:00:00",
+              "wholesale_price": "Não",
+              "transaction_amount": 358.89,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 70000000001,
+            "detail_type": "CHARGE",
+            "detail_amount": 9.09,
+            "detail_sub_type": "CVVPRC",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-08-01T11:00:00",
+            "status_description": null,
+            "transaction_detail": "Custo por cobrar no Mercado Pago",
+            "legal_document_number": "00000000000015738173",
+            "legal_document_status": "PROCESSED",
+            "debited_from_operation": "YES",
+            "legal_document_status_description": "Processado",
+            "debited_from_operation_description": "Sim"
+          },
+          "currency_info": { "currency_id": "BRL" },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": null
+          },
+          "document_info": { "document_id": 4900000001 },
+          "shipping_info": { "pack_id": null, "shipping_id": "48000000001", "receiver_shipping_cost": 0 },
+          "marketplace_info": { "marketplace": "CORE" }
+        },
+        {
+          "items_info": [
+            {
+              "item_id": "MLB4851068132",
+              "order_id": 2000014566978158,
+              "item_type": "gold_special",
+              "item_price": 358.89,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000014566978158,
+              "state_name": "São Paulo",
+              "operation_id": 160000000001,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-08-01T10:00:00",
+              "wholesale_price": "Não",
+              "transaction_amount": 358.89,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 70000000002,
+            "detail_type": "CHARGE",
+            "detail_amount": 32.09,
+            "detail_sub_type": "CVVML",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-08-01T11:00:00",
+            "status_description": null,
+            "transaction_detail": "Custo por vender no Mercado Livre",
+            "legal_document_number": "00000000000009526005",
+            "legal_document_status": "PROCESSED",
+            "debited_from_operation": "YES",
+            "legal_document_status_description": "Processado",
+            "debited_from_operation_description": "Sim"
+          },
+          "currency_info": { "currency_id": "BRL" },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": null
+          },
+          "document_info": { "document_id": 4900000002 },
+          "shipping_info": { "pack_id": null, "shipping_id": "48000000001", "receiver_shipping_cost": 0 },
+          "marketplace_info": { "marketplace": "CORE" }
+        },
+        {
+          "items_info": [
+            {
+              "item_id": "MLB4851068132",
+              "order_id": 2000014566978158,
+              "item_type": "gold_special",
+              "item_price": 358.89,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000014566978158,
+              "state_name": "São Paulo",
+              "operation_id": 160000000001,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-08-01T10:00:00",
+              "wholesale_price": "Não",
+              "transaction_amount": 358.89,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 70000000003,
+            "detail_type": "CHARGE",
+            "detail_amount": 27.08,
+            "detail_sub_type": "CVVFN",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-08-01T11:00:00",
+            "status_description": null,
+            "transaction_detail": "Custo por vender no Mercado Livre (financiamento)",
+            "legal_document_number": "00000000000009526006",
+            "legal_document_status": "PROCESSED",
+            "debited_from_operation": "YES",
+            "legal_document_status_description": "Processado",
+            "debited_from_operation_description": "Sim"
+          },
+          "currency_info": { "currency_id": "BRL" },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": null
+          },
+          "document_info": { "document_id": 4900000003 },
+          "shipping_info": { "pack_id": null, "shipping_id": "48000000001", "receiver_shipping_cost": 0 },
+          "marketplace_info": { "marketplace": "CORE" }
+        },
+        {
+          "items_info": [
+            {
+              "item_id": "MLB4851068132",
+              "order_id": 2000014566978158,
+              "item_type": "gold_special",
+              "item_price": 358.89,
+              "item_amount": 1,
+              "item_kit_id": null,
+              "inventory_id": null
+            }
+          ],
+          "sales_info": [
+            {
+              "order_id": 2000014566978158,
+              "state_name": "São Paulo",
+              "operation_id": 160000000001,
+              "financing_fee": null,
+              "sales_channel": "Mercado Livre",
+              "sale_date_time": "2026-08-01T10:00:00",
+              "wholesale_price": "Não",
+              "transaction_amount": 358.89,
+              "financing_transfer_total": null
+            }
+          ],
+          "charge_info": {
+            "status": null,
+            "detail_id": 70000000004,
+            "detail_type": "CHARGE",
+            "detail_amount": 44.45,
+            "detail_sub_type": "CFFI",
+            "charge_bonified_id": null,
+            "creation_date_time": "2026-08-01T11:00:00",
+            "status_description": null,
+            "transaction_detail": "Tarifa de envio (irmã de CFFE) — frete, não comissão",
+            "legal_document_number": null,
+            "legal_document_status": "NOT_APPLICABLE",
+            "debited_from_operation": "YES",
+            "legal_document_status_description": "NF-e não aplicável",
+            "debited_from_operation_description": "Sim"
+          },
+          "currency_info": { "currency_id": "BRL" },
+          "discount_info": {
+            "rebate": null,
+            "discount_amount": null,
+            "discount_reason": null,
+            "charge_amount_without_discount": null
+          },
+          "document_info": { "document_id": 4900000004 },
+          "shipping_info": { "pack_id": null, "shipping_id": "48000000001", "receiver_shipping_cost": 0 },
+          "marketplace_info": { "marketplace": "SHIPPING" }
+        }
+      ]
+    },
+    {
+      "order_id": 9000000000001,
+      "sale_fee": {
+        "net": 20.0,
+        "gross": 25.0,
+        "rebate": 5.0,
+        "discount": 0,
+        "discount_reason": null
+      },
+      "details": []
+    }
+  ]
+}

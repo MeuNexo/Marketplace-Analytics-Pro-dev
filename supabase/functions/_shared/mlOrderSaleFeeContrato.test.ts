@@ -266,8 +266,29 @@ describe("ehLinhaDeComissao — separa comissão de estorno por cancelamento (Q2
 });
 
 describe("SUBTIPOS_COMISSAO", () => {
-  it("contém exatamente CVVML, CVVPRC e CVVFNU", () => {
-    expect(SUBTIPOS_COMISSAO).toEqual(["CVVML", "CVVPRC", "CVVFNU"]);
+  it("contém exatamente CVVML, CVVPRC, CVVFNU e CVVFN (260821-hap, D-hap-05)", () => {
+    expect(SUBTIPOS_COMISSAO).toEqual(["CVVML", "CVVPRC", "CVVFNU", "CVVFN"]);
+  });
+
+  it("CVVFN não é erro de digitação de CVVFNU — ehLinhaDeComissao aceita os dois convivendo (260821-hap)", () => {
+    expect(
+      ehLinhaDeComissao({
+        charge_info: { detail_type: "CHARGE", detail_sub_type: "CVVFN", detail_amount: 27.08 },
+      }),
+    ).toBe(true);
+    expect(
+      ehLinhaDeComissao({
+        charge_info: { detail_type: "CHARGE", detail_sub_type: "CVVFNU", detail_amount: 1 },
+      }),
+    ).toBe(true);
+  });
+
+  it("CFFI (frete, irmã de CFFE) NÃO entra em SUBTIPOS_COMISSAO — somá-la inflaria a comissão (260821-hap, D-hap-05)", () => {
+    expect(
+      ehLinhaDeComissao({
+        charge_info: { detail_type: "CHARGE", detail_sub_type: "CFFI", detail_amount: 44.45 },
+      }),
+    ).toBe(false);
   });
 
   it("CVVFNU não foi observado na amostra — mantido pela doc do ML, registrado aqui", () => {

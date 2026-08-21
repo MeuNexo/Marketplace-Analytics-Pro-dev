@@ -22,6 +22,8 @@ import {
   agregarPorPedido,
   classificarCaptura,
   conferenciaComissao,
+  detectarTruncamento,
+  idsPresentesNaResposta,
   lerPedidos,
   selecionarLote,
   somaComissaoDasLinhas,
@@ -31,6 +33,7 @@ import {
 import type { ResultadoPedidoSaleFee } from "./mlOrderSaleFeeContrato.ts";
 
 const AMOSTRA_CAMINHO = "supabase/functions/_shared/__fixtures__/mlOrderSaleFee.amostra.json";
+const CVVFN_CAMINHO = "supabase/functions/_shared/__fixtures__/mlOrderSaleFee.cvvfn.json";
 
 interface AmostraSaleFee {
   medido_em: string;
@@ -42,7 +45,19 @@ function lerAmostra(): AmostraSaleFee {
   return JSON.parse(bruto) as AmostraSaleFee;
 }
 
+interface AmostraCvvfn {
+  medido_em: string;
+  procedencia: string;
+  results: ResultadoPedidoSaleFee[];
+}
+
+function lerAmostraCvvfn(): AmostraCvvfn {
+  const bruto = readFileSync(resolve(process.cwd(), CVVFN_CAMINHO), "utf8");
+  return JSON.parse(bruto) as AmostraCvvfn;
+}
+
 const amostra = lerAmostra();
+const amostraCvvfn = lerAmostraCvvfn();
 
 /** Tolerância de centavo — mesmo helper de orderTaxRate.test.ts / mlOrderSaleFeeContrato.test.ts. */
 const closeCents = (received: number | null, expected: number) => {
@@ -135,10 +150,13 @@ describe("lerPedidos — um registro por pedido, sale_fee da raiz, linhas à par
     expect(pedido.linhas.length).toBe(original.details.length);
   });
 
-  it("pedido sem nenhuma linha de comissão (só frete) NÃO entra no mapa — não autoriza afirmar rebate", () => {
+  it("pedido sem sale_fee completo e sem linha de comissão (só frete) NÃO entra no mapa — não autoriza afirmar rebate (260821-hap, D-hap-04)", () => {
     const semComissao = {
       order_id: 9999999999999,
-      sale_fee: { gross: 10, net: 10, rebate: 0, discount: 0, discount_reason: null },
+      // sale_fee INCOMPLETO de propósito (gross/rebate ausentes) — não é o
+      // caso "sale_fee completo, zero linhas" de D-hap-04, é o caso que
+      // continua fora do mapa.
+      sale_fee: { gross: null, net: 10, rebate: null, discount: 0, discount_reason: null },
       details: [
         {
           items_info: [],
@@ -175,6 +193,31 @@ describe("lerPedidos — um registro por pedido, sale_fee da raiz, linhas à par
     const mapa2 = lerPedidos([semComissao]);
     expect(mapa2.has("9999999999999")).toBe(false);
   });
+
+  it("pedido sem sale_fee nenhum e sem linha de comissão NÃO entra no mapa (260821-hap, D-hap-04)", () => {
+    const semNada = {
+      order_id: 8888888888888,
+      // sale_fee ausente da resposta (não é objeto) — lerSaleFee devolve os
+      // cinco campos null; nenhum dos dois critérios de entrada é satisfeito.
+      details: [],
+    };
+    const mapa3 = lerPedidos([semNada]);
+    expect(mapa3.has("8888888888888")).toBe(false);
+  });
+
+  it("pedido com sale_fee COMPLETO e ZERO linhas de cobrança entra no mapa, com comissaoLinhas nulo e linhas vazio (260821-hap, D-hap-04, medido 2 de 371)", () => {
+    const pedidoSintetico = amostraCvvfn.results.find((r) => r.order_id === 9000000000001);
+    if (!pedidoSintetico) throw new Error("pedido sintético de zero linhas não encontrado na fixture");
+    expect(pedidoSintetico.details).toHaveLength(0);
+    const mapa4 = lerPedidos([pedidoSintetico]);
+    const pedido = mapa4.get("9000000000001");
+    expect(pedido).toBeDefined();
+    expect((pedido as PedidoSaleFee).comissaoLinhas).toBeNull();
+    expect((pedido as PedidoSaleFee).linhas).toEqual([]);
+    // Não confundir com "conferiu e deu zero" — 0 seria um valor medido,
+    // null é "não confere" (mesma régua do rebate na fase 223).
+    expect((pedido as PedidoSaleFee).comissaoLinhas).not.toBe(0);
+  });
 });
 
 // ─── Identidade (I) — somaComissaoDasLinhas ────────────────────────────────
@@ -203,6 +246,18 @@ describe("somaComissaoDasLinhas — Identidade (I), interna à resposta do ML", 
     // linhas CHARGE que estornam. Se fossem somadas, o líquido seria zero.
     closeCents(pedido.comissaoLinhas, 21.9);
     expect(pedido.comissaoLinhas).not.toBe(0);
+  });
+
+  it("pedido 2000014566978158 (fixture cvvfn, 260821-hap): CVVPRC 9,09 + CVVML 32,09 + CVVFN 27,08 = 68,26, com CFFI 44,45 presente e FORA da soma", () => {
+    const mapaCvvfn = lerPedidos(amostraCvvfn.results);
+    const pedido = mapaCvvfn.get("2000014566978158") as PedidoSaleFee;
+    expect(pedido).toBeDefined();
+    // A linha CFFI está no pedido (prova que a soma não a ignora por
+    // ausência, e sim por predicado — ehLinhaDeComissao devolve falso pra ela).
+    const temCffi = pedido.linhas.some((l) => l.detail_sub_type === "CFFI");
+    expect(temCffi).toBe(true);
+    closeCents(pedido.comissaoLinhas, 68.26);
+    closeCents(pedido.comissaoLinhas, pedido.saleFee.net as number);
   });
 });
 
@@ -245,14 +300,13 @@ describe("conferenciaComissao — Identidade (II), o gate que autoriza afirmar r
   });
 });
 
-// ─── selecionarLote — o teto de 60 (D-223-05) ──────────────────────────────
+// ─── selecionarLote — o teto medido (D-hap-01, 260821-hap) ─────────────────
 
 describe("selecionarLote — nunca mais que o teto, nunca repetido", () => {
-  it("nunca devolve mais que TAMANHO_MAXIMO_LOTE (60)", () => {
+  it("nunca devolve mais que TAMANHO_MAXIMO_LOTE (o teste lê a constante, não repete o número — o valor muda nesta task)", () => {
     const pendentes = Array.from({ length: 200 }, (_, i) => `pedido-${i}`);
     const lote = selecionarLote(pendentes);
     expect(lote.length).toBe(TAMANHO_MAXIMO_LOTE);
-    expect(TAMANHO_MAXIMO_LOTE).toBe(60);
   });
 
   it("devolve lote vazio para entrada vazia", () => {
@@ -271,16 +325,19 @@ describe("selecionarLote — nunca mais que o teto, nunca repetido", () => {
 });
 
 // ─── classificarCaptura — D-223-05: 206 nunca vira zero ────────────────────
+// ─── + D-hap-02 (260821-hap): ausência só conclui sem_linha em lote solo ───
 
 describe("classificarCaptura — 206 nunca vira zero, capturado nunca reconsulta, erro não grava", () => {
   const agora = new Date("2026-08-21T12:00:00Z");
   const mapa = lerPedidos(amostra.results);
   const pedidosDoLote = ["2000017193192024", "2000017757292324"];
+  const presentesDoLote = idsPresentesNaResposta(amostra.results);
 
   it("206 (Partial Content): TODOS os pedidos do lote saem parcial, com rebate AUSENTE — nunca zero", () => {
     const decisoes = classificarCaptura({
       pedidosDoLote,
       lidos: mapa,
+      presentesNaResposta: presentesDoLote,
       httpStatus: 206,
       agora,
       tentativasAtuais: {},
@@ -297,6 +354,7 @@ describe("classificarCaptura — 206 nunca vira zero, capturado nunca reconsulta
     const decisoes = classificarCaptura({
       pedidosDoLote,
       lidos: mapa,
+      presentesNaResposta: presentesDoLote,
       httpStatus: 200,
       agora,
       tentativasAtuais: {},
@@ -307,10 +365,11 @@ describe("classificarCaptura — 206 nunca vira zero, capturado nunca reconsulta
     closeCents(capturado.saleFee?.net ?? null, 63.06);
   });
 
-  it("200: pedido do lote que não voltou em nenhum result sai 'sem_linha'", () => {
+  it("200, lote de UM id só, ausente da resposta: sai 'sem_linha' — ausência CONFIRMADA sozinha (D-hap-02)", () => {
     const decisoes = classificarCaptura({
       pedidosDoLote: ["pedido-fantasma"],
       lidos: mapa,
+      presentesNaResposta: new Set(), // ninguém voltou — lote de 1 id
       httpStatus: 200,
       agora,
       tentativasAtuais: {},
@@ -319,10 +378,54 @@ describe("classificarCaptura — 206 nunca vira zero, capturado nunca reconsulta
     expect(decisoes[0].proximaTentativa).not.toBeNull(); // 1ª tentativa, ainda reagenda
   });
 
+  it("200, lote de MAIS DE UM id, um deles ausente da resposta: o ausente sai 'erro' (reagenda), NUNCA 'sem_linha' — é o defeito medido: 327 de 1.560 pedidos viraram sem_linha a partir de lote truncado (D-hap-02)", () => {
+    const pedidosDoLoteMaior = ["2000017193192024", "2000017757292324", "pedido-fantasma"];
+    // presentesNaResposta reflete só os dois reais — "pedido-fantasma" nunca
+    // esteve na resposta (simula o truncamento medido: 60 ids -> 49 voltaram).
+    const decisoes = classificarCaptura({
+      pedidosDoLote: pedidosDoLoteMaior,
+      lidos: mapa,
+      presentesNaResposta: presentesDoLote,
+      httpStatus: 200,
+      agora,
+      tentativasAtuais: {},
+    });
+    const ausente = decisoes.find((d) => d.ml_order_id === "pedido-fantasma") as CapturaDecidida;
+    expect(ausente.status).toBe("erro");
+    expect(ausente.status).not.toBe("sem_linha");
+    expect(ausente.proximaTentativa).not.toBeNull();
+    expect(ausente.saleFee).toBeNull();
+    // Os dois que vieram seguem "ok" normalmente — o defeito de um não contamina o resto do lote.
+    const capturado = decisoes.find((d) => d.ml_order_id === "2000017193192024") as CapturaDecidida;
+    expect(capturado.status).toBe("ok");
+  });
+
+  it("200, id presente na resposta mas SEM linha de comissão e SEM sale_fee completo: sai 'sem_linha' — o ML respondeu, mas não autoriza afirmar rebate (D-hap-02/D-hap-04)", () => {
+    const pedidoIncompletoRaw = {
+      order_id: 7777777777777,
+      sale_fee: { gross: null, net: 10, rebate: null, discount: 0, discount_reason: null },
+      details: [],
+    };
+    const presentes = idsPresentesNaResposta([pedidoIncompletoRaw]);
+    const lidos = lerPedidos([pedidoIncompletoRaw]); // não entra no mapa (D-hap-04)
+    expect(lidos.has("7777777777777")).toBe(false);
+    expect(presentes.has("7777777777777")).toBe(true);
+    const decisoes = classificarCaptura({
+      pedidosDoLote: ["7777777777777"],
+      lidos,
+      presentesNaResposta: presentes,
+      httpStatus: 200,
+      agora,
+      tentativasAtuais: {},
+    });
+    expect(decisoes[0].status).toBe("sem_linha");
+  });
+
   it("sem_linha: depois de 3 tentativas, deixa de ter próxima tentativa agendada", () => {
     const decisoes = classificarCaptura({
       pedidosDoLote: ["pedido-fantasma"],
       lidos: mapa,
+      presentesNaResposta: new Set(),
       httpStatus: 200,
       agora,
       tentativasAtuais: { "pedido-fantasma": 2 }, // esta rodada é a 3ª
@@ -336,6 +439,7 @@ describe("classificarCaptura — 206 nunca vira zero, capturado nunca reconsulta
     const decisoes = classificarCaptura({
       pedidosDoLote,
       lidos: mapa,
+      presentesNaResposta: presentesDoLote,
       httpStatus: 429,
       agora,
       tentativasAtuais: {},
@@ -345,5 +449,52 @@ describe("classificarCaptura — 206 nunca vira zero, capturado nunca reconsulta
       expect(d.saleFee).toBeNull();
       expect(d.proximaTentativa).not.toBeNull();
     }
+  });
+});
+
+// ─── idsPresentesNaResposta — quem voltou na resposta, sem filtro (260821-hap) ─
+
+describe("idsPresentesNaResposta — todo order_id cru de results[], sem filtro de conteúdo (D-hap-03)", () => {
+  it("devolve o order_id de todo item, inclusive o sem linha de comissão nenhuma", () => {
+    const presentes = idsPresentesNaResposta(amostra.results);
+    for (const r of amostra.results) {
+      expect(presentes.has(String(r.order_id))).toBe(true);
+    }
+    expect(presentes.size).toBe(amostra.results.length);
+  });
+
+  it("ignora item malformado sem lançar", () => {
+    const presentes = idsPresentesNaResposta([null, undefined, "string", 42, {}, { order_id: 123 }]);
+    expect(presentes.has("123")).toBe(true);
+    expect(presentes.size).toBe(1);
+  });
+
+  it("entrada vazia devolve conjunto vazio", () => {
+    expect(idsPresentesNaResposta([]).size).toBe(0);
+  });
+});
+
+// ─── detectarTruncamento — enviados vs presentes (260821-hap, D-hap-01/03) ──
+
+describe("detectarTruncamento — compara o que foi enviado com o que voltou, nunca usa `lidos`", () => {
+  it("25 enviados, 20 presentes: truncado verdadeiro, 5 ausentes na ordem de envio", () => {
+    const enviados = Array.from({ length: 25 }, (_, i) => `p${i}`);
+    const presentes = new Set(enviados.slice(0, 20));
+    const resultado = detectarTruncamento({ enviados, presentes });
+    expect(resultado.truncado).toBe(true);
+    expect(resultado.ausentes).toEqual(enviados.slice(20));
+  });
+
+  it("todos presentes: truncado falso, lista vazia", () => {
+    const enviados = ["a", "b", "c"];
+    const presentes = new Set(enviados);
+    const resultado = detectarTruncamento({ enviados, presentes });
+    expect(resultado.truncado).toBe(false);
+    expect(resultado.ausentes).toEqual([]);
+  });
+
+  it("nunca repete id na lista de ausentes, mesmo com duplicata nos enviados", () => {
+    const resultado = detectarTruncamento({ enviados: ["a", "a", "b"], presentes: new Set() });
+    expect(resultado.ausentes).toEqual(["a", "b"]);
   });
 });
