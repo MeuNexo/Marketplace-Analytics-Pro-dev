@@ -1,10 +1,34 @@
 // ============================================================================
 // MLFluxoCaixa — /fluxo-de-caixa
-// Modelo futuro-only (2026-06-18):
-//   - 3 cards: Caixa Hoje, Projeção Futura, Capacidade de Compra
-//   - Gráfico: Como meu dinheiro vai evoluir? (120 dias à frente)
-//   - Botão "Ajustar saldo de hoje" (owner only) → Dialog c/ upsert financial_settings
-// CASH-04
+//
+// Aba "Caixa Real", remontada na Fase 230 Plano 04 (CX-03, CX-04): UM BLOCO
+// POR PERGUNTA, em ordem de decisão. O comentário anterior descrevia um modelo
+// de 3 cards que não existia na árvore de render desde a Fase 51 e já induziu
+// leitura errada uma vez — foi reescrito, e esta lista é a ordem real:
+//
+//   1. DiasDeCaixaCard ....... Quanto tempo aguento sem vender?
+//   2. CashGapTable .......... Quando aperta? (veredito de uma linha)
+//   3. CashFlowChart ......... Como meu dinheiro vai evoluir?
+//      + ForecastErrorCard ... Dá para confiar nessa previsão? (colado abaixo,
+//                              porque é a leitura DAQUELE gráfico)
+//   4. CicloCaixaCard ........ Onde meu dinheiro está preso?
+//   5. PainelConferencia ..... (nenhuma — é conferência; os KPIs recolhidos)
+//   6. Composição de custo + exposição por fornecedor
+//                             Para onde vai o dinheiro / quanto devo a quem
+//
+// 🔴 `CashFlowChart` É INTOCÁVEL — decisão explícita do Wesley. É o único bloco
+// que ele aprovou ("exceto a parte de como meu dinheiro vai fluir"). A página
+// passa `data` e `isLoading`, e nada mais. Qualquer mudança nele é regressão
+// (T-230-13, gate de diff vazio na fase inteira).
+//
+// 🔴 A JANELA VEM DE `HORIZONTE_TESOURARIA_DIAS` (13 semanas), nunca de um
+// número digitado aqui — o mesmo módulo alimenta a CashGapTable, e duplicar o
+// valor é exatamente como duas telas divergem sobre a mesma pergunta.
+//
+// Estado da aba: `includePurchaseForecasts` é estado da página propagado por
+// prop a todo bloco que o aceita. Nenhum contexto React novo.
+//
+// CASH-04 · CX-03 · CX-04
 // ============================================================================
 
 import { useMemo, useState } from "react";
@@ -27,21 +51,20 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { CashFlowChart } from "@/components/financial/CashFlowChart";
-import { TreasuryPanel } from "@/components/financial/TreasuryPanel";
 import { CostCompositionChart } from "@/components/financial/CostCompositionChart";
 import { SupplierExposureChart } from "@/components/financial/SupplierExposureChart";
 import { CashFlowSimulator } from "@/components/financial/CashFlowSimulator";
 import { CashGapTable } from "@/components/financial/CashGapTable";
 import { ForecastErrorCard } from "@/components/financial/ForecastErrorCard";
+import { DiasDeCaixaCard } from "@/components/financial/DiasDeCaixaCard";
+import { CicloCaixaCard } from "@/components/financial/CicloCaixaCard";
+import { PainelConferencia } from "@/components/financial/PainelConferencia";
+import { HORIZONTE_TESOURARIA_DIAS } from "@/lib/horizonteTesouraria";
 import { useCashFlowData } from "@/hooks/useCashFlowData";
 import { useFinancialSettings } from "@/hooks/useFinancialSettings";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-
-// ─── Constante ────────────────────────────────────────────────────────────────
-
-const FUTURE_DAYS = 120; // dias de projeção à frente (alinhado ao horizonte do card de projeção)
 
 // ─── Empty state ───────────────────────────────────────────────────────────────
 
@@ -178,12 +201,14 @@ export default function MLFluxoCaixa() {
 
   const { data: financialSettings } = useFinancialSettings();
 
-  // Período: hoje → hoje + 90 dias (futuro-only)
+  // Período: hoje → hoje + 13 semanas (futuro-only). A janela vem da constante
+  // compartilhada com a CashGapTable; `get_cashflow` aceita qualquer data final,
+  // e nem a RPC nem o gráfico mudam por causa disto (CX-03).
   const { startDate, endDate } = useMemo(() => {
     const today = new Date();
     return {
       startDate: format(today, "yyyy-MM-dd"),
-      endDate:   format(addDays(today, FUTURE_DAYS), "yyyy-MM-dd"),
+      endDate:   format(addDays(today, HORIZONTE_TESOURARIA_DIAS), "yyyy-MM-dd"),
     };
   }, []);
 
@@ -199,11 +224,8 @@ export default function MLFluxoCaixa() {
     return (
       <div className="space-y-6">
         <Skeleton className="h-10 w-56" />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {[0, 1, 2].map((i) => (
-            <Skeleton key={i} className="h-40 rounded-xl" />
-          ))}
-        </div>
+        <Skeleton className="h-32 rounded-xl" />
+        <Skeleton className="h-20 rounded-xl" />
         <Skeleton className="h-72 rounded-xl" />
       </div>
     );
@@ -229,49 +251,57 @@ export default function MLFluxoCaixa() {
           <TabsTrigger value="simulador">Simulador</TabsTrigger>
         </TabsList>
 
-        {/* ── Aba Caixa Real (conteúdo atual INTOCADO) ── */}
+        {/* ── Aba Caixa Real — um bloco por pergunta, em ordem de decisão ── */}
         <TabsContent value="real" className="space-y-6 mt-0">
-          {/* ── Painel de Tesouraria (12 KPIs) + botão Ajustar saldo ── */}
-          <div className="flex flex-col gap-4">
-            <TreasuryPanel includePurchaseForecasts={includePurchaseForecasts} />
 
-            {/* Toggle de previsões de compra + botão owner-only de ajuste de saldo */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <Switch
-                  id="include-purchase-forecasts"
-                  checked={includePurchaseForecasts}
-                  onCheckedChange={setIncludePurchaseForecasts}
-                />
-                <Label
-                  htmlFor="include-purchase-forecasts"
-                  className="text-xs text-muted-foreground cursor-pointer"
-                  title="Inclui ordens de compra ainda não faturadas (previsões). Desligado, o caixa reflete só o contas a pagar do Tiny."
-                >
-                  Incluir previsões de compra
-                </Label>
-              </div>
-
-              {isOwner && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setAdjustOpen(true)}
-                  className="gap-1.5 text-xs"
-                >
-                  <Settings2 className="w-3.5 h-3.5" />
-                  Ajustar saldo de hoje
-                </Button>
-              )}
+          {/* ── Controles de escopo da aba ──
+              Linha única e discreta, logo abaixo do cabeçalho. Saíram de baixo
+              do painel de tesouraria: são escopo da página inteira, não do
+              painel. ── */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Switch
+                id="include-purchase-forecasts"
+                checked={includePurchaseForecasts}
+                onCheckedChange={setIncludePurchaseForecasts}
+              />
+              <Label
+                htmlFor="include-purchase-forecasts"
+                className="text-xs text-muted-foreground cursor-pointer"
+                title="Inclui ordens de compra ainda não faturadas (previsões). Desligado, o caixa reflete só o contas a pagar do Tiny."
+              >
+                Incluir previsões de compra
+              </Label>
             </div>
+
+            {isOwner && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAdjustOpen(true)}
+                className="gap-1.5 text-xs"
+              >
+                <Settings2 className="w-3.5 h-3.5" />
+                Ajustar saldo de hoje
+              </Button>
+            )}
           </div>
 
-          {/* ── Vai faltar dinheiro? (Fase 224, ERR-04) ──
-              Vem ANTES do gráfico de propósito: a informação que dispara
-              decisão — pago hoje ou prorrogo? — precede a que ilustra. ── */}
+          {/* ── 1. Quanto tempo aguento sem vender? (Fase 230, CX-01/CX-06) ──
+              É o alarme. Com o colchão medido em ~2 dias, nada abaixo importa
+              mais — por isso abre a página. ── */}
+          <DiasDeCaixaCard includePurchaseForecasts={includePurchaseForecasts} />
+
+          {/* ── 2. Quando aperta? (Fase 224 ERR-04, reduzida na Fase 230) ──
+              Continua ANTES do gráfico: a Fase 224 decidiu, por escrito, que o
+              que dispara decisão — pago hoje ou prorrogo? — precede o que
+              ilustra. A decisão vale; agora ela custa uma linha. ── */}
           <CashGapTable includePurchaseForecasts={includePurchaseForecasts} />
 
-          {/* ── Gráfico: Como meu dinheiro vai evoluir? ── */}
+          {/* ── 3. Como meu dinheiro vai evoluir? ──
+              🔴 O gráfico é intocável (decisão do Wesley). A frase de confiança
+              vem colada abaixo porque é a leitura DESTE gráfico, não um bloco
+              independente. ── */}
           {chartLoading ? (
             <Skeleton className="h-72 rounded-xl" />
           ) : hasData ? (
@@ -279,11 +309,21 @@ export default function MLFluxoCaixa() {
           ) : (
             <CashFlowEmptyState />
           )}
-
-          {/* ── De quanto esta previsão costuma errar (Fase 224, ERR-04) ── */}
           <ForecastErrorCard />
 
-          {/* ── Composição de Custos e Exposição por Fornecedor ── */}
+          {/* ── 4. Onde meu dinheiro está preso? (Fase 230, CX-02) ──
+              Fecha a história que os blocos acima abriram: o ciclo está
+              saudável; o colchão é que não existe. ── */}
+          <CicloCaixaCard includePurchaseForecasts={includePurchaseForecasts} />
+
+          {/* ── 5. Conferência — os 12 KPIs de tesouraria, recolhidos ──
+              Nada foi apagado. O que não dispara decisão deixou de abrir a
+              página (T-230-12). ── */}
+          <PainelConferencia includePurchaseForecasts={includePurchaseForecasts} />
+
+          {/* ── 6. Para onde vai o dinheiro / quanto devo a quem ──
+              Respondem pergunta própria e não estavam entre os blocos
+              rejeitados em 21/08. ── */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <CostCompositionChart />
             <SupplierExposureChart />
