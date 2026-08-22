@@ -171,10 +171,11 @@ export function CicloCaixaCard({ includePurchaseForecasts = false }: CicloCaixaC
             <p key={frase}>{frase}</p>
           ))}
           <p>
-            O estoque vem do cache de anúncios do Mercado Livre, que pode conter anúncio já
-            fechado no ML e ainda ativo no cache — medido em 21/08: 9 anúncios e 94 unidades
-            nessa condição, o que empurra os dias de estoque para cima. É limitação da fonte,
-            não do cálculo.
+            O estoque é o físico do Tiny — os três depósitos somados, anunciado ou não —, porque
+            o dinheiro foi gasto em toda a mercadoria. Não vem do cache de anúncios do Mercado
+            Livre: ele enxerga só o que está anunciado e ativo (1.434 das 2.995 unidades, medido
+            em 22/08) e ainda carrega 9 anúncios fechados no ML que seguem ativos ali, com 94
+            unidades que não existem.
           </p>
           <p>
             O caixa em conta descende de um ajuste manual de saldo; a idade desse ajuste está

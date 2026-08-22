@@ -198,8 +198,12 @@ export function resolveCicloCaixa(insumos: InsumosCicloCaixa): CicloCaixaResult 
     );
   } else {
     dpoEstado = "medido";
+    // A janela sai junto do número de propósito: a mesma mediana dá 15 dias em
+    // 90 e 12 em 180, e nenhum dos dois está errado. Um ciclo composto por três
+    // janelas diferentes não é um ciclo — aqui as três são a mesma.
     dpoTitulo =
-      `Mediana entre o mês de competência e o pagamento efetivo` +
+      `Mediana entre o mês de competência e o pagamento efetivo, nos últimos ` +
+      `${insumos.janelaDias ?? "?"} dias` +
       (insumos.dpoN != null ? `, sobre ${inteiro(insumos.dpoN)} pagamentos a fornecedor.` : ".");
   }
 
