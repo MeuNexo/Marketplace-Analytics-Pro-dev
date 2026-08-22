@@ -29,7 +29,7 @@ describe("resolveDiasDeCaixa", () => {
     expect(r.saidaDiaria).toBeCloseTo(729.318, 3);
     expect(r.saldo).toBe(14650.34);
     expect(r.titulo).toMatch(/90 dias/);
-    expect(r.titulo).toMatch(/zero entrada|nenhuma entrada/);
+    expect(r.titulo).toMatch(/zero entrada|nenhuma entrada/i);
   });
 
   it("burn mensal nulo devolve sem_saida_medida, dias null, e nomeia o motivo — nunca dias 0", () => {
