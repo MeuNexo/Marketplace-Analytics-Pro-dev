@@ -4,13 +4,25 @@
  *
  * POR QUE ISTO EXISTE: `financial_settings` não tinha nenhuma trigger de
  * `updated_at` (confirmado em produção: zero triggers não-internos na
- * tabela). O "Ajustar saldo" faz UPDATE, e `DEFAULT now()` só vale no
- * INSERT — então o valor de `updated_at` que a tela lia era a data de
- * CRIAÇÃO da linha, não a do último ajuste. A migration
- * `20260822000000_financial_settings_updated_at.sql` cria a trigger que
- * corrige isso DAQUI PRA FRENTE; este módulo declara o estado
- * `nunca_carimbado` para que um ajuste ANTERIOR a ela nunca se apresente
- * como recente.
+ * tabela) até a migration `20260822000000_financial_settings_updated_at.sql`
+ * (aplicada em 22/08/2026) desta fase. Sem trigger, nada garantia que
+ * `updated_at` refletisse a última escrita na linha.
+ *
+ * 🔴 CORREÇÃO PÓS-APLICAÇÃO (22/08): medido em produção, a Pé Vermeio TEM
+ * `updated_at` (13/07) divergente de `created_at` (18/06) — algo carimbou a
+ * data antes da trigger existir (SQL manual, migration antiga, ou uma
+ * trigger que existiu e foi removida; não é possível saber o quê). Por isso
+ * este módulo NUNCA afirma que uma data anterior a 22/08 é "quando o saldo
+ * foi ajustado" — os textos dizem "última alteração registrada", que é o
+ * único fato sustentável para o histórico. A PARTIR de 22/08, com a trigger
+ * ativa, toda escrita na linha É de fato o "Ajustar saldo" da tela (é a
+ * única escrita que o app faz nesta tabela), e a distinção deixa de importar.
+ *
+ * `nunca_carimbado` continua existindo e continua correto: cobre o caso em
+ * que `updated_at === created_at` — ou seja, a linha nunca recebeu escrita
+ * nenhuma depois de criada (típico de organização nova). Esse caso é
+ * diferente do achado acima (que tem DUAS datas diferentes, só que de
+ * origem incerta) e não foi afetado pela medição.
  *
  * Molde: `useEstornoDeflator.ts` — "nulo é NÃO MEDIDO, e isso não é bug a
  * consertar"; a coalescência para um valor neutro só pode acontecer dentro
@@ -34,7 +46,7 @@ export type EstadoSaldo = "recente" | "envelhecido" | "nunca_carimbado" | "nao_m
 
 export interface ConfiabilidadeSaldo {
   estado: EstadoSaldo;
-  /** Idade do ajuste em dias corridos; `null` em todo estado que não seja recente/envelhecido/nunca_carimbado. */
+  /** Idade da última alteração registrada, em dias corridos; `null` em todo estado que não seja recente/envelhecido/nunca_carimbado. */
   idadeDias: number | null;
   /** Se o selo deve aparecer na tela — true em tudo que não seja `recente` (critério 5 do ROADMAP). */
   exibir: boolean;
@@ -52,8 +64,12 @@ function diferencaEmDias(dataIso: string, agora: Date): number {
 
 function tituloEnvelhecido(idadeDias: number): string {
   return (
-    `O saldo foi ajustado há ${idadeDias} dias — é um valor rolado por esse tempo, sem ` +
-    `qualquer conferência externa contra o extrato desde então.`
+    // "Última alteração registrada", não "ajustado": updated_at nomeia a última escrita
+    // na linha, e para datas anteriores a 22/08/2026 (antes da trigger desta fase) não
+    // há como afirmar que a escrita foi, de fato, um ajuste manual de saldo — pode ter
+    // sido outra coisa (ver nota de produção no cabeçalho do arquivo).
+    `A última alteração registrada neste saldo foi há ${idadeDias} dias — é um valor ` +
+    `rolado por esse tempo, sem qualquer conferência externa contra o extrato desde então.`
   );
 }
 
@@ -131,8 +147,8 @@ export function resolveConfiabilidadeSaldo(entrada: {
       estado: "recente",
       idadeDias,
       exibir: false,
-      texto: `ajustado há ${idadeDias} dia${idadeDias === 1 ? "" : "s"}`,
-      titulo: `Saldo ajustado há ${idadeDias} dia${idadeDias === 1 ? "" : "s"} — dentro do ciclo de conferência.`,
+      texto: `última alteração há ${idadeDias} dia${idadeDias === 1 ? "" : "s"}`,
+      titulo: `Última alteração registrada neste saldo há ${idadeDias} dia${idadeDias === 1 ? "" : "s"} — dentro do ciclo de conferência.`,
     };
   }
 
