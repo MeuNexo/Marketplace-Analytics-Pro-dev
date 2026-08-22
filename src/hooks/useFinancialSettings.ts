@@ -13,6 +13,14 @@ export interface FinancialSettings {
   operational_cost_rate: number;
   safety_margin: number;
   alert_threshold: number;  // D-10 — limite configurável de alerta de saldo
+  /**
+   * CX-06 — data do último ajuste manual de saldo. `null` quando ausente:
+   * nunca coalescer para uma data aqui — a régua (`saldoConfiabilidade.ts`)
+   * é quem decide o que ausência significa, a mesma disciplina de
+   * `useEstornoDeflator.ts`.
+   */
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 const DEFAULTS: FinancialSettings = {
@@ -20,6 +28,8 @@ const DEFAULTS: FinancialSettings = {
   operational_cost_rate: 0.22,
   safety_margin: 10000,
   alert_threshold: 30000,
+  created_at: null,
+  updated_at: null,
 };
 
 export function useFinancialSettings() {
@@ -37,7 +47,7 @@ export function useFinancialSettings() {
       // (chave única por organization_id — sem risco de truncamento PostgREST)
       const { data, error } = await supabase
         .from("financial_settings")
-        .select("initial_balance, operational_cost_rate, safety_margin, alert_threshold")
+        .select("initial_balance, operational_cost_rate, safety_margin, alert_threshold, created_at, updated_at")
         .eq("organization_id", orgId)
         .maybeSingle();
 
@@ -50,6 +60,9 @@ export function useFinancialSettings() {
         operational_cost_rate: Number(data.operational_cost_rate ?? 0.22),
         safety_margin:         Number(data.safety_margin         ?? 10000),
         alert_threshold:       Number(data.alert_threshold       ?? 30000),
+        // Ausência vai como null para a tela — nunca coalescer para uma data.
+        created_at:            data.created_at ?? null,
+        updated_at:            data.updated_at ?? null,
       };
     },
   });
