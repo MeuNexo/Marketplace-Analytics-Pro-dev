@@ -65,7 +65,7 @@ function porHorizonte(
 export function ForecastErrorCard() {
   const [detalheAberto, setDetalheAberto] = useState(false);
 
-  const { data: curva, isLoading: carregandoCurva, isError: erroCurva } = useForecastErrorCurve();
+  const { data: curva, isLoading: carregandoCurva, isError: erroCurva, error: detalheErro } = useForecastErrorCurve();
   const { data: deflator, isLoading: carregandoDeflator } = useEstornoDeflator();
 
   if (carregandoCurva || carregandoDeflator) {
@@ -83,8 +83,15 @@ export function ForecastErrorCard() {
     return (
       <Card>
         <CardContent className="p-4">
+          {/* A ausência NOMEIA o motivo — regra da casa (Wesley, 21/08). Engolir
+              a mensagem do banco aqui custou uma sessão inteira de diagnóstico
+              às cegas: a tela dizia "erro" e o erro real nunca chegava a
+              ninguém. Ver src/lib/rebateLinhaCenarios.ts. */}
           <p className="text-xs text-destructive">
-            Erro ao carregar o histórico de erro da previsão.
+            Não foi possível carregar o histórico de erro da previsão.
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground break-words">
+            {detalheErro instanceof Error ? detalheErro.message : "sem detalhe devolvido pelo banco"}
           </p>
         </CardContent>
       </Card>
