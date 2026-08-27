@@ -1,44 +1,47 @@
 // ============================================================================
-// 233-05 — Declarar o saldo é MOVER A ÂNCORA
+// 233-06 — Declarar é ancorar A ABERTURA DECOMPOSTA
 //
-// 🔴 O DEFEITO, medido no BANCO VIVO em 27/08/2026 (não no repositório): o botão
-// "corrigir saldo" gravava `financial_settings.initial_balance` por caminho
-// direto, e esse caminho **não toca em `balance_anchor_date`**. O número que a
-// tela de fluxo de caixa exibe não é o campo cru — é o campo cru na data da
-// ÂNCORA, rolado por tudo que entrou e tudo que saiu pago desde então:
+// 🔴 O QUE MUDOU EM RELAÇÃO AO CABEÇALHO ANTERIOR, e é a coisa inteira: o
+// 233-05 escrevia aqui que "declarar é ancorar, o valor atravessa intacto".
+// **Isso deixou de ser verdade**, e um comentário que ensina a teoria errada é
+// pior que nenhum.
 //
-//   get_rolled_opening_balance = initial_balance    (na âncora)
-//                              + entradas           [âncora, hoje)
-//                              − saídas pagas       [âncora, hoje)
+// O **D-07** (o valor digitado é a ABERTURA do dia) durou algumas horas. O
+// Wesley o derrubou no mesmo 27/08/2026: *"hoje o saldo já considerando a
+// liberação já é o que passei, 37430"* — **D-10**. Ele declara olhando o
+// EXTRATO, a qualquer hora, então o número que ele dá já inclui tudo que
+// liquidou até ali.
 //
-// Na Pé Vermeio a âncora estava em **2026-07-13**, 45 dias atrás:
+// 🔴 O ESTRAGO DO D-07, medido: gravado como abertura, o sistema somou o dia por
+// cima e contou **R$ 13.157,27 duas vezes** — fechamento previsto R$ 42.457,04
+// contra os R$ 38.785,31 corretos.
 //
-//   initial_balance (o que ele digitou) ....  R$ 37.430,00
-//   + entradas âncora→ontem ................  R$ 341.243,31
-//   − saídas pagas âncora→ontem ............  R$ 349.371,89
-//   = o que a tela exibia ..................  R$  29.301,42
+// 🔵 AS TRÊS IDENTIDADES, e elas fecham em produção (27/08, Pé Vermeio):
 //
-// Ele digitou 37.430 e leu 29.301,42. Declarou, sem saber, um saldo de 13 de
-// julho.
+//   abertura    = declarado − entradas_liquidadas + saidas_pagas
+//               = 37.430,00 − 13.157,27 + 9.485,54 = 33.758,27
+//   saldo_agora = abertura  + entradas_liquidadas − saidas_pagas = 37.430,00
+//   fechamento  = abertura  + entradas_do_dia     − saidas_do_dia = 38.785,31
 //
-// 🔵 A CORREÇÃO NÃO É INVERTER CONTA NENHUMA. Com `balance_anchor_date = hoje` o
-// intervalo semiaberto `[hoje, hoje)` é VAZIO, as duas somas são zero e a função
-// devolve o declarado ao centavo. É literalmente para isso que
-// `balance_anchor_date` existe, e a RPC que faz isso — `set_financial_balance` —
-// já estava em produção, INVOKER, com `EXECUTE` para `authenticated`, e **nunca
-// tinha sido chamada** por nenhuma linha do garment.
+// O que sobra — R$ 1.355,31 — é exatamente o `in_mediation`, o que ainda pode
+// entrar hoje. Fecha dos dois lados.
 //
-// 🔴 O QUE O 233-03 ERROU, e por que nenhum teste pegou: ele inverteu a conta
-// contra `entradas_hoje`/`saidas_hoje`. A identidade matemática estava certa; a
-// QUANTIDADE estava errada — o rolado desconta 45 dias de movimento, não o do
-// dia. 59 testes verdes provaram uma identidade correta sobre a variável errada,
-// e o defeito só apareceu porque o Wesley leu o número na tela.
+// 🔴 O QUE ATRAVESSA INTACTO agora é o `saldo_real` da DECLARAÇÃO (o saldo de
+// agora, o do extrato), **não** o valor da âncora. `montarDeclaracao` devolve os
+// dois, e eles são números diferentes de propósito — trocá-los é o defeito do
+// D-07 de volta.
 //
-// ⚠️ A AMBIGUIDADE QUE SOBRA É DE DESENHO, e está NOMEADA em vez de resolvida
-// (D-07, decisão do Wesley em 27/08): o que ele declara vira a **abertura** do
-// dia de hoje. Declarar às 14h olhando o extrato conta parte do movimento do dia
-// duas vezes na previsão de fechamento. O erro dura um dia e a declaração
-// seguinte o corrige; o caminho sem ambiguidade é declarar de manhã.
+// 🔴 A INVERSA DO 233-03 ESTAVA CERTA NA FORMA E ERRADA NA QUANTIDADE. Ela usava
+// `entradas_hoje`/`saidas_hoje` INTEIRAS; o certo é só a parte **já liquidada**
+// (`approved` + `refunded` nas entradas, `paid` nas saídas). O 233-05 removeu a
+// inversa; o 233-06 a traz de volta contra a quantidade certa, com nome próprio
+// (`aberturaAncorada`) e um portão que reprova a errada
+// (`../pages/mercadolivre/__tests__/saldoAncorado.test.ts`).
+//
+// 🔴 A CLASSIFICAÇÃO POR ESTADO NÃO MORA AQUI. Ela é do BANCO
+// (`get_movimentos_por_liquidacao`), e este módulo apenas CONSOME as parcelas
+// prontas. Duas implementações da mesma regra divergem, e a divergência aparece
+// como número errado na tela, não como erro.
 //
 // Molde: `confiancaDoSaldo.ts` — módulo puro, nunca lança, ausência é `null`.
 // ============================================================================
@@ -102,15 +105,68 @@ export function saldoExibido(
 }
 
 // ---------------------------------------------------------------------------
+// 🔴 A INVERSA, de volta — contra o LIQUIDADO e só ele
+// ---------------------------------------------------------------------------
+
+/**
+ * A abertura do dia, decomposta a partir do saldo que o humano leu no extrato.
+ *
+ *     abertura = declarado − entradasLiquidadas + saidasPagas
+ *
+ * 🔴 A QUANTIDADE É O PONTO INTEIRO. O 233-03 fez esta mesma conta contra
+ * `entradas_hoje`/`saidas_hoje` — os TOTAIS do dia — e a correção não funcionou:
+ * o que está em mediação **ainda não entrou no extrato** que o Wesley leu, então
+ * descontá-lo tira dinheiro que nunca esteve lá. 59 testes verdes provaram a
+ * identidade certa sobre a variável errada, e o defeito só apareceu quando ele
+ * leu o número na tela.
+ *
+ * 🔵 As três propriedades que o teste mede, e que a implementação tem de ter:
+ *   (i)   mexer em `entradasPendentes` NÃO move o resultado;
+ *   (ii)  mexer em `saidasCanceladas` NÃO move o resultado;
+ *   (iii) somar Δ a `entradasLiquidadas` move o resultado em exatamente −Δ.
+ *
+ * Devolve `null` — nunca `NaN` — quando qualquer parcela está suja.
+ */
+export function aberturaAncorada(
+  saldoDeAgora: unknown,
+  mov: MovimentosDoDia | null | undefined,
+): number | null {
+  if (mov == null) return null;
+  const declarado = numeroOuNulo(saldoDeAgora);
+  const liquidadas = numeroOuNulo(mov.entradasLiquidadas);
+  const pagas = numeroOuNulo(mov.saidasPagas);
+  if (declarado == null || liquidadas == null || pagas == null) return null;
+  return duasCasas(declarado - liquidadas + pagas);
+}
+
+// ---------------------------------------------------------------------------
 // O portão do salvamento e a declaração que vai para o banco
 // ---------------------------------------------------------------------------
 
-/** Os movimentos do dia, como a tela os conhece no instante da declaração. */
+/**
+ * Os movimentos do dia, como a tela os conhece no instante da declaração.
+ *
+ * 🔴 TODOS os campos vêm de `get_daily_balance` — nenhum é derivado no front. A
+ * classificação por estado (`approved`/`refunded`/`in_mediation`/`paid`/
+ * `pending`/`cancelled`) existe em UM lugar só, e ele é o banco.
+ */
 export interface MovimentosDoDia {
   /** A ABERTURA de hoje — rolada — como a tela a exibia ANTES da correção. */
   saldoInicial: unknown;
+  /** O TOTAL de entradas do dia. Inclui o que ainda pode entrar. */
   entradas: unknown;
+  /** O TOTAL de saídas previstas do dia. Já **sem** as canceladas (D-12). */
   saidas: unknown;
+  /** 🔵 O que JÁ LIQUIDOU nas entradas: `approved` + `refunded`. */
+  entradasLiquidadas: unknown;
+  /** 🔵 O que JÁ SAIU do caixa: `paid`. */
+  saidasPagas: unknown;
+  /** O que ainda pode entrar hoje e ainda não entrou (`in_mediation`). */
+  entradasPendentes: unknown;
+  /** O que foi cancelado e **não vai sair nunca** (D-12). */
+  saidasCanceladas: unknown;
+  /** 🔴 O saldo de agora, **vindo do banco**. Nunca composto aqui. */
+  saldoAgora: unknown;
 }
 
 export interface Veredito {
@@ -120,18 +176,19 @@ export interface Veredito {
 }
 
 /**
- * 🔴 O BLOQUEIO CONTINUA OBRIGATÓRIO, mas o motivo dele MUDOU.
+ * 🔴 O BLOQUEIO CONTINUA OBRIGATÓRIO, e o motivo dele MUDOU DE NOVO.
  *
- * No 233-03 ele existia porque a inversa dependia dos movimentos: entradas e
- * saídas ainda carregando (lidas como zero) gravariam o valor digitado como
- * `initial_balance` cru — o defeito disfarçado de conserto.
+ * No 233-03 ele existia porque a inversa (contra o total do dia) dependia dos
+ * movimentos. No 233-05 a âncora deixou de depender de movimento nenhum e o
+ * motivo passou a ser o **retrato do erro do dia zero**.
  *
- * Depois do 233-05 a âncora não depende de movimento nenhum. O que ainda depende
- * é o **retrato do erro do dia zero**: sem entradas e saídas não há
- * `saldo_exibido` para registrar, e a linha de `saldo_declarado` nasceria sem o
- * que ela existe para medir.
+ * 🔴 No 233-06 ele volta a ser existencial, e por uma razão pior: sem as
+ * parcelas LIQUIDADAS não há decomposição, e o declarado seria gravado como
+ * abertura — que é exatamente o defeito do D-07, agora silencioso. Lidas como
+ * zero, elas fariam `abertura = declarado`, o sistema somaria o dia por cima e
+ * contaria o liquidado duas vezes.
  *
- * Zero legítimo (dia sem movimento) passa; ausência não passa.
+ * Zero legítimo (dia sem movimento liquidado) passa; ausência não passa.
  */
 export function podeDeclarar(mov: MovimentosDoDia | null | undefined, carregando = false): Veredito {
   if (carregando) {
@@ -153,12 +210,26 @@ export function podeDeclarar(mov: MovimentosDoDia | null | undefined, carregando
         "As entradas e saídas de hoje não foram carregadas — sem elas a declaração fica sem o retrato do erro.",
     };
   }
+  const liq = numeroOuNulo(mov.entradasLiquidadas);
+  const pg = numeroOuNulo(mov.saidasPagas);
+  if (liq == null || pg == null) {
+    return {
+      pode: false,
+      motivo:
+        "Ainda não dá para saber o que já caiu na conta hoje — sem isso o valor digitado " +
+        "seria gravado como o saldo de abertura e o dia seria contado duas vezes.",
+    };
+  }
   return { pode: true, motivo: null };
 }
 
 export interface Declaracao {
   organization_id: string;
   data_declarada: string;
+  /**
+   * 🔴 O SALDO DE AGORA — o valor DIGITADO, o que ele leu no extrato (D-10).
+   * **Não** é a abertura: essa está em `abertura_ancorada`.
+   */
   saldo_real: number;
   /** O que a tela EXIBIA antes da correção — é ele que mede o erro do dia zero. */
   saldo_exibido: number | null;
@@ -166,16 +237,36 @@ export interface Declaracao {
   initial_balance: number | null;
   entradas_do_dia: number;
   saidas_do_dia: number;
+  /**
+   * 🔵 O RETRATO DA LIQUIDAÇÃO — as quatro colunas do 233-06.
+   *
+   * Elas existem para que a escolha do comparador da curva de confiança possa
+   * ser feita DEPOIS sem perder dado. `get_confianca_do_saldo` hoje confronta
+   * `saldo_real` (que, a partir do D-10, é o saldo de MEIO DE DIA) contra o
+   * congelado, que é FECHAMENTO — em 27/08 a diferença entre os dois
+   * comparadores foi R$ 1.355,31 no D+0. Com as parcelas gravadas, trocar o
+   * comparador vira uma DECISÃO, não uma escavação.
+   */
+  abertura_ancorada: number;
+  entradas_liquidadas: number;
+  saidas_pagas: number;
+  entradas_pendentes: number | null;
 }
 
 /**
- * Monta o par (o valor que vai para a âncora, o que declarar em
- * `saldo_declarado`) a partir do saldo que o humano digitou.
+ * Monta o par (o valor que vai para a ÂNCORA, o que declarar em
+ * `saldo_declarado`) a partir do saldo de agora que o humano digitou.
  *
- * 🔵 `saldoParaAncora` é o valor digitado, arredondado a duas casas e **nada
- * mais**. Não há conta contra os movimentos do dia, e é essa insensibilidade que
- * separa este módulo do 233-03: redigitar o mesmo número com entradas e saídas
- * diferentes produz exatamente o mesmo valor de âncora.
+ * 🔴 OS DOIS SÃO NÚMEROS DIFERENTES DE PROPÓSITO, e trocá-los é o defeito do
+ * D-07 de volta:
+ *
+ *   `saldoParaAncora`      = a ABERTURA decomposta (vai para `set_financial_balance`)
+ *   `declaracao.saldo_real` = o valor DIGITADO, o saldo de agora (vai para a série)
+ *
+ * 🔵 A insensibilidade que separa isto do 233-03 continua existindo, só que
+ * agora ela é ao NÃO-liquidado: redigitar o mesmo número com os TOTAIS do dia
+ * diferentes produz exatamente a mesma âncora, porque só as parcelas liquidadas
+ * entram na conta.
  *
  * 🔴 `saldo_exibido` e `initial_balance` guardam o estado ANTES da correção, e
  * não o depois. É essa diferença — exibido menos declarado — que mede o erro do
@@ -183,8 +274,8 @@ export interface Declaracao {
  * inteira mediria nada.
  *
  * ⚠️ Na REDECLARAÇÃO do mesmo dia o retrato preservado é o da PRIMEIRA — quem
- * cuida disso é o chamador, que atualiza só o `saldo_real` quando já existe
- * linha para a data (comportamento do 233-03, mantido sem mexer).
+ * cuida disso é o chamador, que atualiza só o `saldo_real` e as parcelas de
+ * liquidação quando já existe linha para a data.
  *
  * Devolve `null` quando qualquer parcela está suja: o chamador não grava.
  */
@@ -202,22 +293,29 @@ export function montarDeclaracao(
   const digitado = numeroOuNulo(saldoDigitado);
   if (digitado == null) return null;
 
-  // 🔵 Declarar é ancorar: o valor atravessa intacto.
-  const saldoParaAncora = duasCasas(digitado);
+  // 🔴 Declarar é ancorar A ABERTURA DECOMPOSTA. O valor digitado é o saldo de
+  // AGORA; a âncora recebe o que ele era ANTES do movimento já liquidado de hoje.
+  const saldoParaAncora = aberturaAncorada(digitado, mov);
+  if (saldoParaAncora == null) return null;
 
   const aberturaAnterior = numeroOuNulo(mov!.saldoInicial);
+  const pendentes = numeroOuNulo(mov!.entradasPendentes);
 
   return {
     saldoParaAncora,
     declaracao: {
       organization_id: orgId,
       data_declarada: dataDeclarada,
-      saldo_real: saldoParaAncora,
+      saldo_real: duasCasas(digitado),
       saldo_exibido:
         aberturaAnterior == null ? null : saldoExibido(aberturaAnterior, entradas, saidas),
       initial_balance: aberturaAnterior == null ? null : duasCasas(aberturaAnterior),
       entradas_do_dia: duasCasas(entradas),
       saidas_do_dia: duasCasas(saidas),
+      abertura_ancorada: saldoParaAncora,
+      entradas_liquidadas: duasCasas(numeroOuNulo(mov!.entradasLiquidadas) as number),
+      saidas_pagas: duasCasas(numeroOuNulo(mov!.saidasPagas) as number),
+      entradas_pendentes: pendentes == null ? null : duasCasas(pendentes),
     },
   };
 }

@@ -392,6 +392,14 @@ export default function MLFluxoCaixa() {
         saldoInicial: saldoHoje.saldo_inicial,
         entradas: saldoHoje.entradas_hoje,
         saidas: saldoHoje.saidas_hoje,
+        // 🔴 233-06 — as parcelas de LIQUIDAÇÃO, todas vindas do banco. É delas
+        // que sai a abertura decomposta; os totais acima ficam só para o
+        // retrato do erro do dia zero.
+        entradasLiquidadas: saldoHoje.entradas_liquidadas,
+        saidasPagas: saldoHoje.saidas_pagas,
+        entradasPendentes: saldoHoje.entradas_pendentes,
+        saidasCanceladas: saldoHoje.saidas_canceladas,
+        saldoAgora: saldoHoje.saldo_agora,
       }
     : null;
 

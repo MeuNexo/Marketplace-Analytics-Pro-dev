@@ -23,6 +23,29 @@
 // 🔵 Este hook é um dos DOIS únicos consumidores de `get_daily_balance` (o outro
 // é a tool `get_saldo_diario` do nexo-mcp). Nenhuma função do banco a chama —
 // medido em `pg_proc.prosrc` em 27/08/2026.
+//
+// ============================================================================
+// 🔴 233-06 — O SALDO DE AGORA VEM DO BANCO, E É DE PROPÓSITO
+//
+// `saldo_agora` = abertura + o que JÁ LIQUIDOU hoje (`approved` + `refunded`
+// nas entradas, `paid` nas saídas). É o número que o Wesley lê no extrato e o
+// que ele declara (D-10) — e ele é calculado no BANCO, não aqui.
+//
+// O motivo é o 233-03: somar no front cria uma SEGUNDA implementação da
+// classificação por estado, e a classificação é usada nas DUAS direções — para
+// decompor o declarado até a abertura e para recompor a abertura até o saldo de
+// agora. Duas implementações da mesma regra divergem, e a divergência aparece
+// como número errado na tela, não como erro. Há um portão varrendo por isso
+// (`src/pages/mercadolivre/__tests__/saldoAncorado.test.ts`).
+//
+// ⚠️ TRÊS NÚMEROS, TRÊS PERGUNTAS, e chamar dois deles de "saldo de hoje" foi o
+// engano que a página carregava:
+//   `saldo_inicial`        — a ABERTURA. É por ela que o GRÁFICO começa.
+//   `saldo_agora`          — o saldo NESTE INSTANTE. É o número grande do card.
+//   `saldo_final_previsto` — o FECHAMENTO previsto do dia.
+//
+// 🔴 `saidas_hoje` EXCLUI as canceladas desde o 233-06 (D-12): cancelada não é
+// "adiada", é "não vai sair nunca". O valor excluído vem em `saidas_canceladas`.
 // ============================================================================
 
 import { useQuery } from "@tanstack/react-query";
@@ -35,6 +58,20 @@ export interface TodayBalanceData {
   entradas_hoje: number;
   saidas_hoje: number;
   saldo_final_previsto: number;
+  /** 🔵 Vem do banco. Nunca composto aqui — ver o cabeçalho. */
+  saldo_agora: number;
+  entradas_liquidadas: number;
+  saidas_pagas: number;
+  /** O que o dia ainda pode receber e ainda não recebeu (`in_mediation`). */
+  entradas_pendentes: number;
+  /** Fora da previsão de fechamento desde o 233-06 (D-12), mas visível. */
+  saidas_canceladas: number;
+  /**
+   * 🔴 Estado que não bate nenhum da allowlist. Existe para APARECER: um estado
+   * novo do Mercado Pago não pode ser absorvido em silêncio por um agregado.
+   */
+  entradas_estado_desconhecido: number;
+  saidas_estado_desconhecido: number;
 }
 
 export function useTodayBalance() {
@@ -65,6 +102,17 @@ export function useTodayBalance() {
         entradas_hoje:        Number(r.entradas_hoje        ?? 0),
         saidas_hoje:          Number(r.saidas_hoje          ?? 0),
         saldo_final_previsto: Number(r.saldo_final_previsto ?? 0),
+
+        // 233-06 — as parcelas de liquidação, lidas por NOME (coluna nova não
+        // quebra consumidor que lê por nome; foi por isso que a assinatura pôde
+        // crescer no fim em vez de mudar de posição).
+        saldo_agora:                  Number(r.saldo_agora                  ?? 0),
+        entradas_liquidadas:          Number(r.entradas_liquidadas          ?? 0),
+        saidas_pagas:                 Number(r.saidas_pagas                 ?? 0),
+        entradas_pendentes:           Number(r.entradas_pendentes           ?? 0),
+        saidas_canceladas:            Number(r.saidas_canceladas            ?? 0),
+        entradas_estado_desconhecido: Number(r.entradas_estado_desconhecido ?? 0),
+        saidas_estado_desconhecido:   Number(r.saidas_estado_desconhecido   ?? 0),
       };
     },
   });
