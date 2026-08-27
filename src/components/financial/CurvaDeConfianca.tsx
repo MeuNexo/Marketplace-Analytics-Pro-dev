@@ -41,7 +41,7 @@
 // ============================================================================
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConfiancaDoSaldo, type ConfiancaDoSaldoData } from "@/hooks/useConfiancaDoSaldo";
-import type { EstadoDaConfianca, PontoDeConfianca } from "@/lib/confiancaDoSaldo";
+import type { EstadoDaConfianca, MotivoAusencia, PontoDeConfianca } from "@/lib/confiancaDoSaldo";
 
 /** "2026-08-28" → "28/08". Fatiado à mão: `new Date` em ISO puro é UTC e o
  *  fuso local empurraria a data um dia para trás em quase todo o Brasil. */
@@ -69,6 +69,10 @@ interface BlocoDeAusencia {
   ate: number;
   horizontes: number[];
   medivel_em: string | null;
+  /** O motivo CRU que a RPC devolveu, sem tradução. Ele vai para o DOM em
+   *  `data-motivo`: quando a tela for auditada, o que se lê é o que o banco
+   *  disse — não a interpretação que o front deu a ele. */
+  motivo_ausencia: MotivoAusencia | null;
 }
 
 /** Agrupa horizontes ausentes CONTÍGUOS e de mesmo estado numa faixa só. É o que
@@ -94,6 +98,7 @@ function agruparAusencias(pontos: PontoDeConfianca[]): Array<PontoDeConfianca | 
       atual = {
         estado: p.estado, de: p.horizonte, ate: p.horizonte,
         horizontes: [p.horizonte], medivel_em: p.medivel_em,
+        motivo_ausencia: p.motivo_ausencia,
       };
     } else {
       atual.ate = p.horizonte;
@@ -256,6 +261,7 @@ export function CurvaDeConfiancaView({ data, isLoading, error }: CurvaDeConfianc
                 key={bloco.de}
                 data-horizontes={bloco.horizontes.join(",")}
                 data-estado={bloco.estado}
+                data-motivo={bloco.motivo_ausencia ?? undefined}
                 className="text-[11px] leading-snug text-muted-foreground"
               >
                 {textoDaAusencia(bloco)}
