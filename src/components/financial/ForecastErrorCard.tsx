@@ -35,6 +35,8 @@ import {
 } from "@/hooks/useForecastErrorCurve";
 import { N_MINIMO_PARA_PUBLICAR, type PontoDaCurva } from "@/lib/forecastErrorCurve";
 import { resolveFrasePrevisao } from "@/lib/frasePrevisao";
+import { useConfiancaDoSaldo } from "@/hooks/useConfiancaDoSaldo";
+import { CurvaDeConfianca } from "./CurvaDeConfianca";
 
 const currFmt = (v: number): string =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -136,6 +138,16 @@ export function ForecastErrorCard() {
         >
           {frase.texto}
         </p>
+
+        {/* ── 233-02: a curva de confiança do SALDO ────────────────────────────
+            A ordem é a decisão: frase (o que decide) → curva (o que contextualiza)
+            → detalhe (o que audita). Isso honra a 230 — que tirou a curva de
+            ENTRADAS do primeiro plano — e entrega o que o Wesley pediu em 27/08:
+            *"ver o cenário ao longo do tempo e o quanto posso confiar de 0 a 100%"*.
+
+            🔴 Esta curva é do SALDO, medida contra o saldo DECLARADO por ele —
+            não a de entradas por horizonte que ele rejeitou na 230. */}
+        <CurvaDeConfianca />
 
         {/* ── Tudo o mais, recolhido: a curva por horizonte, o n, o deflator e o erro absoluto ── */}
         <Collapsible open={detalheAberto} onOpenChange={setDetalheAberto}>
