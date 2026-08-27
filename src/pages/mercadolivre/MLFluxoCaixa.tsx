@@ -67,7 +67,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { formatCurrency } from "@/lib/formatters";
 import { brToday } from "@/lib/brDate";
 import {
-  initialBalanceParaSaldo,
   montarDeclaracao,
   numeroOuNulo,
   podeDeclarar,
@@ -93,16 +92,25 @@ function CashFlowEmptyState() {
   );
 }
 
-// ─── Dialog de correção do saldo de hoje (233-03) ─────────────────────────────
+// ─── Dialog de correção do saldo de hoje (233-03, refeito no 233-05) ──────────
 //
-// 🔴 O QUE MUDOU, e por quê: até a Fase 233 este campo gravava
-// `financial_settings.initial_balance` — o saldo ANTES dos movimentos do dia —
-// mas o rótulo dizia "saldo de hoje". O Wesley digitava R$ 37.430, a tela
-// exibia R$ 51.304,62, e ele tentava de novo: *"tenho que ficar inserindo
-// valores e atualizando até o saldo do dia chegar no real que temos"*.
+// 🔴 O QUE ESTAVA ERRADO, e não era conta: era CAMINHO. Esta tela gravava
+// `financial_settings` direto, e esse caminho **não toca em
+// `balance_anchor_date`**. O número que o gráfico de fluxo de caixa exibe é o
+// saldo da ÂNCORA rolado por tudo que entrou e saiu desde ela — e a âncora da Pé
+// Vermeio estava parada em **2026-07-13**, 45 dias atrás. O Wesley digitou
+// R$ 37.430 e leu R$ 29.301,42: declarou, sem saber, um saldo de 13 de julho.
 //
-// 🔵 Agora o campo pede o SALDO REAL DE HOJE e a tela faz a conta inversa
-// (`initialBalanceParaSaldo`). Uma passada, sem tentativa.
+// 🔵 A CORREÇÃO É MOVER A ÂNCORA. Com `balance_anchor_date = hoje` o intervalo
+// `[hoje, hoje)` é vazio e a abertura devolve o declarado ao centavo. A RPC que
+// faz isso — `set_financial_balance` — já estava em produção, INVOKER, com
+// `EXECUTE` para `authenticated`, e nunca tinha sido chamada por nenhuma linha
+// deste repositório.
+//
+// 🔴 O 233-03 tentou consertar isso invertendo a conta contra os movimentos DE
+// HOJE. A identidade estava certa e a quantidade errada; 59 testes verdes não
+// pegaram. Por isso existe agora `__tests__/saldoAncorado.test.ts`, que reprova
+// pela FORMA — se a escrita direta voltar, ele falha.
 //
 // 🔴 E a MESMA ação grava a declaração em `saldo_declarado` — o valor digitado é
 // a fonte de verdade que ancora a curva de confiança do 233-02. Sem isso a série
@@ -111,8 +119,12 @@ function CashFlowEmptyState() {
 interface AdjustBalanceDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** O saldo que a tela EXIBE hoje — não o `initial_balance` cru. */
-  saldoExibidoHoje: number | null;
+  /**
+   * 🔴 A ABERTURA de hoje — o número pelo qual a tela ABRE, e o que ele está
+   * corrigindo. NÃO é a previsão de fechamento do dia: pré-preencher com a
+   * previsão faria ele "corrigir" um valor que não é o que ele quer mudar.
+   */
+  aberturaDeHoje: number | null;
   movimentos: MovimentosDoDia | null;
   carregandoMovimentos: boolean;
   orgId: string;
@@ -135,7 +147,7 @@ type TabelaSolta = {
 function AdjustBalanceDialog({
   open,
   onOpenChange,
-  saldoExibidoHoje,
+  aberturaDeHoje,
   movimentos,
   carregandoMovimentos,
   orgId,
@@ -146,19 +158,14 @@ function AdjustBalanceDialog({
 
   const veredito = podeDeclarar(movimentos, carregandoMovimentos);
 
-  // Ao abrir, o campo já vem com o saldo que a tela mostra — é o número que ele
-  // vai corrigir, não o parâmetro interno.
+  // Ao abrir, o campo já vem com a ABERTURA de hoje — o número pelo qual a tela
+  // abre, que é exatamente o que ele está corrigindo.
   const handleOpenChange = (isOpen: boolean) => {
-    if (isOpen) setValue(saldoExibidoHoje == null ? "" : String(saldoExibidoHoje));
+    if (isOpen) setValue(aberturaDeHoje == null ? "" : String(aberturaDeHoje));
     onOpenChange(isOpen);
   };
 
-  // Prévia ao vivo: o que será gravado para a tela exibir o que ele digitou.
-  const desejado = numeroOuNulo(value);
-  const previaInitialBalance =
-    veredito.pode && desejado != null
-      ? initialBalanceParaSaldo(desejado, movimentos!.entradas, movimentos!.saidas)
-      : null;
+  const digitado = numeroOuNulo(value);
 
   const handleSave = async () => {
     // 🔴 O BLOQUEIO. Se entradas/saídas ainda não carregaram, a inversa gravaria
@@ -177,12 +184,24 @@ function AdjustBalanceDialog({
 
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from("financial_settings")
-        .upsert(
-          { organization_id: orgId, initial_balance: montado.initialBalanceAGravar },
-          { onConflict: "organization_id" }
-        );
+      // 🔴 MOVER A ÂNCORA, não gravar o campo. `set_financial_balance` grava
+      // `initial_balance` E `balance_anchor_date = hoje` na mesma operação — é a
+      // segunda parte que faz a tela abrir no valor digitado. Escrever em
+      // `financial_settings` por caminho direto deixa a âncora onde estava, e foi
+      // esse caminho que produziu o defeito de 27/08/2026.
+      //
+      // ⚠️ `.bind(supabase)`: os métodos do client dependem de `this` —
+      // desacoplá-los estoura `Cannot read properties of undefined (reading
+      // 'rest')`, que foi exatamente o defeito do 233-01.
+      const rpc = supabase.rpc.bind(supabase) as unknown as (
+        fn: string,
+        args: Record<string, unknown>,
+      ) => PromiseLike<{ error: { message: string } | null }>;
+
+      const { error } = await rpc("set_financial_balance", {
+        p_org_id: orgId,
+        p_amount: montado.saldoParaAncora,
+      });
 
       if (error) throw error;
 
@@ -225,7 +244,7 @@ function AdjustBalanceDialog({
       await queryClient.invalidateQueries({ queryKey: ["projected_balance"] });
 
       toast.success(
-        `Pronto. A tela passa a exibir ${formatCurrency(montado.declaracao.saldo_real)} hoje.`,
+        `Pronto. A tela passa a abrir em ${formatCurrency(montado.declaracao.saldo_real)} hoje.`,
       );
       onOpenChange(false);
     } catch (err: any) {
@@ -241,24 +260,37 @@ function AdjustBalanceDialog({
         <DialogHeader>
           <DialogTitle>Corrigir o saldo de hoje</DialogTitle>
           <DialogDescription>
-            Informe o <strong>saldo real que você tem no caixa agora</strong> — o número
-            que você vê no banco. A tela passa a exibir exatamente esse valor.
+            Informe o <strong>saldo real que você tem no caixa</strong> — o número que você
+            vê no banco. A tela de fluxo de caixa passa a <strong>abrir</strong> exatamente
+            nesse valor.
           </DialogDescription>
         </DialogHeader>
 
         {/* 🔴 A mudança de significado precisa estar VISÍVEL: quem tinha decorado
             o comportamento antigo precisa perceber, e não descobrir por um
-            número estranho. */}
+            número estranho.
+            ⚠️ O texto foi REFEITO no 233-05 — o do 233-03 descrevia a teoria
+            errada (saldo inicial vs. saldo final do dia). O que muda de verdade é
+            que declarar passa a fixar a DATA DE REFERÊNCIA do saldo em hoje. */}
         <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
-          <strong>Mudou:</strong> antes este campo pedia o saldo <em>inicial</em> (antes das
-          entradas e saídas do dia) e por isso o número exibido saía diferente do digitado.
-          Agora ele pede o <strong>saldo final de hoje</strong>. O saldo inicial é calculado
-          por trás.
+          <strong>Mudou:</strong> antes, o valor digitado ficava preso à data da última
+          correção — e como ela era de <strong>13/07</strong>, o sistema somava 45 dias de
+          movimento por cima e a tela abria em outro número. Agora salvar também{" "}
+          <strong>marca a data de hoje</strong> como referência do saldo, e a tela abre
+          exatamente no que você digitou.
+          <br />
+          <span className="opacity-80">
+            O valor é lido como o saldo de <strong>abertura</strong> do dia: as entradas e
+            saídas de hoje entram por cima dele na previsão de fechamento. Declarar de manhã
+            é o caminho sem ambiguidade.
+          </span>
         </div>
 
         {/* ── A decomposição: o número deixa de ser caixa-preta ── */}
         <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs space-y-1 tabular-nums">
-          <div className="font-medium text-muted-foreground mb-1">Como a tela chega ao saldo de hoje</div>
+          <div className="font-medium text-muted-foreground mb-1">
+            Como a tela chega à previsão de fechamento de hoje
+          </div>
           {carregandoMovimentos ? (
             <Skeleton className="h-16 w-full" />
           ) : movimentos == null ? (
@@ -268,7 +300,7 @@ function AdjustBalanceDialog({
           ) : (
             <>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Saldo inicial (antes dos movimentos)</span>
+                <span className="text-muted-foreground">Saldo de hoje (abertura)</span>
                 <span>{formatCurrency(numeroOuNulo(movimentos.saldoInicial) ?? 0)}</span>
               </div>
               <div className="flex justify-between">
@@ -284,7 +316,7 @@ function AdjustBalanceDialog({
                 </span>
               </div>
               <div className="flex justify-between border-t border-border/60 pt-1 font-semibold">
-                <span>= Saldo que a tela mostra</span>
+                <span>= Previsão de fechamento de hoje</span>
                 <span>
                   {formatCurrency(
                     saldoExibido(movimentos.saldoInicial, movimentos.entradas, movimentos.saidas) ?? 0,
@@ -309,16 +341,17 @@ function AdjustBalanceDialog({
           />
           {!veredito.pode ? (
             <p className="text-xs text-destructive">{veredito.motivo}</p>
-          ) : previaInitialBalance != null ? (
+          ) : digitado != null ? (
+            /* 🔵 A prévia deixou de prometer um "saldo inicial calculado" — não há
+               conta nenhuma no meio. O que se promete é o que acontece. */
             <p className="text-xs text-muted-foreground">
-              Vamos gravar um saldo inicial de{" "}
-              <span className="font-medium tabular-nums">{formatCurrency(previaInitialBalance)}</span>{" "}
-              para a tela exibir{" "}
-              <span className="font-medium tabular-nums">{formatCurrency(desejado ?? 0)}</span> hoje.
+              A tela vai <strong>abrir</strong> em{" "}
+              <span className="font-medium tabular-nums">{formatCurrency(digitado)}</span>, com a
+              data de hoje como referência do saldo.
             </p>
           ) : (
             <p className="text-xs text-muted-foreground">
-              Digite o valor que você tem no caixa agora.
+              Digite o valor que você tem no caixa.
             </p>
           )}
         </div>
@@ -327,7 +360,7 @@ function AdjustBalanceDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancelar
           </Button>
-          <Button onClick={handleSave} disabled={saving || !veredito.pode || desejado == null}>
+          <Button onClick={handleSave} disabled={saving || !veredito.pode || digitado == null}>
             {saving ? "Salvando…" : "Salvar"}
           </Button>
         </DialogFooter>
@@ -347,9 +380,11 @@ export default function MLFluxoCaixa() {
   // OFF (padrão) = caixa alinhado com o contas a pagar do Tiny/DFC.
   const [includePurchaseForecasts, setIncludePurchaseForecasts] = useState(false);
 
-  // 🔴 A fonte dos movimentos de hoje. `saldo_final_previsto` é o número que a
-  // tela EXIBE (inicial + entradas − saídas); `initial_balance` sozinho é só a
-  // primeira parcela, e apresentá-lo como saldo é metade do engano (233-03).
+  // 🔴 A fonte dos movimentos de hoje. Depois da migration
+  // `20260827190000_saldo_ancorado_no_dia_declarado.sql`, `saldo_inicial` é a
+  // ABERTURA ROLADA — o mesmo número pelo qual o gráfico de fluxo de caixa abre —
+  // e `saldo_final_previsto` é a previsão de FECHAMENTO do dia. São perguntas
+  // diferentes e a página passa a rotulá-las como tal (233-05).
   const { data: saldoHoje, isLoading: saldoHojeLoading } = useTodayBalance();
 
   const movimentosDeHoje: MovimentosDoDia | null = saldoHoje
@@ -439,8 +474,17 @@ export default function MLFluxoCaixa() {
                   linha resolve isso, e torna o próximo desvio visível em vez de
                   misterioso. ── */}
               {saldoHoje && (
+                /* 🔴 DOIS NÚMEROS, DOIS RÓTULOS (233-05). Até aqui esta linha
+                   chamava `saldo_final_previsto` de "saldo de hoje" enquanto o
+                   gráfico abria em `saldo_inicial` — R$ 13.433,20 de divergência
+                   sob o mesmo nome, na mesma página. Nomear os dois é o que faz a
+                   decomposição parar de acusar erro onde não há. */
                 <span className="text-xs text-muted-foreground tabular-nums hidden sm:inline">
                   Saldo de hoje{" "}
+                  <span className="font-semibold text-foreground">
+                    {formatCurrency(saldoHoje.saldo_inicial)}
+                  </span>{" "}
+                  · previsão de fechamento{" "}
                   <span className="font-semibold text-foreground">
                     {formatCurrency(saldoHoje.saldo_final_previsto)}
                   </span>{" "}
@@ -516,7 +560,7 @@ export default function MLFluxoCaixa() {
         <AdjustBalanceDialog
           open={adjustOpen}
           onOpenChange={setAdjustOpen}
-          saldoExibidoHoje={saldoHoje?.saldo_final_previsto ?? null}
+          aberturaDeHoje={saldoHoje?.saldo_inicial ?? null}
           movimentos={movimentosDeHoje}
           carregandoMovimentos={saldoHojeLoading}
           orgId={currentOrg.id}
