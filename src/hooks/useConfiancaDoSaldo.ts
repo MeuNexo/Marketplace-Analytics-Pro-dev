@@ -11,13 +11,14 @@ import { useOrganization } from "@/contexts/OrganizationContext";
 import {
   HORIZONTE_MINIMO,
   confiancaDoSaldo,
+  preencherFaixa,
   resumoDaConfianca,
   seloDeProvisorio,
   type LinhaRpcConfianca,
   type PontoDeConfianca,
 } from "@/lib/confiancaDoSaldo";
 
-const HORIZONTE_MAXIMO = 30;
+export const HORIZONTE_MAXIMO = 30;
 
 export interface ConfiancaDoSaldoData {
   pontos: PontoDeConfianca[];
@@ -58,7 +59,16 @@ export function useConfiancaDoSaldo() {
       });
       if (error != null) throw new Error(error.message);
 
-      const pontos = confiancaDoSaldo((Array.isArray(data) ? data : []) as LinhaRpcConfianca[]);
+      // 🔴 233-04 — `preencherFaixa` é cinto e suspensórios DECLARADOS: a faixa
+      // que sai daqui tem sempre o mesmo tamanho da que foi pedida à RPC. Se o
+      // banco regredir e voltar a omitir horizonte sem par, o ponto retorna como
+      // `nao_medido` e a tela o declara — nunca volta a exibir seis dias como se
+      // fossem todos (o defeito que o Wesley viu em 27/08).
+      const pontos = preencherFaixa(
+        confiancaDoSaldo((Array.isArray(data) ? data : []) as LinhaRpcConfianca[]),
+        HORIZONTE_MINIMO,
+        HORIZONTE_MAXIMO,
+      );
       const resumo = resumoDaConfianca(pontos);
 
       // Dias distintos de declaração observados na amostra — é a idade da série,
