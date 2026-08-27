@@ -11,6 +11,24 @@
 // portão que só conhecesse a amostra atual passaria verde no dia em que a
 // amostra mudasse — foi exatamente assim que o 233-03 reprovou: 59 testes verdes
 // provaram uma identidade matemática correta sobre a variável errada.
+//
+// ── 233-07 Task 3 (D-14) ──────────────────────────────────────────────────────
+// 🔴 O COMPONENTE MUDOU DE PROPÓSITO, e este arquivo muda junto: as barras por
+// horizonte e os parágrafos de lacuna SAÍRAM de `CurvaDeConfianca` — viraram a
+// coluna de confiança de `SaldoEConfiancaPorDia`, linha a linha (233-TEXTO.md).
+// O portão NÃO foi esvaziado, ele MUDOU DE DONO:
+//
+//   - "PORTÃO POR FORMA — nenhum horizonte da faixa some sem palavra" (4 testes,
+//     varredura por propriedade sobre `blocosDeclarados`/`data-horizontes`) e
+//     "as duas escassezes saem separadas por NOME" (3 testes) MIGRARAM para
+//     `SaldoEConfiancaPorDia.test.tsx`, describe "🔴 PORTÃO POR FORMA — migrado
+//     de CurvaDeConfianca.test.tsx (233-07 Task 3)". A propriedade que eles
+//     provam (faixa 1..30 inteira, motivo nomeado em toda ausência, zero
+//     percentual sem par) é exatamente a mesma — só o componente sob teste
+//     mudou, porque a responsabilidade mudou.
+//   - O que fica AQUI (o veredito vem primeiro, as proibições da fase) segue
+//     porque é exatamente o que o componente ainda faz: uma frase, o `n`, e o
+//     selo de direção do viés.
 // ============================================================================
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
@@ -42,18 +60,6 @@ const calendario = (h: number) => ({
   motivo_ausencia: "serie_curta", medivel_em: somaDias(INICIO_DA_SERIE, h),
 });
 
-const semDeclaracao = (h: number) => ({
-  horizon_days: h, n_pares: 0, erro_pct: null, confianca_pct: null,
-  primeiro_alvo: null, ultimo_alvo: null,
-  motivo_ausencia: "sem_declaracao", medivel_em: null,
-});
-
-const semSerie = (h: number) => ({
-  horizon_days: h, n_pares: 0, erro_pct: null, confianca_pct: null,
-  primeiro_alvo: null, ultimo_alvo: null,
-  motivo_ausencia: "sem_serie", medivel_em: null,
-});
-
 function montar(pontos: PontoDeConfianca[]): ConfiancaDoSaldoData {
   const medidos = pontos.filter((p) => p.estado === "medido");
   const totalPares = medidos.reduce((s, p) => s + p.n_pares, 0);
@@ -78,122 +84,17 @@ const AMOSTRA_DE_HOJE = preencherFaixa(
   MAX,
 );
 
-/** Recortes arbitrários — é a propriedade que está sob teste, não a amostra. */
-const RECORTES: Array<{ nome: string; pontos: PontoDeConfianca[] }> = [
-  { nome: "a amostra real de 27/08", pontos: AMOSTRA_DE_HOJE },
-  {
-    nome: "nada medido, tudo calendário",
-    pontos: preencherFaixa(
-      confiancaDoSaldo(Array.from({ length: MAX }, (_, i) => calendario(i + 1))),
-      MIN, MAX,
-    ),
-  },
-  {
-    nome: "buracos de declaração no meio dos medidos",
-    pontos: preencherFaixa(
-      confiancaDoSaldo([
-        medido(1, 90), semDeclaracao(2), medido(3, 80), semDeclaracao(4), semDeclaracao(5),
-        medido(6, 70), ...Array.from({ length: 24 }, (_, i) => calendario(i + 7)),
-      ]),
-      MIN, MAX,
-    ),
-  },
-  {
-    nome: "organização sem série nenhuma",
-    pontos: preencherFaixa(
-      confiancaDoSaldo(Array.from({ length: MAX }, (_, i) => semSerie(i + 1))),
-      MIN, MAX,
-    ),
-  },
-  {
-    nome: "a RPC regrediu e devolveu só três horizontes",
-    pontos: preencherFaixa(confiancaDoSaldo([medido(1, 90), medido(2, 80), medido(3, 70)]), MIN, MAX),
-  },
-  {
-    nome: "tudo medido, a série madura",
-    pontos: preencherFaixa(
-      confiancaDoSaldo(Array.from({ length: MAX }, (_, i) => medido(i + 1, 50 + i, 8))),
-      MIN, MAX,
-    ),
-  },
-];
+/** Nada medido, tudo por calendário — usada no teste de "sem nenhum horizonte medido". */
+const NADA_MEDIDO = preencherFaixa(
+  confiancaDoSaldo(Array.from({ length: MAX }, (_, i) => calendario(i + 1))),
+  MIN, MAX,
+);
 
-/** Todo bloco renderizado declara QUAIS horizontes ele cobre e em que estado. */
-function blocosDeclarados(container: HTMLElement) {
-  return [...container.querySelectorAll<HTMLElement>("[data-horizontes]")].map((el) => ({
-    horizontes: el.getAttribute("data-horizontes")!.split(",").filter(Boolean).map(Number),
-    estado: el.getAttribute("data-estado") ?? "",
-    texto: el.textContent ?? "",
-  }));
-}
-
-describe("🔴 PORTÃO POR FORMA — nenhum horizonte da faixa some sem palavra", () => {
-  it.each(RECORTES)("$nome: a faixa 1..30 sai INTEIRA e sem duplicata", ({ pontos }) => {
-    const { container } = render(<CurvaDeConfiancaView data={montar(pontos)} />);
-    const cobertos = blocosDeclarados(container).flatMap((b) => b.horizontes);
-
-    expect([...cobertos].sort((a, b) => a - b)).toEqual(
-      Array.from({ length: MAX - MIN + 1 }, (_, i) => i + MIN),
-    );
-  });
-
-  it.each(RECORTES)("$nome: horizonte SEM medição aparece com motivo nomeado", ({ pontos }) => {
-    const { container } = render(<CurvaDeConfiancaView data={montar(pontos)} />);
-
-    for (const bloco of blocosDeclarados(container)) {
-      if (bloco.estado === "medido") continue;
-      // A ausência diz o MOTIVO REAL, e ele é uma dessas quatro frases.
-      expect(
-        bloco.texto,
-        `bloco ${bloco.estado} (D+${bloco.horizontes.join(", D+")}) sem motivo nomeado`,
-      ).toMatch(/medíve(l|is) a partir de|sem declaração de saldo|série de previsões congeladas ainda não existe|o banco não devolveu/);
-    }
-  });
-
-  it.each(RECORTES)("$nome: NENHUM horizonte sem par carrega percentual", ({ pontos }) => {
-    const { container } = render(<CurvaDeConfiancaView data={montar(pontos)} />);
-
-    for (const bloco of blocosDeclarados(container)) {
-      if (bloco.estado === "medido") continue;
-      // Nem percentual, nem barra: altura zero LÊ como "confiança zero".
-      expect(bloco.texto, `bloco ${bloco.estado} publicou percentual`).not.toMatch(/\d\s*%/);
-    }
-  });
-
-  it.each(RECORTES)("$nome: todo horizonte MEDIDO mostra percentual e o n", ({ pontos }) => {
-    const { container } = render(<CurvaDeConfiancaView data={montar(pontos)} />);
-    const medidosNaTela = blocosDeclarados(container).filter((b) => b.estado === "medido");
-    const medidosNoDado = pontos.filter((p) => p.estado === "medido");
-
-    expect(medidosNaTela).toHaveLength(medidosNoDado.length);
-    for (const bloco of medidosNaTela) expect(bloco.texto).toMatch(/\d\s*%/);
-  });
-});
-
-describe("as duas escassezes saem separadas por NOME", () => {
-  it("🔴 idade da série vira calendário COM data — e diz quando a série começou", () => {
-    render(<CurvaDeConfiancaView data={montar(AMOSTRA_DE_HOJE)} />);
-    // D+7 abre em 28/08 porque a série começou em 21/08.
-    expect(screen.getByText(/medíveis a partir de 28\/08/)).toBeInTheDocument();
-    expect(screen.getByText(/21\/08/)).toBeInTheDocument();
-  });
-
-  it("🔴 falta de declaração NÃO ganha data — esperar não resolve, declarar resolve", () => {
-    const { container } = render(
-      <CurvaDeConfiancaView data={montar(RECORTES[2].pontos)} />,
-    );
-    const bloco = blocosDeclarados(container).find((b) => b.estado === "sem_declaracao");
-    expect(bloco?.texto).toMatch(/sem declaração de saldo/);
-    expect(bloco?.texto).not.toMatch(/a partir de/);
-  });
-
-  it("os dois motivos nunca compartilham o mesmo bloco", () => {
-    const { container } = render(<CurvaDeConfiancaView data={montar(RECORTES[2].pontos)} />);
-    const estados = new Set(blocosDeclarados(container).map((b) => b.estado));
-    expect(estados.has("serie_curta")).toBe(true);
-    expect(estados.has("sem_declaracao")).toBe(true);
-  });
-});
+/** Amostra madura — usada no teste de "amostra grande tira a ressalva". */
+const TUDO_MEDIDO = preencherFaixa(
+  confiancaDoSaldo(Array.from({ length: MAX }, (_, i) => medido(i + 1, 50 + i, 8))),
+  MIN, MAX,
+);
 
 describe("o veredito vem PRIMEIRO — é ele que responde 'até onde posso confiar'", () => {
   it("diz até que prazo há medição, quanto é, e sobre quantos pares", () => {
@@ -210,21 +111,35 @@ describe("o veredito vem PRIMEIRO — é ele que responde 'até onde posso confi
   });
 
   it("com amostra grande a ressalva de tendência sai de cena", () => {
-    render(<CurvaDeConfiancaView data={montar(RECORTES[5].pontos)} />);
+    render(<CurvaDeConfiancaView data={montar(TUDO_MEDIDO)} />);
     expect(screen.getByTestId("veredito-confianca").textContent).not.toMatch(/não é tendência/i);
   });
 
-  it("sem nenhum horizonte medido o veredito diz isso — e a faixa continua declarada", () => {
-    const { container } = render(<CurvaDeConfiancaView data={montar(RECORTES[1].pontos)} />);
+  it("sem nenhum horizonte medido o veredito diz isso", () => {
+    render(<CurvaDeConfiancaView data={montar(NADA_MEDIDO)} />);
     expect(screen.getByTestId("veredito-confianca").textContent).toMatch(/ainda não há|nenhum/i);
-    expect(blocosDeclarados(container).flatMap((b) => b.horizontes)).toHaveLength(MAX - MIN + 1);
+  });
+});
+
+describe("233-07 Task 3 — o que SAIU da curva não aparece mais aqui", () => {
+  it("nenhuma barra por horizonte e nenhum parágrafo de lacuna sobrevive — não há `[data-horizontes]`", () => {
+    const { container } = render(<CurvaDeConfiancaView data={montar(AMOSTRA_DE_HOJE)} />);
+    expect(container.querySelectorAll("[data-horizontes]")).toHaveLength(0);
+  });
+
+  it("o `n pares · dias de série` continua à vista, junto do rótulo", () => {
+    render(<CurvaDeConfiancaView data={montar(AMOSTRA_DE_HOJE)} />);
+    expect(screen.getByText(/pares? ·/)).toBeInTheDocument();
   });
 });
 
 describe("as proibições da fase continuam de pé", () => {
-  it("o selo de provisório fica, e continua dizendo a direção do viés", () => {
-    render(<CurvaDeConfiancaView data={montar(AMOSTRA_DE_HOJE)} />);
+  it("o selo de provisório fica, marcado `data-aviso=\"vies-provisorio\"`, e diz a direção do viés", () => {
+    const { container } = render(<CurvaDeConfiancaView data={montar(AMOSTRA_DE_HOJE)} />);
     expect(screen.getByText(/PIOR/)).toBeInTheDocument();
+    const aviso = container.querySelector('[data-aviso="vies-provisorio"]');
+    expect(aviso).not.toBeNull();
+    expect(aviso?.textContent).toMatch(/PIOR/);
   });
 
   it("nenhum limiar de tolerância, nenhum semáforo: sem 'confiável' nem cor de veredito", () => {

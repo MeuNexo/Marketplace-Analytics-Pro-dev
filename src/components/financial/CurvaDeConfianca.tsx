@@ -38,65 +38,25 @@
 // pode vir nulo (as datas de alvo) nunca vira chave: com `strictNullChecks: false`
 // o erro não aparece na compilação e o agrupamento quebra em silêncio
 // (`feedback_garment_key_nulavel_react`).
+//
+// ── 233-07 (D-14) ────────────────────────────────────────────────────────────
+// 🔴 A CURVA MUDA DE PROPÓSITO, E ISTO É ENTREGA, NÃO PERDA. Com a tabela
+// `SaldoEConfiancaPorDia` no ar (D-13), manter as seis barras por horizonte e
+// os parágrafos de lacuna aqui, logo ACIMA de trinta linhas que dizem a mesma
+// coisa, é exatamente a densificação que o D-14 manda desfazer — dois lugares
+// respondendo a mesma pergunta é como a página virou parede nas fases 224/230.
+//
+// O que SAIU (nenhum dado perdido, tudo virou coluna da tabela nova):
+//   - as barras por horizonte (`medidos.map(...)`)
+//   - os parágrafos de lacuna (`agruparAusencias` + `textoDaAusencia` por bloco)
+// O que FICA: o veredito de uma frase (é ele que dispara ação, régua da 230),
+// o `n pares · dias de série`, e o selo de provisório com a direção do viés —
+// os três avisos que protegem a leitura de um número que ainda está À VISTA
+// aqui (o percentual do veredito). Ver `233-TEXTO.md`.
 // ============================================================================
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConfiancaDoSaldo, type ConfiancaDoSaldoData } from "@/hooks/useConfiancaDoSaldo";
-import {
-  textoDaAusencia,
-  type EstadoDaConfianca,
-  type MotivoAusencia,
-  type PontoDeConfianca,
-} from "@/lib/confiancaDoSaldo";
-
-interface BlocoDeAusencia {
-  estado: EstadoDaConfianca;
-  de: number;
-  ate: number;
-  horizontes: number[];
-  medivel_em: string | null;
-  /** O motivo CRU que a RPC devolveu, sem tradução. Ele vai para o DOM em
-   *  `data-motivo`: quando a tela for auditada, o que se lê é o que o banco
-   *  disse — não a interpretação que o front deu a ele. */
-  motivo_ausencia: MotivoAusencia | null;
-}
-
-/** Agrupa horizontes ausentes CONTÍGUOS e de mesmo estado numa faixa só. É o que
- *  evita as 24 barras vazias que a 230 rejeitaria. */
-function agruparAusencias(pontos: PontoDeConfianca[]): Array<PontoDeConfianca | BlocoDeAusencia> {
-  const saida: Array<PontoDeConfianca | BlocoDeAusencia> = [];
-  let atual: BlocoDeAusencia | null = null;
-
-  const fechar = () => {
-    if (atual != null) saida.push(atual);
-    atual = null;
-  };
-
-  for (const p of pontos) {
-    if (p.estado === "medido") {
-      fechar();
-      saida.push(p);
-      continue;
-    }
-    const contiguo = atual != null && atual.estado === p.estado && atual.ate + 1 === p.horizonte;
-    if (!contiguo) fechar();
-    if (atual == null) {
-      atual = {
-        estado: p.estado, de: p.horizonte, ate: p.horizonte,
-        horizontes: [p.horizonte], medivel_em: p.medivel_em,
-        motivo_ausencia: p.motivo_ausencia,
-      };
-    } else {
-      atual.ate = p.horizonte;
-      atual.horizontes.push(p.horizonte);
-      // A data da faixa é a MAIS CEDO do grupo: é quando ela começa a abrir.
-      if (atual.medivel_em == null || (p.medivel_em != null && p.medivel_em < atual.medivel_em)) {
-        atual.medivel_em = atual.medivel_em ?? p.medivel_em;
-      }
-    }
-  }
-  fechar();
-  return saida;
-}
+import type { PontoDeConfianca } from "@/lib/confiancaDoSaldo";
 
 /** O veredito. É ele que responde "até onde posso confiar" sem expandir nada. */
 function textoDoVeredito(pontos: PontoDeConfianca[]): string {
@@ -141,8 +101,6 @@ export function CurvaDeConfiancaView({ data, isLoading, error }: CurvaDeConfianc
   }
 
   const pontos = data?.pontos ?? [];
-  const blocos = agruparAusencias(pontos);
-  const medidos = pontos.filter((p) => p.estado === "medido");
 
   return (
     <div className="space-y-2" data-curva-confianca>
@@ -169,78 +127,21 @@ export function CurvaDeConfiancaView({ data, isLoading, error }: CurvaDeConfianc
         {textoDoVeredito(pontos)}
       </p>
 
-      {/* ── 2. Os medidos, individualmente. ── */}
-      {medidos.length > 0 && (
-        <div className="flex items-end gap-1">
-          {pontos
-            .filter((p) => p.estado === "medido")
-            .map((p) => {
-              const pct = p.confianca_pct ?? 0;
-              return (
-                // A chave é o HORIZONTE — nunca uma data, que pode vir nula.
-                <div
-                  key={p.horizonte}
-                  data-horizontes={String(p.horizonte)}
-                  data-estado="medido"
-                  className="flex flex-1 flex-col items-center gap-1"
-                >
-                  <span className="text-[10px] tabular-nums text-muted-foreground">
-                    {Math.round(pct)}%
-                  </span>
-                  <div
-                    className="w-full rounded-sm bg-primary"
-                    style={{
-                      // Altura proporcional e opacidade contínua: sem semáforo,
-                      // que seria limiar de tolerância disfarçado de cor.
-                      height: `${Math.max(4, (pct / 100) * 48)}px`,
-                      opacity: 0.35 + (pct / 100) * 0.65,
-                    }}
-                    title={`D+${p.horizonte}: ${pct}% de confiança · erro ${p.erro_pct}% · ${p.n_pares} par(es)`}
-                  />
-                  <span className="text-[10px] tabular-nums text-muted-foreground">
-                    D+{p.horizonte}
-                  </span>
-                  <span className="text-[9px] tabular-nums text-muted-foreground/70">
-                    n {p.n_pares}
-                  </span>
-                </div>
-              );
-            })}
-        </div>
-      )}
-
-      {/* ── 3. As lacunas, DECLARADAS. Uma faixa por motivo, com a data quando o
-             motivo é calendário. Nunca 24 barras vazias — altura zero LÊ como
-             "confiança zero", e a 230 rejeitou a parede densa. ── */}
-      {blocos.some((b) => !("confianca_pct" in b)) && (
-        <div className="space-y-1 border-t border-border/40 pt-2">
-          {blocos.map((b) => {
-            if ("confianca_pct" in b) return null;
-            const bloco = b as BlocoDeAusencia;
-            return (
-              <p
-                key={bloco.de}
-                data-horizontes={bloco.horizontes.join(",")}
-                data-estado={bloco.estado}
-                data-motivo={bloco.motivo_ausencia ?? undefined}
-                className="text-[11px] leading-snug text-muted-foreground"
-              >
-                {textoDaAusencia({
-                  estado: bloco.estado,
-                  de: bloco.de,
-                  ate: bloco.ate,
-                  medivel_em: bloco.medivel_em,
-                })}
-              </p>
-            );
-          })}
-        </div>
-      )}
+      {/* ── 2. As barras por horizonte e os parágrafos de lacuna SAÍRAM daqui
+             (233-07, D-14) — viraram a coluna de confiança de
+             `SaldoEConfiancaPorDia`, linha a linha, sem perder um texto
+             sequer (`233-TEXTO.md`). Manter os dois aqui, acima de uma
+             tabela de 30 linhas que já responde a mesma pergunta, era a
+             densificação que o D-14 pede para desfazer. ── */}
 
       {data?.selo && (
-        // 🔴 O selo diz a DIREÇÃO do viés. "Provisório" sozinho ensina a ler o
-        // número como se fosse conservador — e ele é otimista.
-        <p className="text-[11px] leading-snug text-amber-600 dark:text-amber-500">
+        // 🔴 O selo diz a DIREÇÃO do viés — é um dos avisos que NÃO colapsam
+        // (233-07 Task 3): "provisório" sozinho ensina a ler o número como se
+        // fosse conservador, e ele é otimista.
+        <p
+          data-aviso="vies-provisorio"
+          className="text-[11px] leading-snug text-amber-600 dark:text-amber-500"
+        >
           ⚠️ {data.selo}
         </p>
       )}

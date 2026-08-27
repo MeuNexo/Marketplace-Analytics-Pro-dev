@@ -35,7 +35,7 @@ import { Settings2, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useTodayBalance } from "@/hooks/useTodayBalance";
+import { useTodayBalance, type TodayBalanceData } from "@/hooks/useTodayBalance";
 
 const currFmt = (v: number): string =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -68,9 +68,23 @@ function Linha({
   );
 }
 
-export function SaldoAgoraCard({ podeCorrigir = false, onCorrigir }: SaldoAgoraCardProps) {
-  const { data: b, isLoading, error } = useTodayBalance();
+/** 🔴 233-07 Task 3 — a parte APRESENTACIONAL, extraída para que
+ *  `avisosQueNaoColapsam.test.tsx` renderize o aviso `card-vs-grafico` sem
+ *  montar `QueryClientProvider` nem mocar o Supabase (mesmo padrão de
+ *  `CurvaDeConfiancaView`). O invólucro `SaldoAgoraCard` segue ligando o hook. */
+export interface SaldoAgoraCardViewProps extends SaldoAgoraCardProps {
+  data: TodayBalanceData | null | undefined;
+  isLoading?: boolean;
+  error?: unknown;
+}
 
+export function SaldoAgoraCardView({
+  data: b,
+  isLoading,
+  error,
+  podeCorrigir = false,
+  onCorrigir,
+}: SaldoAgoraCardViewProps) {
   if (isLoading) {
     return (
       <Card>
@@ -184,8 +198,11 @@ export function SaldoAgoraCard({ podeCorrigir = false, onCorrigir }: SaldoAgoraC
           </div>
         )}
 
-        {/* 🔴 A DISTINÇÃO CARD × GRÁFICO — entrega, não enfeite. Ver o cabeçalho. */}
-        <p className="text-xs text-muted-foreground leading-snug">
+        {/* 🔴 A DISTINÇÃO CARD × GRÁFICO — entrega, não enfeite. Ver o
+            cabeçalho. 233-07 (D-14): é um dos três avisos que NÃO colapsam —
+            `data-aviso="card-vs-grafico"` é o que o portão
+            `avisosQueNaoColapsam.test.tsx` varre. */}
+        <p data-aviso="card-vs-grafico" className="text-xs text-muted-foreground leading-snug">
           O <strong>gráfico</strong> abaixo começa na{" "}
           <strong>abertura do dia</strong> ({currFmt(b.saldo_inicial)}), não neste número: ele
           projeta o futuro a partir do início de hoje. O saldo acima já inclui o que entrou e
@@ -193,5 +210,19 @@ export function SaldoAgoraCard({ podeCorrigir = false, onCorrigir }: SaldoAgoraC
         </p>
       </CardContent>
     </Card>
+  );
+}
+
+/** O invólucro: liga o hook e entrega os dados à parte apresentacional. */
+export function SaldoAgoraCard({ podeCorrigir = false, onCorrigir }: SaldoAgoraCardProps) {
+  const { data, isLoading, error } = useTodayBalance();
+  return (
+    <SaldoAgoraCardView
+      data={data}
+      isLoading={isLoading}
+      error={error}
+      podeCorrigir={podeCorrigir}
+      onCorrigir={onCorrigir}
+    />
   );
 }

@@ -161,6 +161,7 @@ export interface CashGapTableProps {
 
 export function CashGapTable({ includePurchaseForecasts = false }: CashGapTableProps) {
   const [demaisAbertas, setDemaisAbertas] = useState(false);
+  const [saibaMaisAberto, setSaibaMaisAberto] = useState(false);
 
   const { hoje, inicio, fim } = useMemo(() => {
     const agora = new Date();
@@ -347,26 +348,42 @@ export function CashGapTable({ includePurchaseForecasts = false }: CashGapTableP
           </Collapsible>
         )}
 
-        {/* ── Procedência: o que a banda é, e até onde ela vale ── */}
-        <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
-          O pior caso é o saldo projetado menos o erro histórico daquele horizonte — erro é o
-          que a agenda prometeu menos o que entrou, então o cenário ruim é o de maior promessa
-          não cumprida. Ele é publicado até D+{ULTIMO_HORIZONTE_COMPARAVEL}, que é até onde a
-          projeção lê a agenda do Mercado Pago; a partir do 10º dia ela usa a média de 15 dias
-          como piso, e o histórico de erro não mede o piso.{" "}
-          <span className="font-medium">
-            A pergunta olha {HORIZONTE_TESOURARIA_SEMANAS} semanas, a medição de pior caso alcança{" "}
-            {ULTIMO_HORIZONTE_COMPARAVEL} dias
-          </span>{" "}
-          — ampliar a janela não amplia a validade da banda, e por isso a esmagadora maioria das
-          datas aparece sem pior caso, cada uma dizendo o motivo.
-          {erroBanda && (
-            <span className="block mt-1 text-destructive">
-              O histórico de erro não pôde ser lido agora — as datas acima estão sem pior caso
-              por falha de leitura, não por ausência de medição.
-            </span>
-          )}
-        </p>
+        {/* 🔴 A ausência de banda NOMEIA o motivo real (falha de leitura, não
+            ausência de medição) — fica À VISTA, não é procedência. */}
+        {erroBanda && (
+          <p className="text-[11px] text-destructive">
+            O histórico de erro não pôde ser lido agora — as datas acima estão sem pior caso
+            por falha de leitura, não por ausência de medição.
+          </p>
+        )}
+
+        {/* ── 233-07 (D-14) — a procedência (224-07) é EXPLICAÇÃO: o que a
+            banda É e até onde ela vale, não proteção de leitura de número à
+            vista. Vai para o "saiba mais" — nenhuma frase foi apagada
+            (233-TEXTO.md). ── */}
+        <Collapsible open={saibaMaisAberto} onOpenChange={setSaibaMaisAberto}>
+          <CollapsibleTrigger className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
+            <ChevronDown
+              className={`w-3 h-3 transition-transform ${saibaMaisAberto ? "rotate-180" : ""}`}
+            />
+            Saiba mais
+          </CollapsibleTrigger>
+          <CollapsibleContent className="pt-2">
+            <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
+              O pior caso é o saldo projetado menos o erro histórico daquele horizonte — erro é o
+              que a agenda prometeu menos o que entrou, então o cenário ruim é o de maior promessa
+              não cumprida. Ele é publicado até D+{ULTIMO_HORIZONTE_COMPARAVEL}, que é até onde a
+              projeção lê a agenda do Mercado Pago; a partir do 10º dia ela usa a média de 15 dias
+              como piso, e o histórico de erro não mede o piso.{" "}
+              <span className="font-medium">
+                A pergunta olha {HORIZONTE_TESOURARIA_SEMANAS} semanas, a medição de pior caso alcança{" "}
+                {ULTIMO_HORIZONTE_COMPARAVEL} dias
+              </span>{" "}
+              — ampliar a janela não amplia a validade da banda, e por isso a esmagadora maioria das
+              datas aparece sem pior caso, cada uma dizendo o motivo.
+            </p>
+          </CollapsibleContent>
+        </Collapsible>
       </CardContent>
     </Card>
   );

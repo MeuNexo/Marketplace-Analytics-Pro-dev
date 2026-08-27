@@ -10,7 +10,7 @@
 import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
 import { SaldoEConfiancaPorDiaView } from "./SaldoEConfiancaPorDia";
-import type { PontoDeConfianca } from "@/lib/confiancaDoSaldo";
+import { confiancaDoSaldo, preencherFaixa, type PontoDeConfianca } from "@/lib/confiancaDoSaldo";
 import type { CashFlowDataPoint } from "@/hooks/useCashFlowData";
 
 // Data fixa: o componente aceita `hoje` por prop exatamente para o teste não
@@ -183,5 +183,192 @@ describe("SaldoEConfiancaPorDiaView — carregando", () => {
   it("estado de carregando não lança e não é tela em branco", () => {
     const { container } = render(<SaldoEConfiancaPorDiaView serie={null} pontos={null} isLoading />);
     expect(container.innerHTML).not.toBe("");
+  });
+});
+
+// ============================================================================
+// 🔴 PORTÃO POR FORMA — migrado de `CurvaDeConfianca.test.tsx` (233-07 Task 3)
+//
+// Estas asserções viviam em `CurvaDeConfianca.test.tsx` e provavam, sobre as
+// barras por horizonte e os parágrafos de lacuna daquele componente: a faixa
+// 1..30 sai INTEIRA sem duplicata, todo horizonte SEM medição carrega motivo
+// nomeado, NENHUM horizonte sem par publica percentual, e todo horizonte
+// MEDIDO mostra percentual e o `n`. As barras e os parágrafos SAÍRAM de
+// `CurvaDeConfianca` e viraram a coluna de confiança desta tabela — a
+// PROPRIEDADE é a mesma, só o componente sob teste mudou porque a
+// responsabilidade mudou (233-TEXTO.md). O portão não foi esvaziado.
+// ============================================================================
+
+const INICIO_DA_SERIE = "2026-08-21";
+
+const somaDiasDeIso = (iso: string, dias: number): string => {
+  const [a, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(a, m - 1, d + dias)).toISOString().slice(0, 10);
+};
+
+const medidoRpc = (h: number, conf: number, n = 1) => ({
+  horizon_days: h, n_pares: n, erro_pct: 100 - conf, confianca_pct: conf,
+  primeiro_alvo: "2026-08-27", ultimo_alvo: "2026-08-27",
+  motivo_ausencia: null, medivel_em: null,
+});
+
+const calendarioRpc = (h: number) => ({
+  horizon_days: h, n_pares: 0, erro_pct: null, confianca_pct: null,
+  primeiro_alvo: null, ultimo_alvo: null,
+  motivo_ausencia: "serie_curta", medivel_em: somaDiasDeIso(INICIO_DA_SERIE, h),
+});
+
+const semDeclaracaoRpc = (h: number) => ({
+  horizon_days: h, n_pares: 0, erro_pct: null, confianca_pct: null,
+  primeiro_alvo: null, ultimo_alvo: null,
+  motivo_ausencia: "sem_declaracao", medivel_em: null,
+});
+
+const semSerieRpc = (h: number) => ({
+  horizon_days: h, n_pares: 0, erro_pct: null, confianca_pct: null,
+  primeiro_alvo: null, ultimo_alvo: null,
+  motivo_ausencia: "sem_serie", medivel_em: null,
+});
+
+/** Recortes arbitrários — os mesmos seis cenários do arquivo de origem. A
+ *  propriedade sob teste é sobre a FORMA, não sobre esta amostra específica. */
+const RECORTES_MIGRADOS: Array<{ nome: string; pontos: PontoDeConfianca[] }> = [
+  {
+    nome: "a amostra real de 27/08",
+    pontos: preencherFaixa(
+      confiancaDoSaldo([
+        medidoRpc(1, 65.9), medidoRpc(2, 49.7), medidoRpc(3, 78.3),
+        medidoRpc(4, 92.8), medidoRpc(5, 94.8), medidoRpc(6, 85.2),
+        ...Array.from({ length: 24 }, (_, i) => calendarioRpc(i + 7)),
+      ]),
+      1, 30,
+    ),
+  },
+  {
+    nome: "nada medido, tudo calendário",
+    pontos: preencherFaixa(
+      confiancaDoSaldo(Array.from({ length: 30 }, (_, i) => calendarioRpc(i + 1))),
+      1, 30,
+    ),
+  },
+  {
+    nome: "buracos de declaração no meio dos medidos",
+    pontos: preencherFaixa(
+      confiancaDoSaldo([
+        medidoRpc(1, 90), semDeclaracaoRpc(2), medidoRpc(3, 80), semDeclaracaoRpc(4),
+        semDeclaracaoRpc(5), medidoRpc(6, 70),
+        ...Array.from({ length: 24 }, (_, i) => calendarioRpc(i + 7)),
+      ]),
+      1, 30,
+    ),
+  },
+  {
+    nome: "organização sem série nenhuma",
+    pontos: preencherFaixa(
+      confiancaDoSaldo(Array.from({ length: 30 }, (_, i) => semSerieRpc(i + 1))),
+      1, 30,
+    ),
+  },
+  {
+    nome: "a RPC regrediu e devolveu só três horizontes",
+    pontos: preencherFaixa(
+      confiancaDoSaldo([medidoRpc(1, 90), medidoRpc(2, 80), medidoRpc(3, 70)]),
+      1, 30,
+    ),
+  },
+  {
+    nome: "tudo medido, a série madura",
+    pontos: preencherFaixa(
+      confiancaDoSaldo(Array.from({ length: 30 }, (_, i) => medidoRpc(i + 1, 50 + i, 8))),
+      1, 30,
+    ),
+  },
+];
+
+function linhasDaTabela(container: HTMLElement) {
+  return [...container.querySelectorAll<HTMLElement>("[data-horizonte]")].map((el) => ({
+    horizonte: Number(el.getAttribute("data-horizonte")),
+    faixa: el.getAttribute("data-faixa") ?? "",
+    texto: el.textContent ?? "",
+  }));
+}
+
+describe("🔴 PORTÃO POR FORMA — migrado de CurvaDeConfianca.test.tsx (233-07 Task 3)", () => {
+  it.each(RECORTES_MIGRADOS)("$nome: a faixa 1..30 sai INTEIRA e sem duplicata", ({ pontos }) => {
+    const { container } = render(
+      <SaldoEConfiancaPorDiaView serie={[]} pontos={pontos} hoje={HOJE_ISO} />,
+    );
+    const horizontes = linhasDaTabela(container).map((l) => l.horizonte);
+    expect(horizontes.sort((a, b) => a - b)).toEqual(Array.from({ length: 30 }, (_, i) => i + 1));
+  });
+
+  it.each(RECORTES_MIGRADOS)("$nome: horizonte SEM medição aparece com motivo nomeado", ({ pontos }) => {
+    const { container } = render(
+      <SaldoEConfiancaPorDiaView serie={[]} pontos={pontos} hoje={HOJE_ISO} />,
+    );
+    for (const linha of linhasDaTabela(container)) {
+      const ponto = pontos.find((p) => p.horizonte === linha.horizonte);
+      if (ponto?.estado === "medido" && ponto.confianca_pct != null) continue;
+      // A ausência diz o MOTIVO REAL, e ele é uma dessas quatro frases.
+      expect(
+        linha.texto,
+        `linha D+${linha.horizonte} sem motivo nomeado`,
+      ).toMatch(/medíve(l|is) a partir de|sem declaração de saldo|série de previsões congeladas ainda não existe|o banco não devolveu/);
+    }
+  });
+
+  it.each(RECORTES_MIGRADOS)("$nome: NENHUM horizonte sem par carrega percentual", ({ pontos }) => {
+    const { container } = render(
+      <SaldoEConfiancaPorDiaView serie={[]} pontos={pontos} hoje={HOJE_ISO} />,
+    );
+    for (const linha of linhasDaTabela(container)) {
+      const ponto = pontos.find((p) => p.horizonte === linha.horizonte);
+      if (ponto?.estado === "medido" && ponto.confianca_pct != null) continue;
+      expect(linha.texto, `linha D+${linha.horizonte} publicou percentual`).not.toMatch(/\d\s*%/);
+    }
+  });
+
+  it.each(RECORTES_MIGRADOS)("$nome: todo horizonte MEDIDO mostra percentual e o n", ({ pontos }) => {
+    const { container } = render(
+      <SaldoEConfiancaPorDiaView serie={[]} pontos={pontos} hoje={HOJE_ISO} />,
+    );
+    const linhas = linhasDaTabela(container);
+    const medidos = pontos.filter((p) => p.estado === "medido" && p.confianca_pct != null);
+    for (const p of medidos) {
+      const linha = linhas.find((l) => l.horizonte === p.horizonte);
+      expect(linha?.texto).toMatch(/\d\s*%/);
+      expect(linha?.texto).toMatch(new RegExp(`n\\s*${p.n_pares}`));
+    }
+  });
+});
+
+describe("as duas escassezes saem separadas por NOME — migrado de CurvaDeConfianca.test.tsx", () => {
+  it("🔴 idade da série vira calendário COM data — e diz quando a série começou", () => {
+    const { container } = render(
+      <SaldoEConfiancaPorDiaView serie={[]} pontos={RECORTES_MIGRADOS[0].pontos} hoje={HOJE_ISO} />,
+    );
+    const d7 = container.querySelector('[data-horizonte="7"]');
+    // D+7 abre em 28/08 porque a série começou em 21/08.
+    expect(d7?.textContent).toMatch(/fica medível a partir de 28\/08/);
+    expect(d7?.textContent).toMatch(/21\/08/);
+  });
+
+  it("🔴 falta de declaração NÃO ganha data — esperar não resolve, declarar resolve", () => {
+    const { container } = render(
+      <SaldoEConfiancaPorDiaView serie={[]} pontos={RECORTES_MIGRADOS[2].pontos} hoje={HOJE_ISO} />,
+    );
+    const d2 = container.querySelector('[data-horizonte="2"]');
+    expect(d2?.textContent).toMatch(/sem declaração de saldo/);
+    expect(d2?.textContent).not.toMatch(/a partir de/);
+  });
+
+  it("os dois motivos nunca compartilham a mesma linha", () => {
+    const { container } = render(
+      <SaldoEConfiancaPorDiaView serie={[]} pontos={RECORTES_MIGRADOS[2].pontos} hoje={HOJE_ISO} />,
+    );
+    const d2 = container.querySelector('[data-horizonte="2"]')?.textContent ?? "";
+    const d7 = container.querySelector('[data-horizonte="7"]')?.textContent ?? "";
+    expect(d2).toMatch(/sem declaração/);
+    expect(d7).toMatch(/medíve(l|is) a partir de/);
   });
 });

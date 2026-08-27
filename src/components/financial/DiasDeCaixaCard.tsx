@@ -18,9 +18,11 @@
 // Fase 224).
 // ============================================================================
 
-import { Wallet } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, Wallet } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useProjectedBalance } from "@/hooks/useProjectedBalance";
 import { useTreasuryPanel } from "@/hooks/useTreasuryPanel";
 import { useFinancialSettings } from "@/hooks/useFinancialSettings";
@@ -53,6 +55,7 @@ export interface DiasDeCaixaCardProps {
 }
 
 export function DiasDeCaixaCard({ includePurchaseForecasts = false }: DiasDeCaixaCardProps) {
+  const [saibaMaisAberto, setSaibaMaisAberto] = useState(false);
   const { data: saldo, isLoading: loadingSaldo, error: errorSaldo } =
     useProjectedBalance(90, includePurchaseForecasts);
   const { data: tesouraria, isLoading: loadingTesouraria, error: errorTesouraria } =
@@ -144,17 +147,31 @@ export function DiasDeCaixaCard({ includePurchaseForecasts = false }: DiasDeCaix
           </p>
         )}
 
-        {/* ── Rodapé de procedência ── */}
-        <p className="text-[11px] text-muted-foreground/70 leading-relaxed border-t border-border/40 pt-3">
-          O divisor é a média das saídas efetivamente pagas dos últimos 90 dias, e o cálculo
-          supõe zero entrada no período. Referência de literatura para varejo com estoque:{" "}
-          {FAIXA_REFERENCIA_VAREJO.minimo} a {FAIXA_REFERENCIA_VAREJO.maximo} dias — citação, não
-          meta nem limiar de alerta.{" "}
-          <span className="block mt-1">
-            Este número <strong>não é o Runway</strong>: o Runway (meses) usa o burn líquido, já
-            descontando o que entra, e continua existindo no painel de conferência.
-          </span>
-        </p>
+        {/* ── 233-07 (D-14) — o rodapé de procedência (230-01/230-03) é
+            EXPLICAÇÃO, não aviso: ensina COMO o divisor foi montado, não
+            protege a leitura de um número que já está à vista. Vai para o
+            "saiba mais" do próprio card — nenhuma palavra foi apagada
+            (233-TEXTO.md). ── */}
+        <Collapsible open={saibaMaisAberto} onOpenChange={setSaibaMaisAberto}>
+          <CollapsibleTrigger className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground border-t border-border/40 pt-3 w-full">
+            <ChevronDown
+              className={`w-3 h-3 transition-transform ${saibaMaisAberto ? "rotate-180" : ""}`}
+            />
+            Saiba mais
+          </CollapsibleTrigger>
+          <CollapsibleContent className="pt-2">
+            <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
+              O divisor é a média das saídas efetivamente pagas dos últimos 90 dias, e o cálculo
+              supõe zero entrada no período. Referência de literatura para varejo com estoque:{" "}
+              {FAIXA_REFERENCIA_VAREJO.minimo} a {FAIXA_REFERENCIA_VAREJO.maximo} dias — citação, não
+              meta nem limiar de alerta.{" "}
+              <span className="block mt-1">
+                Este número <strong>não é o Runway</strong>: o Runway (meses) usa o burn líquido, já
+                descontando o que entra, e continua existindo no painel de conferência.
+              </span>
+            </p>
+          </CollapsibleContent>
+        </Collapsible>
       </CardContent>
     </Card>
   );

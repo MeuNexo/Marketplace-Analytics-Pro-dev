@@ -17,9 +17,11 @@
 // faz com `resolveSeloPromo`.
 // ============================================================================
 
-import { Boxes } from "lucide-react";
+import { useState } from "react";
+import { Boxes, ChevronDown } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useCashCycle } from "@/hooks/useCashCycle";
 import { useProjectedBalance } from "@/hooks/useProjectedBalance";
 import {
@@ -61,6 +63,7 @@ interface CicloCaixaCardProps {
 }
 
 export function CicloCaixaCard({ includePurchaseForecasts = false }: CicloCaixaCardProps) {
+  const [saibaMaisAberto, setSaibaMaisAberto] = useState(false);
   const { data: insumos, isLoading: carregandoCiclo, error: erroCiclo } = useCashCycle();
   const {
     data: saldo,
@@ -165,29 +168,44 @@ export function CicloCaixaCard({ includePurchaseForecasts = false }: CicloCaixaC
           </p>
         </div>
 
-        {/* ── Procedência: de onde vem cada número, e até onde ele vale ── */}
-        <div className="text-[11px] text-muted-foreground/70 leading-relaxed border-t border-border/40 pt-3 space-y-1">
-          {ciclo.frasesDeRessalva.map((frase) => (
-            <p key={frase}>{frase}</p>
-          ))}
-          <p>
-            O estoque é o físico do Tiny — os três depósitos somados, anunciado ou não —, porque
-            o dinheiro foi gasto em toda a mercadoria. Não vem do cache de anúncios do Mercado
-            Livre: ele enxerga só o que está anunciado e ativo (1.434 das 2.995 unidades, medido
-            em 22/08) e ainda carrega 9 anúncios fechados no ML que seguem ativos ali, com 94
-            unidades que não existem.
-          </p>
-          <p>
-            O caixa em conta descende de um ajuste manual de saldo; a idade desse ajuste está
-            declarada no bloco de dias de caixa.
-          </p>
-          {erroSaldo && (
-            <p className="text-destructive">
-              O saldo em conta não pôde ser lido agora — a comparação com o estoque está ausente
-              por falha de leitura, não por falta de medição.
+        {/* ── 233-07 (D-14) — a procedência (230-03) é EXPLICAÇÃO: de onde
+            vem cada número e até onde ele vale, não proteção de leitura de
+            um número à vista. Vai para o "saiba mais" — nenhuma frase foi
+            apagada (233-TEXTO.md). ── */}
+        <Collapsible open={saibaMaisAberto} onOpenChange={setSaibaMaisAberto}>
+          <CollapsibleTrigger className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground border-t border-border/40 pt-3 w-full">
+            <ChevronDown
+              className={`w-3 h-3 transition-transform ${saibaMaisAberto ? "rotate-180" : ""}`}
+            />
+            Saiba mais
+          </CollapsibleTrigger>
+          <CollapsibleContent className="pt-2 space-y-1 text-[11px] text-muted-foreground/70 leading-relaxed">
+            {ciclo.frasesDeRessalva.map((frase) => (
+              <p key={frase}>{frase}</p>
+            ))}
+            <p>
+              O estoque é o físico do Tiny — os três depósitos somados, anunciado ou não —, porque
+              o dinheiro foi gasto em toda a mercadoria. Não vem do cache de anúncios do Mercado
+              Livre: ele enxerga só o que está anunciado e ativo (1.434 das 2.995 unidades, medido
+              em 22/08) e ainda carrega 9 anúncios fechados no ML que seguem ativos ali, com 94
+              unidades que não existem.
             </p>
-          )}
-        </div>
+            <p>
+              O caixa em conta descende de um ajuste manual de saldo; a idade desse ajuste está
+              declarada no bloco de dias de caixa.
+            </p>
+          </CollapsibleContent>
+        </Collapsible>
+
+        {/* 🔴 NÃO é procedência — é a ausência NOMEANDO o motivo real de a
+            comparação acima faltar agora (regra da casa, 21/08). Erro de
+            leitura fica À VISTA, mesmo padrão de todo outro card da aba. */}
+        {erroSaldo && (
+          <p className="text-[11px] text-destructive">
+            O saldo em conta não pôde ser lido agora — a comparação com o estoque está ausente
+            por falha de leitura, não por falta de medição.
+          </p>
+        )}
       </CardContent>
     </Card>
   );

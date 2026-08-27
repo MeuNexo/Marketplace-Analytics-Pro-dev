@@ -258,18 +258,29 @@ export function ForecastErrorCard() {
                 </p>
               </div>
             )}
+
+            {/* 🔴 233-07 (D-14) — a metade EXPLICAÇÃO da antiga procedência
+                (224-07): ensina COMO a curva foi reconstruída e QUANDO será
+                substituída — não protege leitura de número à vista. Migrou
+                para dentro deste "saiba mais". A metade AVISO (a direção do
+                viés) ficou fora, à vista (233-TEXTO.md). */}
+            <p className="text-[11px] text-muted-foreground/70 leading-relaxed border-t border-border/30 pt-2">
+              Esta curva é <span className="font-medium">reconstruída</span> do histórico — ela
+              pergunta retroativamente o que a base sabia em cada dia passado — e por isso é{" "}
+              <span className="font-medium">provisória</span>. Será substituída pela curva medida
+              contra o registro diário do que a previsão dizia no dia, assim que essa amostra
+              chegar a 15 dias.
+            </p>
           </CollapsibleContent>
         </Collapsible>
 
-        {/* ── Procedência. Sem ela um número provisório vira oficial no primeiro print ── */}
+        {/* ── Procedência que fica: a DIREÇÃO do viés (224-07) é AVISO — sem
+            ela um número provisório vira oficial no primeiro print, lido como
+            se fosse conservador quando ele é otimista. ── */}
         <p className="text-[11px] text-muted-foreground/70 leading-relaxed border-t border-border/40 pt-3">
-          Esta curva é <span className="font-medium">reconstruída</span> do histórico — ela
-          pergunta retroativamente o que a base sabia em cada dia passado — e por isso é{" "}
-          <span className="font-medium">provisória</span>. Ela{" "}
-          <span className="font-medium">subestima</span> o erro: estorno parcial sobrescreve o
-          valor sem deixar vestígio e o Mercado Pago remaneja datas sem guardar histórico, e
-          nenhum dos dois é recuperável. Será substituída pela curva medida contra o registro
-          diário do que a previsão dizia no dia, assim que essa amostra chegar a 15 dias.
+          Ela <span className="font-medium">subestima</span> o erro: estorno parcial sobrescreve
+          o valor sem deixar vestígio e o Mercado Pago remaneja datas sem guardar histórico, e
+          nenhum dos dois é recuperável.
         </p>
       </CardContent>
     </Card>
