@@ -1,41 +1,44 @@
 // ============================================================================
-// 233-03 — O saldo DECLARADO e a conta inversa
+// 233-05 — Declarar o saldo é MOVER A ÂNCORA
 //
-// 🔴 O DEFEITO, medido em 27/08/2026: o botão diz "corrigir saldo" mas grava
-// `financial_settings.initial_balance`, que é o saldo ANTES dos movimentos do
-// dia. A conta do banco (`20260660000200_cashflow_saldo_indicators_forecasts.sql`,
-// linhas 44-49) é:
+// 🔴 O DEFEITO, medido no BANCO VIVO em 27/08/2026 (não no repositório): o botão
+// "corrigir saldo" gravava `financial_settings.initial_balance` por caminho
+// direto, e esse caminho **não toca em `balance_anchor_date`**. O número que a
+// tela de fluxo de caixa exibe não é o campo cru — é o campo cru na data da
+// ÂNCORA, rolado por tudo que entrou e tudo que saiu pago desde então:
 //
-//   saldo_de_hoje = initial_balance
-//                 + entradas com release_date = HOJE
-//                 − saídas  com outflow_date  = HOJE
+//   get_rolled_opening_balance = initial_balance    (na âncora)
+//                              + entradas           [âncora, hoje)
+//                              − saídas pagas       [âncora, hoje)
 //
-// Então:
+// Na Pé Vermeio a âncora estava em **2026-07-13**, 45 dias atrás:
 //
-//   initial_balance (digitado) ...  R$ 46.000,00
-//   + entradas de hoje ..........   R$ 14.790,16
-//   − saídas de hoje ............   R$  9.485,54
-//   = saldo exibido .............   R$ 51.304,62
-//   saldo REAL (Wesley) .........   R$ 37.430,00
+//   initial_balance (o que ele digitou) ....  R$ 37.430,00
+//   + entradas âncora→ontem ................  R$ 341.243,31
+//   − saídas pagas âncora→ontem ............  R$ 349.371,89
+//   = o que a tela exibia ..................  R$  29.301,42
 //
-// O Wesley digita o valor que quer ver, os movimentos entram por cima e movem o
-// alvo. Palavras dele: *"coloco o valor correto de hoje, ele não considera o
-// valor que eu coloquei lá, não sei que conta ele faz... tenho que ficar
-// inserindo valores e atualizando até o saldo do dia chegar no real que temos"*.
+// Ele digitou 37.430 e leu 29.301,42. Declarou, sem saber, um saldo de 13 de
+// julho.
 //
-// 🔵 A CORREÇÃO É A CONTA INVERSA, e ela NÃO TOCA NO `get_cashflow`. A conta do
-// banco está certa; o que está errado é a tela pedir a PARCELA e chamá-la de
-// TOTAL. O usuário informa o saldo que QUER VER, e a tela grava:
+// 🔵 A CORREÇÃO NÃO É INVERTER CONTA NENHUMA. Com `balance_anchor_date = hoje` o
+// intervalo semiaberto `[hoje, hoje)` é VAZIO, as duas somas são zero e a função
+// devolve o declarado ao centavo. É literalmente para isso que
+// `balance_anchor_date` existe, e a RPC que faz isso — `set_financial_balance` —
+// já estava em produção, INVOKER, com `EXECUTE` para `authenticated`, e **nunca
+// tinha sido chamada** por nenhuma linha do garment.
 //
-//   initial_balance = saldo_desejado − entradas_de_hoje + saídas_de_hoje
+// 🔴 O QUE O 233-03 ERROU, e por que nenhum teste pegou: ele inverteu a conta
+// contra `entradas_hoje`/`saidas_hoje`. A identidade matemática estava certa; a
+// QUANTIDADE estava errada — o rolado desconta 45 dias de movimento, não o do
+// dia. 59 testes verdes provaram uma identidade correta sobre a variável errada,
+// e o defeito só apareceu porque o Wesley leu o número na tela.
 //
-// Uma passada, sem tentativa e erro.
-//
-// 🔴 ESTE MÓDULO NÃO EXPLICA A DIFERENÇA DE R$ 13.874,62 entre o exibido e o
-// real. Ele conserta a USABILIDADE. Por que o sistema chegou a R$ 51.304,62
-// quando o real era R$ 37.430 tem causa própria — entrada contabilizada que não
-// caiu, saída não lançada, `release_date` remanejado pelo MP — e investigar isso
-// é fase própria (`<deferred>` do 233-03-PLAN).
+// ⚠️ A AMBIGUIDADE QUE SOBRA É DE DESENHO, e está NOMEADA em vez de resolvida
+// (D-07, decisão do Wesley em 27/08): o que ele declara vira a **abertura** do
+// dia de hoje. Declarar às 14h olhando o extrato conta parte do movimento do dia
+// duas vezes na previsão de fechamento. O erro dura um dia e a declaração
+// seguinte o corrige; o caminho sem ambiguidade é declarar de manhã.
 //
 // Molde: `confiancaDoSaldo.ts` — módulo puro, nunca lança, ausência é `null`.
 // ============================================================================
@@ -45,7 +48,7 @@
  *
  * ⚠️ `Math.round(v * 100) / 100` erra em binários como 1,005 (que vira 1,00).
  * O `+1e-9` sobre o valor absoluto corrige o caso de meio centavo sem introduzir
- * viés de sinal — arredondar o negativo para longe do zero, como o positivo.
+ * viés de sinal — arredonda o negativo para longe do zero, como o positivo.
  */
 function duasCasas(v: number): number {
   const s = v < 0 ? -1 : 1;
@@ -55,9 +58,9 @@ function duasCasas(v: number): number {
 /**
  * 🔴 Converte para número finito ou `null`. NUNCA devolve `NaN`.
  *
- * `NaN` gravado no `initial_balance` faz o saldo sumir da tela **sem erro
- * nenhum** — um estado pior que o defeito atual, porque é mudo. Devolver `null`
- * força o chamador a decidir (e o chamador, aqui, bloqueia o salvamento).
+ * `NaN` gravado no saldo faz o número sumir da tela **sem erro nenhum** — um
+ * estado pior que o defeito, porque é mudo. Devolver `null` força o chamador a
+ * decidir (e o chamador, aqui, bloqueia o salvamento).
  *
  * Aceita a vírgula decimal porque é como um campo brasileiro devolve o valor.
  */
@@ -76,49 +79,26 @@ export function numeroOuNulo(v: unknown): number | null {
 }
 
 /**
- * A conta DIRETA — a mesma que o `get_cashflow` faz no banco.
+ * A decomposição honesta do que a tela mostra no dia: **abertura + entradas −
+ * saídas**.
  *
- * Existe aqui para a tela poder mostrar a decomposição e para o teste de ida e
- * volta provar a identidade contra a inversa.
+ * 🔴 O PRIMEIRO ARGUMENTO MUDOU DE SIGNIFICADO na migration
+ * `20260827190000_saldo_ancorado_no_dia_declarado.sql`. Antes dela,
+ * `get_daily_balance.saldo_inicial` devolvia o `initial_balance` CRU — o saldo
+ * da âncora, que na Pé Vermeio era o de 13/07. Depois dela, devolve a **abertura
+ * ROLADA**, o mesmo número pelo qual o gráfico de fluxo de caixa abre. A conta
+ * aqui é a mesma; o que ela recebe é que passou a ser o número certo.
  */
 export function saldoExibido(
-  initialBalance: unknown,
+  aberturaDoDia: unknown,
   entradasDoDia: unknown,
   saidasDoDia: unknown,
 ): number | null {
-  const ib = numeroOuNulo(initialBalance);
+  const ab = numeroOuNulo(aberturaDoDia);
   const e = numeroOuNulo(entradasDoDia);
   const s = numeroOuNulo(saidasDoDia);
-  if (ib == null || e == null || s == null) return null;
-  return duasCasas(ib + e - s);
-}
-
-/**
- * 🔵 A INVERSA: dado o saldo que o humano QUER VER hoje, devolve o
- * `initial_balance` a gravar para que a tela exiba exatamente esse número.
- *
- *   initial_balance = desejado − entradas + saídas
- *
- * Ida e volta é identidade:
- * `saldoExibido(initialBalanceParaSaldo(X, e, s), e, s) === X`.
- *
- * ⚠️ Devolve `null` para qualquer entrada suja. O chamador NÃO pode tratar
- * `null` como zero: entradas/saídas ainda carregando valem zero na aritmética e
- * fariam `initial_balance = desejado` — que é exatamente o defeito de hoje,
- * agora silencioso e com cara de conserto.
- */
-export function initialBalanceParaSaldo(
-  saldoDesejado: unknown,
-  entradasDoDia: unknown,
-  saidasDoDia: unknown,
-): number | null {
-  const d = numeroOuNulo(saldoDesejado);
-  const e = numeroOuNulo(entradasDoDia);
-  const s = numeroOuNulo(saidasDoDia);
-  if (d == null || e == null || s == null) return null;
-  // Arredondamento UMA vez, na saída — arredondar as parcelas antes de somar
-  // perde centavos que a soma teria conservado.
-  return duasCasas(d - e + s);
+  if (ab == null || e == null || s == null) return null;
+  return duasCasas(ab + e - s);
 }
 
 // ---------------------------------------------------------------------------
@@ -127,7 +107,7 @@ export function initialBalanceParaSaldo(
 
 /** Os movimentos do dia, como a tela os conhece no instante da declaração. */
 export interface MovimentosDoDia {
-  /** `financial_settings.initial_balance` ANTES da correção. */
+  /** A ABERTURA de hoje — rolada — como a tela a exibia ANTES da correção. */
   saldoInicial: unknown;
   entradas: unknown;
   saidas: unknown;
@@ -140,12 +120,18 @@ export interface Veredito {
 }
 
 /**
- * 🔴 O BLOQUEIO É OBRIGATÓRIO, e não é zelo.
+ * 🔴 O BLOQUEIO CONTINUA OBRIGATÓRIO, mas o motivo dele MUDOU.
  *
- * Se entradas e saídas vierem como zero por ainda estarem carregando, a inversa
- * grava `initial_balance = desejado` — que é EXATAMENTE o defeito de hoje, agora
- * silencioso e com cara de conserto. Zero legítimo (dia sem movimento) passa;
- * ausência não passa.
+ * No 233-03 ele existia porque a inversa dependia dos movimentos: entradas e
+ * saídas ainda carregando (lidas como zero) gravariam o valor digitado como
+ * `initial_balance` cru — o defeito disfarçado de conserto.
+ *
+ * Depois do 233-05 a âncora não depende de movimento nenhum. O que ainda depende
+ * é o **retrato do erro do dia zero**: sem entradas e saídas não há
+ * `saldo_exibido` para registrar, e a linha de `saldo_declarado` nasceria sem o
+ * que ela existe para medir.
+ *
+ * Zero legítimo (dia sem movimento) passa; ausência não passa.
  */
 export function podeDeclarar(mov: MovimentosDoDia | null | undefined, carregando = false): Veredito {
   if (carregando) {
@@ -154,7 +140,8 @@ export function podeDeclarar(mov: MovimentosDoDia | null | undefined, carregando
   if (mov == null) {
     return {
       pode: false,
-      motivo: "As entradas e saídas de hoje não foram carregadas — sem elas o valor gravado ficaria errado.",
+      motivo:
+        "As entradas e saídas de hoje não foram carregadas — sem elas a declaração fica sem o retrato do erro.",
     };
   }
   const e = numeroOuNulo(mov.entradas);
@@ -162,7 +149,8 @@ export function podeDeclarar(mov: MovimentosDoDia | null | undefined, carregando
   if (e == null || s == null) {
     return {
       pode: false,
-      motivo: "As entradas e saídas de hoje não foram carregadas — sem elas o valor gravado ficaria errado.",
+      motivo:
+        "As entradas e saídas de hoje não foram carregadas — sem elas a declaração fica sem o retrato do erro.",
     };
   }
   return { pode: true, motivo: null };
@@ -174,50 +162,60 @@ export interface Declaracao {
   saldo_real: number;
   /** O que a tela EXIBIA antes da correção — é ele que mede o erro do dia zero. */
   saldo_exibido: number | null;
-  /** O `initial_balance` que VIGORAVA antes da correção, pelo mesmo motivo. */
+  /** A ABERTURA que vigorava antes da correção, pelo mesmo motivo. */
   initial_balance: number | null;
   entradas_do_dia: number;
   saidas_do_dia: number;
 }
 
 /**
- * Monta o par (o que gravar em `financial_settings`, o que declarar em
- * `saldo_declarado`) a partir do saldo que o humano quer ver.
+ * Monta o par (o valor que vai para a âncora, o que declarar em
+ * `saldo_declarado`) a partir do saldo que o humano digitou.
+ *
+ * 🔵 `saldoParaAncora` é o valor digitado, arredondado a duas casas e **nada
+ * mais**. Não há conta contra os movimentos do dia, e é essa insensibilidade que
+ * separa este módulo do 233-03: redigitar o mesmo número com entradas e saídas
+ * diferentes produz exatamente o mesmo valor de âncora.
  *
  * 🔴 `saldo_exibido` e `initial_balance` guardam o estado ANTES da correção, e
  * não o depois. É essa diferença — exibido menos declarado — que mede o erro do
- * dia zero (R$ 13.874,62 em 27/08). Gravar o depois deixaria erro zero em todas
- * as linhas, e a série inteira mediria nada.
+ * dia zero. Gravar o depois deixaria erro zero em todas as linhas, e a série
+ * inteira mediria nada.
+ *
+ * ⚠️ Na REDECLARAÇÃO do mesmo dia o retrato preservado é o da PRIMEIRA — quem
+ * cuida disso é o chamador, que atualiza só o `saldo_real` quando já existe
+ * linha para a data (comportamento do 233-03, mantido sem mexer).
  *
  * Devolve `null` quando qualquer parcela está suja: o chamador não grava.
  */
 export function montarDeclaracao(
   orgId: string | null | undefined,
   dataDeclarada: string | null | undefined,
-  saldoDesejado: unknown,
+  saldoDigitado: unknown,
   mov: MovimentosDoDia | null | undefined,
-): { initialBalanceAGravar: number; declaracao: Declaracao } | null {
+): { saldoParaAncora: number; declaracao: Declaracao } | null {
   if (!orgId || !dataDeclarada) return null;
   if (!podeDeclarar(mov).pode) return null;
 
   const entradas = numeroOuNulo(mov!.entradas) as number;
   const saidas = numeroOuNulo(mov!.saidas) as number;
-  const desejado = numeroOuNulo(saldoDesejado);
-  if (desejado == null) return null;
+  const digitado = numeroOuNulo(saldoDigitado);
+  if (digitado == null) return null;
 
-  const novoIb = initialBalanceParaSaldo(desejado, entradas, saidas);
-  if (novoIb == null) return null;
+  // 🔵 Declarar é ancorar: o valor atravessa intacto.
+  const saldoParaAncora = duasCasas(digitado);
 
-  const ibAnterior = numeroOuNulo(mov!.saldoInicial);
+  const aberturaAnterior = numeroOuNulo(mov!.saldoInicial);
 
   return {
-    initialBalanceAGravar: novoIb,
+    saldoParaAncora,
     declaracao: {
       organization_id: orgId,
       data_declarada: dataDeclarada,
-      saldo_real: duasCasas(desejado),
-      saldo_exibido: ibAnterior == null ? null : saldoExibido(ibAnterior, entradas, saidas),
-      initial_balance: ibAnterior == null ? null : duasCasas(ibAnterior),
+      saldo_real: saldoParaAncora,
+      saldo_exibido:
+        aberturaAnterior == null ? null : saldoExibido(aberturaAnterior, entradas, saidas),
+      initial_balance: aberturaAnterior == null ? null : duasCasas(aberturaAnterior),
       entradas_do_dia: duasCasas(entradas),
       saidas_do_dia: duasCasas(saidas),
     },
