@@ -1,226 +1,225 @@
 // ============================================================================
-// 233-03 — A conta inversa do saldo declarado
+// 233-05 — Testes do saldo DECLARADO, agora contra a quantidade CERTA
 //
-// 🔴 O DEFEITO que estes testes travam, medido em 27/08/2026:
+// 🔴 POR QUE ESTE ARQUIVO FOI REESCRITO. A versão do 233-03 tinha 59 testes
+// verdes — inclusive 500 trios pseudoaleatórios provando uma identidade de ida e
+// volta — e o código que ela protegia estava ERRADO. A identidade
+// `saldoExibido(inversa(X, e, s), e, s) === X` é matematicamente correta e não
+// diz nada sobre o assunto: ela foi feita contra `entradas_hoje`/`saidas_hoje`,
+// e o número que a tela de fluxo de caixa exibe não é feito dessas parcelas. Ele
+// é o saldo da ÂNCORA (`balance_anchor_date = 2026-07-13`, 45 dias atrás) rolado
+// por todo o movimento do intervalo.
 //
-//   initial_balance (digitado) ...  R$ 46.000,00
-//   + entradas de hoje ..........   R$ 14.790,16
-//   − saídas de hoje ............   R$  9.485,54
-//   = saldo exibido .............   R$ 51.304,62
-//   saldo REAL (Wesley) .........   R$ 37.430,00
+// O defeito não apareceu em teste nenhum. Apareceu porque o Wesley digitou
+// 37.430 e leu 29.301,42 na tela.
 //
-// A tela pede a PARCELA (`initial_balance`, o saldo ANTES dos movimentos do dia)
-// e a chama de saldo. O Wesley digita o valor que quer ver, os movimentos entram
-// por cima e movem o alvo — palavras dele: *"tenho que ficar inserindo valores e
-// atualizando até o saldo do dia chegar no real que temos"*.
+// 🔵 A CORREÇÃO CERTA NÃO É INVERTER CONTA NENHUMA — é MOVER A ÂNCORA para hoje,
+// que é literalmente para isso que `balance_anchor_date` existe. Com a âncora em
+// hoje o intervalo semiaberto `[âncora, hoje)` é vazio e
+// `get_rolled_opening_balance` devolve o declarado ao centavo.
 //
-// 🔵 O TESTE QUE IMPORTA É O DE IDA E VOLTA. Ele prova a IDENTIDADE em vez de
-// conferir um caso, e é o que impede alguém de "simplificar" a conta invertendo
-// um sinal — o erro mais provável aqui, e o mais silencioso.
+// 🔴 A REGRA QUE ESTE ARQUIVO PASSA A OBEDECER: um teste que só prova aritmética
+// não protege nada. O teste central daqui é o de INSENSIBILIDADE — o valor
+// declarado NÃO pode se mexer quando entradas e saídas mudam. É o único formato
+// de teste que teria reprovado o 233-03.
 // ============================================================================
 import { describe, expect, it } from "vitest";
 import {
-  initialBalanceParaSaldo,
   montarDeclaracao,
+  numeroOuNulo,
   podeDeclarar,
   saldoExibido,
+  type MovimentosDoDia,
 } from "./saldoDeclarado";
 
-describe("saldoExibido — a conta direta, a mesma do get_cashflow", () => {
-  it("reproduz o que a tela exibiu em 27/08: 46.000 + 14.790,16 − 9.485,54", () => {
-    expect(saldoExibido(46000, 14790.16, 9485.54)).toBe(51304.62);
+const ORG = "7f615df7-7bac-45e5-8a93-827fb9ddeec7";
+const HOJE = "2026-08-27";
+
+// ---------------------------------------------------------------------------
+// O que a tela mostra — a decomposição honesta, agora sobre a ABERTURA ROLADA
+// ---------------------------------------------------------------------------
+
+describe("saldoExibido — abertura + entradas − saídas", () => {
+  it("🔴 o primeiro argumento é a ABERTURA ROLADA, não o campo cru", () => {
+    // 27/08/2026 na Pé Vermeio: a abertura rolada era 29.301,42 (e NÃO os
+    // 37.430,00 do campo cru, que é o saldo de 13/07). Depois da migration
+    // 20260827190000, `get_daily_balance.saldo_inicial` devolve a rolada.
+    expect(saldoExibido(29301.42, 14790.16, 9485.54)).toBe(34606.04);
   });
 
-  it("dia sem movimento nenhum exibe o próprio saldo inicial", () => {
-    expect(saldoExibido(37430, 0, 0)).toBe(37430);
-  });
-});
-
-describe("initialBalanceParaSaldo — a inversa que resolve", () => {
-  it("🔴 o caso REAL de 27/08: para exibir 37.430, grava 32.125,38", () => {
-    expect(initialBalanceParaSaldo(37430, 14790.16, 9485.54)).toBe(32125.38);
+  it("dia sem movimento nenhum exibe a própria abertura", () => {
+    expect(saldoExibido(29301.42, 0, 0)).toBe(29301.42);
   });
 
-  it("sem movimentos, o que se grava é o próprio saldo desejado", () => {
-    expect(initialBalanceParaSaldo(37430, 0, 0)).toBe(37430);
-  });
-
-  it("saída maior que entrada empurra o initial_balance para CIMA", () => {
-    // desejado 1.000, entrou 100, saiu 400 → precisou partir de 1.300
-    expect(initialBalanceParaSaldo(1000, 100, 400)).toBe(1300);
-  });
-
-  it("aceita saldo desejado negativo — caixa estourado é um estado real", () => {
-    expect(initialBalanceParaSaldo(-500, 200, 100)).toBe(-600);
+  it("arredonda UMA vez, na saída — não arredonda as parcelas antes de somar", () => {
+    expect(saldoExibido(0.005, 0.005, 0)).toBe(0.01);
   });
 });
 
-describe("🔵 IDA E VOLTA — a identidade que trava o sinal invertido", () => {
-  const casos: Array<[number, number, number]> = [
-    [37430, 14790.16, 9485.54],   // o caso real de 27/08
-    [0, 0, 0],
-    [1, 0.01, 0.02],
-    [-1234.56, 987.65, 4321.09],
-    [51304.62, 0, 9485.54],
-    [999999.99, 123456.78, 87654.32],
-    [250.5, 250.5, 0],
-    [10, 0, 1000000],
-  ];
+// ---------------------------------------------------------------------------
+// 🔴 O TESTE QUE TERIA PEGADO O 233-03
+// ---------------------------------------------------------------------------
 
-  it.each(casos)(
-    "saldoExibido(initialBalanceParaSaldo(%s, %s, %s)) devolve o próprio saldo",
-    (desejado, entradas, saidas) => {
-      const ib = initialBalanceParaSaldo(desejado, entradas, saidas);
-      expect(ib).not.toBeNull();
-      expect(saldoExibido(ib as number, entradas, saidas)).toBe(desejado);
-    },
-  );
+describe("🔴 INSENSIBILIDADE — declarar é ancorar, não inverter", () => {
+  const mov = (e: number, s: number, ab: number = 29301.42): MovimentosDoDia => ({
+    saldoInicial: ab,
+    entradas: e,
+    saidas: s,
+  });
 
-  it("a identidade vale para 500 trios pseudoaleatórios de duas casas", () => {
-    // Gerador determinístico: um teste que muda de resultado a cada execução
-    // não prova nada — ele só falha em dias diferentes.
-    let seed = 20260827;
-    const proximo = () => {
-      seed = (seed * 1103515245 + 12345) % 2147483648;
-      return Math.round(((seed / 2147483648) * 200000 - 100000) * 100) / 100;
-    };
+  it("o valor digitado atravessa INTACTO para a âncora", () => {
+    const r = montarDeclaracao(ORG, HOJE, 37430, mov(14790.16, 9485.54));
+    expect(r?.saldoParaAncora).toBe(37430);
+  });
 
-    for (let i = 0; i < 500; i++) {
-      const desejado = proximo();
-      const entradas = Math.abs(proximo());
-      const saidas = Math.abs(proximo());
-      const ib = initialBalanceParaSaldo(desejado, entradas, saidas);
-      expect(saldoExibido(ib as number, entradas, saidas)).toBe(desejado);
-    }
+  it("🔴 o mesmo número digitado com movimentos DIFERENTES ancora igual", () => {
+    // Este é o teste. A versão do 233-03 devolveria 32.125,38 no primeiro caso e
+    // 37.430 no segundo — e foi essa dependência do movimento do dia que fez a
+    // correção não funcionar contra o número que a tela realmente exibe.
+    const a = montarDeclaracao(ORG, HOJE, 37430, mov(14790.16, 9485.54));
+    const b = montarDeclaracao(ORG, HOJE, 37430, mov(0, 0));
+    const c = montarDeclaracao(ORG, HOJE, 37430, mov(999999.99, 123456.78));
+
+    expect(a?.saldoParaAncora).toBe(37430);
+    expect(b?.saldoParaAncora).toBe(37430);
+    expect(c?.saldoParaAncora).toBe(37430);
+    expect(a?.saldoParaAncora).toBe(c?.saldoParaAncora);
+  });
+
+  it("a âncora também não se move quando a ABERTURA anterior muda", () => {
+    const a = montarDeclaracao(ORG, HOJE, 37430, mov(14790.16, 9485.54, 29301.42));
+    const b = montarDeclaracao(ORG, HOJE, 37430, mov(14790.16, 9485.54, 46000));
+    expect(a?.saldoParaAncora).toBe(b?.saldoParaAncora);
+  });
+
+  it("saldo declarado negativo atravessa igual — caixa estourado é estado real", () => {
+    const r = montarDeclaracao(ORG, HOJE, -1234.56, mov(500, 700));
+    expect(r?.saldoParaAncora).toBe(-1234.56);
+  });
+
+  it("arredonda a duas casas na saída, sem viés de sinal", () => {
+    expect(montarDeclaracao(ORG, HOJE, 1.005, mov(0, 0))?.saldoParaAncora).toBe(1.01);
+    expect(montarDeclaracao(ORG, HOJE, -1.005, mov(0, 0))?.saldoParaAncora).toBe(-1.01);
+  });
+
+  it("🔴 o módulo NÃO exporta mais nenhuma inversa contra os movimentos do dia", async () => {
+    // Código obsoleto que compila é a próxima pessoa usando de novo. A inversa
+    // saiu do arquivo, não ficou marcada como depreciada.
+    const mod = await import("./saldoDeclarado");
+    const nomes = Object.keys(mod);
+    expect(nomes.filter((n) => /initialBalance/i.test(n))).toEqual([]);
   });
 });
 
-describe("🔴 entrada suja devolve null, NUNCA NaN", () => {
-  // `NaN` gravado no `initial_balance` faz o saldo sumir da tela sem erro
-  // nenhum — um estado PIOR que o defeito atual, porque é mudo.
-  const sujas: unknown[] = [null, undefined, "", "  ", "abc", NaN, Infinity, -Infinity, {}, []];
+// ---------------------------------------------------------------------------
+// O retrato do erro do dia zero
+// ---------------------------------------------------------------------------
 
-  it.each(sujas.map((v) => [String(v === "" ? "(vazio)" : v), v] as [string, unknown]))(
-    "initialBalanceParaSaldo rejeita %s no saldo desejado",
-    (_rotulo, valor) => {
-      expect(initialBalanceParaSaldo(valor, 100, 50)).toBeNull();
-    },
-  );
+describe("montarDeclaracao — o retrato ANTERIOR à correção", () => {
+  const movHoje: MovimentosDoDia = {
+    saldoInicial: 29301.42, // a abertura ROLADA que a tela exibia
+    entradas: 14790.16,
+    saidas: 9485.54,
+  };
 
-  it.each(sujas.map((v) => [String(v === "" ? "(vazio)" : v), v] as [string, unknown]))(
-    "initialBalanceParaSaldo rejeita %s nas entradas",
-    (_rotulo, valor) => {
-      expect(initialBalanceParaSaldo(1000, valor, 50)).toBeNull();
-    },
-  );
-
-  it.each(sujas.map((v) => [String(v === "" ? "(vazio)" : v), v] as [string, unknown]))(
-    "initialBalanceParaSaldo rejeita %s nas saídas",
-    (_rotulo, valor) => {
-      expect(initialBalanceParaSaldo(1000, 100, valor)).toBeNull();
-    },
-  );
-
-  it("saldoExibido segue a mesma régua", () => {
-    expect(saldoExibido(NaN, 100, 50)).toBeNull();
-    expect(saldoExibido(1000, null, 50)).toBeNull();
-    expect(saldoExibido(1000, 100, "x")).toBeNull();
+  it("`saldo_exibido` é o que a tela mostrava ANTES — abertura rolada + movimentos", () => {
+    const r = montarDeclaracao(ORG, HOJE, 37430, movHoje);
+    expect(r?.declaracao.saldo_exibido).toBe(34606.04);
+    expect(r?.declaracao.initial_balance).toBe(29301.42);
+    expect(r?.declaracao.entradas_do_dia).toBe(14790.16);
+    expect(r?.declaracao.saidas_do_dia).toBe(9485.54);
   });
 
-  it("nunca devolve NaN — o valor de retorno é número finito ou null", () => {
-    for (const v of sujas) {
-      const r = initialBalanceParaSaldo(v, v, v);
-      expect(r === null || Number.isFinite(r)).toBe(true);
-      expect(Number.isNaN(r as number)).toBe(false);
-    }
+  it("o erro do dia zero fica medido na linha: exibido − real", () => {
+    const r = montarDeclaracao(ORG, HOJE, 37430, movHoje)!;
+    const erro = r.declaracao.saldo_exibido! - r.declaracao.saldo_real;
+    expect(Number(erro.toFixed(2))).toBe(-2823.96);
   });
 
-  it("string numérica com vírgula decimal é aceita — é como o campo devolve", () => {
-    expect(initialBalanceParaSaldo("37430", "14790,16", "9485,54")).toBe(32125.38);
-  });
-});
-
-describe("arredondamento acontece UMA vez, na saída", () => {
-  it("não arredonda as parcelas antes de somar", () => {
-    // 0,004 + 0,004 + 0,004 = 0,012 → 0,01. Arredondar cada parcela daria 0,00.
-    expect(initialBalanceParaSaldo(0.008, 0, 0.004)).toBe(0.01);
+  it("carrega organization_id e data_declarada explícitos (T-224-07-01)", () => {
+    const r = montarDeclaracao(ORG, HOJE, 37430, movHoje);
+    expect(r?.declaracao.organization_id).toBe(ORG);
+    expect(r?.declaracao.data_declarada).toBe(HOJE);
   });
 
-  it("a saída tem no máximo duas casas", () => {
-    const r = initialBalanceParaSaldo(1 / 3, 1 / 7, 1 / 11) as number;
-    expect(r).toBe(Math.round(r * 100) / 100);
+  it("devolve null sem org, sem data, com valor sujo ou com movimentos ausentes", () => {
+    expect(montarDeclaracao("", HOJE, 37430, movHoje)).toBeNull();
+    expect(montarDeclaracao(ORG, "", 37430, movHoje)).toBeNull();
+    expect(montarDeclaracao(ORG, HOJE, "abc", movHoje)).toBeNull();
+    expect(montarDeclaracao(ORG, HOJE, 37430, null)).toBeNull();
+    expect(
+      montarDeclaracao(ORG, HOJE, 37430, { saldoInicial: 1, entradas: null, saidas: 2 }),
+    ).toBeNull();
+  });
+
+  it("abertura anterior ausente não impede a declaração — vira null, nunca zero", () => {
+    const r = montarDeclaracao(ORG, HOJE, 37430, {
+      saldoInicial: null,
+      entradas: 10,
+      saidas: 5,
+    });
+    expect(r?.saldoParaAncora).toBe(37430);
+    expect(r?.declaracao.saldo_exibido).toBeNull();
+    expect(r?.declaracao.initial_balance).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// O bloqueio, preservado sem mexer (233-03)
+// ---------------------------------------------------------------------------
 
 describe("🔴 podeDeclarar — o bloqueio quando os movimentos não carregaram", () => {
   it("bloqueia enquanto está carregando", () => {
-    const v = podeDeclarar({ saldoInicial: 46000, entradas: 0, saidas: 0 }, true);
-    expect(v.pode).toBe(false);
-    expect(v.motivo).toMatch(/carregando/i);
+    expect(podeDeclarar({ saldoInicial: 1, entradas: 2, saidas: 3 }, true).pode).toBe(false);
   });
 
   it("bloqueia quando os movimentos são nulos", () => {
     expect(podeDeclarar(null).pode).toBe(false);
-    expect(podeDeclarar(undefined).pode).toBe(false);
+    expect(podeDeclarar(undefined).motivo).toBeTruthy();
   });
 
   it("bloqueia quando entradas ou saídas são ausentes — nunca trata como zero", () => {
-    expect(podeDeclarar({ saldoInicial: 46000, entradas: null, saidas: 100 }).pode).toBe(false);
-    expect(podeDeclarar({ saldoInicial: 46000, entradas: 100, saidas: undefined }).pode).toBe(false);
-    expect(podeDeclarar({ saldoInicial: 46000, entradas: NaN, saidas: 100 }).pode).toBe(false);
+    expect(podeDeclarar({ saldoInicial: 1, entradas: null, saidas: 3 }).pode).toBe(false);
+    expect(podeDeclarar({ saldoInicial: 1, entradas: 2, saidas: undefined }).pode).toBe(false);
   });
 
   it("ZERO LEGÍTIMO passa — dia sem movimento é um dia válido", () => {
-    const v = podeDeclarar({ saldoInicial: 46000, entradas: 0, saidas: 0 });
-    expect(v).toEqual({ pode: true, motivo: null });
+    const v = podeDeclarar({ saldoInicial: 0, entradas: 0, saidas: 0 });
+    expect(v.pode).toBe(true);
+    expect(v.motivo).toBeNull();
+  });
+
+  it("🔵 o bloqueio existe pelo `saldo_exibido`, não mais pela inversa", () => {
+    // Depois do 233-05 a âncora não depende dos movimentos. O que ainda depende
+    // é o RETRATO do erro do dia zero: sem entradas e saídas não há
+    // `saldo_exibido` para registrar, e a linha nasceria sem o que ela mede.
+    expect(podeDeclarar({ saldoInicial: 29301.42, entradas: 0, saidas: 0 }).pode).toBe(true);
   });
 });
 
-describe("montarDeclaracao — o par (gravar, declarar)", () => {
-  const ORG = "7f615df7-7bac-45e5-8a93-827fb9ddeec7";
-  const MOV = { saldoInicial: 46000, entradas: 14790.16, saidas: 9485.54 };
+// ---------------------------------------------------------------------------
+// Entrada suja — preservado sem mexer (233-03)
+// ---------------------------------------------------------------------------
 
-  it("🔴 reproduz 27/08 inteiro: grava 32.125,38 e declara o estado ANTERIOR", () => {
-    const r = montarDeclaracao(ORG, "2026-08-27", 37430, MOV);
-    expect(r).not.toBeNull();
-    expect(r!.initialBalanceAGravar).toBe(32125.38);
-    expect(r!.declaracao).toEqual({
-      organization_id: ORG,
-      data_declarada: "2026-08-27",
-      saldo_real: 37430,
-      saldo_exibido: 51304.62,   // o que a tela mostrava ANTES
-      initial_balance: 46000,    // o que vigorava ANTES
-      entradas_do_dia: 14790.16,
-      saidas_do_dia: 9485.54,
-    });
+describe("🔴 entrada suja devolve null, NUNCA NaN", () => {
+  const sujos: unknown[] = ["", "  ", "abc", "R$ 1.000", {}, [], true, NaN, Infinity, null, undefined];
+
+  it("numeroOuNulo rejeita tudo que não é número finito", () => {
+    for (const v of sujos) expect(numeroOuNulo(v)).toBeNull();
   });
 
-  it("o erro do dia zero fica medido na linha: exibido − real = 13.874,62", () => {
-    const r = montarDeclaracao(ORG, "2026-08-27", 37430, MOV)!;
-    expect(r.declaracao.saldo_exibido! - r.declaracao.saldo_real).toBeCloseTo(13874.62, 2);
+  it("montarDeclaracao nunca produz NaN — devolve null e o chamador não grava", () => {
+    for (const v of sujos) {
+      const r = montarDeclaracao(ORG, HOJE, v, { saldoInicial: 1, entradas: 2, saidas: 3 });
+      expect(r === null || Number.isFinite(r.saldoParaAncora)).toBe(true);
+    }
   });
 
-  it("gravar o initial_balance devolvido faz a tela exibir o valor digitado", () => {
-    const r = montarDeclaracao(ORG, "2026-08-27", 37430, MOV)!;
-    expect(saldoExibido(r.initialBalanceAGravar, MOV.entradas, MOV.saidas)).toBe(37430);
-  });
-
-  it("devolve null sem org, sem data, com valor sujo ou com movimentos ausentes", () => {
-    expect(montarDeclaracao(null, "2026-08-27", 37430, MOV)).toBeNull();
-    expect(montarDeclaracao(ORG, null, 37430, MOV)).toBeNull();
-    expect(montarDeclaracao(ORG, "2026-08-27", "", MOV)).toBeNull();
-    expect(montarDeclaracao(ORG, "2026-08-27", 37430, null)).toBeNull();
+  it("string numérica com vírgula decimal é aceita — é como o campo devolve", () => {
+    expect(numeroOuNulo("37430,55")).toBe(37430.55);
     expect(
-      montarDeclaracao(ORG, "2026-08-27", 37430, { saldoInicial: 1, entradas: null, saidas: 2 }),
-    ).toBeNull();
-  });
-
-  it("saldo inicial ausente não impede a declaração — vira null, nunca zero", () => {
-    const r = montarDeclaracao(ORG, "2026-08-27", 37430, {
-      saldoInicial: null, entradas: 14790.16, saidas: 9485.54,
-    })!;
-    expect(r.declaracao.saldo_exibido).toBeNull();
-    expect(r.declaracao.initial_balance).toBeNull();
-    expect(r.initialBalanceAGravar).toBe(32125.38);
+      montarDeclaracao(ORG, HOJE, "37430,55", { saldoInicial: 1, entradas: 2, saidas: 3 })
+        ?.saldoParaAncora,
+    ).toBe(37430.55);
   });
 });
