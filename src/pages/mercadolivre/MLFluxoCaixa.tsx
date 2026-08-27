@@ -55,6 +55,7 @@ import { CostCompositionChart } from "@/components/financial/CostCompositionChar
 import { SupplierExposureChart } from "@/components/financial/SupplierExposureChart";
 import { CashFlowSimulator } from "@/components/financial/CashFlowSimulator";
 import { CashGapTable } from "@/components/financial/CashGapTable";
+import { SaldoEConfiancaPorDia } from "@/components/financial/SaldoEConfiancaPorDia";
 import { ForecastErrorCard } from "@/components/financial/ForecastErrorCard";
 import { DiasDeCaixaCard } from "@/components/financial/DiasDeCaixaCard";
 import { SaldoAgoraCard } from "@/components/financial/SaldoAgoraCard";
@@ -550,6 +551,12 @@ export default function MLFluxoCaixa() {
           ) : (
             <CashFlowEmptyState />
           )}
+
+          {/* ── 233-07 (D-13) — saldo e confiança na mesma linha, D+1 a D+30 ──
+              A leitura numérica DESTE gráfico: a série chega por PROP, a
+              mesma `cashFlowData` acima — nenhuma consulta nova. ── */}
+          <SaldoEConfiancaPorDia serie={cashFlowData} isLoading={chartLoading} />
+
           <ForecastErrorCard />
 
           {/* ── 4. Onde meu dinheiro está preso? (Fase 230, CX-02) ──
