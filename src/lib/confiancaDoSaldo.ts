@@ -215,6 +215,65 @@ export function preencherFaixa(
  * descrição da forma da curva medida, e a leitura do que fazer com ela é do
  * Wesley (D-6 do 224).
  */
+// ── 233-07 ──────────────────────────────────────────────────────────────────
+// 🔴 EXTRAÍDO de `CurvaDeConfianca.tsx` (233-04), SEM mudar nenhuma frase — é
+// a mesma régua da tabela `SaldoEConfiancaPorDia`: uma segunda implementação
+// do texto de ausência divergiria da primeira, e a divergência apareceria
+// como frase errada na tela, não como erro. Ver `233-TEXTO.md`.
+
+/** "2026-08-28" → "28/08". Fatiado à mão: `new Date` em ISO puro é UTC e o
+ *  fuso local empurraria a data um dia para trás em quase todo o Brasil. */
+function diaMes(iso: string | null): string {
+  if (iso == null || iso.length < 10) return "";
+  return `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+}
+
+/** A data em que a série começou, DEDUZIDA do que a RPC mandou: `medivel_em`
+ *  é o primeiro snapshot mais o horizonte, então subtrair o horizonte devolve
+ *  o primeiro snapshot. Nada de constante escrita à mão na tela. */
+function inicioDaSerie(medivelEm: string | null, horizonte: number): string | null {
+  if (medivelEm == null || medivelEm.length < 10) return null;
+  const [a, m, d] = medivelEm.split("-").map(Number);
+  if (!Number.isFinite(a) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+  return new Date(Date.UTC(a, m - 1, d - horizonte)).toISOString().slice(0, 10);
+}
+
+function rotuloDaFaixa(de: number, ate: number): string {
+  return de === ate ? `D+${de}` : `D+${de} a D+${ate}`;
+}
+
+export interface ParametrosTextoDaAusencia {
+  estado: EstadoDaConfianca;
+  de: number;
+  ate: number;
+  medivel_em: string | null;
+}
+
+/**
+ * O texto de uma ausência (ou faixa contígua de ausências), por estado.
+ * ⚠️ `medivel_em` é a data mais CEDO em que o par PODERIA existir — por isso
+ * "ficam medíveis a partir de", nunca "terão medição em": a medição também
+ * depende de haver declaração naquele dia.
+ */
+export function textoDaAusencia({ estado, de, ate, medivel_em }: ParametrosTextoDaAusencia): string {
+  const faixa = rotuloDaFaixa(de, ate);
+  const plural = de !== ate;
+
+  if (estado === "serie_curta") {
+    const inicio = inicioDaSerie(medivel_em, de);
+    const quando = diaMes(medivel_em);
+    const desde = inicio != null ? ` — a série de previsões congeladas começou em ${diaMes(inicio)}` : "";
+    return `${faixa} ${plural ? "ficam medíveis" : "fica medível"} a partir de ${quando}${desde}.`;
+  }
+  if (estado === "sem_declaracao") {
+    return `${faixa}: sem declaração de saldo nesse dia. Corrigir o saldo do dia cria o ponto.`;
+  }
+  if (estado === "sem_serie") {
+    return `${faixa}: a série de previsões congeladas ainda não existe nesta conta.`;
+  }
+  return `${faixa}: o banco não devolveu este prazo — sem medição e sem motivo declarado.`;
+}
+
 export function resumoDaConfianca(pontos: PontoDeConfianca[]): {
   melhor: PontoDeConfianca | null;
   pior: PontoDeConfianca | null;

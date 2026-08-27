@@ -41,27 +41,12 @@
 // ============================================================================
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConfiancaDoSaldo, type ConfiancaDoSaldoData } from "@/hooks/useConfiancaDoSaldo";
-import type { EstadoDaConfianca, MotivoAusencia, PontoDeConfianca } from "@/lib/confiancaDoSaldo";
-
-/** "2026-08-28" → "28/08". Fatiado à mão: `new Date` em ISO puro é UTC e o
- *  fuso local empurraria a data um dia para trás em quase todo o Brasil. */
-const diaMes = (iso: string | null): string => {
-  if (iso == null || iso.length < 10) return "";
-  return `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
-};
-
-/** A data em que a série começou, DEDUZIDA do que a RPC mandou: `medivel_em`
- *  é o primeiro snapshot mais o horizonte, então subtrair o horizonte devolve
- *  o primeiro snapshot. Nada de constante escrita à mão na tela. */
-const inicioDaSerie = (medivelEm: string | null, horizonte: number): string | null => {
-  if (medivelEm == null || medivelEm.length < 10) return null;
-  const [a, m, d] = medivelEm.split("-").map(Number);
-  if (!Number.isFinite(a) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
-  return new Date(Date.UTC(a, m - 1, d - horizonte)).toISOString().slice(0, 10);
-};
-
-const rotuloDaFaixa = (de: number, ate: number): string =>
-  de === ate ? `D+${de}` : `D+${de} a D+${ate}`;
+import {
+  textoDaAusencia,
+  type EstadoDaConfianca,
+  type MotivoAusencia,
+  type PontoDeConfianca,
+} from "@/lib/confiancaDoSaldo";
 
 interface BlocoDeAusencia {
   estado: EstadoDaConfianca;
@@ -111,30 +96,6 @@ function agruparAusencias(pontos: PontoDeConfianca[]): Array<PontoDeConfianca | 
   }
   fechar();
   return saida;
-}
-
-/**
- * O texto de cada ausência. ⚠️ `medivel_em` é a data mais CEDO em que o par
- * PODERIA existir — por isso "ficam medíveis a partir de", nunca "terão medição
- * em": a medição também depende de haver declaração naquele dia.
- */
-function textoDaAusencia(bloco: BlocoDeAusencia): string {
-  const faixa = rotuloDaFaixa(bloco.de, bloco.ate);
-  const plural = bloco.de !== bloco.ate;
-
-  if (bloco.estado === "serie_curta") {
-    const inicio = inicioDaSerie(bloco.medivel_em, bloco.de);
-    const quando = diaMes(bloco.medivel_em);
-    const desde = inicio != null ? ` — a série de previsões congeladas começou em ${diaMes(inicio)}` : "";
-    return `${faixa} ${plural ? "ficam medíveis" : "fica medível"} a partir de ${quando}${desde}.`;
-  }
-  if (bloco.estado === "sem_declaracao") {
-    return `${faixa}: sem declaração de saldo nesse dia. Corrigir o saldo do dia cria o ponto.`;
-  }
-  if (bloco.estado === "sem_serie") {
-    return `${faixa}: a série de previsões congeladas ainda não existe nesta conta.`;
-  }
-  return `${faixa}: o banco não devolveu este prazo — sem medição e sem motivo declarado.`;
 }
 
 /** O veredito. É ele que responde "até onde posso confiar" sem expandir nada. */
@@ -264,7 +225,12 @@ export function CurvaDeConfiancaView({ data, isLoading, error }: CurvaDeConfianc
                 data-motivo={bloco.motivo_ausencia ?? undefined}
                 className="text-[11px] leading-snug text-muted-foreground"
               >
-                {textoDaAusencia(bloco)}
+                {textoDaAusencia({
+                  estado: bloco.estado,
+                  de: bloco.de,
+                  ate: bloco.ate,
+                  medivel_em: bloco.medivel_em,
+                })}
               </p>
             );
           })}
