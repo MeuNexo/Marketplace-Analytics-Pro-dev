@@ -117,11 +117,15 @@ export function ForecastErrorCard() {
             <Activity className="w-4 h-4 text-muted-foreground" />
           </div>
           <div className="min-w-0">
+            {/* 🔴 233-04 — o cabeçalho do card fala pelo CARD, não por uma das
+                medidas. O subtítulo que descrevia o erro das ENTRADAS desceu para
+                junto do que ele descreve: enquanto ele ficava aqui, o percentual
+                de SALDO logo abaixo era lido como se fosse de entradas — e as
+                duas divergem por construção, já que a de entradas é isolada e a
+                de saldo já embute o cancelamento que aconteceu na realidade. Um
+                rótulo errado aqui produz a conclusão errada com precisão decimal. */}
             <p className="text-xs uppercase tracking-wider font-medium text-muted-foreground leading-tight">
               Dá para confiar nessa previsão?
-            </p>
-            <p className="text-[11px] text-muted-foreground/60">
-              Erro histórico das entradas, por horizonte
             </p>
           </div>
         </div>
@@ -139,6 +143,12 @@ export function ForecastErrorCard() {
           {frase.texto}
         </p>
 
+        {/* O rótulo desceu do cabeçalho para cá: ele descreve ESTA frase e o
+            detalhe recolhido, que são de entradas — não a curva de saldo. */}
+        <p className="text-[11px] text-muted-foreground/60 -mt-2">
+          Erro histórico das entradas, por horizonte
+        </p>
+
         {/* ── 233-02: a curva de confiança do SALDO ────────────────────────────
             A ordem é a decisão: frase (o que decide) → curva (o que contextualiza)
             → detalhe (o que audita). Isso honra a 230 — que tirou a curva de
@@ -146,8 +156,15 @@ export function ForecastErrorCard() {
             *"ver o cenário ao longo do tempo e o quanto posso confiar de 0 a 100%"*.
 
             🔴 Esta curva é do SALDO, medida contra o saldo DECLARADO por ele —
-            não a de entradas por horizonte que ele rejeitou na 230. */}
-        <CurvaDeConfianca />
+            não a de entradas por horizonte que ele rejeitou na 230.
+
+            🔴 233-04 — o bloco fica DENTRO de uma borda própria e carrega o
+            próprio rótulo ("Confiança da previsão de saldo", em `CurvaDeConfianca`).
+            Um leitor que só olhe os rótulos consegue dizer qual número é de
+            entradas e qual é de saldo, sem abrir nada. */}
+        <div className="border-t border-border/40 pt-3">
+          <CurvaDeConfianca />
+        </div>
 
         {/* ── Tudo o mais, recolhido: a curva por horizonte, o n, o deflator e o erro absoluto ── */}
         <Collapsible open={detalheAberto} onOpenChange={setDetalheAberto}>
