@@ -69,12 +69,24 @@ const modulo = lerOuVazio(CAMINHO_MODULO);
 const hook = lerOuVazio(CAMINHO_HOOK);
 const card = lerOuVazio(CAMINHO_CARD);
 
-/** Linhas de código, sem os comentários — prosa não pode reprovar nem absolver. */
+/**
+ * Linhas de código, sem os comentários — prosa não pode reprovar nem absolver.
+ *
+ * 🔴 CORRIGIDO NO 233-06, e o defeito era deste helper. A versão do 233-05
+ * filtrava linha a linha por `//`, `*` e `/*`, o que deixa passar as linhas do
+ * MEIO de um comentário JSX de várias linhas (`{/* ... *\/}`): elas não começam
+ * com marcador nenhum. Resultado real: a asserção do diálogo reprovou por causa
+ * de um comentário que EXPLICAVA a mudança, não de código.
+ *
+ * Um portão que reprova por prosa é um portão que vai ser desligado. Os blocos
+ * `/* ... *\/` saem inteiros ANTES do split.
+ */
 function linhasDeCodigo(fonte: string): string[] {
   return fonte
+    .replace(/\/\*[\s\S]*?\*\//g, "")
     .split("\n")
     .map((l) => l.trim())
-    .filter((l) => l !== "" && !l.startsWith("//") && !l.startsWith("*") && !l.startsWith("/*"));
+    .filter((l) => l !== "" && !l.startsWith("//") && !l.startsWith("*"));
 }
 
 describe("🔴 PORTÃO DE FONTE — declarar saldo tem de MOVER A ÂNCORA", () => {
