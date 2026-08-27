@@ -80,7 +80,13 @@ export function useEstornoDeflator() {
     queryFn: async (): Promise<EstornoDeflatorInfo> => {
       if (orgId == null) return AMOSTRA_VAZIA;
 
-      const chamar = supabase.rpc as unknown as ChamadaRpc;
+      // 🔴 `.bind(supabase)` NÃO é estilo: `supabase.rpc` é implementado como
+      // `return this.rest.rpc(...)`, e atribuí-lo a uma variável desacopla o
+      // método do objeto — em ESM strict o `this` vira undefined e a tela
+      // mostra `Cannot read properties of undefined (reading 'rest')`.
+      // Foi o defeito de 27/08/2026 (233-01). Há portão em
+      // `src/hooks/__tests__/rpcBind.test.ts` que reprova o padrão sem bind.
+      const chamar = supabase.rpc.bind(supabase) as unknown as ChamadaRpc;
 
       const [deflatorRes, serieRes] = await Promise.all([
         chamar("get_estorno_deflator", { p_org_id: orgId }),
