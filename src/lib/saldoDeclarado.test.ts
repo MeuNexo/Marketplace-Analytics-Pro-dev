@@ -19,7 +19,12 @@
 // um sinal — o erro mais provável aqui, e o mais silencioso.
 // ============================================================================
 import { describe, expect, it } from "vitest";
-import { initialBalanceParaSaldo, saldoExibido } from "./saldoDeclarado";
+import {
+  initialBalanceParaSaldo,
+  montarDeclaracao,
+  podeDeclarar,
+  saldoExibido,
+} from "./saldoDeclarado";
 
 describe("saldoExibido — a conta direta, a mesma do get_cashflow", () => {
   it("reproduz o que a tela exibiu em 27/08: 46.000 + 14.790,16 − 9.485,54", () => {
@@ -144,5 +149,78 @@ describe("arredondamento acontece UMA vez, na saída", () => {
   it("a saída tem no máximo duas casas", () => {
     const r = initialBalanceParaSaldo(1 / 3, 1 / 7, 1 / 11) as number;
     expect(r).toBe(Math.round(r * 100) / 100);
+  });
+});
+
+describe("🔴 podeDeclarar — o bloqueio quando os movimentos não carregaram", () => {
+  it("bloqueia enquanto está carregando", () => {
+    const v = podeDeclarar({ saldoInicial: 46000, entradas: 0, saidas: 0 }, true);
+    expect(v.pode).toBe(false);
+    expect(v.motivo).toMatch(/carregando/i);
+  });
+
+  it("bloqueia quando os movimentos são nulos", () => {
+    expect(podeDeclarar(null).pode).toBe(false);
+    expect(podeDeclarar(undefined).pode).toBe(false);
+  });
+
+  it("bloqueia quando entradas ou saídas são ausentes — nunca trata como zero", () => {
+    expect(podeDeclarar({ saldoInicial: 46000, entradas: null, saidas: 100 }).pode).toBe(false);
+    expect(podeDeclarar({ saldoInicial: 46000, entradas: 100, saidas: undefined }).pode).toBe(false);
+    expect(podeDeclarar({ saldoInicial: 46000, entradas: NaN, saidas: 100 }).pode).toBe(false);
+  });
+
+  it("ZERO LEGÍTIMO passa — dia sem movimento é um dia válido", () => {
+    const v = podeDeclarar({ saldoInicial: 46000, entradas: 0, saidas: 0 });
+    expect(v).toEqual({ pode: true, motivo: null });
+  });
+});
+
+describe("montarDeclaracao — o par (gravar, declarar)", () => {
+  const ORG = "7f615df7-7bac-45e5-8a93-827fb9ddeec7";
+  const MOV = { saldoInicial: 46000, entradas: 14790.16, saidas: 9485.54 };
+
+  it("🔴 reproduz 27/08 inteiro: grava 32.125,38 e declara o estado ANTERIOR", () => {
+    const r = montarDeclaracao(ORG, "2026-08-27", 37430, MOV);
+    expect(r).not.toBeNull();
+    expect(r!.initialBalanceAGravar).toBe(32125.38);
+    expect(r!.declaracao).toEqual({
+      organization_id: ORG,
+      data_declarada: "2026-08-27",
+      saldo_real: 37430,
+      saldo_exibido: 51304.62,   // o que a tela mostrava ANTES
+      initial_balance: 46000,    // o que vigorava ANTES
+      entradas_do_dia: 14790.16,
+      saidas_do_dia: 9485.54,
+    });
+  });
+
+  it("o erro do dia zero fica medido na linha: exibido − real = 13.874,62", () => {
+    const r = montarDeclaracao(ORG, "2026-08-27", 37430, MOV)!;
+    expect(r.declaracao.saldo_exibido! - r.declaracao.saldo_real).toBeCloseTo(13874.62, 2);
+  });
+
+  it("gravar o initial_balance devolvido faz a tela exibir o valor digitado", () => {
+    const r = montarDeclaracao(ORG, "2026-08-27", 37430, MOV)!;
+    expect(saldoExibido(r.initialBalanceAGravar, MOV.entradas, MOV.saidas)).toBe(37430);
+  });
+
+  it("devolve null sem org, sem data, com valor sujo ou com movimentos ausentes", () => {
+    expect(montarDeclaracao(null, "2026-08-27", 37430, MOV)).toBeNull();
+    expect(montarDeclaracao(ORG, null, 37430, MOV)).toBeNull();
+    expect(montarDeclaracao(ORG, "2026-08-27", "", MOV)).toBeNull();
+    expect(montarDeclaracao(ORG, "2026-08-27", 37430, null)).toBeNull();
+    expect(
+      montarDeclaracao(ORG, "2026-08-27", 37430, { saldoInicial: 1, entradas: null, saidas: 2 }),
+    ).toBeNull();
+  });
+
+  it("saldo inicial ausente não impede a declaração — vira null, nunca zero", () => {
+    const r = montarDeclaracao(ORG, "2026-08-27", 37430, {
+      saldoInicial: null, entradas: 14790.16, saidas: 9485.54,
+    })!;
+    expect(r.declaracao.saldo_exibido).toBeNull();
+    expect(r.declaracao.initial_balance).toBeNull();
+    expect(r.initialBalanceAGravar).toBe(32125.38);
   });
 });

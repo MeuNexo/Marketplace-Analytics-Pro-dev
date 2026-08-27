@@ -61,9 +61,19 @@ import { CicloCaixaCard } from "@/components/financial/CicloCaixaCard";
 import { PainelConferencia } from "@/components/financial/PainelConferencia";
 import { HORIZONTE_TESOURARIA_DIAS } from "@/lib/horizonteTesouraria";
 import { useCashFlowData } from "@/hooks/useCashFlowData";
-import { useFinancialSettings } from "@/hooks/useFinancialSettings";
+import { useTodayBalance } from "@/hooks/useTodayBalance";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { supabase } from "@/integrations/supabase/client";
+import { formatCurrency } from "@/lib/formatters";
+import { brToday } from "@/lib/brDate";
+import {
+  initialBalanceParaSaldo,
+  montarDeclaracao,
+  numeroOuNulo,
+  podeDeclarar,
+  saldoExibido,
+  type MovimentosDoDia,
+} from "@/lib/saldoDeclarado";
 import { toast } from "sonner";
 
 // ─── Empty state ───────────────────────────────────────────────────────────────
@@ -83,34 +93,84 @@ function CashFlowEmptyState() {
   );
 }
 
-// ─── Dialog de ajuste de saldo inicial ────────────────────────────────────────
+// ─── Dialog de correção do saldo de hoje (233-03) ─────────────────────────────
+//
+// 🔴 O QUE MUDOU, e por quê: até a Fase 233 este campo gravava
+// `financial_settings.initial_balance` — o saldo ANTES dos movimentos do dia —
+// mas o rótulo dizia "saldo de hoje". O Wesley digitava R$ 37.430, a tela
+// exibia R$ 51.304,62, e ele tentava de novo: *"tenho que ficar inserindo
+// valores e atualizando até o saldo do dia chegar no real que temos"*.
+//
+// 🔵 Agora o campo pede o SALDO REAL DE HOJE e a tela faz a conta inversa
+// (`initialBalanceParaSaldo`). Uma passada, sem tentativa.
+//
+// 🔴 E a MESMA ação grava a declaração em `saldo_declarado` — o valor digitado é
+// a fonte de verdade que ancora a curva de confiança do 233-02. Sem isso a série
+// tem um ponto só, o que a migration inseriu à mão.
 
 interface AdjustBalanceDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  currentBalance: number;
+  /** O saldo que a tela EXIBE hoje — não o `initial_balance` cru. */
+  saldoExibidoHoje: number | null;
+  movimentos: MovimentosDoDia | null;
+  carregandoMovimentos: boolean;
   orgId: string;
 }
+
+/**
+ * `saldo_declarado` não está nos tipos gerados do Supabase (a migration do
+ * 233-02 foi aplicada pela Management API). O escape é local e explícito.
+ *
+ * ⚠️ `.bind(supabase)`: os métodos do client dependem de `this` — desacoplá-los
+ * estoura `Cannot read properties of undefined (reading 'rest')`, que foi
+ * exatamente o defeito do 233-01.
+ */
+type TabelaSolta = {
+  select: (cols: string) => any;
+  insert: (linhas: unknown) => PromiseLike<{ error: { message: string } | null }>;
+  update: (patch: unknown) => any;
+};
 
 function AdjustBalanceDialog({
   open,
   onOpenChange,
-  currentBalance,
+  saldoExibidoHoje,
+  movimentos,
+  carregandoMovimentos,
   orgId,
 }: AdjustBalanceDialogProps) {
   const queryClient = useQueryClient();
-  const [value, setValue] = useState<string>(String(currentBalance));
+  const [value, setValue] = useState<string>("");
   const [saving, setSaving] = useState(false);
 
-  // Sincronizar valor quando o dialog abre com saldo atual
+  const veredito = podeDeclarar(movimentos, carregandoMovimentos);
+
+  // Ao abrir, o campo já vem com o saldo que a tela mostra — é o número que ele
+  // vai corrigir, não o parâmetro interno.
   const handleOpenChange = (isOpen: boolean) => {
-    if (isOpen) setValue(String(currentBalance));
+    if (isOpen) setValue(saldoExibidoHoje == null ? "" : String(saldoExibidoHoje));
     onOpenChange(isOpen);
   };
 
+  // Prévia ao vivo: o que será gravado para a tela exibir o que ele digitou.
+  const desejado = numeroOuNulo(value);
+  const previaInitialBalance =
+    veredito.pode && desejado != null
+      ? initialBalanceParaSaldo(desejado, movimentos!.entradas, movimentos!.saidas)
+      : null;
+
   const handleSave = async () => {
-    const parsed = parseFloat(value.replace(",", "."));
-    if (isNaN(parsed)) {
+    // 🔴 O BLOQUEIO. Se entradas/saídas ainda não carregaram, a inversa gravaria
+    // `initial_balance = desejado` — o defeito de hoje, agora silencioso.
+    if (!veredito.pode) {
+      toast.error(veredito.motivo ?? "Não é possível salvar agora.");
+      return;
+    }
+
+    const hoje = brToday();
+    const montado = montarDeclaracao(orgId, hoje, value, movimentos);
+    if (montado == null) {
       toast.error("Digite um valor numérico válido.");
       return;
     }
@@ -120,19 +180,53 @@ function AdjustBalanceDialog({
       const { error } = await supabase
         .from("financial_settings")
         .upsert(
-          { organization_id: orgId, initial_balance: parsed },
+          { organization_id: orgId, initial_balance: montado.initialBalanceAGravar },
           { onConflict: "organization_id" }
         );
 
       if (error) throw error;
 
-      // Invalidar queries de fluxo de caixa para recalcular cards e gráfico
+      // ── A declaração — a âncora da curva de confiança ──
+      // ⚠️ Redeclarar o mesmo dia atualiza o `saldo_real` (vale a última palavra
+      // dele) mas PRESERVA o retrato anterior: na segunda declaração do dia o
+      // "exibido" já é o valor que ele mesmo acabou de gravar, e sobrescrevê-lo
+      // faria o erro do dia zero aparecer como zero em toda linha corrigida
+      // duas vezes.
+      try {
+        const from = supabase.from.bind(supabase) as unknown as (n: string) => TabelaSolta;
+        const { data: existente, error: erroLeitura } = await from("saldo_declarado")
+          .select("id")
+          .eq("organization_id", orgId)
+          .eq("data_declarada", hoje)
+          .maybeSingle();
+        if (erroLeitura) throw erroLeitura;
+
+        const escrita = existente?.id
+          ? await from("saldo_declarado")
+              .update({ saldo_real: montado.declaracao.saldo_real })
+              .eq("id", existente.id)
+              .eq("organization_id", orgId)
+          : await from("saldo_declarado").insert(montado.declaracao);
+
+        if (escrita?.error) throw escrita.error;
+        await queryClient.invalidateQueries({ queryKey: ["confianca-do-saldo", orgId] });
+      } catch (errDecl: any) {
+        // A correção do saldo já valeu — não desfazemos. Mas o motivo REAL da
+        // falha vai para a tela: declaração perdida em silêncio é série que
+        // nunca nasce.
+        toast.warning(
+          `Saldo corrigido, mas a declaração não foi registrada: ${errDecl?.message ?? "erro desconhecido"}`,
+        );
+      }
+
       await queryClient.invalidateQueries({ queryKey: ["financial_settings", orgId] });
       await queryClient.invalidateQueries({ queryKey: ["cashflow"] });
       await queryClient.invalidateQueries({ queryKey: ["today_balance"] });
       await queryClient.invalidateQueries({ queryKey: ["projected_balance"] });
 
-      toast.success("Saldo de hoje atualizado com sucesso.");
+      toast.success(
+        `Pronto. A tela passa a exibir ${formatCurrency(montado.declaracao.saldo_real)} hoje.`,
+      );
       onOpenChange(false);
     } catch (err: any) {
       toast.error(`Erro ao salvar: ${err?.message ?? "Tente novamente."}`);
@@ -143,43 +237,97 @@ function AdjustBalanceDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Ajustar saldo de hoje</DialogTitle>
+          <DialogTitle>Corrigir o saldo de hoje</DialogTitle>
           <DialogDescription>
-            Informe quanto você tem disponível no caixa agora. Este valor é o ponto de
-            partida da projeção — não é atualizado automaticamente.
-            <br />
-            <span className="text-xs text-muted-foreground mt-1 block">
-              Dica: atualize manualmente quando quiser calibrar a projeção com o
-              saldo real do banco.
-            </span>
+            Informe o <strong>saldo real que você tem no caixa agora</strong> — o número
+            que você vê no banco. A tela passa a exibir exatamente esse valor.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3 py-2">
-          <Label htmlFor="initial-balance">Quanto você tem de caixa hoje? (R$)</Label>
+        {/* 🔴 A mudança de significado precisa estar VISÍVEL: quem tinha decorado
+            o comportamento antigo precisa perceber, e não descobrir por um
+            número estranho. */}
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
+          <strong>Mudou:</strong> antes este campo pedia o saldo <em>inicial</em> (antes das
+          entradas e saídas do dia) e por isso o número exibido saía diferente do digitado.
+          Agora ele pede o <strong>saldo final de hoje</strong>. O saldo inicial é calculado
+          por trás.
+        </div>
+
+        {/* ── A decomposição: o número deixa de ser caixa-preta ── */}
+        <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs space-y-1 tabular-nums">
+          <div className="font-medium text-muted-foreground mb-1">Como a tela chega ao saldo de hoje</div>
+          {carregandoMovimentos ? (
+            <Skeleton className="h-16 w-full" />
+          ) : movimentos == null ? (
+            <p className="text-destructive">
+              Não foi possível carregar as entradas e saídas de hoje.
+            </p>
+          ) : (
+            <>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Saldo inicial (antes dos movimentos)</span>
+                <span>{formatCurrency(numeroOuNulo(movimentos.saldoInicial) ?? 0)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">+ Entradas de hoje</span>
+                <span className="text-kpi-positive">
+                  {formatCurrency(numeroOuNulo(movimentos.entradas) ?? 0)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">− Saídas de hoje</span>
+                <span className="text-kpi-negative">
+                  {formatCurrency(numeroOuNulo(movimentos.saidas) ?? 0)}
+                </span>
+              </div>
+              <div className="flex justify-between border-t border-border/60 pt-1 font-semibold">
+                <span>= Saldo que a tela mostra</span>
+                <span>
+                  {formatCurrency(
+                    saldoExibido(movimentos.saldoInicial, movimentos.entradas, movimentos.saidas) ?? 0,
+                  )}
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="space-y-2 py-1">
+          <Label htmlFor="saldo-real-hoje">Qual é o saldo real de hoje? (R$)</Label>
           <Input
-            id="initial-balance"
+            id="saldo-real-hoje"
             type="number"
-            min={0}
             step={0.01}
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder="Ex: 15000"
+            placeholder="Ex: 37430"
             className="tabular-nums"
+            disabled={!veredito.pode}
           />
+          {!veredito.pode ? (
+            <p className="text-xs text-destructive">{veredito.motivo}</p>
+          ) : previaInitialBalance != null ? (
+            <p className="text-xs text-muted-foreground">
+              Vamos gravar um saldo inicial de{" "}
+              <span className="font-medium tabular-nums">{formatCurrency(previaInitialBalance)}</span>{" "}
+              para a tela exibir{" "}
+              <span className="font-medium tabular-nums">{formatCurrency(desejado ?? 0)}</span> hoje.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Digite o valor que você tem no caixa agora.
+            </p>
+          )}
         </div>
 
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={saving}
-          >
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancelar
           </Button>
-          <Button onClick={handleSave} disabled={saving}>
+          <Button onClick={handleSave} disabled={saving || !veredito.pode || desejado == null}>
             {saving ? "Salvando…" : "Salvar"}
           </Button>
         </DialogFooter>
@@ -199,7 +347,18 @@ export default function MLFluxoCaixa() {
   // OFF (padrão) = caixa alinhado com o contas a pagar do Tiny/DFC.
   const [includePurchaseForecasts, setIncludePurchaseForecasts] = useState(false);
 
-  const { data: financialSettings } = useFinancialSettings();
+  // 🔴 A fonte dos movimentos de hoje. `saldo_final_previsto` é o número que a
+  // tela EXIBE (inicial + entradas − saídas); `initial_balance` sozinho é só a
+  // primeira parcela, e apresentá-lo como saldo é metade do engano (233-03).
+  const { data: saldoHoje, isLoading: saldoHojeLoading } = useTodayBalance();
+
+  const movimentosDeHoje: MovimentosDoDia | null = saldoHoje
+    ? {
+        saldoInicial: saldoHoje.saldo_inicial,
+        entradas: saldoHoje.entradas_hoje,
+        saidas: saldoHoje.saidas_hoje,
+      }
+    : null;
 
   // Período: hoje → hoje + 13 semanas (futuro-only). A janela vem da constante
   // compartilhada com a CashGapTable; `get_cashflow` aceita qualquer data final,
@@ -274,17 +433,33 @@ export default function MLFluxoCaixa() {
               </Label>
             </div>
 
-            {isOwner && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setAdjustOpen(true)}
-                className="gap-1.5 text-xs"
-              >
-                <Settings2 className="w-3.5 h-3.5" />
-                Ajustar saldo de hoje
-              </Button>
-            )}
+            <div className="flex items-center gap-3">
+              {/* ── A decomposição, visível sem abrir nada (233-03) ──
+                  O Wesley passou semanas sem saber "que conta ele faz". Uma
+                  linha resolve isso, e torna o próximo desvio visível em vez de
+                  misterioso. ── */}
+              {saldoHoje && (
+                <span className="text-xs text-muted-foreground tabular-nums hidden sm:inline">
+                  Saldo de hoje{" "}
+                  <span className="font-semibold text-foreground">
+                    {formatCurrency(saldoHoje.saldo_final_previsto)}
+                  </span>{" "}
+                  = {formatCurrency(saldoHoje.saldo_inicial)} + {formatCurrency(saldoHoje.entradas_hoje)} −{" "}
+                  {formatCurrency(saldoHoje.saidas_hoje)}
+                </span>
+              )}
+              {isOwner && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAdjustOpen(true)}
+                  className="gap-1.5 text-xs"
+                >
+                  <Settings2 className="w-3.5 h-3.5" />
+                  Corrigir saldo de hoje
+                </Button>
+              )}
+            </div>
           </div>
 
           {/* ── 1. Quanto tempo aguento sem vender? (Fase 230, CX-01/CX-06) ──
@@ -341,7 +516,9 @@ export default function MLFluxoCaixa() {
         <AdjustBalanceDialog
           open={adjustOpen}
           onOpenChange={setAdjustOpen}
-          currentBalance={financialSettings?.initial_balance ?? 0}
+          saldoExibidoHoje={saldoHoje?.saldo_final_previsto ?? null}
+          movimentos={movimentosDeHoje}
+          carregandoMovimentos={saldoHojeLoading}
           orgId={currentOrg.id}
         />
       )}

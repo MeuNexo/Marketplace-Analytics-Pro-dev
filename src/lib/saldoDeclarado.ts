@@ -120,3 +120,106 @@ export function initialBalanceParaSaldo(
   // perde centavos que a soma teria conservado.
   return duasCasas(d - e + s);
 }
+
+// ---------------------------------------------------------------------------
+// O portão do salvamento e a declaração que vai para o banco
+// ---------------------------------------------------------------------------
+
+/** Os movimentos do dia, como a tela os conhece no instante da declaração. */
+export interface MovimentosDoDia {
+  /** `financial_settings.initial_balance` ANTES da correção. */
+  saldoInicial: unknown;
+  entradas: unknown;
+  saidas: unknown;
+}
+
+export interface Veredito {
+  pode: boolean;
+  /** O motivo, em português, quando `pode` é falso. `null` quando pode. */
+  motivo: string | null;
+}
+
+/**
+ * 🔴 O BLOQUEIO É OBRIGATÓRIO, e não é zelo.
+ *
+ * Se entradas e saídas vierem como zero por ainda estarem carregando, a inversa
+ * grava `initial_balance = desejado` — que é EXATAMENTE o defeito de hoje, agora
+ * silencioso e com cara de conserto. Zero legítimo (dia sem movimento) passa;
+ * ausência não passa.
+ */
+export function podeDeclarar(mov: MovimentosDoDia | null | undefined, carregando = false): Veredito {
+  if (carregando) {
+    return { pode: false, motivo: "Os movimentos de hoje ainda estão carregando." };
+  }
+  if (mov == null) {
+    return {
+      pode: false,
+      motivo: "As entradas e saídas de hoje não foram carregadas — sem elas o valor gravado ficaria errado.",
+    };
+  }
+  const e = numeroOuNulo(mov.entradas);
+  const s = numeroOuNulo(mov.saidas);
+  if (e == null || s == null) {
+    return {
+      pode: false,
+      motivo: "As entradas e saídas de hoje não foram carregadas — sem elas o valor gravado ficaria errado.",
+    };
+  }
+  return { pode: true, motivo: null };
+}
+
+export interface Declaracao {
+  organization_id: string;
+  data_declarada: string;
+  saldo_real: number;
+  /** O que a tela EXIBIA antes da correção — é ele que mede o erro do dia zero. */
+  saldo_exibido: number | null;
+  /** O `initial_balance` que VIGORAVA antes da correção, pelo mesmo motivo. */
+  initial_balance: number | null;
+  entradas_do_dia: number;
+  saidas_do_dia: number;
+}
+
+/**
+ * Monta o par (o que gravar em `financial_settings`, o que declarar em
+ * `saldo_declarado`) a partir do saldo que o humano quer ver.
+ *
+ * 🔴 `saldo_exibido` e `initial_balance` guardam o estado ANTES da correção, e
+ * não o depois. É essa diferença — exibido menos declarado — que mede o erro do
+ * dia zero (R$ 13.874,62 em 27/08). Gravar o depois deixaria erro zero em todas
+ * as linhas, e a série inteira mediria nada.
+ *
+ * Devolve `null` quando qualquer parcela está suja: o chamador não grava.
+ */
+export function montarDeclaracao(
+  orgId: string | null | undefined,
+  dataDeclarada: string | null | undefined,
+  saldoDesejado: unknown,
+  mov: MovimentosDoDia | null | undefined,
+): { initialBalanceAGravar: number; declaracao: Declaracao } | null {
+  if (!orgId || !dataDeclarada) return null;
+  if (!podeDeclarar(mov).pode) return null;
+
+  const entradas = numeroOuNulo(mov!.entradas) as number;
+  const saidas = numeroOuNulo(mov!.saidas) as number;
+  const desejado = numeroOuNulo(saldoDesejado);
+  if (desejado == null) return null;
+
+  const novoIb = initialBalanceParaSaldo(desejado, entradas, saidas);
+  if (novoIb == null) return null;
+
+  const ibAnterior = numeroOuNulo(mov!.saldoInicial);
+
+  return {
+    initialBalanceAGravar: novoIb,
+    declaracao: {
+      organization_id: orgId,
+      data_declarada: dataDeclarada,
+      saldo_real: duasCasas(desejado),
+      saldo_exibido: ibAnterior == null ? null : saldoExibido(ibAnterior, entradas, saidas),
+      initial_balance: ibAnterior == null ? null : duasCasas(ibAnterior),
+      entradas_do_dia: duasCasas(entradas),
+      saidas_do_dia: duasCasas(saidas),
+    },
+  };
+}
