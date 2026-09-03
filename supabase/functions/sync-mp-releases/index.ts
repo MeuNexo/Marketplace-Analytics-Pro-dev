@@ -243,6 +243,14 @@ async function processWindow(
         description:     p?.description ?? null,
         synced_at:       syncedAt,
         refund_date:     refundDate,
+        // 225-01: a chave de conciliação venda↔repasse. O valor já era lido na
+        // condição do filtro acima (`p.order.type`) e era descartado aqui — sem
+        // ele é impossível dizer se uma venda foi repassada, porque `release_date`
+        // é a data em que o dinheiro liberou, não a da venda. `String(...) || null`
+        // cobre os dois formatos que a API já devolveu (número e string) e
+        // transforma vazio em NULO, em vez de gravar string vazia: nulo é o estado
+        // que a coluna documenta, string vazia seria um terceiro estado sem filtro.
+        ml_order_id:     String(p?.order?.id ?? "") || null,
       });
     }
 
