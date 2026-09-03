@@ -27,6 +27,7 @@ export const routeTitles: Record<string, { title: string; subtitle: string }> = 
   },
   "/fluxo-de-caixa": { title: "Fluxo de Caixa", subtitle: "Como meu dinheiro vai evoluir?" },
   "/dre-caixa": { title: "DRE Caixa", subtitle: "O que entrou no mês pagou as contas do mês?" },
+  "/conciliacao": { title: "Protetor do caixa", subtitle: "Repasses do Mercado Pago conciliados venda a venda" },
   "/usuarios": { title: "Usuários", subtitle: "Gerencie usuários e permissões do sistema" },
   "/monitoramento": { title: "Monitoramento", subtitle: "Estatísticas de banco de dados e capacidade do sistema" },
 };

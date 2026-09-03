@@ -21,6 +21,9 @@ export const roleAccess: Record<string, OrgRole[]> = {
   "/metas": OPERATIONAL,
   "/precificacao": OPERATIONAL,
   "/compras": OPERATIONAL,
+  // 🔴 Sem esta linha a rota compila, o menu aparece e NINGUÉM consegue
+  // abrir: `canAccess` nega por omissão. É a armadilha silenciosa da 225-03.
+  "/conciliacao": OPERATIONAL,
   // Fase 213: a antiga `/produtos-vendidos`. O endereço velho virou
   // redirecionamento e, como `/precos-custos`, não tem entrada aqui — quem
   // decide o acesso é o destino. Rota sem entrada é negada por omissão.

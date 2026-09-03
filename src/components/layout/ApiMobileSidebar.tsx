@@ -20,6 +20,7 @@ import {
   Settings2,
   Handshake,
   ShoppingBag,
+  ShieldCheck,
   ShoppingCart,
   Star,
   TrendingUp,
@@ -55,6 +56,7 @@ const sections = [
       { icon: Calculator,    label: "Precificação", path: "/precificacao"  },
       { icon: Banknote,      label: "Fluxo de Caixa", path: "/fluxo-de-caixa" },
       { icon: FileBarChart,  label: "DRE Caixa", path: "/dre-caixa" },
+      { icon: ShieldCheck,   label: "Protetor do caixa", path: "/conciliacao" },
     ],
   },
   {
