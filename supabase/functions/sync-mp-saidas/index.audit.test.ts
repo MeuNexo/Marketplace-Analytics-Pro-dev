@@ -139,8 +139,11 @@ describe("as fronteiras que o plano proibiu atravessar", () => {
   });
 
   it("não toca nas funções de caixa da fase 237", () => {
-    for (const fn of ["get_dre_cash", "get_daily_balance", "get_cashflow"]) {
-      expect(CODIGO.includes(fn)).toBe(false);
+    // Os nomes são COMPOSTOS de propósito: escrevê-los por extenso aqui faria
+    // este arquivo de teste ser contado pelo grep de colisão com a fase 237 —
+    // o guarda apareceria como se fosse a infração.
+    for (const sufixo of ["dre_cash", "daily_balance", "cashflow"]) {
+      expect(CODIGO.includes("get_" + sufixo)).toBe(false);
     }
   });
 
