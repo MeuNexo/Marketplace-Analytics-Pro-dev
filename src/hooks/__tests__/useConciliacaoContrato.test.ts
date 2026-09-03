@@ -47,10 +47,14 @@ describe("🔴 PORTÃO — o contrato de useConciliacao com as RPCs da 225-02", 
     // `Cannot read properties of undefined (reading 'rest')`.
     expect(CODIGO).toContain("bind(supabase)");
 
+    // ⚠️ Mais largo que o portão de `rpcBind.test.ts` de propósito: aquele só
+    // varre `= supabase.rpc` e deixa passar `return supabase.rpc`, que
+    // desacopla o método exatamente do mesmo jeito. Medido: com o `.bind`
+    // removido daqui, o portão do repositório continuou VERDE.
     const ofensores = CODIGO.split("\n").filter(
-      (l) => /=\s*supabase\.rpc\b/.test(l) && !l.includes(".bind"),
+      (l) => /\bsupabase\.rpc\b/.test(l) && !l.includes(".bind"),
     );
-    expect(ofensores, "atribuição de supabase.rpc sem bind").toEqual([]);
+    expect(ofensores, "supabase.rpc referenciado sem .bind na mesma linha").toEqual([]);
   });
 
   it("3/4 — há laço de paginação de verdade, não uma chamada só", () => {
