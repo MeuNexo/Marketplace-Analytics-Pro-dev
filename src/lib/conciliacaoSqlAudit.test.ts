@@ -20,8 +20,13 @@ import { resolve } from "node:path";
 /** Caminho relativo à RAIZ DO REPO (`process.cwd()`), não a `import.meta.url`:
  *  a suíte roda em jsdom, onde `import.meta.url` é uma URL `http://` do Vite. */
 const ARQ = "supabase/migrations/20260903130000_conciliacao_modelo_e_rpcs.sql";
+/** A correção de ACL e de truncamento (Task 3). A migration acima JÁ ESTÁ
+ *  APLICADA em produção e não se edita — o que está no ar só muda por
+ *  migration nova. */
+const ARQ_ACL = "supabase/migrations/20260903140000_conciliacao_acl_e_totais.sql";
 
 const sqlBruto = readFileSync(resolve(process.cwd(), ARQ), "utf8");
+const sqlAcl = readFileSync(resolve(process.cwd(), ARQ_ACL), "utf8");
 
 function semComentarios(sql: string): string {
   return sql
@@ -34,6 +39,13 @@ function semComentarios(sql: string): string {
 }
 
 const corpo = semComentarios(sqlBruto);
+const corpoAcl = semComentarios(sqlAcl);
+
+/** As duas migrations da fase, para as regras que valem em todo arquivo. */
+const ARQUIVOS = [
+  { nome: ARQ, corpo, bruto: sqlBruto },
+  { nome: ARQ_ACL, corpo: corpoAcl, bruto: sqlAcl },
+] as const;
 
 /** As três funções criadas pela migration. */
 const FUNCOES = [
@@ -246,5 +258,108 @@ describe("paginação — o PostgREST trunca em 1000 sem avisar", () => {
 
   it("ordena por dias restantes, não por valor (D-225-03)", () => {
     expect(/order\s+by\s+\w*\.?dias_restantes\s+asc\s+nulls\s+last/i.test(corpo)).toBe(true);
+  });
+});
+
+// ─── 11. A correção de ACL e de truncamento (Task 3) ───────────────────────
+
+describe("migration de correção — `anon` nomeado e o truncamento visível", () => {
+  it.each(FUNCOES)("revoga execução de anon em %s — revogar de PUBLIC não basta nesta base", (fn) => {
+    const regex = new RegExp(`REVOKE\\s+ALL\\s+ON\\s+FUNCTION\\s+public\\.${fn}\\s*\\([^)]*\\)\\s+FROM\\s+anon`, "i");
+    expect(regex.test(corpoAcl)).toBe(true);
+  });
+
+  it.each(FUNCOES)("reemite o grant de %s — DROP FUNCTION apaga a ACL", (fn) => {
+    const regex = new RegExp(`GRANT\\s+EXECUTE\\s+ON\\s+FUNCTION\\s+public\\.${fn}\\s*\\([^)]*\\)\\s+TO\\s+authenticated`, "i");
+    expect(regex.test(corpoAcl)).toBe(true);
+  });
+
+  it("toda função que este arquivo remove é recriada e reganha o grant no mesmo arquivo", () => {
+    const removidas = [...corpoAcl.matchAll(/DROP\s+FUNCTION\s+(?:IF\s+EXISTS\s+)?public\.(\w+)/gi)].map((m) => m[1]);
+    for (const fn of removidas) {
+      expect(new RegExp(`CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+public\\.${fn}\\b`, "i").test(corpoAcl)).toBe(true);
+      expect(new RegExp(`GRANT\\s+EXECUTE\\s+ON\\s+FUNCTION\\s+public\\.${fn}\\b`, "i").test(corpoAcl)).toBe(true);
+    }
+    expect(removidas.length).toBeGreaterThan(0);
+  });
+
+  it("o resumo devolve o total sem teto, o valor do teto e a contagem sem valor", () => {
+    // Medido em produção: 1.351 linhas em 30d contra teto de 1.000. Sem estes
+    // campos a tela mostra 1.000 e o usuário acha que são todos.
+    for (const campo of ["linhas_total", "teto_da_lista", "valor_desconhecido_n"]) {
+      expect(corpoAcl).toContain(campo);
+    }
+  });
+
+  it.each(["nosso_erro_soma", "fora_escopo_soma"])(
+    "%s NÃO é coalescido para zero — nulo é 'não sei', zero é uma afirmação",
+    (campo) => {
+      // `coalesce(...)` tem parênteses aninhados, então regex de um nível não
+      // serve: a checagem olha a EXPRESSÃO inteira que antecede o apelido.
+      const i = corpoAcl.indexOf(`as ${campo}`);
+      expect(i, `campo ${campo} não encontrado`).toBeGreaterThan(0);
+      const inicioDaLinha = corpoAcl.lastIndexOf("\n", i);
+      const expressao = corpoAcl.slice(inicioDaLinha, i);
+      expect(/coalesce/i.test(expressao)).toBe(false);
+      expect(/sum\s*\(\s*b\.diferenca\s*\)/i.test(expressao)).toBe(true);
+    },
+  );
+
+  it("os campos que SÃO somas legítimas continuam coalescidos — o contraste prova que a regra é seletiva", () => {
+    for (const campo of ["vazamento_total", "sub_piso_soma", "entradas_sem_origem_soma"]) {
+      const i = corpoAcl.indexOf(`as ${campo}`);
+      expect(i, `campo ${campo} não encontrado`).toBeGreaterThan(0);
+      const expressao = corpoAcl.slice(corpoAcl.lastIndexOf("\n", i), i);
+      expect(/coalesce/i.test(expressao)).toBe(true);
+    }
+  });
+
+  it("a fila 'nosso' exibe residuo_nosso, não residuo_ml — o motivo só dispara com residuo_ml dentro do piso", () => {
+    expect(/when\s+l\.motivo\s*=\s*'divergencia_da_nossa_base'\s*then\s+l\.residuo_nosso/i.test(corpoAcl)).toBe(true);
+  });
+
+  it("a guarda final falha alto se anon continuar executando ou se authenticated perder o grant", () => {
+    expect(/has_function_privilege\s*\(\s*'anon'/i.test(corpoAcl)).toBe(true);
+    expect(/has_function_privilege\s*\(\s*'authenticated'/i.test(corpoAcl)).toBe(true);
+    expect(/raise\s+exception[^;]*anon ainda executa/i.test(corpoAcl)).toBe(true);
+  });
+});
+
+// ─── 12. As regras transversais valem nos DOIS arquivos ────────────────────
+
+describe("regras transversais — valem em toda migration da fase, não só na primeira", () => {
+  it.each(ARQUIVOS.map((a) => [a.nome, a] as const))("%s não contém SECURITY DEFINER", (_n, a) => {
+    expect(/\bSECURITY\s+DEFINER\b/i.test(a.corpo)).toBe(false);
+  });
+
+  it.each(ARQUIVOS.map((a) => [a.nome, a] as const))("%s não usa o campo POR UNIDADE nem o que herda o defeito dele", (_n, a) => {
+    expect(/\bcomissao\b/i.test(a.corpo)).toBe(false);
+    expect(/\breceita_liquida\b/i.test(a.corpo)).toBe(false);
+  });
+
+  it.each(ARQUIVOS.map((a) => [a.nome, a] as const))("%s nunca filtra por data_pagamento (coluna morta)", (_n, a) => {
+    expect(/where[\s\S]{0,400}?\bdata_pagamento\b\s*(is\s+not\s+null|>=|<=|<|>|=)/i.test(a.corpo)).toBe(false);
+  });
+
+  it.each(ARQUIVOS.map((a) => [a.nome, a] as const))("%s não contém UUID literal", (_n, a) => {
+    expect(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(a.corpo)).toBe(false);
+  });
+
+  it.each(ARQUIVOS.map((a) => [a.nome, a] as const))("%s não menciona nenhuma função de caixa da Fase 237", (_n, a) => {
+    for (const fn of ["get_dre_cash", "get_daily_balance", "get_cashflow"]) {
+      expect(a.bruto.includes(fn)).toBe(false);
+    }
+  });
+
+  it("toda cópia do netting inverte o sinal — nenhuma soma simples escapou em nenhum arquivo", () => {
+    for (const a of ARQUIVOS) {
+      expect((a.corpo.match(/sum\s*\(\s*\w*\.?detail_amount\s*\)/gi) ?? [])).toEqual([]);
+    }
+    // O netting existe duas vezes: uma por migration, porque a segunda recria a
+    // função base inteira. As duas cópias precisam ser a MESMA expressão.
+    const netting = /detail_type\s*=\s*'BONUS'\s+or\s+\w*\.?charge_bonified_id\s+is\s+not\s+null/gi;
+    for (const a of ARQUIVOS) {
+      expect((a.corpo.match(netting) ?? []).length).toBeGreaterThanOrEqual(1);
+    }
   });
 });
