@@ -351,6 +351,24 @@ async function runSync(daysBack: number, daysAhead: number): Promise<unknown> {
       }
     }
 
+    // ── 225-04: a ingestao das SAIDAS do MP pega carona AQUI ────────────────
+    // O teto de pg_cron/pg_net e compartilhado e ja ha dois jobs ativos, entao
+    // nao se cria um terceiro. `sync-mp-saidas` sai desta invocacao, que ja e
+    // agendada de 3 em 3 horas pelo cron `sync-mp-releases-daily`.
+    //
+    // 🔴 E estritamente APOS todo o trabalho de caixa, e o catch NAO propaga:
+    // ingestao de caixa nao pode cair por causa de relatorio de saida. Nenhuma
+    // linha da logica acima muda por causa deste bloco.
+    try {
+      await fetch(SUPABASE_URL + "/functions/v1/sync-mp-saidas", {
+        method:  "POST",
+        headers: { Authorization: "Bearer " + SERVICE_KEY, "Content-Type": "application/json" },
+        body:    "{}",
+      });
+    } catch (e: any) {
+      console.warn("sync-mp-releases: disparo de sync-mp-saidas falhou (nao bloqueia):", e?.message);
+    }
+
     return { ok: true, days_back: daysBack, days_ahead: daysAhead, results };
   } catch (err: unknown) {
     // Pitfall 4: capturar TODA exceção do background — sem try/catch o processo
