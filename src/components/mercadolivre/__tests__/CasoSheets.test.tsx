@@ -14,7 +14,7 @@
 //   · a fila "Nosso erro" não tem dossiê nem desfecho nem prazo.
 // ============================================================================
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import type { CasoConciliacaoRow } from "@/hooks/useConciliacao";
 
 const marcarDesfecho = vi.fn();
@@ -222,5 +222,207 @@ describe("🔴 a fila 'Nosso erro' não tem caminho para virar chamado", () => {
   it("15 — diz, com todas as letras, que nada sai daqui", () => {
     abrirNosso();
     expect(screen.getByText(/Nada aqui é enviado para fora/i)).toBeTruthy();
+  });
+});
+
+// ============================================================================
+// 225-07 (G-01) — a CHAVE do portão, exercida na árvore acessível
+//
+// 🔴 O que estas asserções protegem, e por que grep não alcança:
+//
+// A fase inventou `conciliacao_casos.verificado_no_mp` em 225-02 (achado C-06:
+// os 5 únicos pedidos sem repasse em 75 dias eram 5/5 contestação de cartão) e
+// a cascata da RPC LÊ a coluna — é ela que separa `ausencia_a_verificar`, que
+// não acusa, de `sem_repasse_confirmado`, que vira chamado. Nenhuma linha do
+// produto escrevia a coluna. O `grep` provava a ausência do texto; só a árvore
+// renderizada prova que existe um CAMINHO — e que ele some onde deve sumir.
+//
+// A cadeia inteira, em uma frase: conferir no Mercado Pago → registrar o que se
+// viu → a RPC re-deriva o motivo → o portão de `acionavel` que já existia abre
+// sozinho. A chave não abre uma porta nova; abre a que a fase deixou trancada.
+// ============================================================================
+
+const registrarVerificacao = vi.fn();
+let verificacaoAtual: {
+  caso_id: string | null;
+  verificado_no_mp: boolean;
+  status_mp_verificado: string | null;
+  verificado_em: string | null;
+} | null = null;
+
+vi.mock("@/hooks/useVerificacaoMp", async () => {
+  const real = await vi.importActual<typeof import("@/hooks/useVerificacaoMp")>(
+    "@/hooks/useVerificacaoMp",
+  );
+  return {
+    ...real,
+    useVerificacaoMp: () => ({
+      verificacao: verificacaoAtual,
+      carregando: false,
+      registrarVerificacao,
+      podeEscrever,
+      ocupado: false,
+      erro: null,
+    }),
+  };
+});
+
+/** O pedido de R-09, medido em produção: `ausencia_a_verificar`, R$ 439,25. */
+const AUSENCIA: Partial<CasoConciliacaoRow> = {
+  tipo_caso: "repasse_ausente",
+  motivo: "ausencia_a_verificar",
+  acionavel: false,
+  estado: "aberto",
+  diferenca: 439.25,
+};
+
+const ROTULO_CONFERIR = /Conferi no Mercado Pago/i;
+const ROTULO_DESFAZER = /Desfazer verificação/i;
+
+beforeEach(() => {
+  registrarVerificacao.mockReset();
+  verificacaoAtual = null;
+});
+
+describe("🔴 G-01 — a ausência a verificar ganha caminho para ser verificada", () => {
+  it("16 — o caso `ausencia_a_verificar` oferece registrar a conferência", () => {
+    abrir(AUSENCIA);
+    expect(screen.getByRole("button", { name: ROTULO_CONFERIR })).toBeTruthy();
+    // E continua SEM caminho para virar chamado: verificar não é contestar.
+    nenhumBotaoDeDesfecho();
+  });
+
+  it("17 — o painel pergunta O QUE foi visto: os quatro status do banco, e só eles", () => {
+    abrir(AUSENCIA);
+    fireEvent.click(screen.getByRole("button", { name: ROTULO_CONFERIR }));
+
+    const opcoes = screen.getAllByRole("radio");
+    expect(opcoes.length, "os quatro status que a régua do banco lê").toBe(4);
+
+    // 🔴 O texto de cada opção é o que o usuário vê no painel do MP, não o
+    // código do banco. Código na tela transfere a tradução para quem clica.
+    expect(screen.getByText(/repasse não chegou/i)).toBeTruthy();
+    expect(screen.getByText(/contestação de cartão/i)).toBeTruthy();
+    expect(screen.getByText(/cancelado/i)).toBeTruthy();
+    expect(screen.getByText(/estornado/i)).toBeTruthy();
+  });
+
+  it("18 — 🔴 confirmar sem escolher status é impossível: conferência sem conteúdo não decide nada", () => {
+    abrir(AUSENCIA);
+    fireEvent.click(screen.getByRole("button", { name: ROTULO_CONFERIR }));
+
+    const confirmar = screen.getByRole("button", { name: /^Confirmar$/i });
+    expect((confirmar as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(confirmar);
+    expect(registrarVerificacao).not.toHaveBeenCalled();
+  });
+
+  it("19 — escolher e confirmar grava o status escolhido, com pedido e tipo", () => {
+    abrir(AUSENCIA);
+    fireEvent.click(screen.getByRole("button", { name: ROTULO_CONFERIR }));
+    fireEvent.click(screen.getAllByRole("radio")[0]);
+    fireEvent.click(screen.getByRole("button", { name: /^Confirmar$/i }));
+
+    expect(registrarVerificacao).toHaveBeenCalledTimes(1);
+    const args = registrarVerificacao.mock.calls[0][0];
+    expect(args.ml_order_id).toBe("2000017817648050");
+    expect(args.tipo_caso).toBe("repasse_ausente");
+    expect(args.verificado).toBe(true);
+    expect(args.status_mp).toBe("approved");
+  });
+});
+
+describe("🔴 G-01 — a verificação é REVERSÍVEL: clique errado não acusa para sempre", () => {
+  it("20 — verificado, a tela diz o que foi conferido, quando, e oferece desfazer", () => {
+    verificacaoAtual = {
+      caso_id: "uuid-do-caso",
+      verificado_no_mp: true,
+      status_mp_verificado: "charged_back",
+      verificado_em: "2026-09-04",
+    };
+    abrir({ ...AUSENCIA, motivo: "fora_do_escopo", fila: "nenhuma" });
+
+    expect(screen.getByText(/04\/09\/2026/)).toBeTruthy();
+    expect(screen.getByText(/contestação de cartão/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: ROTULO_DESFAZER })).toBeTruthy();
+    // Registrar de novo por cima não existe: primeiro desfaz, depois registra.
+    expect(screen.queryByRole("button", { name: ROTULO_CONFERIR })).toBeNull();
+  });
+
+  it("21 — desfazer grava a reversão SEM status: desfazer é apagar, não afirmar outra coisa", () => {
+    verificacaoAtual = {
+      caso_id: "uuid-do-caso",
+      verificado_no_mp: true,
+      status_mp_verificado: "approved",
+      verificado_em: "2026-09-04",
+    };
+    abrir({ ...AUSENCIA, motivo: "sem_repasse_confirmado", acionavel: true });
+
+    fireEvent.click(screen.getByRole("button", { name: ROTULO_DESFAZER }));
+    fireEvent.click(screen.getByRole("button", { name: /^Confirmar$/i }));
+
+    expect(registrarVerificacao).toHaveBeenCalledTimes(1);
+    const args = registrarVerificacao.mock.calls[0][0];
+    expect(args.verificado).toBe(false);
+    expect(args.status_mp ?? null).toBeNull();
+  });
+
+  it("22 — 🔴 a confirmação de desfazer NÃO promete irreversibilidade", () => {
+    // As três confirmações de desfecho dizem "não pode ser desfeito", e é
+    // verdade. Copiar essa frase aqui seria mentir sobre a única ação da tela
+    // que É reversível — e mentira de confirmação treina o usuário a não ler.
+    verificacaoAtual = {
+      caso_id: "uuid-do-caso",
+      verificado_no_mp: true,
+      status_mp_verificado: "approved",
+      verificado_em: "2026-09-04",
+    };
+    abrir({ ...AUSENCIA, motivo: "sem_repasse_confirmado", acionavel: true });
+    fireEvent.click(screen.getByRole("button", { name: ROTULO_DESFAZER }));
+
+    expect(screen.queryByText(/não pode ser desfeito/i)).toBeNull();
+  });
+});
+
+describe("🔴 G-01 — o caminho existe SÓ onde a régua do banco o lê", () => {
+  it("23 — `repasse_a_menor` não tem bloco de verificação: a régua dele é outra", () => {
+    abrir({ tipo_caso: "repasse_a_menor", motivo: "regua_nao_liberada", acionavel: false });
+    expect(screen.queryByRole("button", { name: ROTULO_CONFERIR })).toBeNull();
+    expect(screen.queryByRole("button", { name: ROTULO_DESFAZER })).toBeNull();
+  });
+
+  it("24 — sem permissão de escrita não há botão de conferir", () => {
+    podeEscrever = false;
+    abrir(AUSENCIA);
+    expect(screen.queryByRole("button", { name: ROTULO_CONFERIR })).toBeNull();
+  });
+
+  it("25 — caso já contestado não oferece conferência: ela mexeria embaixo de um desfecho", () => {
+    abrir({ ...AUSENCIA, motivo: "sem_repasse_confirmado", acionavel: true, estado: "contestado" });
+    expect(screen.queryByRole("button", { name: ROTULO_CONFERIR })).toBeNull();
+    expect(screen.queryByRole("button", { name: ROTULO_DESFAZER })).toBeNull();
+  });
+
+  it("26 — 🔴 A CADEIA INTEIRA: verificado como `approved`, o caso vira acionável e ganha o desfecho", () => {
+    // Este é o teste que a fase não tinha. A RPC re-deriva o motivo para
+    // `sem_repasse_confirmado` e `acionavel` para verdadeiro; o portão que já
+    // existia na Sheet abre sozinho. A chave não abre porta nova.
+    verificacaoAtual = {
+      caso_id: "uuid-do-caso",
+      verificado_no_mp: true,
+      status_mp_verificado: "approved",
+      verificado_em: "2026-09-04",
+    };
+    abrir({
+      ...AUSENCIA,
+      motivo: "sem_repasse_confirmado",
+      acionavel: true,
+      fila: "ml",
+      dias_restantes: 5,
+    });
+
+    expect(screen.getByRole("button", { name: /Marcar como contestado/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: ROTULO_DESFAZER })).toBeTruthy();
+    expect(screen.queryByText(/ainda não é acionável/i)).toBeNull();
   });
 });
