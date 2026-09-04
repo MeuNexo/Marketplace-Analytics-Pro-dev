@@ -416,6 +416,14 @@ async function processWindow(
         recebedor = idOuNulo(p?.collector_id);
         pagador   = idOuNulo(p?.payer_id);
 
+        // ⚠️ "não perguntei ainda" e "perguntei e a fonte não respondeu" são estados
+        // DIFERENTES, e somá-los no mesmo contador inflaria o número que existe para
+        // avisar que a exclusividade mútua do par quebrou. O censo mediu ZERO
+        // indeterminadas em 438 — se o teto contasse como indeterminada, a primeira
+        // invocação de uma janela grande devolveria dezenas e ninguém saberia se é
+        // sinal novo ou só fila.
+        let ficouPendentePorTeto = false;
+
         // Ausência dos dois é DÚVIDA, não veredito: a busca omite o recebedor
         // quando o dono do token é o pagador. Quem responde é o detalhe.
         if (recebedor === null && pagador === null) {
@@ -435,6 +443,7 @@ async function processWindow(
             // entre invocações — e decresce porque quem foi conferido não volta a
             // gastar consulta.
             apurado.detalhes_pendentes++;
+            ficouPendentePorTeto = true;
           }
         }
 
@@ -460,7 +469,9 @@ async function processWindow(
           entraNoCaixa = true;
           motivo       = null;
           conferidaEm  = null;
-          apurado.origem_indeterminada++;
+          // Só conta como indeterminada quem foi PERGUNTADO e não respondeu. Quem
+          // apenas esbarrou no teto já está contado em detalhes_pendentes.
+          if (!ficouPendentePorTeto) apurado.origem_indeterminada++;
         }
       }
 
