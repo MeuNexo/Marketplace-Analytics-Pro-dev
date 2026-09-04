@@ -229,19 +229,46 @@ DECLARE
   v_colunas   integer;
   v_crons     integer;
   v_faltando  text;
+  v_formas    text;
 BEGIN
-  -- (a) a funcao existe com a MESMA assinatura, e as propriedades que a ACL e
-  --     o isolamento dependem continuam de pe
+  -- (a) a funcao existe com a MESMA assinatura, e as propriedades de que a ACL
+  --     e o isolamento dependem continuam de pe.
+  --
+  -- 🔴 A ASSINATURA E CASADA POR TIPO, NUNCA POR TEXTO RENDERIZADO. Armadilha
+  -- paga na primeira tentativa desta migration, em 2026-09-04: eu comparava
+  -- `pg_get_function_identity_arguments(p.oid) = 'boolean'` e a guarda reprovou
+  -- com "a funcao nao existe" sobre uma funcao que existia e acabara de ser
+  -- substituida com sucesso. Motivo: `pg_get_function_identity_arguments`
+  -- devolve o NOME do parametro junto com o tipo — aqui, `p_incluir_hoje
+  -- boolean`, e nao `boolean`. Quem imprime `dispatch_orders_jobs(boolean)` e o
+  -- `regprocedure`, que e o formato em que a assinatura circula nas conversas e
+  -- na documentacao desta fase. Sao dois formatos diferentes para a mesma
+  -- coisa, e confundi-los produz um falso negativo que parece um desastre.
+  -- `pronargs` + `proargtypes` casa por TIPO e ainda fica imune a renomear o
+  -- parametro, que e mudanca inocua e nao deveria derrubar guarda nenhuma.
+  --
+  -- ⚠️ `proargtypes` e um oidvector e comeca no indice ZERO.
   SELECT p.oid, p.prosecdef, p.provolatile, p.proconfig
     INTO v_oid, v_secdef, v_volatile, v_config
   FROM pg_proc p
   JOIN pg_namespace n ON n.oid = p.pronamespace
   WHERE n.nspname = 'public'
     AND p.proname = 'dispatch_orders_jobs'
-    AND pg_get_function_identity_arguments(p.oid) = 'boolean';
+    AND p.pronargs = 1
+    AND p.proargtypes[0] = 'boolean'::regtype;
 
   IF v_oid IS NULL THEN
-    RAISE EXCEPTION '225-10 POS-ESTADO: public.dispatch_orders_jobs(boolean) nao existe depois da migration. A assinatura mudou ou a funcao sumiu.';
+    -- Se falhar, a mensagem diz o que EXISTE — sem isso o diagnostico custa
+    -- outra ida ao banco, que foi exatamente o que a primeira tentativa custou.
+    SELECT COALESCE(string_agg(format('%s(%s)', p.proname, pg_get_function_identity_arguments(p.oid)), ' | '), '(nenhuma)')
+      INTO v_formas
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'dispatch_orders_jobs';
+
+    RAISE EXCEPTION
+      '225-10 POS-ESTADO: nao achei public.dispatch_orders_jobs com exatamente 1 argumento boolean depois da migration. A assinatura mudou ou a funcao sumiu. Formas encontradas: %.',
+      v_formas;
   END IF;
 
   IF v_secdef IS DISTINCT FROM true
