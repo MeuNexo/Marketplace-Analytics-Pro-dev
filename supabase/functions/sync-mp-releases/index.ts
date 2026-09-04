@@ -369,6 +369,30 @@ async function runSync(daysBack: number, daysAhead: number): Promise<unknown> {
       console.warn("sync-mp-releases: disparo de sync-mp-saidas falhou (nao bloqueia):", e?.message);
     }
 
+    // ── 225-06: a captura do custo de tabela do frete pega carona AQUI ──────
+    // Mesma disciplina do 225-04 e pelo mesmo motivo: o teto de pg_cron/pg_net
+    // e compartilhado e ja ha dois jobs ativos, entao nao se cria um terceiro.
+    //
+    // ⚠️ Esta invocacao acontece OITO vezes por dia (cron de 3 em 3 horas), e
+    // `list_cost` e custo de TABELA — nao muda de hora em hora. Quem impede a
+    // varredura de repetir e a TRAVA DIARIA dentro da propria EF: item ja
+    // tentado hoje e pulado, e as sete invocacoes seguintes devolvem
+    // `nada_novo` depois de uma consulta barata. Sem essa trava a conta seria
+    // varrida 8x/dia contra o ML, cujo bloqueio por excesso e por ENDERECO DE
+    // ORIGEM e derrubaria estas outras sincronizacoes junto.
+    //
+    // 🔴 Tambem estritamente APOS todo o trabalho de caixa, e o catch NAO
+    // propaga: ingestao de caixa nao pode cair por causa de captura de frete.
+    try {
+      await fetch(SUPABASE_URL + "/functions/v1/sync-ml-frete-tabela", {
+        method:  "POST",
+        headers: { Authorization: "Bearer " + SERVICE_KEY, "Content-Type": "application/json" },
+        body:    "{}",
+      });
+    } catch (e: any) {
+      console.warn("sync-mp-releases: disparo de sync-ml-frete-tabela falhou (nao bloqueia):", e?.message);
+    }
+
     return { ok: true, days_back: daysBack, days_ahead: daysAhead, results };
   } catch (err: unknown) {
     // Pitfall 4: capturar TODA exceção do background — sem try/catch o processo

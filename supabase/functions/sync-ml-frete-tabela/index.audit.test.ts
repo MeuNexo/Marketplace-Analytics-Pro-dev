@@ -82,9 +82,15 @@ describe("🔴 UMA chamada por anúncio — não uma varredura de destinos", () 
     expect(/list_cost/.test(CODIGO)).toBe(true);
     // `base_cost` é função do destino (R$ 23,30 / 47,50 / 29,20 no mesmo item).
     // Ele pode ser guardado, mas NUNCA na coluna que a comparação usa.
-    expect(/list_cost\s*:\s*[A-Za-z_$][\w$]*/.test(CODIGO)).toBe(true);
-    expect(/list_cost\s*:\s*[A-Za-z_$][\w$.]*base_cost/i.test(CODIGO)).toBe(false);
-    expect(/base_cost_ref/.test(CODIGO)).toBe(true);
+    //
+    // 🔴 A asserção é POSITIVA e nomeia a origem. A versão anterior era
+    // negativa (`não contém base_cost` depois de `list_cost:`) e passou com
+    // `list_cost: leitura.baseCostRef` — a regressão exata que ela existia
+    // para pegar, escrita em camelCase. Proibir uma grafia não é proibir a
+    // troca; exigir a origem certa é.
+    expect(/list_cost\s*:\s*leitura\.listCost\b/.test(CODIGO)).toBe(true);
+    expect(/list_cost\s*:[^,\n]*base/i.test(CODIGO)).toBe(false);
+    expect(/base_cost_ref\s*:\s*leitura\.baseCostRef\b/.test(CODIGO)).toBe(true);
   });
 
   it("grava linha nova SÓ quando o custo muda — a série cresce por mudança", () => {
@@ -95,7 +101,7 @@ describe("🔴 UMA chamada por anúncio — não uma varredura de destinos", () 
 
 describe("🔴 anúncio sem estoque é condição normal, não erro", () => {
   it("o 404 tem caminho próprio, distinto do caminho de erro", () => {
-    expect(/status\s*===\s*404/.test(CODIGO)).toBe(true);
+    expect(/status\s*===\s*404\b/.test(CODIGO)).toBe(true);
     expect(/sem_estoque/.test(CODIGO)).toBe(true);
   });
 
@@ -105,13 +111,13 @@ describe("🔴 anúncio sem estoque é condição normal, não erro", () => {
   });
 
   it("429 recua com espera crescente — o bloqueio do ML é por origem", () => {
-    expect(/status\s*===\s*429/.test(CODIGO)).toBe(true);
+    expect(/status\s*===\s*429\b/.test(CODIGO)).toBe(true);
     expect(/backoff|espera|recuo/i.test(CODIGO)).toBe(true);
   });
 
   it("🔴 400 falha ALTO — o CEP é constante nossa, não entrada do usuário", () => {
-    expect(/status\s*===\s*400/.test(CODIGO)).toBe(true);
-    const trecho = CODIGO.slice(CODIGO.indexOf("status === 400"));
+    expect(/status\s*===\s*400\b/.test(CODIGO)).toBe(true);
+    const trecho = CODIGO.slice(CODIGO.search(/status\s*===\s*400\b/));
     expect(/throw new Error/.test(trecho.slice(0, 400))).toBe(true);
   });
 });
