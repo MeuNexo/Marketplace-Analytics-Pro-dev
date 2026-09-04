@@ -279,6 +279,22 @@ const MOTIVOS: Record<string, string> = {
     "Entrada sem tarifa do marketplace — aporte, rendimento ou transferência, não é venda",
   venda_sem_chave:
     "Entrada sem número de pedido identificado — não dá para casar com uma venda",
+
+  // ── 225-11: a compra do titular ───────────────────────────────────────────
+  // 🔴 ESTE MOTIVO EXISTE PARA LIMPAR DOIS NÚMEROS DE UMA VEZ. A compra
+  // pessoal do dono no ML, paga com a mesma conta Mercado Pago da empresa,
+  // carrega o identificador do pedido do OUTRO vendedor — então ela tem
+  // `ml_order_id`, não casa com `orders`, e vinha caindo no balde
+  // `pedido_nao_ingerido`, se passando pelas vendas realmente perdidas do
+  // G-05. São R$ 12.232,60 em 38 linhas desde 07/01/2026 (censo: 438 de 438
+  // linhas classificadas contra a API, zero sem prova).
+  //
+  // 🔴 A LINHA CONTINUA APARECENDO. Filtrar do caixa e esconder da tela são
+  // coisas diferentes: D-225-10 exige classificar TODA entrada, e uma linha
+  // que some da tela vira exatamente o buraco que esta fase existe para
+  // fechar. Ela sai do caixa e ganha nome — não desaparece.
+  compra_do_titular:
+    "Compra pessoal do titular da conta, paga pelo mesmo Mercado Pago da empresa — não é receita e não entra no caixa. A linha fica visível para não sumir do total",
 };
 
 export interface OpcoesMotivo {

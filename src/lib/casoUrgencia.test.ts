@@ -314,6 +314,36 @@ describe("rotuloMotivo — a ausência diz o motivo REAL", () => {
     expect(rotuloMotivo("motivo_novo_do_banco")).toBe("motivo_novo_do_banco");
     expect(rotuloMotivo(null).length).toBeGreaterThan(0);
   });
+
+  // ── 225-11 ────────────────────────────────────────────────────────────────
+
+  it("🔴 compra_do_titular tem texto próprio — não cai no rótulo genérico", () => {
+    const t = rotuloMotivo("compra_do_titular");
+    // O genérico desta função é devolver o PRÓPRIO código. Se ele voltasse
+    // aqui, a tela mostraria `compra_do_titular` cru — e o motivo novo teria
+    // sido criado no banco sem chegar a quem lê.
+    expect(t, "o motivo novo está caindo no genérico (código cru)").not.toBe("compra_do_titular");
+    expect(t.length).toBeGreaterThan(10);
+  });
+
+  it("🔴 compra_do_titular diz que NÃO é receita — é o que separa do balde de venda perdida", () => {
+    const t = rotuloMotivo("compra_do_titular");
+    expect(t).toMatch(/não é receita|nao e receita/i);
+    expect(t).toMatch(/caixa/i);
+    // ⚠️ E não pode sugerir cobrança: não há nada a cobrar do Mercado Livre
+    // aqui — o dinheiro nunca foi da empresa.
+    expect(t).not.toMatch(/chamado|cobrar do ML/i);
+  });
+
+  it("🔴 compra_do_titular NÃO diz que a linha some — D-225-10 exige que toda entrada apareça", () => {
+    const t = rotuloMotivo("compra_do_titular");
+    expect(t).toMatch(/vis[ií]vel|fica|aparece/i);
+  });
+
+  it("compra_do_titular é motivo distinto de pedido_nao_ingerido — era ali que ele se escondia", () => {
+    expect(rotuloMotivo("compra_do_titular")).not.toBe(rotuloMotivo("pedido_nao_ingerido"));
+    expect(rotuloMotivo("pedido_nao_ingerido")).toMatch(/ingest/i);
+  });
 });
 
 describe("rotuloEstado — os desfechos do caso", () => {
