@@ -601,6 +601,250 @@ async function conferirJanela(
   };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 225-10 — A REPESCAGEM: rejanelar por data de CRIAÇÃO, sem cron novo
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// 🔴 POR QUE REJANELAR POR DATA DE CRIAÇÃO E NÃO VARRER POR DATA DE ATUALIZAÇÃO.
+// Esta é a decisão de desenho mais fácil de reverter por engano daqui a seis
+// meses, então o motivo fica aqui com os dois números que o censo mediu:
+//
+//   • A varredura por `date_last_updated` alcança 28/28 PROSPECTIVAMENTE, mas
+//     NÃO funciona em retrospectiva: o filtro casa com o valor ATUAL, que já
+//     andou por eventos de entrega. No teste retroativo o censo achou
+//     **3 de 12**.
+//   • A rejanela por `date_created` funciona NOS DOIS SENTIDOS, e o censo
+//     provou isso sem querer: repetindo o algoritmo do sync sobre os cinco dias
+//     afetados, **"hoje o ML devolve todos os 28"**. O pedido entra no índice
+//     quando FECHA, e a data de criação dele continua sendo a mesma.
+//   • Uma passada só, retro-capaz, é melhor que duas passadas em que a de trás
+//     é cega. Duas réguas para o mesmo fato divergindo em silêncio é o padrão
+//     que quebrou o saldo na Fase 233.
+//
+// ⚠️ O LIMITE RESIDUAL, ESCRITO EM VEZ DE ESCONDIDO: um pedido que feche mais de
+// 30 dias depois de criado escaparia desta janela. O maior atraso observado em
+// 2026 foi de 292 horas (~12 dias), então há folga de 2,5×, e ZERO ocorrências
+// medidas acima de 30 dias. Se algum dia aparecer uma, a resposta é ALARGAR a
+// janela, ou acrescentar a varredura prospectiva por data de atualização como
+// SEGUNDA rede — nunca trocar uma pela outra.
+//
+// POR QUE A ASSINATURA DA RODADA DIÁRIA SERVE DE TRAVA, SEM TABELA NOVA: o cron
+// insere jobs de um dia só, e a sincronização manual da tela usa faixa
+// arbitrária. Se por acaso uma manual coincidir, a repescagem roda duas vezes no
+// mesmo dia — e rodar duas vezes é inofensivo, porque ela só INSERE o que falta.
+// **A trava protege contra custo, não contra correção.**
+
+const REPESCAGEM_JANELA_DIAS = 30;
+// Teto de dias examinados por invocação. O bloqueio por excesso do ML é por
+// ENDEREÇO DE ORIGEM e derrubaria as outras sincronizações junto: recuar é
+// obrigatório, insistir não. Os 30 dias são cobertos em rodízio de blocos, sem
+// estado novo em tabela — o bloco sai do próprio dia do calendário.
+const REPESCAGEM_TETO_DIAS = 10;
+// Teto de pedidos recuperados por invocação. O resto é contado e volta na
+// rodada seguinte, porque o dia dele continua dentro da janela de 30.
+const REPESCAGEM_TETO_PEDIDOS = 50;
+// Profundidade da janela retroativa do corpo VIVO de `dispatch_orders_jobs`
+// (`v_dias_retro := 3`). A rodada diária despacha D−1, D−2 e D−3 como jobs de um
+// dia; a repescagem pega carona na mais antiga das três, que ocorre uma vez por
+// dia. O cron horário varre sempre o dia CORRENTE, então nunca casa com isto.
+const REPESCAGEM_DIA_GATILHO = 3;
+
+/** O dia do calendário BRT de um instante. Meia-noite BRT = 03:00Z. */
+function hojeBRT(agora: Date = new Date()): string {
+  return new Date(agora.getTime() - 3 * 60 * 60 * 1000).toISOString().substring(0, 10);
+}
+
+function temAssinaturaDaRodadaDiaria(dateFrom: string, dateTo: string, hoje: string): boolean {
+  if (dateFrom !== dateTo) return false;
+  return dateFrom === deslocarDia(hoje, -REPESCAGEM_DIA_GATILHO);
+}
+
+interface ResultadoRepescagem {
+  rodou: boolean;
+  motivo: string;
+  janela_dias: number;
+  teto_dias: number;
+  bloco: number;
+  faixa: string | null;
+  dias_examinados: number;
+  dias_nao_examinados: number;
+  dias_com_divergencia: number;
+  dias_nao_medidos: number;
+  dias_nao_medidos_lista: string[];
+  bordas_nao_medidas: number;
+  ausentes_encontrados: number;
+  descartados_por_ja_existirem: number;
+  recuperados: number;
+  recuperacao_adiada: number;
+  recusados: { id: string; motivo: string }[];
+  maior_atraso_horas: number | null;
+  atraso_denominador: number;
+  sem_data_de_fechamento: number;
+  folga_estourada: boolean;
+  pedidos: any[];
+}
+
+function repescagemNaoRodou(motivo: string): ResultadoRepescagem {
+  return {
+    rodou: false, motivo,
+    janela_dias: REPESCAGEM_JANELA_DIAS, teto_dias: REPESCAGEM_TETO_DIAS,
+    bloco: -1, faixa: null,
+    dias_examinados: 0, dias_nao_examinados: 0, dias_com_divergencia: 0,
+    dias_nao_medidos: 0, dias_nao_medidos_lista: [], bordas_nao_medidas: 0,
+    ausentes_encontrados: 0, descartados_por_ja_existirem: 0,
+    recuperados: 0, recuperacao_adiada: 0, recusados: [],
+    maior_atraso_horas: null, atraso_denominador: 0, sem_data_de_fechamento: 0,
+    folga_estourada: false, pedidos: [],
+  };
+}
+
+/**
+ * A segunda passada. Ela COLHE — quem escreve é o pipeline do handler, uma porta
+ * só. Não tem porta de escrita própria por desenho, e o portão de forma afirma
+ * isso: um segundo caminho de escrita seria uma segunda régua para o mesmo fato.
+ *
+ * 🔴 O CONTRASTE QUE JUSTIFICA ESTA FUNÇÃO EXISTIR: `reconcileCancelled` também
+ * é uma passada posterior sobre janela antiga, roda todo dia, e em meses NUNCA
+ * inseriu uma linha — ela só faz `update` de status. Um pedido que nunca entrou
+ * continuava sem entrar, para sempre. É essa diferença, INSERIR contra
+ * ATUALIZAR, que fecha o buraco de 26 pedidos.
+ */
+async function executarRepescagem(args: {
+  mlNumericId: number;
+  accessToken: string;
+  supabaseAdmin: any;
+  organizationId: string | null;
+  dateFrom: string;
+  dateTo: string;
+  forcada?: boolean;
+  modoRecaptura: boolean;
+}): Promise<ResultadoRepescagem> {
+  const { mlNumericId, accessToken, supabaseAdmin, organizationId, dateFrom, dateTo, forcada, modoRecaptura } = args;
+
+  if (modoRecaptura) return repescagemNaoRodou("rodada de recaptura nao dispara repescagem");
+  if (!organizationId) return repescagemNaoRodou("token sem organizacao");
+
+  const hoje = hojeBRT();
+  const assinatura = temAssinaturaDaRodadaDiaria(dateFrom, dateTo, hoje);
+  const deveRodar = forcada === true || (forcada !== false && assinatura);
+  if (!deveRodar) {
+    return repescagemNaoRodou(
+      `janela ${dateFrom}..${dateTo} nao tem a assinatura da rodada diaria (esperado dia unico D-${REPESCAGEM_DIA_GATILHO} = ${deslocarDia(hoje, -REPESCAGEM_DIA_GATILHO)})`,
+    );
+  }
+
+  // Rodízio de blocos: sem estado novo em tabela, o bloco sai do próprio dia do
+  // calendário. Cada dia da janela de 30 é reexaminado a cada 3 rodadas, o que é
+  // folga larga contra os ~12 dias do pior atraso já medido.
+  const blocos = Math.ceil(REPESCAGEM_JANELA_DIAS / REPESCAGEM_TETO_DIAS);
+  const diasDesdeEpoca = Math.floor(Date.parse(`${hoje}T12:00:00.000Z`) / 86_400_000);
+  const bloco = ((diasDesdeEpoca % blocos) + blocos) % blocos;
+
+  const maisAntigo  = Math.min(REPESCAGEM_JANELA_DIAS, (bloco + 1) * REPESCAGEM_TETO_DIAS);
+  const maisRecente = bloco * REPESCAGEM_TETO_DIAS + 1;
+  const de  = deslocarDia(hoje, -maisAntigo);
+  const ate = deslocarDia(hoje, -maisRecente);
+  const diasDoBloco = maisAntigo - maisRecente + 1;
+
+  console.log(`sync-ml-orders: REPESCAGEM bloco ${bloco + 1}/${blocos} — ${de} → ${ate}`);
+
+  const conferencia = await conferirJanela(mlNumericId, de, ate, accessToken, supabaseAdmin, organizationId);
+
+  // Segundo filtro, de propósito: a conferência já descartou o que existe, mas
+  // entre uma coisa e outra a captura desta mesma rodada pode ter gravado. O
+  // filtro é barato e é ele que torna a garantia INCONDICIONAL — nenhum pedido
+  // preexistente é buscado, muito menos reescrito.
+  const { ausentes, descartados } = await filtrarIdentificadoresAusentes(
+    supabaseAdmin, organizationId, conferencia.ausentes_no_banco,
+  );
+
+  const aBuscar = ausentes.slice(0, REPESCAGEM_TETO_PEDIDOS);
+  const adiados = ausentes.length - aBuscar.length;
+  const colhido = await buscarPedidosPorId(aBuscar, accessToken);
+
+  // O vigia da folga: dois terços de 30 dias = 480 horas. Guardar um número que
+  // ninguém lê é a mesma classe de defeito do portão ancorado em versão
+  // superada — o pressuposto que ninguém remede passa a valer para sempre.
+  const limiteDaFolga = (REPESCAGEM_JANELA_DIAS * 24 * 2) / 3;
+  const folga_estourada =
+    conferencia.maior_atraso_horas !== null && conferencia.maior_atraso_horas > limiteDaFolga;
+  if (folga_estourada) {
+    console.warn(
+      `🔴 sync-ml-orders: FOLGA DA JANELA ESTOURADA — maior atraso ${conferencia.maior_atraso_horas}h ` +
+      `sobre ${conferencia.atraso_denominador} pedidos, acima de dois tercos da janela de ${REPESCAGEM_JANELA_DIAS} dias ` +
+      `(${limiteDaFolga}h). A acao e ALARGAR a janela, nao trocar a regua.`,
+    );
+  }
+
+  if (colhido.pedidos.length > 0 || conferencia.dias_nao_medidos > 0) {
+    console.log(
+      `sync-ml-orders: repescagem colheu ${colhido.pedidos.length} pedidos ausentes, ` +
+      `${descartados.length} descartados por ja existirem, ${adiados} adiados por teto, ` +
+      `${conferencia.dias_nao_medidos} dias NAO MEDIDOS`,
+    );
+  }
+
+  return {
+    rodou: true,
+    motivo: forcada === true ? "pedida explicitamente" : "assinatura da rodada diaria",
+    janela_dias: REPESCAGEM_JANELA_DIAS,
+    teto_dias: REPESCAGEM_TETO_DIAS,
+    bloco,
+    faixa: `${de}..${ate}`,
+    dias_examinados: conferencia.dias_examinados,
+    dias_nao_examinados: REPESCAGEM_JANELA_DIAS - diasDoBloco,
+    dias_com_divergencia: conferencia.dias_com_divergencia,
+    dias_nao_medidos: conferencia.dias_nao_medidos,
+    dias_nao_medidos_lista: conferencia.dias_nao_medidos_lista,
+    bordas_nao_medidas: conferencia.bordas_nao_medidas,
+    ausentes_encontrados: conferencia.ausentes_no_banco.length,
+    descartados_por_ja_existirem: descartados.length,
+    recuperados: colhido.pedidos.length,
+    recuperacao_adiada: adiados,
+    recusados: colhido.recusados,
+    maior_atraso_horas: conferencia.maior_atraso_horas,
+    atraso_denominador: conferencia.atraso_denominador,
+    sem_data_de_fechamento: conferencia.sem_data_de_fechamento,
+    folga_estourada,
+    pedidos: colhido.pedidos,
+  };
+}
+
+/**
+ * Grava o vigia da folga na linha da PRÓPRIA rodada em `sync_jobs`.
+ *
+ * Colunas próprias e nuláveis, nunca o campo de mensagem de falha: aquele é lido
+ * como "este job quebrou", e gravar métrica de saúde ali arrebentaria qualquer
+ * consulta de job com erro. Vazio aqui significa "esta rodada não mediu", e não
+ * "o atraso foi zero".
+ *
+ * Há uma linha de `sync_jobs` por rodada diária, então o número vira SÉRIE
+ * consultável por SQL — não instantâneo.
+ */
+async function gravarVigiaDaFolga(
+  supabaseAdmin: any,
+  syncJobId: string | number,
+  maiorAtrasoHoras: number | null,
+  denominador: number,
+): Promise<boolean> {
+  const { error } = await supabaseAdmin
+    .from("sync_jobs")
+    .update({
+      repescagem_maior_atraso_horas: maiorAtrasoHoras,
+      repescagem_atraso_denominador: denominador,
+    })
+    .eq("id", syncJobId);
+
+  if (error) {
+    // Falhar aqui não pode derrubar a rodada: o vigia é medição de saúde, não a
+    // captura. Mas também não pode ficar mudo — sem este aviso a série
+    // simplesmente para de crescer e ninguém sabe.
+    console.warn(`gravarVigiaDaFolga: nao consegui gravar o vigia da folga (${error.message})`);
+    return false;
+  }
+  return true;
+}
+
 // ── Batch-fetch shipment details from /shipments/{id} ────────────────────────
 // Fetches ALL unique shipment IDs (not just frete grátis) to get:
 //   • base_cost  → seller-absorbed shipping cost (frete grátis / Full)
@@ -1331,6 +1575,22 @@ serve(async (req) => {
       );
     }
 
+    // ── [225-10] REPESCAGEM — a segunda passada, pendurada na rodada diária ──
+    // Ela COLHE; quem escreve é o pipeline abaixo, com uma porta só. O que ela
+    // trouxer é FUNDIDO no mesmo lote e segue pelo caminho normal de
+    // enriquecimento, cálculo fiscal e upsert — e é essa fusão que faz a passada
+    // nova INSERIR, ao contrário de `reconcileCancelled`, que roda todo dia há
+    // meses e nunca criou uma linha.
+    const repescagem_resultado = await executarRepescagem({
+      mlNumericId, accessToken, supabaseAdmin, organizationId,
+      dateFrom: date_from, dateTo: date_to,
+      forcada: repescagem, modoRecaptura: Boolean(only_missing),
+    });
+    const pedidosDaRepescagem = repescagem_resultado.pedidos;
+    if (pedidosDaRepescagem.length > 0) {
+      rawOrders = rawOrders.concat(pedidosDaRepescagem);
+    }
+
     // Deduplicate by order id
     const seen    = new Set<number>();
     const orders  = rawOrders.filter((o) => {
@@ -1559,6 +1819,19 @@ serve(async (req) => {
       console.log(`sync-ml-orders: ${reconciliados} cancelamentos tardios reconciliados`);
     }
 
+    // ── [225-10] O vigia da folga, na linha da própria rodada ────────────────
+    // Sem `sync_job_id` a rodada não tem onde gravar, e isso é dito no retorno:
+    // coluna vazia significa "esta rodada não mediu", nunca "o atraso foi zero".
+    let vigia_gravado = false;
+    if (repescagem_resultado.rodou && sync_job_id != null) {
+      vigia_gravado = await gravarVigiaDaFolga(
+        supabaseAdmin,
+        sync_job_id,
+        repescagem_resultado.maior_atraso_horas,
+        repescagem_resultado.atraso_denominador,
+      );
+    }
+
     // ── Log to ml_sync_log ────────────────────────────────────────────────────
     // [225-10] A recaptura NÃO escreve aqui. A chave do upsert é
     // (user_id, ml_user_id, date_from, date_to, source), e a janela que a
@@ -1600,6 +1873,34 @@ serve(async (req) => {
         recaptura_descartados_ids: recapturaDescartados,
         recaptura_recusados: recapturaRecusados.length,
         recaptura_recusados_detalhe: recapturaRecusados,
+        // [225-10] 🔴 ZERO RECUPERADOS COM ZERO DIVERGÊNCIAS É APROVAÇÃO;
+        // zero recuperados com `dias_nao_medidos` maior que zero é CEGUEIRA. O
+        // retorno tem que permitir distinguir os dois sem adivinhação — por isso
+        // os campos são separados e nenhum deles colapsa no outro.
+        repescagem: {
+          rodou:                        repescagem_resultado.rodou,
+          motivo:                       repescagem_resultado.motivo,
+          faixa:                        repescagem_resultado.faixa,
+          janela_dias:                  repescagem_resultado.janela_dias,
+          teto_dias:                    repescagem_resultado.teto_dias,
+          bloco:                        repescagem_resultado.bloco,
+          dias_examinados:              repescagem_resultado.dias_examinados,
+          dias_nao_examinados:          repescagem_resultado.dias_nao_examinados,
+          dias_com_divergencia:         repescagem_resultado.dias_com_divergencia,
+          dias_nao_medidos:             repescagem_resultado.dias_nao_medidos,
+          dias_nao_medidos_lista:       repescagem_resultado.dias_nao_medidos_lista,
+          bordas_nao_medidas:           repescagem_resultado.bordas_nao_medidas,
+          ausentes_encontrados:         repescagem_resultado.ausentes_encontrados,
+          descartados_por_ja_existirem: repescagem_resultado.descartados_por_ja_existirem,
+          recuperados:                  repescagem_resultado.recuperados,
+          recuperacao_adiada:           repescagem_resultado.recuperacao_adiada,
+          recusados:                    repescagem_resultado.recusados,
+          maior_atraso_horas:           repescagem_resultado.maior_atraso_horas,
+          atraso_denominador:           repescagem_resultado.atraso_denominador,
+          sem_data_de_fechamento:       repescagem_resultado.sem_data_de_fechamento,
+          folga_estourada:              repescagem_resultado.folga_estourada,
+          vigia_gravado,
+        },
         shipments_failed: shipmentsFailed,
         shipments_total:  shipmentsAttempted,
         tax_preserved:    impostoPreservado,

@@ -117,6 +117,13 @@ serve(async (req) => {
           ml_user_id: job.ml_user_id,
           date_from:  job.date_from ?? today,
           date_to:    job.date_to   ?? today,
+          // [225-10] A linha desta rodada, para o vigia da folga da janela de 30
+          // dias gravar o maior atraso entre criação e fechamento em
+          // `sync_jobs`. Sem este id a repescagem MEDE mas não tem onde gravar,
+          // e o número morre no corpo da resposta — que é exatamente o que não
+          // vale como prova nesta casa. `sync-ml-orders` usa este campo só para
+          // o `UPDATE` das duas colunas do vigia; ele não toca na captura.
+          sync_job_id: job.id,
         }),
       });
 
