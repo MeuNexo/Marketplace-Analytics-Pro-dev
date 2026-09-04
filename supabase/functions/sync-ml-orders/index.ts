@@ -1581,11 +1581,24 @@ serve(async (req) => {
     // enriquecimento, cálculo fiscal e upsert — e é essa fusão que faz a passada
     // nova INSERIR, ao contrário de `reconcileCancelled`, que roda todo dia há
     // meses e nunca criou uma linha.
-    const repescagem_resultado = await executarRepescagem({
-      mlNumericId, accessToken, supabaseAdmin, organizationId,
-      dateFrom: date_from, dateTo: date_to,
-      forcada: repescagem, modoRecaptura: Boolean(only_missing),
-    });
+    //
+    // Ela é COMPLEMENTAR, como `reconcileCancelled`: se falhar, a captura desta
+    // rodada já colheu o que tinha de colher, e derrubar o job inteiro por causa
+    // da segunda passada trocaria um buraco pequeno por um grande. A falha vira
+    // motivo NOMEADO no retorno — e `rodou: false` impede o vigia de gravar um
+    // número que ninguém mediu.
+    let repescagem_resultado: ResultadoRepescagem;
+    try {
+      repescagem_resultado = await executarRepescagem({
+        mlNumericId, accessToken, supabaseAdmin, organizationId,
+        dateFrom: date_from, dateTo: date_to,
+        forcada: repescagem, modoRecaptura: Boolean(only_missing),
+      });
+    } catch (err) {
+      const motivo = err instanceof Error ? err.message : String(err);
+      console.error(`sync-ml-orders: repescagem FALHOU (${motivo}) — a captura desta rodada segue`);
+      repescagem_resultado = repescagemNaoRodou(`falhou: ${motivo}`);
+    }
     const pedidosDaRepescagem = repescagem_resultado.pedidos;
     if (pedidosDaRepescagem.length > 0) {
       rawOrders = rawOrders.concat(pedidosDaRepescagem);
