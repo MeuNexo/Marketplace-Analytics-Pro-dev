@@ -557,3 +557,206 @@ describe("o token do ML não vaza — regra: nem em mensagem de erro", () => {
     expect(suspeitos, `console com token: ${suspeitos.join(" | ")}`).toEqual([]);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 12. [Task 2] A repescagem existe e pega carona na rodada diária
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("a repescagem — regra: um dia do calendário tinha três dias de chance e nunca mais", () => {
+  it("existe `executarRepescagem`", () => {
+    expect(
+      /(?:async\s+)?function\s+executarRepescagem\s*\(/.test(corpo),
+      "`executarRepescagem` não existe — o buraco continua aberto depois de D+3",
+    ).toBe(true);
+  });
+
+  it("ela é acionada pela ASSINATURA da rodada diária, não por agendamento novo", () => {
+    expect(
+      /(?:async\s+)?function\s+temAssinaturaDaRodadaDiaria\s*\(/.test(corpo),
+      "não existe teste de assinatura da rodada diária — sem ele a repescagem precisaria de cron próprio",
+    ).toBe(true);
+    expect(
+      corpoDaFuncao(corpo, "executarRepescagem").includes("temAssinaturaDaRodadaDiaria("),
+      "a repescagem não consulta a assinatura da rodada diária",
+    ).toBe(true);
+  });
+
+  it("nenhum agendamento nem tabela nasce dentro da edge function", () => {
+    const proibidos = ["cron.schedule", "CREATE TABLE", "create table"].filter((t) => corpo.includes(t));
+    expect(
+      proibidos,
+      `a EF criou agendamento ou tabela (${proibidos.join(", ")}) — o teto de chamadas é compartilhado e a repescagem pega carona`,
+    ).toEqual([]);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 13. 🔴 A ASSERÇÃO MAIS IMPORTANTE DO ARQUIVO: a passada nova INSERE
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("🔴 a passada nova INSERE, não só atualiza — regra: `reconcileCancelled` roda todo dia há meses e nunca inseriu uma linha", () => {
+  /**
+   * Um portão que só verificasse "a passada roda" APROVARIA `reconcileCancelled`
+   * — e ela é exatamente o defeito que esta tarefa existe para fechar. Por isso
+   * a asserção não pergunta se a repescagem roda; ela persegue a CADEIA que liga
+   * o que a repescagem colheu até a porta que CRIA linha.
+   */
+  it("elo 1 — a colheita da repescagem vira uma variável própria", () => {
+    const m = /const\s+pedidosDaRepescagem\s*=/.exec(handler);
+    expect(m, "`pedidosDaRepescagem` não existe no handler — a colheita não tem para onde ir").not.toBeNull();
+  });
+
+  it("elo 2 — essa variável é FUNDIDA no lote que segue para o pipeline", () => {
+    const fusao = handler
+      .split("\n")
+      .filter((l) => l.includes("pedidosDaRepescagem") && l.includes("rawOrders"));
+    expect(
+      fusao.length,
+      "nenhuma linha funde `pedidosDaRepescagem` em `rawOrders` — a repescagem colhe e joga fora",
+    ).toBeGreaterThan(0);
+  });
+
+  it("elo 3 — o lote passa pelo dedupe e vira `records`", () => {
+    expect(/const\s+orders\s*=\s*rawOrders\./.test(handler), "o lote não passa por `rawOrders` até `orders`").toBe(true);
+    expect(/const\s+records\s*=\s*orders\./.test(handler), "`records` não é construído a partir de `orders`").toBe(true);
+  });
+
+  it("elo 4 — `records` chega à porta que CRIA linha, e ela é um upsert em lote", () => {
+    const posRpc = handler.indexOf("batch_upsert_orders");
+    expect(posRpc, "a porta de escrita de `orders` sumiu do handler").toBeGreaterThan(-1);
+    expect(
+      /p_records\s*:\s*records/.test(handler),
+      "`records` não é o que vai para `batch_upsert_orders` — a cadeia se rompe antes da porta",
+    ).toBe(true);
+    // Sem este `> -1` a comparação seguinte passaria VAZIA: `indexOf` devolve
+    // -1 quando a variável não existe, e -1 é menor que qualquer posição. Gate
+    // que aprova com denominador zero não é aprovação.
+    const posRepescagem = handler.indexOf("const pedidosDaRepescagem");
+    expect(posRepescagem, "`pedidosDaRepescagem` não existe — a cadeia não tem começo").toBeGreaterThan(-1);
+    expect(
+      posRepescagem < posRpc,
+      "a repescagem acontece DEPOIS da escrita — o que ela colher nesta rodada não entra",
+    ).toBe(true);
+  });
+
+  /**
+   * A prova de que este portão DISCRIMINA: `reconcileCancelled` — a passada
+   * que existe há meses e nunca inseriu — falharia nos elos acima. Aqui isso
+   * fica afirmado em vez de suposto. Se algum dia ela ganhar caminho até a
+   * porta de criação, esta asserção quebra e alguém relê a decisão.
+   */
+  it("o contraexemplo continua sendo contraexemplo: `reconcileCancelled` só atualiza", () => {
+    const corpoRec = corpoDaFuncao(corpo, "reconcileCancelled");
+    expect(
+      corpoRec.includes("batch_upsert_orders") || corpoRec.includes(".insert(") || corpoRec.includes(".upsert("),
+      "`reconcileCancelled` ganhou porta de criação — releia a decisão: a passada de recuperação é a repescagem, não ela",
+    ).toBe(false);
+    expect(
+      corpoRec.includes(".update("),
+      "`reconcileCancelled` deixou de atualizar — o contraexemplo deste portão mudou de forma",
+    ).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 14. A repescagem reutiliza os dois modos e não tem porta de escrita própria
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("a repescagem não tem régua própria — regra: um segundo caminho de escrita seria uma segunda régua para o mesmo fato", () => {
+  it("ela usa a conferência para achar e a recaptura para colher", () => {
+    const corpoRep = corpoDaFuncao(corpo, "executarRepescagem");
+    for (const reuso of ["conferirJanela(", "filtrarIdentificadoresAusentes(", "buscarPedidosPorId("]) {
+      expect(
+        corpoRep.includes(reuso),
+        `a repescagem não reutiliza \`${reuso}\` — escreveu caminho próprio para o mesmo fato`,
+      ).toBe(true);
+    }
+  });
+
+  it("ela não tem NENHUMA porta de escrita dentro de si", () => {
+    const achadas = portasEncontradas(corpoDaFuncao(corpo, "executarRepescagem"));
+    expect(
+      achadas,
+      `a repescagem ganhou porta de escrita própria (${achadas.join(", ")}) — a única porta é a do pipeline`,
+    ).toEqual([]);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 15. Teto de dias por invocação, com o resto contado
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("orçamento da varredura — regra: bloqueio por excesso do ML é por endereço de origem e derrubaria as outras sincronizações junto", () => {
+  it("existe teto de dias por invocação e a janela é de 30 dias", () => {
+    expect(/REPESCAGEM_TETO_DIAS\s*=\s*\d+/.test(corpo), "não há teto de dias por invocação").toBe(true);
+    expect(/REPESCAGEM_JANELA_DIAS\s*=\s*30/.test(corpo), "a janela da repescagem não é de 30 dias").toBe(true);
+  });
+
+  it("o que sobrou é CONTADO e a próxima rodada retoma de onde parou", () => {
+    const corpoRep = corpoDaFuncao(corpo, "executarRepescagem");
+    expect(
+      corpoRep.includes("dias_nao_examinados"),
+      "o resto não é contado — sem ele não dá para saber que a janela não foi coberta",
+    ).toBe(true);
+    expect(
+      corpoRep.includes("bloco"),
+      "não há rodízio de blocos — sem ele a mesma fatia seria examinada todo dia e o resto nunca",
+    ).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 16. O vigia da folga — o pressuposto de 30 dias não pode envelhecer calado
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("o vigia da folga — regra: pressuposto que ninguém remede passa a valer para sempre", () => {
+  it("o maior atraso é medido com DENOMINADOR ao lado", () => {
+    const corpoRep = corpoDaFuncao(corpo, "executarRepescagem");
+    expect(corpoRep.includes("maior_atraso_horas"), "a repescagem não mede o maior atraso").toBe(true);
+    expect(
+      corpoRep.includes("atraso_denominador"),
+      "o maior atraso vai sem denominador — número sem denominador não é medição",
+    ).toBe(true);
+  });
+
+  it("pedido sem data de fechamento fica FORA do cálculo e é contado à parte", () => {
+    const corpoConf = corpoDaFuncao(corpo, "conferirJanela");
+    expect(
+      corpoConf.includes("sem_data_de_fechamento") && corpoConf.includes("date_closed"),
+      "pedido sem data de fechamento não é separado — ele não tem atraso, ele tem ausência",
+    ).toBe(true);
+  });
+
+  it("atraso acima de dois terços da janela FALA, não só grava", () => {
+    const corpoRep = corpoDaFuncao(corpo, "executarRepescagem");
+    expect(
+      corpoRep.includes("folga_estourada"),
+      "não há sinal de folga estourada — guardar um número que ninguém lê é a mesma classe de defeito do portão ancorado em versão superada",
+    ).toBe(true);
+    expect(
+      /console\.(warn|error)/.test(corpoRep),
+      "a folga estourada não chega ao log",
+    ).toBe(true);
+  });
+
+  it("o vigia grava em `sync_jobs`, e NUNCA em `orders`", () => {
+    const corpoVigia = corpoDaFuncao(corpo, "gravarVigiaDaFolga");
+    expect(corpoVigia.includes('from("sync_jobs")'), "o vigia não escreve em `sync_jobs`").toBe(true);
+    expect(
+      corpoVigia.includes('from("orders")') || corpoVigia.includes("batch_upsert_orders"),
+      "o vigia toca em `orders` — métrica de saúde não mora no denominador que ela vigia",
+    ).toBe(false);
+  });
+
+  it("o vigia usa colunas PRÓPRIAS, e não o campo de mensagem de falha", () => {
+    const corpoVigia = corpoDaFuncao(corpo, "gravarVigiaDaFolga");
+    expect(
+      corpoVigia.includes("error_msg"),
+      "o vigia grava no campo de falha — ele é lido como \"este job quebrou\" e isso arrebentaria qualquer consulta de job com erro",
+    ).toBe(false);
+    expect(
+      /repescagem_maior_atraso_horas/.test(corpoVigia) && /repescagem_atraso_denominador/.test(corpoVigia),
+      "as duas colunas próprias do vigia não são as que o vigia escreve",
+    ).toBe(true);
+  });
+});
