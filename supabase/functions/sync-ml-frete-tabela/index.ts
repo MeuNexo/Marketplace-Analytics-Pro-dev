@@ -272,10 +272,12 @@ async function capturarOrg(
 ): Promise<Record<string, unknown>> {
   const orgId = linha.organization_id;
   const mlUserId = String(linha.ml_user_id);
-  const sellerId = String(linha.seller_id ?? linha.ml_user_id);
-
+  // 🔴 `ml_tokens.seller_id` e UUID INTERNO (FK para `sellers`), nao o id do
+  // vendedor no Mercado Livre. Usar ele no path devolve
+  // `400 Invalid user_id in path` — medido em 04/09/2026, primeira invocacao.
+  // O id que a API do ML entende e `ml_user_id`.
   const token = await getAccessToken(sb, mlUserId);
-  const universo = await listarAnuncios(sellerId, token);
+  const universo = await listarAnuncios(mlUserId, token);
 
   // Estado da varredura: quem foi tentado, quando, e com que desfecho.
   const { data: estado } = await sb
