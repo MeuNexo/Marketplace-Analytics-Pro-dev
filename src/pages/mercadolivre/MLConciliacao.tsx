@@ -513,6 +513,16 @@ export default function MLConciliacao() {
       ? totalReal - linhas.length
       : 0;
 
+  // 🔴 A única suposição não medida da carga em duas etapas: que o PostgREST
+  // devolve até 1.000 linhas por chamada. O laço para quando a página vem
+  // INCOMPLETA — se o teto do servidor fosse menor que `PAGINA`, toda página
+  // pareceria incompleta e a leitura se declararia completa depois de uma ida
+  // só, truncando EM SILÊNCIO. Isso é exatamente o defeito que o 225-07
+  // fechou, então não fica por conta da fé: o resumo conta a janela SEM teto,
+  // e "me declarei completo" contra "o resumo conta mais" é uma contradição
+  // detectável. Quando ela aparece, a lista não é confiável e a tela diz isso.
+  const contradicaoDeCompletude = listaJaCompleta && faltamLinhas > 0;
+
   const urgentesN = resumo?.casos_urgentes ?? 0;
   const saidasAuditadas = resumo?.saidas_auditadas === true;
   const vazamento = resumo?.vazamento_total ?? null;
@@ -653,7 +663,7 @@ export default function MLConciliacao() {
           D-225-16 — a última linha lida ainda tem prazo, então pode haver caso
           a expirar fora da lista. Um alerta que dispara sempre é ruído; este
           dispara quando há caso invisível com relógio correndo. */}
-      {truncadoNoTeto || (faltamLinhas > 0 && !prazoCoberto) ? (
+      {truncadoNoTeto || contradicaoDeCompletude || (faltamLinhas > 0 && !prazoCoberto) ? (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle className="text-sm">Pode haver caso com prazo fora desta lista</AlertTitle>
@@ -661,9 +671,11 @@ export default function MLConciliacao() {
             <p>
               {truncadoNoTeto
                 ? `A leitura parou no teto de páginas com ${linhas.length} linhas.`
-                : `Foram carregadas ${linhas.length} de ${totalReal} linhas, e a última carregada ainda tem prazo correndo — as ${faltamLinhas} que faltam podem conter caso a expirar.`}
+                : contradicaoDeCompletude
+                  ? `A leitura se deu por completa com ${linhas.length} linhas, mas o resumo conta ${totalReal} na mesma janela. Enquanto as duas contas não fecharem, esta lista não é confiável — pode haver caso a expirar fora dela.`
+                  : `Foram carregadas ${linhas.length} de ${totalReal} linhas, e a última carregada ainda tem prazo correndo — as ${faltamLinhas} que faltam podem conter caso a expirar.`}
             </p>
-            {!truncadoNoTeto ? (
+            {!truncadoNoTeto && !contradicaoDeCompletude ? (
               <Button
                 size="sm"
                 variant="outline"
@@ -682,7 +694,7 @@ export default function MLConciliacao() {
 
       {/* Leitura parcial DELIBERADA, e ela se declara. Tom neutro: não é falha
           nem risco — o que falta vem depois de tudo que tem prazo. */}
-      {faltamLinhas > 0 && prazoCoberto && !truncadoNoTeto ? (
+      {faltamLinhas > 0 && prazoCoberto && !truncadoNoTeto && !contradicaoDeCompletude ? (
         <Alert>
           <Layers className="h-4 w-4" />
           <AlertTitle className="text-sm">
