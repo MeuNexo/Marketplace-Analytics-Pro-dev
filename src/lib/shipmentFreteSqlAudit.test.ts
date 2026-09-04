@@ -353,7 +353,7 @@ describe("a varredura tem teto e o bloqueio do ML não é insistido", () => {
   });
 
   it("há trava diária por pedido — pedido que erra não monopoliza a fila", () => {
-    expect(/const\s+hoje\s*=\s*new\s+Date\(\)\.toISOString\(\)\.slice\(0,\s*10\)/.test(ef)).toBe(true);
+    expect(/const\s+hoje\s*=\s*diaEmSaoPaulo\(new\s+Date\(\)\)/.test(ef)).toBe(true);
     expect(/tentadoEm\.get\(id\)[\s\S]{0,60}?!==\s*hoje/.test(ef)).toBe(true);
   });
 
@@ -387,6 +387,12 @@ describe("a varredura tem teto e o bloqueio do ML não é insistido", () => {
     const chamadas = [...ef.matchAll(/lerTudo\(\s*sb,\s*["'](\w+)["'],\s*["'][^"']+["'],\s*["'](\w+)["']/g)];
     expect(chamadas.length).toBe(4);
     for (const c of chamadas) expect(c[2].length).toBeGreaterThan(0);
+    // 🔴 `orders` ordena por `id`, a chave ÚNICA. `ml_order_id` se repete (uma
+    // linha por item) e linhas empatadas na FRONTEIRA da página podem trocar de
+    // lugar entre requisições — some pedido da varredura sem erro nenhum.
+    const orders = chamadas.find((c) => c[1] === "orders");
+    expect(orders, "leitura de orders não encontrada").toBeTruthy();
+    expect(orders![2]).toBe("id");
   });
 
   it("toda leitura de lista é paginada — o PostgREST trunca em 1000 sem avisar", () => {
@@ -443,6 +449,17 @@ describe("a função captura e não decide — nenhuma acusação, nenhuma destr
 
   it("data_pedido é comparada como TEXTO — converter para date cega o índice nesta base", () => {
     expect(/\.gte\(\s*["']data_pedido["']\s*,\s*corte\s*\)/.test(ef)).toBe(true);
-    expect(/const\s+corte\s*=[\s\S]{0,140}?\.slice\(0,\s*10\)/.test(ef)).toBe(true);
+    expect(/const\s+corte\s*=\s*diaEmSaoPaulo\(/.test(ef)).toBe(true);
+  });
+
+  it("🔴 toda data de recorte sai em America/Sao_Paulo, nunca em UTC", () => {
+    // A RPC da tela recorta com `now() at time zone 'America/Sao_Paulo'`.
+    // `toISOString().slice(0,10)` daria uma data até um dia MAIS RECENTE nas
+    // três primeiras horas do dia UTC: a janela encurtaria e a cobertura seria
+    // medida contra um universo diferente do que o Wesley vê.
+    expect(/timeZone:\s*["']America\/Sao_Paulo["']/.test(ef)).toBe(true);
+    // Nenhum recorte de DIA por UTC. (`toISOString()` inteiro segue válido para
+    // carimbo de `timestamptz` — o que se proíbe é o fatiamento em data.)
+    expect(/toISOString\(\)\.slice\(0,\s*10\)/.test(ef)).toBe(false);
   });
 });

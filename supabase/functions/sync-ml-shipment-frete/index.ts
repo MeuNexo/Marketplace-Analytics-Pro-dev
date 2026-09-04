@@ -119,6 +119,14 @@ function json(body: unknown, status = 200) {
 
 const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** O dia no fuso do negocio, em 'YYYY-MM-DD' (`en-CA` ja emite nesse formato).
+ *  Toda comparacao de data desta funcao passa por aqui: a RPC da tela recorta
+ *  em `America/Sao_Paulo` e medir a captura com outro relogio produziria uma
+ *  cobertura contra um universo que a tela nao mostra. */
+function diaEmSaoPaulo(d: Date): string {
+  return d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+}
+
 // ── Guarda de papel de servico ───────────────────────────────────────────────
 // T-239-08: fica ANTES de qualquer trabalho e nao pode mover para depois do
 // waitUntil. Autenticacao que roda depois do trabalho nao e autenticacao.
@@ -269,12 +277,22 @@ async function capturarOrg(
   // Horizonte. `orders.data_pedido` e TEXT nesta base, entao o corte e por
   // comparacao de string no formato 'YYYY-MM-DD' — o mesmo que a RPC da tela
   // faz com `to_char`. Converter para date aqui cegaria o indice.
-  const corte = new Date(Date.now() - janelaDias * 86_400_000).toISOString().slice(0, 10);
+  //
+  // 🔴 O RELOGIO E `America/Sao_Paulo`, nao UTC. A RPC da tela recorta com
+  // `now() at time zone 'America/Sao_Paulo'`; usar `toISOString()` aqui daria
+  // uma data ate um dia MAIS RECENTE nas tres primeiras horas do dia UTC,
+  // encurtando a janela e deixando pedidos do alvo de fora — a cobertura sairia
+  // medida contra um universo diferente do que a tela mostra.
+  const corte = diaEmSaoPaulo(new Date(Date.now() - janelaDias * 86_400_000));
 
   // ⚠️ `orders` tem UMA LINHA POR ITEM. O universo e de pedidos DISTINTOS —
   // sem o `Set` um pedido de 3 itens consumiria 3 vagas do orcamento para
   // buscar exatamente o mesmo envio.
-  const linhasDePedido = await lerTudo(sb, "orders", "ml_order_id", "ml_order_id", (q: any) =>
+  // ⚠️ A ordem da paginacao e `id`, a chave UNICA da tabela — nao `ml_order_id`.
+  // `ml_order_id` se repete (uma linha por item) e o Postgres nao promete ordem
+  // estavel entre linhas empatadas: as empatadas na FRONTEIRA da pagina podiam
+  // trocar de lugar entre requisicoes e sumir da varredura.
+  const linhasDePedido = await lerTudo(sb, "orders", "id,ml_order_id", "id", (q: any) =>
     q.eq("organization_id", orgId)
       .in("status", ["paid", "shipped", "delivered"])
       .gte("data_pedido", corte)
@@ -310,7 +328,7 @@ async function capturarOrg(
   // 🔴 TRAVA DIARIA. Pedido ja tentado hoje e pulado — sem ela, um pedido que
   // erra volta ao topo da fila a cada rodada e consome o orcamento inteiro
   // numa lista que nunca avanca.
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = diaEmSaoPaulo(new Date());
   const pendentes = universo
     .filter((id) => !jaMapeados.has(id) && !resolvidos.has(id))
     .filter((id) => (tentadoEm.get(id) ?? "").slice(0, 10) !== hoje)
