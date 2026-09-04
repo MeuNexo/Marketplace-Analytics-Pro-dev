@@ -354,9 +354,15 @@ describe("regras transversais — valem em toda migration da fase", () => {
     expect(/\breceita_liquida\b/i.test(corpo)).toBe(false);
   });
 
-  it("25 — não contém SECURITY DEFINER, e guarda contra ele", () => {
-    expect(/\bSECURITY\s+DEFINER\b/i.test(corpo)).toBe(false);
-    expect(/\bSECURITY\s+INVOKER\b/i.test(corpo)).toBe(true);
+  it("25 — não DECLARA SECURITY DEFINER, e guarda contra ele em tempo de aplicação", () => {
+    // ⚠️ Literais de string saem antes de contar, pela mesma razão que os
+    // comentários saem: a mensagem de exceção que ACUSA `SECURITY DEFINER`
+    // seria contada como se FOSSE uma declaração dele. Foi assim que a guarda
+    // ancorada em literal reprovou a si mesma no 225-05.
+    const semTexto = corpo.replace(/'(?:[^']|'')*'/g, "''");
+    expect(/\bSECURITY\s+DEFINER\b/i.test(semTexto)).toBe(false);
+    expect(/\bSECURITY\s+INVOKER\b/i.test(semTexto)).toBe(true);
+    // E a proibição também roda no banco, não só aqui.
     expect(/prosecdef/i.test(corpo)).toBe(true);
   });
 
@@ -374,10 +380,17 @@ describe("regras transversais — valem em toda migration da fase", () => {
     expect(/from\s+public\.conciliacao_config/i.test(corpo)).toBe(true);
   });
 
-  it("28 — não menciona nenhuma função de caixa da Fase 237", () => {
+  it("28 — não TOCA nenhuma função de caixa da Fase 237", () => {
+    // A regra é de perímetro: `cash_inflows` é a mesma tabela que a 237 vai
+    // mexer, e as duas fases não podem colidir. O que ela proíbe é o CÓDIGO
+    // encostar nessas funções — citar `get_cashflow` num comentário, como a
+    // lição de 21/08 que custou R$ 30.372,11, é o contrário de perigoso.
     for (const fn of ["get_dre_cash", "get_daily_balance", "get_cashflow"]) {
-      expect(bruto.includes(fn), `menciona ${fn}`).toBe(false);
+      expect(corpo.includes(fn), `código toca ${fn}`).toBe(false);
     }
+    // ⚠️ `cash_inflows` CONTINUA sendo lida: `ultima_sync` é uma das 26 colunas do
+    // contrato, e tirá-la apagaria o "atualizado em" do topo da tela. A regra é
+    // sobre as FUNÇÕES de caixa, que são o ponto de colisão com a 237.
   });
 
   it("29 — nunca filtra por `data_pagamento` (coluna morta, 100% NULL)", () => {
