@@ -210,6 +210,16 @@ const TIPOS_DE_CASO: Record<string, string> = {
   // Quem troca este texto pela CAUSA real da comparação em aberto é o motivo,
   // e é o plano 03 que a mede.
   frete_em_aberto: "Frete: comparação em aberto",
+  // 🔴 239-04 (D-239-01), a mesma régua do `frete_em_aberto`, agora na régua do
+  // DINHEIRO: "Repasse a menor" é uma afirmação sobre o que aconteceu com o
+  // dinheiro, e sem as três linhas do card fechadas — esperado, recebido e
+  // diferença — o card não sabe de que lado o número cai. Quem diz a CAUSA da
+  // apuração não fechar é o motivo, e são as quatro causas acima.
+  //
+  // ⚠️ Ele NÃO substitui `repasse_ausente` nem `repasse_a_menor` quando a linha
+  // é acionável: ausência de repasse VERIFICADA no Mercado Pago tem `recebido`
+  // nulo porque o dinheiro não veio — ali o nulo é o achado, não a lacuna.
+  repasse_em_aberto: "Repasse: apuração em aberto",
 };
 
 /** Todo tipo de caso cuja régua compara a FICHA do anúncio com a FATURA. */
@@ -322,6 +332,28 @@ const MOTIVOS: Record<string, string> = {
   // do envio, e a conta é feita uma vez só — no pedido líder, que o card nomeia.
   frete_apurado_no_pacote:
     "Este pedido divide o envio com outros: o frete foi cotado e cobrado uma única vez pelo pacote, então a comparação aparece no pedido líder do envio e não é repetida aqui",
+
+  // ── 239-04: as quatro causas que estavam coladas em `sem_captura_cobranca` ──
+  //
+  // 🔴 O balde dizia UMA coisa — "falta dado nosso" — para QUATRO situações, e
+  // TRÊS delas não são lacuna nossa. A pior era a primeira: uma venda de
+  // ontem, que o Mercado Livre ainda nem faturou, aparecia como defeito da
+  // nossa base. A defasagem entre a venda e a emissão da cobrança foi MEDIDA
+  // no CFFE — mediana 1 dia, máximo 18 —, e é o SQL que decide por ela.
+  //
+  // Cada texto abaixo nomeia a CAUSA e diz DE QUEM é a lacuna. É a régua de
+  // `feedback_ausencia_diz_o_motivo_real`, que é o contrato desta fase.
+  cobranca_nao_emitida_pelo_ml:
+    "O Mercado Livre ainda não emitiu a cobrança desta venda — dentro dos 18 dias que a defasagem medida mostra (mediana de 1 dia). A espera é normal e a linha sai sozinha quando a fatura fechar; não há o que corrigir aqui",
+  captura_nunca_tentada:
+    "Ainda não consultamos a cobrança deste pedido no Mercado Livre — nunca houve tentativa registrada. É lacuna nossa, e ela some quando a captura alcançar este pedido",
+  captura_com_erro:
+    "A consulta da cobrança deste pedido falhou e ainda não foi refeita — o erro é da nossa captura, não do Mercado Livre. A lacuna é nossa e depende de nova tentativa",
+  // ⚠️ Isto NÃO é lacuna nossa: é o que a fonte respondeu. Pode ser venda sem
+  // comissão, cobrança já estornada ou pedido que o ML não fatura. Tratar
+  // resposta da fonte como falha nossa trocaria um balde errado por outro.
+  ml_respondeu_sem_cobranca:
+    "O Mercado Livre respondeu que não há cobrança para este pedido. É informação da fonte, não lacuna da nossa captura — sem cobrança não há o que comparar, e por isso a apuração fica em aberto",
 
   // ── Entradas sem origem identificada (D-225-10) ───────────────────────────
   repasse_de_frete:
