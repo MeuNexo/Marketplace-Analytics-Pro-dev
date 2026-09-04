@@ -524,3 +524,89 @@ describe("239-01 — a identidade de seleção separa o aberto do afirmativo", (
     expect(afirmativo).toContain(pedido);
   });
 });
+
+// ─── 239-03: os quatro motivos da régua do ENVIO (D-239-01) ──────────────────
+//
+// A régua do frete sai do ITEM e vai para o ENVIO, e com ela nascem quatro
+// causas novas de não-fechamento. Cada uma tem de dizer a causa REAL e de quem
+// é a lacuna — a régua de `feedback_ausencia_diz_o_motivo_real` aplicada ao
+// card. Um código cru na tela ou um "não apurado" genérico é exatamente o
+// defeito que esta fase existe para matar.
+describe("239-03 — os motivos da régua do envio nomeiam a causa e o dono da lacuna", () => {
+  const NOVOS = [
+    "frete_sem_envio_capturado",
+    "frete_sem_opcao_no_envio",
+    "frete_cobranca_nao_emitida",
+    "frete_apurado_no_pacote",
+  ];
+
+  it("os quatro têm texto, nenhum devolve o próprio código", () => {
+    for (const m of NOVOS) {
+      const texto = rotuloMotivo(m);
+      expect(texto, `motivo não traduzido: ${m}`).not.toBe(m);
+      expect(texto.length, `motivo curto demais: ${m}`).toBeGreaterThan(20);
+    }
+  });
+
+  it("🔴 nenhum dos quatro usa a expressão genérica de ausência", () => {
+    for (const m of NOVOS) {
+      const texto = rotuloMotivo(m);
+      expect(texto, `${m} diz 'não apurado'`).not.toMatch(/n[ãa]o apurado/i);
+      expect(texto, `${m} diz 'sem dados'`).not.toMatch(/sem dados/i);
+      expect(texto, `${m} diz 'indisponível'`).not.toMatch(/indispon[íi]vel/i);
+    }
+  });
+
+  it("sem envio capturado: a lacuna é NOSSA e está nomeada", () => {
+    const texto = rotuloMotivo("frete_sem_envio_capturado");
+    expect(texto).toContain("ainda não capturamos o envio deste pedido");
+    expect(texto).toMatch(/lacuna nossa/i);
+  });
+
+  it("sem opção no envio: quem não publicou foi o ML, e não há o que comparar", () => {
+    const texto = rotuloMotivo("frete_sem_opcao_no_envio");
+    expect(texto).toContain("Mercado Livre não publicou a opção de envio");
+    expect(texto).toContain("não há o que comparar");
+  });
+
+  it("cobrança não emitida: a espera é do ML e sai sozinha — não é defeito nosso", () => {
+    const texto = rotuloMotivo("frete_cobranca_nao_emitida");
+    expect(texto).toContain("Mercado Livre ainda não emitiu a cobrança");
+    expect(texto).toMatch(/não é lacuna nossa/i);
+    expect(texto).toMatch(/sai sozinho/i);
+  });
+
+  it("apurado no pacote: a conta foi feita UMA vez, no pedido líder", () => {
+    const texto = rotuloMotivo("frete_apurado_no_pacote");
+    expect(texto).toMatch(/uma (única )?vez/i);
+    expect(texto).toMatch(/l[íi]der/i);
+    // 🔴 O card do não-líder não pode se apresentar como não-caso mudo: ele
+    // aponta para onde a conta está.
+    expect(texto).toMatch(/pacote|envio/i);
+  });
+
+  it("🔴 espera do ML e lacuna nossa NÃO dizem a mesma coisa", () => {
+    // Se os dois textos colapsassem, a tela voltaria a somar 'ainda vai chegar'
+    // com 'nós perdemos' — que é como 244 linhas viraram um número só.
+    expect(rotuloMotivo("frete_cobranca_nao_emitida")).not.toBe(
+      rotuloMotivo("frete_sem_cobranca_registrada"),
+    );
+    expect(rotuloMotivo("frete_sem_envio_capturado")).not.toBe(
+      rotuloMotivo("frete_sem_opcao_no_envio"),
+    );
+  });
+
+  it("os motivos antigos continuam no mapa — tela aberta de antes não vira código cru", () => {
+    // A v3 para de emitir `frete_multi_item` e `frete_sem_vigencia_na_venda`,
+    // mas linha já renderizada ou em cache ainda os carrega. Removê-los do mapa
+    // trocaria uma frase por um identificador de banco na cara do Wesley.
+    for (const antigo of [
+      "frete_sem_vigencia_na_venda",
+      "frete_multi_item",
+      "possivel_carrinho",
+      "frete_sem_cobranca_registrada",
+    ]) {
+      expect(rotuloMotivo(antigo), `motivo antigo sumiu: ${antigo}`).not.toBe(antigo);
+    }
+  });
+});
