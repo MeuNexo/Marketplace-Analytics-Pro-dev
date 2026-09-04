@@ -3,7 +3,6 @@ import {
   AlertCircle,
   AlertTriangle,
   CheckCircle2,
-  ChevronRight,
   Clock,
   Eye,
   Layers,
@@ -22,6 +21,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
+import { CasoConciliacaoSheet } from "@/components/mercadolivre/CasoConciliacaoSheet";
+import { CasoNossoErroSheet } from "@/components/mercadolivre/CasoNossoErroSheet";
 import {
   useCasosConciliacao,
   useConciliacaoResumo,
@@ -416,9 +417,11 @@ export default function MLConciliacao() {
   const [fila, setFila] = useState<"ml" | "nosso">("ml");
   const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>("abertos");
   const [soUrgentes, setSoUrgentes] = useState(false);
-  // Preparado para o dossiê do plano 05. Por ora clique só seleciona — nenhum
-  // botão morto na tela.
-  const [casoSelecionado, setCasoSelecionado] = useState<CasoConciliacaoRow | null>(null);
+  // 🔴 A seleção guarda a CHAVE, não o objeto. Guardar o objeto congelaria um
+  // instantâneo: depois de marcar um desfecho, a invalidação refaz a leitura e
+  // o Sheet continuaria mostrando o estado anterior — a tela diria "aberto"
+  // sobre um caso que o banco já tem como contestado.
+  const [chaveSelecionada, setChaveSelecionada] = useState<string | null>(null);
 
   const resumo = resumoQuery.data ?? null;
   // Referência estável: `?? []` cria um array novo a cada render e faria o
@@ -461,6 +464,11 @@ export default function MLConciliacao() {
   }, [linhas]);
 
   const maisUrgente = useMemo(() => baldes.ml.find(ehUrgente) ?? null, [baldes.ml]);
+
+  const casoSelecionado = useMemo<CasoConciliacaoRow | null>(() => {
+    if (chaveSelecionada == null) return null;
+    return linhas.find((c) => chaveDeLista(c) === chaveSelecionada) ?? null;
+  }, [linhas, chaveSelecionada]);
 
   const filaVisivel = useMemo(() => {
     if (fila === "nosso") return baldes.nosso;
@@ -739,8 +747,8 @@ export default function MLConciliacao() {
                   ingestaoInicio={ingestaoInicio}
                   comPrazo
                   colunaPrazo="Prazo"
-                  selecionado={casoSelecionado ? chaveDeLista(casoSelecionado) : null}
-                  onSelecionar={setCasoSelecionado}
+                  selecionado={chaveSelecionada}
+                  onSelecionar={(c) => setChaveSelecionada(chaveDeLista(c))}
                 />
               )}
 
@@ -815,8 +823,8 @@ export default function MLConciliacao() {
                   ingestaoInicio={ingestaoInicio}
                   comPrazo={false}
                   colunaPrazo="—"
-                  selecionado={casoSelecionado ? chaveDeLista(casoSelecionado) : null}
-                  onSelecionar={setCasoSelecionado}
+                  selecionado={chaveSelecionada}
+                  onSelecionar={(c) => setChaveSelecionada(chaveDeLista(c))}
                 />
               )}
             </TabsContent>
@@ -824,13 +832,24 @@ export default function MLConciliacao() {
         </CardContent>
       </Card>
 
-      {casoSelecionado ? (
-        <p className="text-xs text-muted-foreground flex items-center gap-1">
-          <ChevronRight className="w-3 h-3" />
-          Caso selecionado: {casoSelecionado.titulo ?? casoSelecionado.ml_order_id ?? "—"}. O
-          dossiê com os valores lado a lado e os botões de desfecho entra no próximo plano.
-        </p>
-      ) : null}
+      {/* 🔴 Dois Sheets, montados sempre e controlados pela seleção. Qual deles
+          abre é decidido pela FILA que a RPC classificou, nunca pela tab ativa:
+          a fronteira que impede um erro nosso de virar chamado contra o ML tem
+          que valer também quando a seleção sobrevive a uma troca de aba. */}
+      <CasoConciliacaoSheet
+        caso={casoSelecionado != null && casoSelecionado.fila !== "nosso" ? casoSelecionado : null}
+        ingestaoInicio={ingestaoInicio}
+        onOpenChange={(aberto) => {
+          if (!aberto) setChaveSelecionada(null);
+        }}
+      />
+      <CasoNossoErroSheet
+        caso={casoSelecionado != null && casoSelecionado.fila === "nosso" ? casoSelecionado : null}
+        ingestaoInicio={ingestaoInicio}
+        onOpenChange={(aberto) => {
+          if (!aberto) setChaveSelecionada(null);
+        }}
+      />
     </div>
   );
 }

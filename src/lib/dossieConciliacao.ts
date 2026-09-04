@@ -132,7 +132,7 @@ export function dataEmBR(valor: string | Date | null | undefined, ausente = AUSE
  * de texto do chamado do ML já colou U+00A0 como caractere estranho antes.
  */
 function dinheiro(valor: number | null | undefined): string {
-  return valorEmReais(valor, AUSENTE_VALOR).replace(/ /g, " ");
+  return valorEmReais(valor, AUSENTE_VALOR).replace(/\u00a0/g, " ");
 }
 
 // ─── O caso, como ele chega da RPC ──────────────────────────────────────────
