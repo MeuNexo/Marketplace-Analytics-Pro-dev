@@ -157,6 +157,17 @@ export interface ConciliacaoResumoRow {
 // nulos foi cruzada dentro do que se leu. Quando ela é falsa, a tela grita e
 // oferece a leitura completa; nunca fica quieta.
 
+/**
+ * O horizonte de urgência da tela, em dias — o MESMO do card "expiram em ≤7
+ * dias" do topo. Uma linha com `dias_restantes` acima dele não é caso a
+ * expirar, então a leitura que já passou desse ponto cobriu todos os que são.
+ *
+ * 🔴 Se este número mudar, o card do topo tem de mudar junto: são a mesma
+ * régua. Duas definições de "urgente" na mesma tela é como o saldo quebrou na
+ * fase 233.
+ */
+const HORIZONTE_URGENCIA_DIAS = 7;
+
 /** Teto duro do PostgREST — pedir mais numa chamada não traz mais. */
 const PAGINA = 1000;
 /** Teto de segurança: 8 × 1.000 = 8.000 linhas. Existe para o laço não girar
@@ -277,12 +288,32 @@ export function useCasosConciliacao(opcoes?: OpcoesCasos) {
         }
       }
 
-      // 🔴 A invariante de D-225-16. `dias_restantes asc NULLS LAST`: se a
-      // última linha lida já não tem prazo, a fronteira dos nulos foi cruzada
-      // dentro do que se leu — logo TODA linha com prazo está aqui. É uma
-      // conferência sobre o dado devolvido, não uma promessa sobre a RPC.
+      // 🔴 A invariante de D-225-16, ANCORADA NO HORIZONTE E NÃO NUMA FRONTEIRA
+      // DE NULOS (239-06).
+      //
+      // A régua anterior perguntava se a última linha lida tinha
+      // `dias_restantes` NULO — a fronteira dos nulos, cruzada dentro do que se
+      // leu. Ela era inalcançável: a RPC deriva `dias_restantes` de
+      // `data_evento` nos DOIS ramos do union, e `data_evento` nunca é nulo.
+      // Medido em 04/09/2026: **0 de 2.569 linhas** com prazo nulo. O alerta
+      // vermelho ficava ligado em toda abertura da tela, para sempre, sem que
+      // nada estivesse errado — e alarme que nunca desliga é alarme que ninguém
+      // lê. É o mesmo defeito de gate ancorado em literal superado
+      // (feedback_gate_por_invariante_nao_por_literal).
+      //
+      // A pergunta certa não é "acabaram os prazos?", é "todo caso que pode
+      // expirar já está na tela?". Como a ordem é `dias_restantes asc`, se a
+      // ÚLTIMA linha lida já passou do horizonte de urgência, então toda linha
+      // dentro do horizonte veio antes dela — logo está carregada.
+      //
+      // ⚠️ O nulo continua valendo como cobertura, para o dia em que a RPC
+      // voltar a emiti-lo: nulo vem por último, então nulo no fim também prova
+      // que a fronteira foi cruzada. As duas condições convivem.
       const ultima = linhas.length > 0 ? linhas[linhas.length - 1] : null;
-      const prazoCoberto = completo || (ultima != null && ultima.dias_restantes == null);
+      const prazoCoberto =
+        completo ||
+        (ultima != null &&
+          (ultima.dias_restantes == null || ultima.dias_restantes > HORIZONTE_URGENCIA_DIAS));
 
       return { linhas, truncadoNoTeto, completo, prazoCoberto, paginasLidas };
     },

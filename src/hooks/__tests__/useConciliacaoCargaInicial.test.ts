@@ -67,15 +67,39 @@ const COM_PRAZO = 1363;
 const SEM_PRAZO = 1241;
 const JANELA = COM_PRAZO + SEM_PRAZO; // 2.604
 
+// 🔴 O prazo cresce MONOTONICAMENTE (239-06). O gerador antigo usava `i % 30`,
+// que CICLA — a linha 900 tinha prazo 0 e a 901, prazo 1 de novo. A RPC ordena
+// `dias_restantes asc`, então aquele fixture não representava o que a tela
+// recebe, e a régua de cobertura passava por acidente do resto da divisão.
+// Com `prazoDe`, a fatia lida é sempre um prefixo dos prazos menores — que é
+// exatamente a propriedade em que a invariante se apoia.
+function prazoDe(i: number, total: number): number {
+  return Math.floor((i * 40) / Math.max(total, 1)) - 5; // −5 (vencido) até 34
+}
+
 function janelaOrdenada(comPrazo = COM_PRAZO, semPrazo = SEM_PRAZO) {
   const linhas: Array<Record<string, unknown>> = [];
   for (let i = 0; i < comPrazo; i++) {
-    linhas.push({ ml_order_id: `p-${i}`, tipo_caso: "repasse_ausente", dias_restantes: i % 30 });
+    linhas.push({
+      ml_order_id: `p-${i}`,
+      tipo_caso: "repasse_ausente",
+      dias_restantes: prazoDe(i, comPrazo),
+    });
   }
   for (let i = 0; i < semPrazo; i++) {
     linhas.push({ ml_order_id: `f-${i}`, tipo_caso: "frete_a_maior", dias_restantes: null });
   }
   return linhas;
+}
+
+/** Uma janela em que TODA linha tem prazo — a janela real, medida em 04/09. */
+function janelaSemNulos(total: number, dentroDoHorizonte: number) {
+  return Array.from({ length: total }, (_, i) => ({
+    ml_order_id: `x-${i}`,
+    tipo_caso: "repasse_a_menor",
+    // As `dentroDoHorizonte` primeiras expiram em ≤7 dias; o resto, depois.
+    dias_restantes: i < dentroDoHorizonte ? (i % 8) - 0 : 8 + (i % 30),
+  }));
 }
 
 /** Serve fatias da janela por `p_offset`/`p_limite`, como a RPC faria. */
@@ -131,17 +155,42 @@ describe("🔴 PORTÃO — completude não regride: nenhum caso com prazo fica i
     (supabase.rpc as ReturnType<typeof vi.fn>).mockImplementation(servir(janelaOrdenada()));
   });
 
-  it("4 — `prazoCoberto` é FALSO enquanto a cauda carregada ainda tem prazo", async () => {
-    // 1.363 linhas com prazo contra uma página de 1.000: a linha 1.001 TEM
-    // prazo e ficou fora. A tela precisa gritar — é o caso D-225-16.
+  it("4 — `prazoCoberto` é FALSO enquanto a cauda carregada ainda pode expirar", async () => {
+    // 1.200 linhas, TODAS com prazo, e as 1.100 primeiras dentro do horizonte
+    // de 7 dias: a página de 1.000 para no meio das urgentes, então a linha
+    // 1.001 PODE expirar e ficou fora. A tela precisa gritar — é D-225-16.
+    const { supabase } = await import("@/integrations/supabase/client");
+    (supabase.rpc as ReturnType<typeof vi.fn>).mockImplementation(
+      servir(janelaSemNulos(1200, 1100)),
+    );
     const { dados } = await ler();
     expect(dados?.prazoCoberto).toBe(false);
   });
 
-  it("5 — `prazoCoberto` é VERDADEIRO quando a cauda carregada já não tem prazo", async () => {
+  it("🔴 4b — a janela REAL (zero prazos nulos) não trava o alerta em ligado", async () => {
+    // O defeito que a tela mostrou ao Wesley em 04/09/2026. A régua antiga
+    // exigia uma fronteira de NULOS, e a RPC não emite nenhum: 0 de 2.569
+    // linhas. `prazoCoberto` era falso em TODA abertura, para sempre, e o
+    // alerta vermelho aparecia sem nada estar errado.
+    //
+    // Aqui: 2.569 linhas, todas com prazo, 966 dentro do horizonte — como
+    // medido. A página de 1.000 cobre as 966, logo NÃO há caso a expirar fora
+    // da tela, e o alerta tem de ficar quieto.
+    const { supabase } = await import("@/integrations/supabase/client");
+    (supabase.rpc as ReturnType<typeof vi.fn>).mockImplementation(
+      servir(janelaSemNulos(2569, 966)),
+    );
+    const { dados } = await ler();
+    expect(dados?.linhas.length).toBe(1000);
+    expect(dados?.completo, "continua sendo leitura parcial, e ela se declara").toBe(false);
+    expect(dados?.prazoCoberto).toBe(true);
+  });
+
+  it("5 — o NULO continua valendo como cobertura, para quando a RPC voltar a emiti-lo", async () => {
     // Com 800 linhas com prazo, a página de 1.000 cruza a fronteira dos nulos:
     // como a RPC ordena `NULLS LAST`, cruzar a fronteira PROVA que toda linha
-    // com prazo está carregada. Invariante verificada, não suposta.
+    // com prazo está carregada. A régua nova não descartou este caminho — ela
+    // acrescentou o do horizonte ao lado dele.
     const { supabase } = await import("@/integrations/supabase/client");
     (supabase.rpc as ReturnType<typeof vi.fn>).mockImplementation(servir(janelaOrdenada(800, 1804)));
     const { dados } = await ler();

@@ -592,7 +592,31 @@ async function executarParaConta(
   }
 
   const agora = new Date();
-  const dateFrom = modo === "backfill" ? configRow.backfill_desde : diasAntesUTC(agora, 3);
+  // 🔴 A JANELA DIARIA ERA DE 3 DIAS, E A REGUA DA TELA LE 75 (239-06).
+  //
+  // O defeito nao era o agendamento de retentativa — ele existe e esta certo
+  // logo abaixo (`proxima_tentativa <= agora`). O defeito era que a fila so
+  // considerava pedidos DENTRO da janela: um pedido que errou em 21/08 mas
+  // vendeu em julho nunca mais voltava a `idsNaJanela`, entao a retentativa
+  // agendada NUNCA era lida. Medido em 04/09/2026: 44 capturas com
+  // `proxima_tentativa` vencida havia 14 dias e `tentativas = 1,0` — nenhuma
+  // segunda tentativa jamais aconteceu. Mais 7 pedidos (venda mais antiga
+  // 24/06) nunca ganharam nem linha, porque cairam fora dos 3 dias antes de a
+  // captura existir.
+  //
+  // 75 = `janela_dias + 45`, o mesmo horizonte da CTE `pedidos` de
+  // `conciliacao_base_linhas` e o mesmo que `sync-ml-shipment-frete` passou a
+  // varrer no 239-05. O pedido entra na tela pela data do EVENTO (liberacao do
+  // repasse), que chega semanas depois da venda: varrer menos que isso e pedir
+  // a cobranca de um pedido que a captura nunca visitou.
+  //
+  // ⚠️ Nao ha custo de API nisso. `status === "ok"` continua sendo pulado sem
+  // consulta (D-223-05), e hoje sao 8.069 dos 8.113. O que cresce e uma
+  // LEITURA DE BANCO paginada, nao a fila de chamadas ao ML.
+  const DIAS_JANELA_DIARIA = 75;
+  const dateFrom = modo === "backfill"
+    ? configRow.backfill_desde
+    : diasAntesUTC(agora, DIAS_JANELA_DIARIA);
   const dateTo = hojeUTC(agora);
   const inicio = inicioInclusivoDataPedido(dateFrom);
   const fim = fimExclusivoDataPedido(dateTo);
