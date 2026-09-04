@@ -300,6 +300,29 @@ const MOTIVOS: Record<string, string> = {
   frete_a_maior_confirmado:
     "Frete cobrado acima do publicado na ficha do anúncio, com a régua vigente na data da venda — este caso pode virar chamado",
 
+  // ── Frete pela régua do ENVIO (239-03) ────────────────────────────────────
+  // 🔴 A régua saiu do ITEM e foi para o ENVIO, que é a unidade em que o ML
+  // cota e cobra o frete. Com isso nascem quatro causas novas de não-fechamento
+  // — e cada uma tem de dizer QUAL é a causa e DE QUEM é a lacuna. Um único
+  // "não apurado" cobrindo as quatro é o defeito que a fase 239 existe para
+  // matar (feedback_ausencia_diz_o_motivo_real).
+  //
+  // A separação que mais importa é entre as duas primeiras e a terceira:
+  // "ainda vai chegar" e "nós perdemos" não podem somar no mesmo balde. Medido
+  // no 239-01: das 244 linhas sem cobrança, 225 eram espera normal do ML
+  // (mediana do CFFE = 1 dia, máximo 18) e só 19 eram lacuna de verdade.
+  frete_sem_envio_capturado:
+    "Lacuna nossa: ainda não capturamos o envio deste pedido, então não existe custo de tabela para comparar — ela sai quando a captura do envio alcançar este pedido",
+  frete_sem_opcao_no_envio:
+    "O Mercado Livre não publicou a opção de envio deste envio — sem ela não existe custo de tabela e não há o que comparar. A ausência é da fonte, não da nossa captura",
+  frete_cobranca_nao_emitida:
+    "O Mercado Livre ainda não emitiu a cobrança de frete desta venda — a espera é normal e sai sozinho conforme a fatura fecha. Não é lacuna nossa",
+  // 🔴 Carrinho tem N pedidos e UM frete. Antes, N pedidos viravam N não-casos
+  // por uma heurística (mesmo comprador, mesmo dia); agora o pacote é FATO, vindo
+  // do envio, e a conta é feita uma vez só — no pedido líder, que o card nomeia.
+  frete_apurado_no_pacote:
+    "Este pedido divide o envio com outros: o frete foi cotado e cobrado uma única vez pelo pacote, então a comparação aparece no pedido líder do envio e não é repetida aqui",
+
   // ── Entradas sem origem identificada (D-225-10) ───────────────────────────
   repasse_de_frete:
     "Repasse de frete do marketplace — entrada legítima, sem pedido próprio para casar",
