@@ -671,14 +671,35 @@ async function runSync(
   daysAhead: number,
   beginDate: string | null,
   endDate:   string | null,
+  filtroMlUserId: string | null = null,
 ): Promise<unknown> {
   try {
     const sb = createClient(SUPABASE_URL, SERVICE_KEY);
 
-    const { data: tokenRows, error: tokErr } = await sb
+    // 🔴 225-11 — O FILTRO DE ORGANIZAÇÃO, OPCIONAL E ADITIVO.
+    //
+    // Esta função sempre varreu TODAS as linhas de `ml_tokens` com refresh
+    // token, e a janela explícita do 225-09 vale para todas elas. Medido em
+    // 04/09/2026: o Thales tem 247.523 linhas em `cash_inflows` — 25× a Pé
+    // Vermeio (9.894) — e o Junior, 4.343. O 225-11 reprocessa MÊS A MÊS: dez
+    // invocações sem filtro varreriam o Thales dez vezes, esgotariam o teto de
+    // consultas de detalhe em linhas que ninguém pediu e, pior, gravariam
+    // classificação numa organização que D-225-14 põe fora do escopo da fase.
+    //
+    // ⚠️ Quando o filtro NÃO vem, o comportamento é idêntico ao de antes desta
+    // passagem — e é isso que o cron `sync-mp-releases-daily` (0 */3 * * *)
+    // invoca oito vezes por dia, já em produção classificando sozinho. Um
+    // filtro obrigatório desligaria a correção do 225-09 em silêncio.
+    let consultaTokens = sb
       .from("ml_tokens")
       .select("ml_user_id,organization_id,seller_id")
       .not("refresh_token", "is", null);
+
+    if (filtroMlUserId !== null) {
+      consultaTokens = consultaTokens.eq("ml_user_id", filtroMlUserId);
+    }
+
+    const { data: tokenRows, error: tokErr } = await consultaTokens;
 
     if (tokErr) {
       console.error("sync-mp-releases runSync error: Erro ao buscar ml_tokens:", tokErr.message);
@@ -687,7 +708,7 @@ async function runSync(
 
     if (!tokenRows || tokenRows.length === 0) {
       console.log("sync-mp-releases runSync: no active users");
-      return { ok: true, days_back: daysBack, days_ahead: daysAhead, begin_date: beginDate, end_date: endDate, results: [] };
+      return { ok: true, days_back: daysBack, days_ahead: daysAhead, begin_date: beginDate, end_date: endDate, ml_user_id: filtroMlUserId, orgs_varridas: 0, results: [] };
     }
 
     const results: any[] = [];
@@ -743,7 +764,7 @@ async function runSync(
       console.warn("sync-mp-releases: disparo de sync-ml-frete-tabela falhou (nao bloqueia):", e?.message);
     }
 
-    return { ok: true, days_back: daysBack, days_ahead: daysAhead, begin_date: beginDate, end_date: endDate, results };
+    return { ok: true, days_back: daysBack, days_ahead: daysAhead, begin_date: beginDate, end_date: endDate, ml_user_id: filtroMlUserId, orgs_varridas: results.length, results };
   } catch (err: unknown) {
     // Pitfall 4: capturar TODA exceção do background — sem try/catch o processo
     // morre silenciosamente (sem log) quando chamado via EdgeRuntime.waitUntil
@@ -780,17 +801,26 @@ serve(async (req) => {
   const beginDate = dataOuNulo(body.begin_date);
   const endDate   = dataOuNulo(body.end_date);
 
+  // 🔴 225-11: o vendedor a processar, OPCIONAL. Vazio, zero e ausente são a
+  // MESMA coisa — ausência de filtro —, e nunca um filtro que não casa com
+  // ninguém: um filtro inválido silenciosamente virando "nenhuma organização"
+  // seria uma invocação que não faz nada e devolve 202 dizendo que fez.
+  const filtroMlUserId =
+    body.ml_user_id !== undefined && body.ml_user_id !== null && String(body.ml_user_id).trim() !== ""
+      ? String(body.ml_user_id).trim()
+      : null;
+
   // Modo debug síncrono (CASHFIX-03): ?debug=1 roda runSync inline e
   // devolve o diagnóstico no corpo — permite ao orquestrador provar a persistência
   // (upserted>0) sem depender de logs de console.
   const isDebug = new URL(req.url).searchParams.get("debug") === "1";
   if (isDebug) {
-    const diag = await runSync(daysBack, daysAhead, beginDate, endDate);
+    const diag = await runSync(daysBack, daysAhead, beginDate, endDate, filtroMlUserId);
     return json({ ok: true, mode: "debug-sync", diag }, 200);
   }
 
   // Desacoplar o pg_net da duração de execução (CASHFIX-03):
   // runSync() processa em background — o caller recebe 202 imediatamente.
-  EdgeRuntime.waitUntil(runSync(daysBack, daysAhead, beginDate, endDate));
+  EdgeRuntime.waitUntil(runSync(daysBack, daysAhead, beginDate, endDate, filtroMlUserId));
   return json({ ok: true, msg: "sync enqueued" }, 202);
 });

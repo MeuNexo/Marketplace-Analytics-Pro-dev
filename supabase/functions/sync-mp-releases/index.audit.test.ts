@@ -573,3 +573,91 @@ describe("11 — nenhum caminho do código escreve token em log ou mensagem de e
     expect(vazamentos, "token indo para o log: " + JSON.stringify(vazamentos)).toHaveLength(0);
   });
 });
+
+// ─── 12. O filtro de organização ───────────────────────────────────────────
+//
+// 🔴 POR QUE ESTE GRUPO EXISTE (225-11, passo zero da Task 1): `runSync` varre
+// TODAS as linhas de `ml_tokens` que tenham refresh token. Não há parâmetro de
+// organização, e a janela explícita que o 225-09 acrescentou vale para todas
+// elas. Medido em 04/09/2026: a conta Thales tem 247.523 linhas em
+// `cash_inflows` — 25× a Pé Vermeio (9.894) — e a do Junior, 4.343.
+//
+// O 225-11 manda invocar a função UMA VEZ POR MÊS de liberação. Dez invocações
+// sem filtro varreriam o Thales dez vezes, esgotariam o teto de consultas de
+// detalhe em linhas que ninguém pediu, e — o que é pior — GRAVARIAM
+// classificação em 247.523 linhas de uma organização que D-225-14 põe
+// explicitamente fora do escopo desta fase. A proibição existe desde o começo;
+// o mecanismo que a cumpre é o que este grupo protege.
+//
+// ⚠️ O campo é OPCIONAL e ADITIVO. Sem ele, o comportamento é idêntico ao de
+// hoje — e é isso que o cron `sync-mp-releases-daily` (0 */3 * * *) invoca oito
+// vezes por dia, já em produção classificando sozinho. Um filtro que virasse
+// obrigatório desligaria a correção do 225-09 em silêncio.
+
+describe("12 — o reprocessamento pode ser dirigido a UMA organização, e o caminho sem filtro continua existindo — regra: dez invocações mensais sem filtro escrevem em 247.523 linhas do Thales, que D-225-14 exclui", () => {
+  /** O corpo de `runSync`, onde a varredura de `ml_tokens` mora. */
+  const corpoRunSync = (() => {
+    const marca = corpo.indexOf("async function runSync");
+    expect(marca, "runSync não encontrada no fonte").toBeGreaterThan(-1);
+    return blocoQueContem(corpo, corpo.indexOf("{", corpo.indexOf(")", marca)) + 1);
+  })();
+
+  it("o corpo da requisição aceita um filtro de vendedor", () => {
+    expect(
+      /body\s*\.\s*\w*(ml_user|seller|vendedor)\w*/i.test(corpo),
+      "o corpo da requisição não aceita filtro de vendedor — a proibição de não tocar Junior e Thales viraria uma frase sem mecanismo",
+    ).toBe(true);
+  });
+
+  it("o filtro chega a runSync como parâmetro, não como constante nem como global", () => {
+    const assinatura = corpo.slice(
+      corpo.indexOf("async function runSync"),
+      corpo.indexOf("{", corpo.indexOf("Promise<unknown>", corpo.indexOf("async function runSync"))),
+    );
+    expect(
+      /(ml_user|seller|vendedor|filtro)/i.test(assinatura),
+      "runSync não recebe o filtro por parâmetro: assinatura = " + JSON.stringify(assinatura.slice(0, 400)),
+    ).toBe(true);
+  });
+
+  it("a varredura de `ml_tokens` é restringida quando o filtro vem", () => {
+    const idx = corpoRunSync.indexOf('from("ml_tokens")');
+    expect(idx, "runSync não lê ml_tokens — o fonte mudou de forma").toBeGreaterThan(-1);
+    const depois = corpoRunSync.slice(idx, idx + 1200);
+    expect(
+      /\.eq\(\s*["'](ml_user_id|seller_id|organization_id)["']/.test(depois),
+      "a consulta a ml_tokens não é restringida por vendedor em lugar nenhum — toda invocação varre todas as organizações",
+    ).toBe(true);
+  });
+
+  it("a restrição está num RAMO CONDICIONAL — filtro obrigatório desligaria o cron de 3 em 3 horas", () => {
+    const idx = corpoRunSync.search(/\.eq\(\s*["'](ml_user_id|seller_id|organization_id)["']/);
+    expect(idx, "não achei a restrição por vendedor em runSync").toBeGreaterThan(-1);
+    const antes = corpoRunSync.slice(Math.max(0, idx - 600), idx);
+    expect(
+      /\bif\s*\(/.test(antes) || /\?\s*$/m.test(antes),
+      "a restrição está no caminho reto: sem filtro no corpo, a consulta devolveria zero linhas e o cron pararia de ingerir caixa",
+    ).toBe(true);
+  });
+
+  it("o caminho SEM filtro continua existindo — o cron invoca sem ele e é quem classifica sozinho hoje", () => {
+    expect(
+      /body\s*\.\s*days_back/.test(corpo),
+      "o comportamento padrão sumiu junto com a mudança",
+    ).toBe(true);
+    const idx = corpoRunSync.search(/\.eq\(\s*["'](ml_user_id|seller_id|organization_id)["']/);
+    expect(idx).toBeGreaterThan(-1);
+    const blocoDaRestricao = blocoQueContem(corpoRunSync, idx);
+    expect(
+      blocoDaRestricao.length < corpoRunSync.length,
+      "a restrição ocupa o corpo inteiro de runSync — não há caminho sem filtro",
+    ).toBe(true);
+  });
+
+  it("o retorno diz QUAIS organizações foram varridas — parada obrigatória do 225-11: retorno com mais de uma organização aborta o reprocessamento", () => {
+    expect(
+      /org_id/.test(corpo),
+      "o retorno não carrega a organização: seria impossível provar que a invocação tocou uma só",
+    ).toBe(true);
+  });
+});
