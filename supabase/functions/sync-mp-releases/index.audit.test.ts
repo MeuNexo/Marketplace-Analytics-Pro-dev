@@ -661,3 +661,92 @@ describe("12 — o reprocessamento pode ser dirigido a UMA organização, e o ca
     ).toBe(true);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 225-13 — a ingestão decide pelo DINHEIRO, não pelo RÓTULO do pagamento
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// `charged_back` com `status_detail = reimbursed`, `money_release_status =
+// released` e `transaction_amount_refunded = 0` é contestação encerrada A NOSSO
+// FAVOR: o dinheiro foi liberado e está no bolso. A lista de cinco status
+// recusava esses pagamentos na linha do `continue`, ANTES de qualquer escrita —
+// 14 pagamentos e R$ 3.330,88 em 2026, dos quais 6 (R$ 1.280,40) nunca entraram
+// e 8 entraram quando o pagamento ainda estava `approved` e CONGELARAM sem chave
+// de pedido, porque toda passagem seguinte as descartava antes da escrita.
+//
+// 🔴 A régua nova é ADITIVA e mora FORA da lista. Quem a implementar
+// acrescentando `charged_back` a VALID_STATUSES deixa o bloco anterior vermelho —
+// e com razão: aceitar por RÓTULO passaria a gravar como receita a contestação de
+// fato PERDIDA, na qual o dinheiro volta para o comprador. É o defeito de sinal
+// oposto, e ele é pior que o de hoje.
+
+const CONTADOR_DO_DINHEIRO = "aceitos_pelo_caminho_do_dinheiro";
+
+describe("13 — a recusa por status consulta a régua importada, e a régua decide pelo dinheiro — regra: o rótulo mente nos dois sentidos, e quem separa é money_release_status × transaction_amount_refunded", () => {
+  it("o laço consulta a régua, e não uma lista literal — a decisão saiu do laço e virou função nomeada", () => {
+    expect(
+      /julgaPagamento\s*\(/.test(laco),
+      "o laço não chama a régua: a decisão de entrada continua embutida no laço, onde não há como testá-la",
+    ).toBe(true);
+  });
+
+  it("nenhuma lista de status decide sozinha dentro do laço — a lista é ARGUMENTO da régua, não o veredito", () => {
+    expect(
+      /VALID_STATUSES\s*\.\s*includes/.test(laco),
+      "o laço ainda decide por `VALID_STATUSES.includes`: a régua nova não está no caminho, ou está duplicada",
+    ).toBe(false);
+  });
+
+  it("o import da régua é RELATIVO, nunca remoto — o resolvedor do vitest no Node não abre import por URL, e é por isso que o núcleo testável mora em arquivo separado", () => {
+    const imports = [...corpo.matchAll(/import\s*{([^}]*)}\s*from\s*(["'])([^"']+)\2/g)];
+    expect(imports.length, "nenhum import com chaves no fonte — denominador zero, não há veredito").toBeGreaterThan(0);
+
+    const daRegua = imports.filter((m) => /julgaPagamento/.test(m[1]));
+    expect(daRegua.length, "a régua não é importada em lugar nenhum").toBe(1);
+    expect(
+      daRegua[0][3].startsWith("./"),
+      "a régua é importada de `" + daRegua[0][3] + "`: import remoto quebra o teste no Node e a EF perde o portão",
+    ).toBe(true);
+  });
+
+  it("a negação do valor continua condicionada ao status de estorno, e só a ele — pagamento aceito pelo caminho do dinheiro entra POSITIVO", () => {
+    const linhas = laco.split("\n").filter((l) => /-\s*Math\.abs\s*\(/.test(l));
+    expect(linhas.length, "nenhuma negação de valor no laço — o denominador é zero, não há o que aprovar").toBe(1);
+    expect(
+      /refunded/.test(linhas[0]),
+      "a negação do valor não está mais condicionada ao status de estorno: `" + linhas[0].trim() + "`",
+    ).toBe(true);
+  });
+
+  it("o contador do que a régua nova admitiu está declarado no tipo do retorno da janela", () => {
+    const m = /interface\s+ResultadoJanela\s*{([^}]*)}/.exec(corpo);
+    expect(m, "ResultadoJanela não encontrado no fonte").not.toBeNull();
+    expect(
+      (m as RegExpExecArray)[1].includes(CONTADOR_DO_DINHEIRO),
+      "sem contador próprio o efeito da régua nova fica indistinguível do movimento normal da janela",
+    ).toBe(true);
+  });
+
+  it("o contador zera na janela vazia e SOMA entre janelas — a janela explícita e a de dias-para-trás caem no mesmo acumulador", () => {
+    const iVazia = corpo.indexOf("function janelaVazia");
+    expect(iVazia, "janelaVazia não encontrada").toBeGreaterThan(-1);
+    expect(
+      blocoQueContem(corpo, corpo.indexOf("{", iVazia) + 1).includes(CONTADOR_DO_DINHEIRO),
+      "o contador não nasce zerado: a primeira janela devolveria `undefined` e a soma viraria NaN",
+    ).toBe(true);
+
+    const iSoma = corpo.indexOf("function somarJanela");
+    expect(iSoma, "somarJanela não encontrada").toBeGreaterThan(-1);
+    expect(
+      blocoQueContem(corpo, corpo.indexOf("{", iSoma) + 1).includes(CONTADOR_DO_DINHEIRO),
+      "o contador não é somado entre janelas: o retorno mostraria só a última",
+    ).toBe(true);
+  });
+
+  it("o contador é incrementado DENTRO do laço, junto do veredito — contador fora do laço conta janela, não pagamento", () => {
+    expect(
+      laco.includes(CONTADOR_DO_DINHEIRO),
+      "o contador existe no tipo mas ninguém o incrementa: ele devolveria zero para sempre",
+    ).toBe(true);
+  });
+});
