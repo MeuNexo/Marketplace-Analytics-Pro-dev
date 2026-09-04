@@ -304,3 +304,56 @@ describe("🔴 PORTÃO — o módulo é puro", () => {
     }
   });
 });
+
+// ─── 225-06: os rótulos da terceira régua (frete prometido × frete cobrado) ──
+
+describe("225-06 — rótulos do frete prometido", () => {
+  it("o tipo novo tem rótulo e não devolve o código cru", () => {
+    expect(rotuloTipoCaso("frete_a_maior")).toBe("Frete cobrado acima do publicado");
+  });
+
+  it("🔴 o rótulo do tipo não afirma a hipótese do Wesley", () => {
+    // "é sempre a mais" é o que a fase existe para TESTAR. A tela nomeia a
+    // comparação; quem diz de que lado o número caiu é o motivo.
+    expect(rotuloTipoCaso("frete_a_maior").toLowerCase()).not.toContain("sempre");
+  });
+
+  it("os sete motivos de frete têm texto, nenhum devolve o próprio código", () => {
+    const motivos = [
+      "frete_multi_item",
+      "frete_sem_cobranca_registrada",
+      "frete_sem_vigencia_na_venda",
+      "frete_abaixo_do_piso",
+      "frete_a_menor_medido",
+      "regua_frete_nao_liberada",
+      "frete_a_maior_confirmado",
+    ];
+    for (const m of motivos) {
+      const texto = rotuloMotivo(m);
+      expect(texto).not.toBe(m);
+      expect(texto.length).toBeGreaterThan(20);
+    }
+  });
+
+  it("🔴 o lado que NÃO acusa existe e se declara como medição, não como caso", () => {
+    const texto = rotuloMotivo("frete_a_menor_medido");
+    expect(texto).toContain("ABAIXO");
+    expect(texto).toContain("Não é caso");
+  });
+
+  it("o retroativo se declara diagnóstico, e diz por quê", () => {
+    const texto = rotuloMotivo("frete_sem_vigencia_na_venda");
+    expect(texto).toContain("diagnóstico");
+    expect(texto).toContain("réguas diferentes");
+  });
+
+  it("ausência de cobrança de frete NUNCA é lida como frete grátis presumido", () => {
+    const texto = rotuloMotivo("frete_sem_cobranca_registrada");
+    expect(texto).toContain("não presumimos zero");
+  });
+
+  it("motivo de frete desconhecido continua devolvendo o próprio código", () => {
+    // Um motivo novo no banco tem que aparecer feio na tela, não sumir dela.
+    expect(rotuloMotivo("frete_invencao_nova")).toBe("frete_invencao_nova");
+  });
+});

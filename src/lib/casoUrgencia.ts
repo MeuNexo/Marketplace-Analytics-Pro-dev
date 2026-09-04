@@ -157,6 +157,12 @@ const TIPOS_DE_CASO: Record<string, string> = {
   repasse_ausente: "Repasse ausente",
   repasse_a_menor: "Repasse a menor",
   entrada_sem_origem: "Entrada sem origem",
+  // 225-06 — a terceira régua: o frete publicado na ficha do anúncio contra o
+  // frete cobrado na fatura. 🔴 O rótulo diz "acima do publicado", nunca "a
+  // mais": "a mais" é a hipótese do Wesley, e a tela não pode afirmar a
+  // hipótese antes de F-02 medir a direção. O tipo nomeia a comparação; o
+  // motivo é que diz de que lado o número caiu.
+  frete_a_maior: "Frete cobrado acima do publicado",
 };
 
 export function rotuloTipoCaso(codigo: string | null | undefined): string {
@@ -206,6 +212,24 @@ const MOTIVOS: Record<string, string> = {
     "As duas pontas do Mercado Livre batem entre si; quem diverge é a nossa base. Correção de cadastro, não chamado",
   possivel_carrinho:
     "Mais de um pedido no mesmo pacote — o repasse pode ter vindo agrupado. Não acusamos em cima de carrinho",
+  frete_multi_item:
+    "O pedido tem mais de um anúncio: o custo de tabela é por anúncio e o frete é por pacote — não há soma honesta, então não comparamos",
+  frete_sem_cobranca_registrada:
+    "Não há linha de cobrança de frete para este pedido. Pode ser frete grátis ou lacuna da nossa captura — não presumimos zero",
+
+  // ── Frete: medido, ainda sem ação (225-06) ────────────────────────────────
+  frete_sem_vigencia_na_venda:
+    "A venda é anterior à primeira captura do custo de tabela deste anúncio — comparar com o custo de hoje seria comparar réguas diferentes. Fica como diagnóstico, não como caso",
+  frete_abaixo_do_piso:
+    "Diferença de frete abaixo do piso de materialidade — aparece, não vira caso individual",
+  // 🔴 Este motivo é a metade que torna a pergunta respondível: se só o lado
+  // positivo aparecesse, "é sempre a mais" seria irrefutável pelo recorte.
+  frete_a_menor_medido:
+    "O frete cobrado ficou ABAIXO do publicado na ficha. Não é caso — aparece porque medir direção exige os dois lados",
+  regua_frete_nao_liberada:
+    "Diferença de frete medida, mas a régua ainda não está liberada: a direção do desvio não foi medida. Fica visível para não sumir do total, e não vira caso",
+  frete_a_maior_confirmado:
+    "Frete cobrado acima do publicado na ficha do anúncio, com a régua vigente na data da venda — este caso pode virar chamado",
 
   // ── Entradas sem origem identificada (D-225-10) ───────────────────────────
   repasse_de_frete:
