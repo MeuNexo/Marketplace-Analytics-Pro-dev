@@ -65,6 +65,7 @@ const CASO: CasoConciliacaoRow = {
   payment_ids: ["172656733528", "171656032162"],
   release_date_max: "2026-08-25",
   valor_estimado: false,
+  ponta_comprador: null,
 };
 
 function abrir(caso: Partial<CasoConciliacaoRow>) {
@@ -512,5 +513,48 @@ describe("🔴 239-01 — no frete o slot do meio é cobrança, no dinheiro é r
   it("32 — e no dinheiro daquela fila o rótulo do meio não muda", () => {
     abrirNossoErro({ tipo_caso: "repasse_a_menor", motivo: "divergencia_da_nossa_base" });
     expect(screen.getByRole("group", { name: "Recebido" })).toBeTruthy();
+  });
+});
+
+// ── 239-05: a quarta linha da prova ─────────────────────────────────────────
+describe("239-05 — o envio pago pelo comprador aparece, ou a lacuna se nomeia", () => {
+  /** Local: o `abrirNossoErro` do bloco acima é privado daquele describe. */
+  function abrirNossoErro(caso: Partial<CasoConciliacaoRow>) {
+    render(
+      <CasoNossoErroSheet
+        caso={{ ...CASO, fila: "nosso", acionavel: false, ...caso } as CasoConciliacaoRow}
+        ingestaoInicio="2026-01-28"
+        onOpenChange={() => {}}
+      />,
+    );
+  }
+
+  it("com ponta capturada, o card PROVA a linha com o número", () => {
+    abrir({ ponta_comprador: 25.99, esperado_nosso: 247.25 });
+    expect(screen.getByText("Comprador pagou do envio")).toBeInTheDocument();
+    expect(screen.getByText("R$ 25,99")).toBeInTheDocument();
+  });
+
+  it("🔴 sem captura, NÃO inventa R$ 0,00 — a linha some", () => {
+    abrir({ ponta_comprador: null });
+    expect(screen.queryByText("Comprador pagou do envio")).not.toBeInTheDocument();
+  });
+
+  it("🔴 ponta zero conhecida também não polui: só aparece quando é dinheiro", () => {
+    abrir({ ponta_comprador: 0 });
+    expect(screen.queryByText("Comprador pagou do envio")).not.toBeInTheDocument();
+  });
+
+  it("o mesmo vale no sheet de erro nosso", () => {
+    abrirNossoErro({ ponta_comprador: 12.99, motivo: "divergencia_da_nossa_base" });
+    expect(screen.getByText("Comprador pagou do envio")).toBeInTheDocument();
+    expect(screen.getByText("R$ 12,99")).toBeInTheDocument();
+  });
+
+  it("🔴 o motivo novo NÃO manda corrigir cadastro nenhum", () => {
+    abrirNossoErro({ motivo: "base_sem_ponta_do_comprador", ponta_comprador: null });
+    const texto = document.body.textContent ?? "";
+    expect(texto).toContain("não foi capturado");
+    expect(texto).not.toContain("Correção de cadastro");
   });
 });

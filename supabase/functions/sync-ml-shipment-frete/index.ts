@@ -283,7 +283,18 @@ async function capturarOrg(
   // uma data ate um dia MAIS RECENTE nas tres primeiras horas do dia UTC,
   // encurtando a janela e deixando pedidos do alvo de fora — a cobertura sairia
   // medida contra um universo diferente do que a tela mostra.
-  const corte = diaEmSaoPaulo(new Date(Date.now() - janelaDias * 86_400_000));
+  //
+  // 🔴 A JANELA DA CAPTURA E A DA REGUA, NAO METADE DELA (239-05). A CTE
+  // `pedidos` de `conciliacao_base_linhas` le pedidos em `janela + 45` dias:
+  // o pedido entra na tela pela data do EVENTO (liberacao do repasse), que
+  // chega semanas depois da venda. Varrer so `janelaDias` deixava a regua
+  // pedindo o envio de pedidos que a captura nunca tinha visitado — medido em
+  // 04/09/2026: 1.213 de 1.214 mapeados em 30 dias, e 1.213 de 2.753 em 75.
+  // O `45` e o mesmo literal da RPC, de proposito: se um mudar, o outro tem
+  // de mudar junto.
+  const DEFASAGEM_DO_EVENTO_DIAS = 45;
+  const janelaDeVarredura = janelaDias + DEFASAGEM_DO_EVENTO_DIAS;
+  const corte = diaEmSaoPaulo(new Date(Date.now() - janelaDeVarredura * 86_400_000));
 
   // ⚠️ `orders` tem UMA LINHA POR ITEM. O universo e de pedidos DISTINTOS —
   // sem o `Set` um pedido de 3 itens consumiria 3 vagas do orcamento para
@@ -341,7 +352,7 @@ async function capturarOrg(
       pedidos_na_fila: 0,
       tentados: 0,
       restam: 0,
-      janela_dias: janelaDias,
+      janela_dias: janelaDeVarredura,
       universo: universo.length,
     };
   }
@@ -528,7 +539,7 @@ async function capturarOrg(
   }
 
   return {
-    janela_dias: janelaDias,
+    janela_dias: janelaDeVarredura,
     universo: universo.length,
     pedidos_na_fila: pendentes.length,
     tentados,

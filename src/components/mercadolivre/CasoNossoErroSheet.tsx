@@ -99,6 +99,17 @@ export function CasoNossoErroSheet({ caso, ingestaoInicio, onOpenChange }: Props
                 </p>
                 <div className="mt-2">
                   <LinhaMeta rotulo="Esperado pela nossa base" valor={valorEmReais(caso.esperado_nosso)} />
+                  {/* 🔴 239-05: a QUARTA linha da prova. Ela só aparece quando
+                      existe ponta capturada e não-zero — renderizar "R$ 0,00"
+                      em todo pedido sem envio pago pelo comprador afogaria a
+                      informação em ruído, e renderizar quando é `null` afirmaria
+                      zero onde a resposta é "não capturamos". */}
+                  {caso.ponta_comprador != null && caso.ponta_comprador > 0 && (
+                    <LinhaMeta
+                      rotulo="Comprador pagou do envio"
+                      valor={valorEmReais(caso.ponta_comprador)}
+                    />
+                  )}
                   {/* 🔴 239-01: carrinho e frete sem cobrança registrada saem
                       com fila `nosso` e abrem NESTE sheet — 63 das 1.200 linhas
                       de frete. Lá o número do meio é cobrança, não recebimento. */}

@@ -523,6 +523,17 @@ export function CasoConciliacaoSheet({ caso, ingestaoInicio, onOpenChange }: Pro
                 </p>
                 <div className="mt-2">
                   <LinhaMeta rotulo="Esperado" valor={valorEmReais(caso.esperado_nosso)} />
+                  {/* 🔴 239-05: a QUARTA linha da prova. Ela só aparece quando
+                      existe ponta capturada e não-zero — renderizar "R$ 0,00"
+                      em todo pedido sem envio pago pelo comprador afogaria a
+                      informação em ruído, e renderizar quando é `null` afirmaria
+                      zero onde a resposta é "não capturamos". */}
+                  {caso.ponta_comprador != null && caso.ponta_comprador > 0 && (
+                    <LinhaMeta
+                      rotulo="Comprador pagou do envio"
+                      valor={valorEmReais(caso.ponta_comprador)}
+                    />
+                  )}
                   {/* 🔴 239-01: no frete este número é COBRANÇA, não entrada de
                       dinheiro. O rótulo vem do tipo do caso — ver
                       `rotuloSlotRecebido`. */}

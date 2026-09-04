@@ -287,8 +287,15 @@ const MOTIVOS: Record<string, string> = {
   fora_da_janela_de_ingestao: "", // montado dinamicamente com a data — ver abaixo
   sem_captura_cobranca:
     "A cobrança do Mercado Livre ainda não foi capturada para este pedido — falta dado nosso, não dinheiro deles",
+  // 🔴 239-05: o texto antigo mandava corrigir cadastro CERTO. Medido em
+  // 04/09: as 23 linhas deste motivo eram 23/23 o envio pago pelo comprador
+  // faltando na conta. Agora ele só sobra quando a ponta ESTÁ capturada e
+  // mesmo assim não fecha — aí a divergência é real, e o texto diz que a
+  // ponta já foi somada para que ninguém procure de novo por ela.
   divergencia_da_nossa_base:
-    "As duas pontas do Mercado Livre batem entre si; quem diverge é a nossa base. Correção de cadastro, não chamado",
+    "As duas pontas do Mercado Livre batem entre si, e o envio pago pelo comprador já entrou na conta; quem diverge é a nossa base. Correção de cadastro, não chamado",
+  base_sem_ponta_do_comprador:
+    "O comprador pode ter pago parte do envio, e esse envio ainda não foi capturado. Sem ele a conta não fecha — não há cadastro para corrigir nem dinheiro para cobrar",
   possivel_carrinho:
     "Mais de um pedido no mesmo pacote — o repasse pode ter vindo agrupado. Não acusamos em cima de carrinho",
   frete_multi_item:

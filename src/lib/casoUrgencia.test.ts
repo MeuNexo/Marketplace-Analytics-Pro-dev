@@ -265,6 +265,7 @@ describe("rotuloMotivo — a ausência diz o motivo REAL", () => {
       "fora_da_janela_de_ingestao",
       "fora_do_escopo",
       "divergencia_da_nossa_base",
+      "base_sem_ponta_do_comprador",
       "possivel_carrinho",
       "ausencia_a_verificar",
       "sem_repasse_confirmado",

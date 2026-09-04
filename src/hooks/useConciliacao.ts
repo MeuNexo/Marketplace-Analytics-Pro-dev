@@ -68,6 +68,14 @@ export interface CasoConciliacaoRow {
   cobranca_declarada: number | null;
   residuo_ml: number | null;
   esperado_nosso: number | null;
+  /**
+   * 239-05: o envio pago pelo COMPRADOR, vindo de `ml_shipment_frete`. Já está
+   * somado dentro de `esperado_nosso`; a coluna existe para o card PROVAR a
+   * linha em vez de exibir uma soma que ninguém consegue conferir.
+   * 🔴 `null` NÃO é zero: significa que o envio não foi capturado (ou que o
+   * envio carrega mais de um pedido e a ponta não é atribuível).
+   */
+  ponta_comprador: number | null;
   recebido: number | null;
   residuo_nosso: number | null;
   /** A grandeza a exibir — muda de fonte conforme o tipo/motivo (225-02). */
