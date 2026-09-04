@@ -358,7 +358,35 @@ describe("a varredura tem teto e o bloqueio do ML não é insistido", () => {
   });
 
   it("envio já capturado não é rebuscado — carrinho compartilha o mesmo envio", () => {
-    expect(/jaCapturados\.has\(shipmentId\)/.test(ef)).toBe(true);
+    expect(/enviosConhecidos\.has\(shipmentId\)/.test(ef)).toBe(true);
+  });
+
+  it("o segundo pedido do carrinho herda o DESFECHO do envio, não um `ok` de cortesia", () => {
+    // Marcar `ok` só porque o envio já estava na tabela contaminaria justamente
+    // o contador de `sem_opcao_de_envio` — o número que aprova ou refuta a
+    // premissa A2. A decisão sairia de um denominador adulterado.
+    expect(/enviosConhecidos\s*=\s*new\s+Map<string,\s*boolean>/.test(ef)).toBe(true);
+    expect(/if\s*\(enviosConhecidos\.get\(shipmentId\)\)/.test(ef)).toBe(true);
+    expect(/enviosConhecidos\.set\(shipmentId,\s*listCost\s*!==\s*null\)/.test(ef)).toBe(true);
+  });
+
+  it("pedido sem envio próprio SAI da fila — senão `restam` nunca chega a zero", () => {
+    // `sem_envio` não ganha linha em `ml_shipment_pedido` (não há envio para
+    // mapear), então sem esta lista ele voltaria em toda rodada e o critério de
+    // parada do backfill (`restam = 0`) jamais seria alcançado.
+    expect(/const\s+resolvidos\s*=\s*new\s+Set<string>/.test(ef)).toBe(true);
+    expect(/===\s*["']sem_envio["']\)\s*resolvidos\.add\(id\)/.test(ef)).toBe(true);
+    expect(/!jaMapeados\.has\(id\)\s*&&\s*!resolvidos\.has\(id\)/.test(ef)).toBe(true);
+  });
+
+  it("a paginação tem ORDER BY — `.range()` sem ordem pula e repete linhas", () => {
+    // Sem ordem estável o planner do Postgres pode devolver a página 2 com
+    // linhas da 1 e omitir outras: a fila nasceria com buracos, pedidos nunca
+    // varridos, e a cobertura ficaria abaixo do possível sem erro nenhum.
+    expect(/\.order\(ordem,\s*\{\s*ascending:\s*true\s*\}\)/.test(ef)).toBe(true);
+    const chamadas = [...ef.matchAll(/lerTudo\(\s*sb,\s*["'](\w+)["'],\s*["'][^"']+["'],\s*["'](\w+)["']/g)];
+    expect(chamadas.length).toBe(4);
+    for (const c of chamadas) expect(c[2].length).toBeGreaterThan(0);
   });
 
   it("toda leitura de lista é paginada — o PostgREST trunca em 1000 sem avisar", () => {

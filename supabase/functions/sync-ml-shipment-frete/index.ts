@@ -221,16 +221,26 @@ async function chamarML(
   return { status: res.status, corpo };
 }
 
-/** Le uma lista inteira do PostgREST, que TRUNCA em 1000 em silencio. */
+/**
+ * Le uma lista inteira do PostgREST, que TRUNCA em 1000 em silencio.
+ *
+ * 🔴 `ordem` NAO e enfeite. Paginar com `.range()` sem ORDER BY deixa a ordem
+ * a cargo do planner do Postgres, que nao a garante estavel entre requisicoes:
+ * a pagina 2 pode repetir linhas da 1 e PULAR outras. O resultado seria uma
+ * fila com buracos — pedidos que nunca sao varridos — e a cobertura ficaria
+ * abaixo do possivel sem nenhum erro aparecer em lugar nenhum.
+ */
 async function lerTudo(
   sb: Sb,
   tabela: string,
   colunas: string,
+  ordem: string,
   filtrar: (q: any) => any,
 ): Promise<Record<string, unknown>[]> {
   const linhas: Record<string, unknown>[] = [];
   for (let inicio = 0; ; inicio += PAGINA) {
     const { data, error } = await filtrar(sb.from(tabela).select(colunas))
+      .order(ordem, { ascending: true })
       .range(inicio, inicio + PAGINA - 1);
     if (error) throw new Error(tabela + ": " + error.message);
     const pagina = (data ?? []) as Record<string, unknown>[];
@@ -264,7 +274,7 @@ async function capturarOrg(
   // ⚠️ `orders` tem UMA LINHA POR ITEM. O universo e de pedidos DISTINTOS —
   // sem o `Set` um pedido de 3 itens consumiria 3 vagas do orcamento para
   // buscar exatamente o mesmo envio.
-  const linhasDePedido = await lerTudo(sb, "orders", "ml_order_id", (q: any) =>
+  const linhasDePedido = await lerTudo(sb, "orders", "ml_order_id", "ml_order_id", (q: any) =>
     q.eq("organization_id", orgId)
       .in("status", ["paid", "shipped", "delivered"])
       .gte("data_pedido", corte)
@@ -273,19 +283,28 @@ async function capturarOrg(
 
   // Pedidos que ja tem o par pedido->envio: nao voltam a fila.
   const jaMapeados = new Set(
-    (await lerTudo(sb, "ml_shipment_pedido", "ml_order_id", (q: any) =>
+    (await lerTudo(sb, "ml_shipment_pedido", "ml_order_id", "ml_order_id", (q: any) =>
       q.eq("organization_id", orgId))).map((p) => String(p.ml_order_id)),
   );
 
   // Estado da varredura: quem foi tentado, quando, e com que desfecho.
   const estado = await lerTudo(sb, "ml_shipment_frete_captura",
-    "ml_order_id,ultima_tentativa,tentativas", (q: any) => q.eq("organization_id", orgId));
+    "ml_order_id,ultima_tentativa,tentativas,ultimo_status", "ml_order_id",
+    (q: any) => q.eq("organization_id", orgId));
 
   const tentadoEm = new Map<string, string>();
   const contagem = new Map<string, number>();
+  // 🔴 Pedido SEM ENVIO PROPRIO esta RESOLVIDO, nao pendente. Ele nunca ganha
+  // linha em `ml_shipment_pedido` — nao ha envio para mapear —, entao sem esta
+  // lista ele voltaria a fila em toda rodada e `restam` NUNCA chegaria a zero,
+  // que e justamente o criterio de parada do backfill. Um pedido pago que nao
+  // tem `shipping.id` nao passa a ter depois: o envio nasce com a venda.
+  const resolvidos = new Set<string>();
   for (const e of estado) {
-    tentadoEm.set(String(e.ml_order_id), String(e.ultima_tentativa ?? ""));
-    contagem.set(String(e.ml_order_id), Number(e.tentativas ?? 0));
+    const id = String(e.ml_order_id);
+    tentadoEm.set(id, String(e.ultima_tentativa ?? ""));
+    contagem.set(id, Number(e.tentativas ?? 0));
+    if (String(e.ultimo_status ?? "") === "sem_envio") resolvidos.add(id);
   }
 
   // 🔴 TRAVA DIARIA. Pedido ja tentado hoje e pulado — sem ela, um pedido que
@@ -293,7 +312,7 @@ async function capturarOrg(
   // numa lista que nunca avanca.
   const hoje = new Date().toISOString().slice(0, 10);
   const pendentes = universo
-    .filter((id) => !jaMapeados.has(id))
+    .filter((id) => !jaMapeados.has(id) && !resolvidos.has(id))
     .filter((id) => (tentadoEm.get(id) ?? "").slice(0, 10) !== hoje)
     // `nulls first`: pedido nunca tentado vem antes do tentado ha mais tempo.
     .sort((a, b) => (tentadoEm.get(a) ?? "").localeCompare(tentadoEm.get(b) ?? ""));
@@ -313,10 +332,17 @@ async function capturarOrg(
 
   // Envios ja capturados: carrinho compartilha o MESMO envio e a segunda
   // ocorrencia nao paga uma segunda chamada de API.
-  const jaCapturados = new Set(
-    (await lerTudo(sb, "ml_shipment_frete", "shipment_id", (q: any) =>
-      q.eq("organization_id", orgId))).map((s) => String(s.shipment_id)),
-  );
+  //
+  // 🔴 E um MAPA, nao um conjunto, e o valor e "este envio tem regua?". O
+  // segundo pedido de um carrinho cujo envio NAO trouxe `shipping_option`
+  // precisa sair como `sem_opcao_de_envio` igual ao primeiro. Marca-lo `ok` so
+  // porque o envio ja estava na tabela contaminaria justamente o contador que
+  // aprova ou refuta a premissa A2 — a decisao sairia de um numero adulterado.
+  const enviosConhecidos = new Map<string, boolean>();
+  for (const e of await lerTudo(sb, "ml_shipment_frete", "shipment_id,list_cost", "shipment_id",
+    (q: any) => q.eq("organization_id", orgId))) {
+    enviosConhecidos.set(String(e.shipment_id), e.list_cost !== null && e.list_cost !== undefined);
+  }
 
   let enviosNovos = 0;
   let comListCost = 0;
@@ -366,9 +392,15 @@ async function capturarOrg(
         );
         if (erroMapa) throw new Error("upsert do mapa: " + erroMapa.message);
 
-        if (jaCapturados.has(shipmentId)) {
-          // Carrinho: o envio ja tem custo. So o par era novo.
-          status = "ok";
+        if (enviosConhecidos.has(shipmentId)) {
+          // Carrinho: o envio ja foi lido. So o par era novo — e o desfecho do
+          // pedido e o MESMO do envio, senao o contador de A2 mente.
+          if (enviosConhecidos.get(shipmentId)) {
+            status = "ok";
+          } else {
+            status = "sem_opcao_de_envio";
+            semOpcao++;
+          }
         } else {
           const det = await chamarML("/shipments/" + shipmentId, token);
           if (det.status !== 200 || !det.corpo) {
@@ -430,7 +462,7 @@ async function capturarOrg(
           );
           if (erroFrete) throw new Error("upsert do envio: " + erroFrete.message);
 
-          jaCapturados.add(shipmentId);
+          enviosConhecidos.set(shipmentId, listCost !== null);
           enviosNovos++;
 
           if (listCost === null) {
