@@ -243,3 +243,29 @@ describe("🔴 determinismo: mesma entrada, mesmo texto", () => {
     expect(texto).toContain("03/09/2026");
   });
 });
+
+describe("🔴 o bloco copiado diz, ele mesmo, quando o caso NÃO é acionável", () => {
+  // Um dossiê copiado circula sozinho. Fora da tela, ninguém que o lê sabe se
+  // a linha era acionável no dia em que foi copiada — e hoje quase nenhuma é.
+  it("8/7 — caso não acionável carrega o aviso e o motivo real", () => {
+    const texto = montarDossie(
+      { ...CASO_A_MENOR, acionavel: false, motivo: "regua_nao_liberada" },
+      { montadoEm: MONTADO_EM },
+    );
+    expect(texto).toContain("AINDA NÃO É ACIONÁVEL");
+    expect(texto, "o motivo real, não um genérico").toContain("55,3%");
+  });
+
+  it("8b/7 — caso acionável NÃO carrega o aviso", () => {
+    const texto = montarDossie(
+      { ...CASO_A_MENOR, acionavel: true },
+      { montadoEm: MONTADO_EM },
+    );
+    expect(texto).not.toContain("AINDA NÃO É ACIONÁVEL");
+  });
+
+  it("8c/7 — sem a flag, o texto assume o lado seguro: não acionável", () => {
+    const texto = montarDossie(CASO_A_MENOR, { montadoEm: MONTADO_EM });
+    expect(texto).toContain("AINDA NÃO É ACIONÁVEL");
+  });
+});

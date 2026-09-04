@@ -25,7 +25,7 @@
 // ⚠️ TEXTO SIMPLES, sem markdown: o campo de chamado do ML não renderiza.
 // ============================================================================
 
-import { rotuloTipoCaso, rotuloUrgencia, valorEmReais } from "./casoUrgencia";
+import { rotuloMotivo, rotuloTipoCaso, rotuloUrgencia, valorEmReais } from "./casoUrgencia";
 
 // ─── Os nomes das duas fontes. Exportados de propósito ──────────────────────
 //
@@ -143,6 +143,8 @@ function dinheiro(valor: number | null | undefined): string {
 
 export interface CasoDossie {
   caso_id?: string | null;
+  /** 🔴 Falso na esmagadora maioria hoje: só DOIS motivos abrem caso (225-02). */
+  acionavel?: boolean | null;
   ml_order_id?: string | null;
   tipo_caso?: string | null;
   motivo?: string | null;
@@ -175,6 +177,8 @@ export interface OpcoesDossie {
    * determinístico, e a VPS desta casa já marcou três dias à frente do banco.
    */
   montadoEm?: string | Date;
+  /** `ingestao_inicio` do resumo — a régua do motivo é do banco, não daqui. */
+  ingestaoInicio?: string | null;
 }
 
 /** Rótulo à esquerda, preenchido com pontos até a coluna do valor. */
@@ -235,6 +239,23 @@ export function montarDossie(caso: CasoDossie, opcoes?: OpcoesDossie): string {
   l.push(`DOSSIÊ DE CONCILIAÇÃO — ${tipo}`);
   l.push(`Montado em ${dataEmBR(montadoEm)} pelo painel de conciliação do vendedor.`);
   l.push("");
+
+  // 🔴 O bloco que impede este texto de virar acusação falsa fora da tela.
+  // Um dossiê copiado circula sozinho: sai do sistema, entra num chamado, e
+  // ninguém que o lê depois sabe se a linha era acionável no dia em que foi
+  // copiada. `acionavel` é FALSO na esmagadora maioria dos casos de hoje — a
+  // régua de valor a menor está desligada por calibração reprovada e a
+  // ausência de repasse nasce a verificar. Dizer isso DENTRO do bloco é o que
+  // separa "evidência em preparação" de "acusação assinada" (D-225-07).
+  if (c.acionavel !== true) {
+    l.push("SITUAÇÃO DESTE CASO");
+    l.push(
+      "Este caso AINDA NÃO É ACIONÁVEL: não envie este bloco como chamado antes " +
+        "de resolver o ponto abaixo.",
+    );
+    l.push(`Motivo: ${rotuloMotivo(c.motivo, { ingestaoInicio: opcoes?.ingestaoInicio })}`);
+    l.push("");
+  }
 
   l.push("PEDIDO");
   l.push(linha("Pedido no Mercado Livre", textoOuAusente(c.ml_order_id)));
