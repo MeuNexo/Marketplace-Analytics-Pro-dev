@@ -1,10 +1,12 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
   Clock,
   Copy,
   Gavel,
+  RotateCcw,
+  SearchCheck,
   ShieldAlert,
   ThumbsDown,
   Trophy,
@@ -32,9 +34,16 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import type { CasoConciliacaoRow } from "@/hooks/useConciliacao";
 import { useCasoDesfecho, type EstadoDesfecho } from "@/hooks/useCasoDesfecho";
+import {
+  STATUS_MP_ACEITOS,
+  TIPO_VERIFICAVEL,
+  rotuloStatusMp,
+  useVerificacaoMp,
+} from "@/hooks/useVerificacaoMp";
 import {
   rotuloEstado,
   rotuloMotivo,
@@ -152,6 +161,61 @@ const ACTION_META: Record<
 /** Estados em que o caso já acabou — nenhuma ação faz sentido. */
 const ESTADOS_ENCERRADOS = ["ganho", "negado", "resolvido_sozinho", "expirado"];
 
+// ─── 225-07 (G-01) — a conferência no Mercado Pago ──────────────────────────
+//
+// 🔴 POR QUE ISTO EXISTE. A onda 2 criou `conciliacao_casos.verificado_no_mp`
+// como resposta a um achado próprio (C-06: os 5 únicos pedidos sem repasse em
+// 75 dias eram 5/5 contestação de cartão do comprador). A cascata da RPC LÊ a
+// coluna, R-09 provou o portão contra produção nos dois sentidos — e nenhuma
+// linha do produto escrevia. A fase construiu o portão e deixou a chave fora.
+//
+// 🔴 O QUE ESTE BLOCO NÃO FAZ: ele não decide o caso. Registrada a conferência
+// como `approved`, quem torna o caso acionável é a RPC ao re-derivar o motivo,
+// e quem oferece o desfecho é o `acoesDisponiveis` que já estava aqui. A chave
+// abre a porta que a fase deixou trancada; não constrói uma porta nova.
+//
+// ⚠️ RADIO EM VEZ DE SELECT, e é uma escolha, não um descuido. Os quatro status
+// não são rótulos intercambiáveis: um deles transforma a linha em acusação
+// contra o Mercado Livre e os outros três a tiram da fila. Esconder essa
+// assimetria atrás de um `Select` fechado faria o usuário escolher sem ver as
+// consequências lado a lado. `radio-group` é bloco oficial do shadcn e já está
+// instalado neste repositório.
+
+/** Estados que já são uma decisão do usuário — conferir depois mexeria embaixo
+ *  de um desfecho registrado. `resolvido_sozinho` entra porque o repasse
+ *  chegou: não há mais ausência para conferir. */
+const ESTADOS_QUE_ENCERRAM_A_CONFERENCIA = [
+  "contestado",
+  "ganho",
+  "negado",
+  "resolvido_sozinho",
+];
+
+/**
+ * O texto de cada status é o que o usuário vê no PAINEL DO MERCADO PAGO, nunca
+ * o código do banco. Código na tela transfere a tradução para quem clica.
+ */
+const OPCOES_MP: Record<string, { titulo: string; explicacao: string }> = {
+  approved: {
+    titulo: "O pagamento está aprovado e o repasse não chegou",
+    explicacao:
+      "É o único status que torna esta ausência acionável — o dinheiro foi cobrado do comprador e não voltou para nós.",
+  },
+  charged_back: {
+    titulo: "Contestação de cartão do comprador (chargeback)",
+    explicacao:
+      "O comprador contestou a compra no cartão. O caso sai da fila: não é retenção do Mercado Livre.",
+  },
+  cancelled: {
+    titulo: "O pagamento aparece cancelado",
+    explicacao: "Não houve pagamento a repassar. O caso sai da fila.",
+  },
+  refunded: {
+    titulo: "O pagamento foi estornado ao comprador",
+    explicacao: "O dinheiro voltou para quem comprou. O caso sai da fila.",
+  },
+};
+
 async function copiar(texto: string, oQue: string): Promise<void> {
   try {
     await navigator.clipboard.writeText(texto);
@@ -244,6 +308,34 @@ export function CasoConciliacaoSheet({ caso, ingestaoInicio, onOpenChange }: Pro
   const prazo = rotuloUrgencia(caso?.dias_restantes);
   const tomEstado = rotuloEstado(estado);
 
+  // ── 225-07 (G-01) — a conferência no Mercado Pago ───────────────────────
+  const conferivel = caso?.tipo_caso === TIPO_VERIFICAVEL;
+  const {
+    verificacao,
+    registrarVerificacao,
+    ocupado: ocupadoVerificacao,
+  } = useVerificacaoMp(
+    conferivel ? { ml_order_id: caso?.ml_order_id, tipo_caso: caso?.tipo_caso } : null,
+  );
+  const [acaoConferencia, setAcaoConferencia] = useState<"registrar" | "desfazer" | null>(null);
+  const [statusEscolhido, setStatusEscolhido] = useState<string>("");
+
+  // 🔴 O estado vem do BANCO, nunca do `motivo`. Inferir "está conferido" a
+  // partir de `motivo = 'fora_do_escopo'` seria uma segunda régua para o mesmo
+  // fato — o padrão que quebrou o saldo na fase 233.
+  const jaConferido = verificacao?.verificado_no_mp === true;
+  const podeConferir =
+    conferivel && podeEscrever && !ESTADOS_QUE_ENCERRAM_A_CONFERENCIA.includes(estado);
+
+  // Trocar de caso com o painel aberto não pode carregar a escolha do anterior
+  // para dentro do próximo: seria registrar no pedido errado o que se viu em
+  // outro. `strictNullChecks` está desligado nesta base e um estado residual
+  // aqui não quebraria nada visivelmente — só gravaria a coisa errada.
+  useEffect(() => {
+    setAcaoConferencia(null);
+    setStatusEscolhido("");
+  }, [caso?.ml_order_id, caso?.tipo_caso]);
+
   const dossie = useMemo(
     () => (caso ? montarDossie(caso, { ingestaoInicio }) : ""),
     [caso, ingestaoInicio],
@@ -279,6 +371,32 @@ export function CasoConciliacaoSheet({ caso, ingestaoInicio, onOpenChange }: Pro
       // A mensagem original do banco sobe para a tela. Um "algo deu errado"
       // genérico esconderia justamente a policy que recusou a escrita.
       toast.error(e instanceof Error ? e.message : "Não foi possível registrar o desfecho.");
+    }
+  }
+
+  async function executarConferencia(): Promise<void> {
+    if (!caso || acaoConferencia == null) return;
+    const registrando = acaoConferencia === "registrar";
+    try {
+      await registrarVerificacao({
+        ml_order_id: caso.ml_order_id,
+        tipo_caso: caso.tipo_caso,
+        verificado: registrando,
+        // 🔴 Desfazer NÃO carrega status: desfazer é apagar, nunca afirmar
+        // outra coisa. Trocar o que foi visto é desfazer e registrar de novo.
+        status_mp: registrando ? statusEscolhido : null,
+        valor_diferenca: caso.diferenca,
+        data_evento: caso.data_evento,
+      });
+      toast.success(
+        registrando ? "Conferência registrada" : "Conferência desfeita",
+      );
+      setAcaoConferencia(null);
+      setStatusEscolhido("");
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : "Não foi possível registrar a conferência.",
+      );
     }
   }
 
@@ -467,6 +585,61 @@ export function CasoConciliacaoSheet({ caso, ingestaoInicio, onOpenChange }: Pro
                 </Alert>
               ) : null}
 
+              {/* ── 225-07 (G-01) — a conferência no Mercado Pago ────────
+                  🔴 A cascata da RPC lê estas três colunas e nada as escrevia.
+                  Sem este bloco, conferir no painel do MP, ver que o repasse
+                  sumiu e abrir o chamado não deixava rastro nenhum — e
+                  D-225-13 existe para medir exatamente esse rastro. */}
+              {conferivel ? (
+                <div className="space-y-2 rounded-lg border border-border p-3">
+                  <p className="text-xs font-semibold">Conferência no Mercado Pago</p>
+
+                  {jaConferido ? (
+                    <>
+                      <p className="text-xs text-muted-foreground">
+                        Conferido em {dataEmBR(verificacao?.verificado_em)}:{" "}
+                        {rotuloStatusMp(verificacao?.status_mp_verificado)}.
+                      </p>
+                      {podeConferir ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={ocupadoVerificacao}
+                          onClick={() => setAcaoConferencia("desfazer")}
+                        >
+                          <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                          Desfazer verificação
+                        </Button>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs leading-snug text-muted-foreground">
+                        Nenhum repasse foi encontrado para este pedido. Abra o painel do Mercado
+                        Pago, veja o que está registrado lá e diga aqui — é essa conferência que
+                        separa repasse retido de contestação de cartão do comprador, e é ela que
+                        libera o caso para virar chamado.
+                      </p>
+                      {podeConferir ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={ocupadoVerificacao}
+                          onClick={() => setAcaoConferencia("registrar")}
+                        >
+                          <SearchCheck className="mr-1.5 h-3.5 w-3.5" />
+                          Conferi no Mercado Pago
+                        </Button>
+                      ) : !podeEscrever ? (
+                        <p className="text-[11px] text-muted-foreground">
+                          Seu papel nesta organização não registra conferência de caso.
+                        </p>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              ) : null}
+
               {estado === "resolvido_sozinho" ? (
                 <p className="py-1 text-center text-xs text-muted-foreground">
                   O ML repassou este valor em {dataEmBR(caso.data_evento)}, sem chamado aberto. O
@@ -574,6 +747,79 @@ export function CasoConciliacaoSheet({ caso, ingestaoInicio, onOpenChange }: Pro
               }
             >
               {ocupado ? "Registrando…" : "Confirmar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 🔴 A confirmação da conferência NÃO promete irreversibilidade. As três
+          do desfecho dizem "não pode ser desfeito" porque é verdade; copiar a
+          frase aqui seria mentir sobre a única ação reversível da tela — e
+          confirmação que mente treina o usuário a não ler nenhuma. */}
+      <AlertDialog
+        open={acaoConferencia !== null}
+        onOpenChange={(aberto) => {
+          if (!aberto) {
+            setAcaoConferencia(null);
+            setStatusEscolhido("");
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {acaoConferencia === "desfazer"
+                ? "Desfazer a verificação?"
+                : "O que o painel do Mercado Pago mostra?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {acaoConferencia === "desfazer"
+                ? "Apaga o que foi registrado sobre este pedido no Mercado Pago e devolve o caso para “falta verificar”. Nenhum desfecho é apagado, e você pode registrar de novo."
+                : "Registra o que você viu no painel, com a data de hoje e o seu nome. É esta resposta que decide se a ausência vira chamado — e ela pode ser desfeita depois."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          {acaoConferencia === "registrar" ? (
+            <RadioGroup
+              value={statusEscolhido}
+              onValueChange={setStatusEscolhido}
+              className="gap-2"
+            >
+              {STATUS_MP_ACEITOS.map((s) => (
+                <label
+                  key={`mp-${s}`}
+                  htmlFor={`mp-${s}`}
+                  className="flex cursor-pointer items-start gap-2 rounded-lg border border-border p-2.5 text-left"
+                >
+                  <RadioGroupItem id={`mp-${s}`} value={s} className="mt-0.5" />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium leading-snug">
+                      {OPCOES_MP[s].titulo}
+                    </span>
+                    <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
+                      {OPCOES_MP[s].explicacao}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </RadioGroup>
+          ) : null}
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={ocupadoVerificacao}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                executarConferencia();
+              }}
+              // Conferência sem conteúdo não decide nada: sem status escolhido o
+              // registro seria um "conferi" que a régua do banco não sabe ler.
+              disabled={
+                ocupadoVerificacao ||
+                (acaoConferencia === "registrar" && statusEscolhido.length === 0)
+              }
+            >
+              {ocupadoVerificacao ? "Registrando…" : "Confirmar"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

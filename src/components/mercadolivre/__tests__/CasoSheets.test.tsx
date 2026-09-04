@@ -301,10 +301,19 @@ describe("🔴 G-01 — a ausência a verificar ganha caminho para ser verificad
 
     // 🔴 O texto de cada opção é o que o usuário vê no painel do MP, não o
     // código do banco. Código na tela transfere a tradução para quem clica.
-    expect(screen.getByText(/repasse não chegou/i)).toBeTruthy();
-    expect(screen.getByText(/contestação de cartão/i)).toBeTruthy();
-    expect(screen.getByText(/cancelado/i)).toBeTruthy();
-    expect(screen.getByText(/estornado/i)).toBeTruthy();
+    // ⚠️ Os recortes são estreitos de propósito: o aviso de C-06, que já era
+    // renderizado antes desta correção, também fala em "contestação de cartão".
+    // Um matcher largo aqui passaria SEM o bloco novo existir.
+    expect(screen.getByText(/O pagamento está aprovado e o repasse não chegou/i)).toBeTruthy();
+    expect(
+      screen.getByText(/^Contestação de cartão do comprador \(chargeback\)$/i),
+    ).toBeTruthy();
+    expect(screen.getByText(/O pagamento aparece cancelado/i)).toBeTruthy();
+    expect(screen.getByText(/O pagamento foi estornado ao comprador/i)).toBeTruthy();
+    // Nenhum código de banco vaza para a tela.
+    for (const codigo of ["approved", "charged_back", "cancelled", "refunded"]) {
+      expect(screen.queryByText(codigo), `codigo cru na tela: ${codigo}`).toBeNull();
+    }
   });
 
   it("18 — 🔴 confirmar sem escolher status é impossível: conferência sem conteúdo não decide nada", () => {
@@ -342,8 +351,9 @@ describe("🔴 G-01 — a verificação é REVERSÍVEL: clique errado não acusa
     };
     abrir({ ...AUSENCIA, motivo: "fora_do_escopo", fila: "nenhuma" });
 
-    expect(screen.getByText(/04\/09\/2026/)).toBeTruthy();
-    expect(screen.getByText(/contestação de cartão/i)).toBeTruthy();
+    expect(
+      screen.getByText(/Conferido em 04\/09\/2026: contestação de cartão do comprador/i),
+    ).toBeTruthy();
     expect(screen.getByRole("button", { name: ROTULO_DESFAZER })).toBeTruthy();
     // Registrar de novo por cima não existe: primeiro desfaz, depois registra.
     expect(screen.queryByRole("button", { name: ROTULO_CONFERIR })).toBeNull();
