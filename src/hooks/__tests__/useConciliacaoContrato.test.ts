@@ -98,10 +98,34 @@ describe("a página de paginação tem teto — laço não pode girar para sempr
     expect(CODIGO).toMatch(/MAX_PAGINAS|TETO_PAGINAS|maxPaginas/);
   });
 
-  it("a página é menor ou igual a 200 (o teto duro da RPC é 1000)", () => {
+  it("a página vai até o teto duro do PostgREST, nunca além", () => {
+    // ⚠️ Esta asserção mudou em 04/09/2026. Ela exigia `<= 200`, e 200 não era
+    // uma régua de segurança — era um custo. Cada chamada da RPC reexecuta a
+    // função INTEIRA (o `p_offset` só corta no fim) e ela leva 1.079 ms como
+    // `authenticated`. Com 2.604 linhas, 200 por página dava 14 idas ≈ 15,1 s
+    // para abrir a tela. O que precisa continuar sendo verdade é o TETO: pedir
+    // mais de 1.000 numa chamada não traz mais de 1.000, e uma página maior
+    // que o teto faria o laço achar que a janela acabou quando ela não acabou.
     const m = CODIGO.match(/PAGINA\s*=\s*(\d+)/);
     expect(m, "constante PAGINA não encontrada").not.toBeNull();
-    expect(Number(m?.[1])).toBeLessThanOrEqual(200);
+    expect(Number(m?.[1]), "acima do teto do PostgREST o laço pararia cedo").toBeLessThanOrEqual(
+      1000,
+    );
+    expect(Number(m?.[1]), "página minúscula multiplica execuções da RPC").toBeGreaterThanOrEqual(
+      500,
+    );
+  });
+
+  it("a leitura parcial se declara parcial — `completo` e `prazoCoberto`", () => {
+    // A abertura lê só a primeira página. Isso só é honesto se a leitura disser
+    // que é parcial E se a cobertura de prazo for CONFERIDA (D-225-16), nunca
+    // suposta. Ver `useConciliacaoCargaInicial.test.ts` para a prova de
+    // comportamento; aqui garante-se que os dois campos não sumam num refactor.
+    expect(CODIGO).toContain("prazoCoberto");
+    expect(CODIGO).toContain("completo");
+    expect(CODIGO, "a invariante lê dias_restantes da última linha").toMatch(
+      /ultima[\s\S]{0,80}dias_restantes/,
+    );
   });
 });
 

@@ -118,31 +118,76 @@ export interface ConciliacaoResumoRow {
   valor_desconhecido_n: number | null;
 }
 
-// ─── Paginação ──────────────────────────────────────────────────────────────
+// ─── Paginação: uma ida ao banco para abrir, o resto sob demanda ───────────
 //
-// 🔴 O PostgREST trunca em 1000 EM SILÊNCIO e a onda 2 mediu 1.351 linhas na
-// janela de 30 dias — não é risco futuro, é o estado de hoje. Uma tela que
-// mostra 1.000 e deixa o usuário achar que são todos reprova D-225-16
-// ("nenhum caso expira sem eu ter olhado") direto: o caso da linha 1.001
-// nunca é olhado.
+// 🔴 O PostgREST trunca em 1000 EM SILÊNCIO. Uma tela que mostra 1.000 e deixa
+// o usuário achar que são todos reprova D-225-16 ("nenhum caso expira sem eu
+// ter olhado") direto: o caso da linha 1.001 nunca é olhado. Por isso o laço
+// existe, e por isso ele NÃO vai voltar a truncar.
+//
+// ⚠️ Mas paginar de 200 em 200 custava caro do jeito errado. Medido em
+// produção (04/09/2026): `get_casos_conciliacao` roda em 231 ms como
+// `postgres` e em 1.079 ms como `authenticated` — 4,7×, porque a RLS é
+// avaliada linha a linha. E CADA chamada reexecuta a função INTEIRA: o
+// `p_offset` só corta no fim. Com 2.604 linhas na janela, 200 por página dava
+// 14 idas sequenciais × 1.079 ms ≈ 15,1 s para abrir a tela.
+//
+// Duas mudanças, nenhuma delas "mostrar menos":
+//
+//   1. a página passa a ser o teto duro do PostgREST (1.000). Mesmo custo por
+//      chamada, um quinto das chamadas para o mesmo pedaço de lista;
+//   2. a abertura lê só a PRIMEIRA página, e a primeira página é a que decide:
+//      a RPC ordena por `dias_restantes asc NULLS LAST` (ordem total desde o
+//      225-07), então quem tem prazo correndo vem antes de quem não tem.
+//      As 1.241 linhas de frete da janela têm `diferenca` NULA — entram como
+//      VOLUME, não como dinheiro apurado. O CEO estava esperando 15 segundos
+//      em boa parte por linhas que ainda não dizem nada.
+//
+// A completude não vira suposição: vira `prazoCoberto`, uma invariante
+// conferida a cada leitura. Com nulos no fim, se a ÚLTIMA linha carregada já
+// não tem prazo, então toda linha com prazo está carregada — a fronteira dos
+// nulos foi cruzada dentro do que se leu. Quando ela é falsa, a tela grita e
+// oferece a leitura completa; nunca fica quieta.
 
-const PAGINA = 200;
-/** Teto de segurança: 40 × 200 = 8.000 linhas. Existe para o laço não girar
+/** Teto duro do PostgREST — pedir mais numa chamada não traz mais. */
+const PAGINA = 1000;
+/** Teto de segurança: 8 × 1.000 = 8.000 linhas. Existe para o laço não girar
  *  para sempre se a RPC passar a devolver página cheia indefinidamente. */
-const MAX_PAGINAS = 40;
+const MAX_PAGINAS = 8;
 
 export interface OpcoesCasos {
   /** `false` traz tudo (D-225-06: mostra tudo, age em alguns). */
   apenasAcionaveis?: boolean;
+  /**
+   * `false` (padrão) lê só a primeira página — a que tem os casos com prazo.
+   * `true` varre a janela inteira; é o que a tela pede quando o usuário clica
+   * em carregar o restante.
+   */
+  completo?: boolean;
 }
 
 export interface CasosConciliacao {
   linhas: CasoConciliacaoRow[];
   /** Verdadeiro se o laço bateu no teto de páginas — a tela precisa dizer. */
   truncadoNoTeto: boolean;
+  /** Verdadeiro quando a leitura trouxe a janela inteira. */
+  completo: boolean;
+  /**
+   * 🔴 A garantia de D-225-16, conferida e não suposta: verdadeiro quando toda
+   * linha COM prazo está carregada. Falso obriga a tela a alertar.
+   */
+  prazoCoberto: boolean;
+  /** Quantas idas ao banco esta leitura custou. A tela não usa; o portão usa. */
+  paginasLidas: number;
 }
 
-const SEM_LINHAS: CasosConciliacao = { linhas: [], truncadoNoTeto: false };
+const SEM_LINHAS: CasosConciliacao = {
+  linhas: [],
+  truncadoNoTeto: false,
+  completo: true,
+  prazoCoberto: true,
+  paginasLidas: 0,
+};
 
 /**
  * A fila do monitor. Só dispara com organização resolvida; sem ela devolve
@@ -153,6 +198,7 @@ export function useCasosConciliacao(opcoes?: OpcoesCasos) {
   const { currentOrg } = useOrganization();
   const orgId = currentOrg?.id ?? null;
   const apenasAcionaveis = opcoes?.apenasAcionaveis ?? false;
+  const completoPedido = opcoes?.completo ?? false;
 
   return useQuery<CasosConciliacao>({
     // 🔴 A organização entra na chave: sem ela, trocar de conta serve o número
@@ -160,8 +206,19 @@ export function useCasosConciliacao(opcoes?: OpcoesCasos) {
     // `resolvedMLUserIds` entra por consistência com o resto do módulo — a RPC
     // resolve pelo RLS, mas se a conta Junior um dia entrar (hoje fora por
     // D-225-14) a chave já está preparada.
-    queryKey: ["conciliacao-casos", orgId, resolvedMLUserIds, apenasAcionaveis] as const,
+    queryKey: [
+      "conciliacao-casos",
+      orgId,
+      resolvedMLUserIds,
+      apenasAcionaveis,
+      completoPedido,
+    ] as const,
     enabled: !!orgId,
+    // 🔴 Pedir o restante NÃO pode apagar o que já está na tela: sem isto, a
+    // chave muda, o cache vira miss e a lista pisca para vazia enquanto as
+    // duas chamadas seguintes correm — o usuário perde o caso que estava
+    // olhando bem no momento em que pediu para ver mais.
+    placeholderData: (anterior) => anterior,
     staleTime: 2 * 60 * 1000,
     // A tela é o ÚNICO canal (D-225-11). Voltar para a aba é justamente o
     // momento em que o número de agora é o que importa.
@@ -172,6 +229,8 @@ export function useCasosConciliacao(opcoes?: OpcoesCasos) {
       const chamar = chamarRpc();
       const linhas: CasoConciliacaoRow[] = [];
       let truncadoNoTeto = true;
+      let completo = false;
+      let paginasLidas = 0;
 
       for (let pagina = 0; pagina < MAX_PAGINAS; pagina++) {
         const { data, error } = await chamar("get_casos_conciliacao", {
@@ -191,13 +250,33 @@ export function useCasosConciliacao(opcoes?: OpcoesCasos) {
           ? (data as CasoConciliacaoRow[])
           : [];
         linhas.push(...bloco);
+        paginasLidas++;
+
+        // Página incompleta = fim da janela. Não há mais o que buscar.
         if (bloco.length < PAGINA) {
           truncadoNoTeto = false;
+          completo = true;
+          break;
+        }
+
+        // Parada DELIBERADA da abertura. Não é o teto de segurança do laço —
+        // confundir as duas faria a tela acusar truncamento numa leitura que
+        // ela mesma pediu curta.
+        if (!completoPedido) {
+          truncadoNoTeto = false;
+          completo = false;
           break;
         }
       }
 
-      return { linhas, truncadoNoTeto };
+      // 🔴 A invariante de D-225-16. `dias_restantes asc NULLS LAST`: se a
+      // última linha lida já não tem prazo, a fronteira dos nulos foi cruzada
+      // dentro do que se leu — logo TODA linha com prazo está aqui. É uma
+      // conferência sobre o dado devolvido, não uma promessa sobre a RPC.
+      const ultima = linhas.length > 0 ? linhas[linhas.length - 1] : null;
+      const prazoCoberto = completo || (ultima != null && ultima.dias_restantes == null);
+
+      return { linhas, truncadoNoTeto, completo, prazoCoberto, paginasLidas };
     },
   });
 }

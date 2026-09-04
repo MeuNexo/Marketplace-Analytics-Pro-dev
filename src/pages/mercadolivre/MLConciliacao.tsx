@@ -412,7 +412,11 @@ const SEM_CASOS: CasoConciliacaoRow[] = [];
 const ESTADOS_RESOLVIDOS = ["ganho", "negado", "resolvido_sozinho", "expirado"];
 
 export default function MLConciliacao() {
-  const casosQuery = useCasosConciliacao({ apenasAcionaveis: false });
+  // 🔴 A abertura lê só a primeira página — a que tem os casos com prazo
+  // correndo. Eram 14 idas ao banco (≈15,1 s) para trazer 2.604 linhas, das
+  // quais 1.241 são linhas de frete sem valor apurado. Ver `useConciliacao.ts`.
+  const [listaCompleta, setListaCompleta] = useState(false);
+  const casosQuery = useCasosConciliacao({ apenasAcionaveis: false, completo: listaCompleta });
   const resumoQuery = useConciliacaoResumo();
 
   const [fila, setFila] = useState<"ml" | "nosso">("ml");
@@ -430,7 +434,16 @@ export default function MLConciliacao() {
   // render enquanto a query não resolve.
   const linhas = casosQuery.data?.linhas ?? SEM_CASOS;
   const truncadoNoTeto = casosQuery.data?.truncadoNoTeto ?? false;
+  // 🔴 Conferido pelo hook a cada leitura, não suposto: verdadeiro quando toda
+  // linha COM prazo já está carregada. É a garantia de D-225-16 sobrevivendo à
+  // leitura parcial — sem ele, "carregou menos" e "pode haver caso invisível"
+  // seriam a mesma frase, e a tela gritaria sempre ou nunca.
+  const prazoCoberto = casosQuery.data?.prazoCoberto ?? false;
+  const listaJaCompleta = casosQuery.data?.completo ?? false;
   const carregando = casosQuery.isLoading || resumoQuery.isLoading;
+  // `placeholderData` mantém a lista na tela enquanto o restante chega — o
+  // indicador precisa vir do fetch, não do `isLoading`, que fica falso aí.
+  const buscandoRestante = listaCompleta && !listaJaCompleta && casosQuery.isFetching;
   const erro = casosQuery.isError || resumoQuery.isError;
   const ingestaoInicio = resumo?.ingestao_inicio ?? null;
   const nuncaSincronizou = resumo != null && resumo.ultima_sync == null;
@@ -642,17 +655,64 @@ export default function MLConciliacao() {
         </Alert>
       ) : null}
 
-      {/* Truncamento — 🔴 o total real vem contado SEM teto pela RPC. */}
-      {faltamLinhas > 0 || truncadoNoTeto ? (
+      {/* 🔴 Truncamento — o total real vem contado SEM teto pela RPC.
+          A condição NÃO é "carregou menos que o total": a abertura carrega
+          menos DE PROPÓSITO. O alarme é para o único estado que reprova
+          D-225-16 — a última linha lida ainda tem prazo, então pode haver caso
+          a expirar fora da lista. Um alerta que dispara sempre é ruído; este
+          dispara quando há caso invisível com relógio correndo. */}
+      {truncadoNoTeto || (faltamLinhas > 0 && !prazoCoberto) ? (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
-          <AlertTitle className="text-sm">A lista não está completa</AlertTitle>
-          <AlertDescription className="text-sm">
-            {faltamLinhas > 0
-              ? `Foram carregadas ${linhas.length} de ${totalReal} linhas da janela — faltam ${faltamLinhas}.`
-              : `A leitura parou no teto de páginas com ${linhas.length} linhas.`}{" "}
-            Use “Atualizar”; se continuar faltando, a fila precisa de filtro por período antes de
-            ser confiável — um caso fora desta lista expira sem ninguém ter olhado.
+          <AlertTitle className="text-sm">Pode haver caso com prazo fora desta lista</AlertTitle>
+          <AlertDescription className="text-sm space-y-2">
+            <p>
+              {truncadoNoTeto
+                ? `A leitura parou no teto de páginas com ${linhas.length} linhas.`
+                : `Foram carregadas ${linhas.length} de ${totalReal} linhas, e a última carregada ainda tem prazo correndo — as ${faltamLinhas} que faltam podem conter caso a expirar.`}
+            </p>
+            {!truncadoNoTeto ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={buscandoRestante}
+                onClick={() => setListaCompleta(true)}
+              >
+                {buscandoRestante ? (
+                  <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                ) : null}
+                Carregar as {faltamLinhas} linhas restantes
+              </Button>
+            ) : null}
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {/* Leitura parcial DELIBERADA, e ela se declara. Tom neutro: não é falha
+          nem risco — o que falta vem depois de tudo que tem prazo. */}
+      {faltamLinhas > 0 && prazoCoberto && !truncadoNoTeto ? (
+        <Alert>
+          <Layers className="h-4 w-4" />
+          <AlertTitle className="text-sm">
+            Carregadas {linhas.length} de {totalReal} linhas da janela
+          </AlertTitle>
+          <AlertDescription className="text-sm space-y-2">
+            <p>
+              A lista é ordenada por prazo e as {faltamLinhas} linhas que faltam vêm depois de
+              todas as que têm prazo correndo — <strong>nenhum caso pode expirar sem aparecer
+              aqui</strong>. Até você pedir o restante, os contadores das abas e dos blocos
+              recolhidos descrevem só o que está carregado; os totais do rodapé e dos cartões
+              continuam vindo do resumo, que conta a janela inteira.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={buscandoRestante}
+              onClick={() => setListaCompleta(true)}
+            >
+              {buscandoRestante ? <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
+              Carregar as {faltamLinhas} restantes
+            </Button>
           </AlertDescription>
         </Alert>
       ) : null}
