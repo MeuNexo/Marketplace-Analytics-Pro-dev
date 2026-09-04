@@ -88,10 +88,16 @@ declare
   v_denominador int;
   v_com_flag    int;
 begin
+  -- 🔴 O REPLAY SE RECONHECE POR "JA TRATADA", NAO POR "JA FILTRA".
+  -- Duas das 16 nao ganham o predicado: elas so leem max(ci.synced_at) e
+  -- recebem o marcador de dispensa. Contar so quem menciona a flag daria 14
+  -- de 16 DEPOIS de esta migration rodar — e o pre-guarda nunca reconheceria
+  -- o proprio efeito, deixando o replay passar. Tratada = filtra OU dispensa.
   select count(*),
          count(*) filter (
            where regexp_replace(pg_get_functiondef(p.oid), '^[[:space:]]*--.*$', '', 'gn')
-                 ilike '%entra_no_caixa%')
+                 ilike '%entra_no_caixa%'
+              or pg_get_functiondef(p.oid) ilike '%dispensa-do-filtro%')
     into v_denominador, v_com_flag
     from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
@@ -109,11 +115,11 @@ begin
 
   if v_com_flag = v_denominador then
     raise exception
-      '225-11 REPLAY BLOQUEADO: as % funcoes que leem cash_inflows JA carregam o predicado de entra_no_caixa. Reaplicar sobrescreveria corpos vivos que outras fases (a 237 mexe em get_dre_cash) podem ter alterado desde entao — e faria isso em silencio. Se a intencao e mesmo reaplicar, leia os corpos vivos do banco primeiro e monte uma migration nova a partir deles.',
+      '225-11 REPLAY BLOQUEADO: as % funcoes que leem cash_inflows JA estao tratadas (predicado de entra_no_caixa ou marcador de dispensa). Reaplicar sobrescreveria corpos vivos que outras fases (a 237 mexe em get_dre_cash) podem ter alterado desde entao — e faria isso em silencio. Se a intencao e mesmo reaplicar, leia os corpos vivos do banco primeiro e monte uma migration nova a partir deles.',
       v_denominador;
   end if;
 
-  raise notice '225-11 pre-guarda OK: % funcoes leem cash_inflows, % ja filtram — a migration segue.',
+  raise notice '225-11 pre-guarda OK: % funcoes leem cash_inflows, % ja tratadas — a migration segue.',
     v_denominador, v_com_flag;
 end $$;
 
