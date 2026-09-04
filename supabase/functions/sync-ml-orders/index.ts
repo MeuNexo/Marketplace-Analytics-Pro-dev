@@ -74,6 +74,21 @@ import {
   type LinhaTaxConfigVigencia,
 } from "../_shared/taxConfigVigente.ts";
 import {
+  inicioInclusivoDataPedido,
+  fimExclusivoDataPedido,
+} from "../_shared/janelaDataPedido.ts";
+import {
+  janelaBRT,
+  deslocarDia,
+  diasDaJanela,
+  hojeBRT,
+  temAssinaturaDaRodadaDiaria,
+  blocoDaRepescagem,
+  REPESCAGEM_JANELA_DIAS,
+  REPESCAGEM_TETO_DIAS,
+  REPESCAGEM_DIA_GATILHO,
+} from "../_shared/janelaMlBusca.ts";
+import {
   extrairLogisticType,
   ehFlex,
   extrairBonusEnvio,
@@ -151,41 +166,6 @@ async function mlFetch(path: string, accessToken: string, timeoutMs = 15_000) {
     return data;
   }
   throw new Error(`mlFetch ${path}: falhou apos 5 tentativas (ultimo erro: ${ultimoErro})`);
-}
-
-// ── A ÚNICA régua de janela BRT deste arquivo ────────────────────────────────
-// Meia-noite BRT = 03:00Z. Esta função é a única que conhece esse número, e é de
-// propósito: a captura e a conferência precisam montar EXATAMENTE a mesma
-// janela, senão o diff de conjuntos acusa como ausente um pedido que só caiu do
-// outro lado da borda. Duas noções da mesma janela divergindo em silêncio é a
-// classe de defeito que derrubou o saldo na Fase 233 — por isso o portão de
-// forma exige que o literal apareça uma vez só, e aqui dentro.
-function janelaBRT(dateFrom: string, dateTo: string): { rangeStart: Date; rangeEnd: Date } {
-  const rangeStart   = new Date(`${dateFrom}T03:00:00.000Z`);
-  const rangeEndBase = new Date(`${dateTo}T03:00:00.000Z`);
-  rangeEndBase.setUTCDate(rangeEndBase.getUTCDate() + 1);
-  return { rangeStart, rangeEnd: new Date(rangeEndBase.getTime() - 1) };
-}
-
-// Desloca um dia do calendário (YYYY-MM-DD) por N passos. Ancorado ao meio-dia
-// UTC de propósito: qualquer aritmética de dia ancorada na meia-noite passa a
-// depender do fuso do runtime, e é assim que se produz o defeito dos 111 pedidos
-// gravados um dia antes (225-CENSO-PEDIDOS.md, seção 5).
-function deslocarDia(dia: string, passos: number): string {
-  const d = new Date(`${dia}T12:00:00.000Z`);
-  d.setUTCDate(d.getUTCDate() + passos);
-  return d.toISOString().substring(0, 10);
-}
-
-function diasDaJanela(dateFrom: string, dateTo: string): string[] {
-  const dias: string[] = [];
-  let atual = dateFrom;
-  // Teto de segurança: janela maior que um ano é erro de chamada, não pedido.
-  for (let i = 0; i < 400 && atual <= dateTo; i++) {
-    dias.push(atual);
-    atual = deslocarDia(atual, 1);
-  }
-  return dias;
 }
 
 // ── Paginated order fetch with auto-split when total > 950 ────────────────────
@@ -350,6 +330,20 @@ interface ResultadoConferencia {
  * 1.000 com folga. Truncar aqui não devolve menos dado, devolve um diff que
  * INVENTA ausências. Por isso a divergência entre o total declarado e o
  * recebido é exceção, e nunca um número menor devolvido calado.
+ *
+ * 🔴 E O LIMITE SUPERIOR É EXCLUSIVO NO DIA SEGUINTE, nunca `<=` no próprio dia.
+ * `orders.data_pedido` é TEXT com formatos MISTOS neste banco: o código atual
+ * grava `AAAA-MM-DD` puro, mas o histórico tem linhas com carimbo de hora
+ * (`'2026-02-10 00:00:00+00'`). Contra essas, `<= '2026-02-10'` é FALSO por
+ * comparação de string — o dia inteiro some. Isso não é teoria: foi medido em
+ * produção em 20/08, quando `recalc-order-costs` devolvia `scanned: 0` para uma
+ * janela de um dia e 59 pedidos passando o dia seguinte como fim
+ * (`_shared/janelaDataPedido.ts`). Aqui o estrago seria o diff reverso perder o
+ * último dia da janela e deixar de ver um fantasma real — em silêncio.
+ *
+ * A régua vem do módulo que já resolveu isso, e não de uma terceira escrita
+ * à parte. Limite ilegível LANÇA: janela vazia com sucesso declarado é
+ * exatamente o defeito que aquele módulo existe para impedir.
  */
 async function lerIdsDoBanco(
   supabaseAdmin: any,
@@ -362,13 +356,19 @@ async function lerIdsDoBanco(
   let recebidas = 0;
   let totalDeclarado: number | null = null;
 
+  const inicioInclusivo = inicioInclusivoDataPedido(dataDe);
+  const fimExclusivo    = fimExclusivoDataPedido(dataAte);
+  if (inicioInclusivo === null || fimExclusivo === null) {
+    throw new Error(`lerIdsDoBanco: janela ilegivel (${dataDe} .. ${dataAte})`);
+  }
+
   for (let pagina = 0; pagina < 200; pagina++) {
     const { data, error, count } = await supabaseAdmin
       .from("orders")
       .select("ml_order_id", { count: "exact" })
       .eq("organization_id", organizationId)
-      .gte("data_pedido", dataDe)
-      .lte("data_pedido", dataAte)
+      .gte("data_pedido", inicioInclusivo)
+      .lt("data_pedido", fimExclusivo)
       .order("id", { ascending: true })
       .range(recebidas, recebidas + PAGINA - 1);
 
@@ -668,30 +668,9 @@ async function conferirJanela(
 // mesmo dia — e rodar duas vezes é inofensivo, porque ela só INSERE o que falta.
 // **A trava protege contra custo, não contra correção.**
 
-const REPESCAGEM_JANELA_DIAS = 30;
-// Teto de dias examinados por invocação. O bloqueio por excesso do ML é por
-// ENDEREÇO DE ORIGEM e derrubaria as outras sincronizações junto: recuar é
-// obrigatório, insistir não. Os 30 dias são cobertos em rodízio de blocos, sem
-// estado novo em tabela — o bloco sai do próprio dia do calendário.
-const REPESCAGEM_TETO_DIAS = 10;
-// Teto de pedidos recuperados por invocação. O resto é contado e volta na
+// Teto de pedidos recuperados por invocacao. O resto e contado e volta na
 // rodada seguinte, porque o dia dele continua dentro da janela de 30.
 const REPESCAGEM_TETO_PEDIDOS = 50;
-// Profundidade da janela retroativa do corpo VIVO de `dispatch_orders_jobs`
-// (`v_dias_retro := 3`). A rodada diária despacha D−1, D−2 e D−3 como jobs de um
-// dia; a repescagem pega carona na mais antiga das três, que ocorre uma vez por
-// dia. O cron horário varre sempre o dia CORRENTE, então nunca casa com isto.
-const REPESCAGEM_DIA_GATILHO = 3;
-
-/** O dia do calendário BRT de um instante. Meia-noite BRT = 03:00Z. */
-function hojeBRT(agora: Date = new Date()): string {
-  return new Date(agora.getTime() - 3 * 60 * 60 * 1000).toISOString().substring(0, 10);
-}
-
-function temAssinaturaDaRodadaDiaria(dateFrom: string, dateTo: string, hoje: string): boolean {
-  if (dateFrom !== dateTo) return false;
-  return dateFrom === deslocarDia(hoje, -REPESCAGEM_DIA_GATILHO);
-}
 
 interface ResultadoRepescagem {
   rodou: boolean;
@@ -770,15 +749,7 @@ async function executarRepescagem(args: {
   // Rodízio de blocos: sem estado novo em tabela, o bloco sai do próprio dia do
   // calendário. Cada dia da janela de 30 é reexaminado a cada 3 rodadas, o que é
   // folga larga contra os ~12 dias do pior atraso já medido.
-  const blocos = Math.ceil(REPESCAGEM_JANELA_DIAS / REPESCAGEM_TETO_DIAS);
-  const diasDesdeEpoca = Math.floor(Date.parse(`${hoje}T12:00:00.000Z`) / 86_400_000);
-  const bloco = ((diasDesdeEpoca % blocos) + blocos) % blocos;
-
-  const maisAntigo  = Math.min(REPESCAGEM_JANELA_DIAS, (bloco + 1) * REPESCAGEM_TETO_DIAS);
-  const maisRecente = bloco * REPESCAGEM_TETO_DIAS + 1;
-  const de  = deslocarDia(hoje, -maisAntigo);
-  const ate = deslocarDia(hoje, -maisRecente);
-  const diasDoBloco = maisAntigo - maisRecente + 1;
+  const { bloco, blocos, de, ate, dias: diasDoBloco } = blocoDaRepescagem(hoje);
 
   console.log(`sync-ml-orders: REPESCAGEM bloco ${bloco + 1}/${blocos} — ${de} → ${ate}`);
 

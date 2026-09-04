@@ -119,8 +119,16 @@ function blocoQueContem(corpoFonte: string, posicao: number): string {
  * `buscarPedidosPorId` e `filtrarIdentificadoresAusentes` estando os dois
  * corretos: o gate estava errado, não o código.
  *
- * Aqui a lista de parâmetros é fechada por contagem de parênteses e o corpo é o
- * primeiro `{` em profundidade ZERO de sinais de tipo genérico.
+ * ⚠️ E a profundidade de `<>` sozinha também não basta. `): { a: Date } {` — tipo
+ * de retorno em objeto literal PURO, sem genérico à volta — tem um `{` em
+ * profundidade angular zero antes do corpo. `janelaBRT` é exatamente esse caso.
+ * Nenhuma asserção de hoje pede o corpo dela, mas o buraco é latente e do pior
+ * tipo: devolveria a anotação de tipo, onde uma asserção de "não há porta de
+ * escrita aqui" passaria VAZIA.
+ *
+ * A regra que fecha os dois casos: um `{` em profundidade angular zero é o corpo
+ * se, DEPOIS de fechado, o próximo caractere útil NÃO for outro `{`. Se for, o
+ * que acabou de ser fechado era o tipo, e o corpo é o seguinte.
  */
 function corpoDaFuncao(corpoFonte: string, nome: string): string {
   const re = new RegExp("(?:async\\s+)?function\\s+" + nome + "\\s*\\(");
@@ -139,25 +147,38 @@ function corpoDaFuncao(corpoFonte: string, nome: string): string {
   }
   expect(fechaParams, `lista de parâmetros de ${nome} não fecha`).toBeGreaterThan(-1);
 
-  let angulo = 0;
-  let inicioCorpo = -1;
-  for (let i = fechaParams + 1; i < corpoFonte.length; i++) {
-    const c = corpoFonte[i];
-    if (c === "<") angulo++;
-    else if (c === ">") angulo--;
-    else if (c === "{" && angulo === 0) { inicioCorpo = i; break; }
-  }
-  expect(inicioCorpo, `corpo de ${nome} não encontrado`).toBeGreaterThan(-1);
-
-  let p = 0;
-  for (let i = inicioCorpo; i < corpoFonte.length; i++) {
-    if (corpoFonte[i] === "{") p++;
-    else if (corpoFonte[i] === "}") {
-      p--;
-      if (p === 0) return corpoFonte.slice(inicioCorpo + 1, i);
+  /** Fecha o `{` em `abre` e devolve a posição do `}` correspondente. */
+  const fechar = (abre: number): number => {
+    let p = 0;
+    for (let i = abre; i < corpoFonte.length; i++) {
+      if (corpoFonte[i] === "{") p++;
+      else if (corpoFonte[i] === "}") { p--; if (p === 0) return i; }
     }
+    throw new Error(`bloco de ${nome} não fecha — fonte malformado?`);
+  };
+
+  let angulo = 0;
+  let cursor = fechaParams + 1;
+  for (let tentativa = 0; tentativa < 8; tentativa++) {
+    let abre = -1;
+    for (let i = cursor; i < corpoFonte.length; i++) {
+      const c = corpoFonte[i];
+      if (c === "<") angulo++;
+      else if (c === ">") angulo--;
+      else if (c === "{" && angulo === 0) { abre = i; break; }
+    }
+    expect(abre, `corpo de ${nome} não encontrado`).toBeGreaterThan(-1);
+
+    const fecha = fechar(abre);
+    const seguinte = corpoFonte.slice(fecha + 1).match(/\S/);
+    if (seguinte?.[0] === "{") {
+      // Era a anotação de tipo em objeto literal puro; o corpo é o próximo.
+      cursor = fecha + 1;
+      continue;
+    }
+    return corpoFonte.slice(abre + 1, fecha);
   }
-  throw new Error(`corpo de ${nome} não fecha — fonte malformado?`);
+  throw new Error(`corpo de ${nome} não achado depois de 8 tentativas — fonte malformado?`);
 }
 
 /**
@@ -197,6 +218,22 @@ function corpoDoHandler(corpoFonte: string): string {
 const fonte = ler(ARQ_FONTE);
 const corpo = semComentarios(fonte);
 const handler = corpoDoHandler(corpo);
+
+/**
+ * 225-10 — a régua de janela mudou de ENDEREÇO, não de invariante.
+ *
+ * As quatro funções puras de data saíram do `index.ts` para
+ * `_shared/janelaMlBusca.ts`, no molde que esta pasta já usa (`flexOrder.ts`,
+ * `orderTaxRate.ts`, `janelaDataPedido.ts`): módulo sem IO, importável tanto
+ * pelo Deno quanto pelo vitest — e por isso testável por COMPORTAMENTO, coisa
+ * que um portão de forma não alcança (`_shared/janelaMlBusca.test.ts`).
+ *
+ * A invariante que este portão guarda continua sendo "uma régua só". O que muda
+ * é que agora ela é guardada sobre os DOIS arquivos: o literal de meia-noite BRT
+ * pode existir no módulo e em lugar nenhum além dele.
+ */
+const ARQ_REGUA = "supabase/functions/_shared/janelaMlBusca.ts";
+const regua = semComentarios(ler(ARQ_REGUA));
 
 /**
  * As quatro portas de escrita que existem nesta função. `batch_upsert_orders` é
@@ -264,10 +301,14 @@ describe("a conferência não escreve — regra: medir o buraco não pode mexer 
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("uma régua só de meia-noite BRT — regra: duas noções da mesma janela divergindo em silêncio é a classe de defeito que derrubou o saldo na Fase 233", () => {
-  it("existe a função `janelaBRT`", () => {
+  it("existe a função `janelaBRT`, no módulo compartilhado", () => {
     expect(
-      /(?:async\s+)?function\s+janelaBRT\s*\(/.test(corpo),
-      "`janelaBRT` não existe — a construção da janela continua inline e a conferência precisaria escrever a sua",
+      /export function janelaBRT\s*\(/.test(regua),
+      "`janelaBRT` não existe em `_shared/janelaMlBusca.ts` — a régua perdeu o dono",
+    ).toBe(true);
+    expect(
+      /from\s+"\.\.\/_shared\/janelaMlBusca\.ts"/.test(corpo),
+      "`sync-ml-orders` não importa a régua compartilhada — voltou a ter construção própria",
     ).toBe(true);
   });
 
@@ -279,21 +320,26 @@ describe("uma régua só de meia-noite BRT — regra: duas noções da mesma jan
    * em número, não em propriedade: ele reprova o certo e, pior, passaria se
    * alguém movesse a única ocorrência para outra função.
    */
-  it("todo literal de meia-noite BRT mora dentro de `janelaBRT`", () => {
-    const achados = posicoes(corpo, "T03:00:00");
+  it("todo literal de meia-noite BRT mora dentro de `janelaBRT`, e em lugar nenhum além dela", () => {
+    const noModulo = posicoes(regua, "T03:00:00");
     expect(
-      achados.length,
-      "o literal de meia-noite BRT sumiu do arquivo — não há régua nenhuma",
+      noModulo.length,
+      "o literal de meia-noite BRT sumiu do módulo — não há régua nenhuma",
     ).toBeGreaterThan(0);
 
-    const forasteiros = Array.from(new Set(
-      achados
-        .map((p) => funcaoQueContem(corpo, p) ?? "(fora de função nomeada)")
+    const forasteirosNoModulo = Array.from(new Set(
+      noModulo
+        .map((p) => funcaoQueContem(regua, p) ?? "(fora de função nomeada)")
         .filter((nome) => nome !== "janelaBRT"),
     ));
     expect(
-      forasteiros,
-      "o literal de meia-noite BRT aparece fora de `janelaBRT` — é uma segunda régua de data escrita à parte",
+      forasteirosNoModulo,
+      "o literal de meia-noite BRT aparece fora de `janelaBRT` dentro do próprio módulo",
+    ).toEqual([]);
+
+    expect(
+      posicoes(corpo, "T03:00:00"),
+      "a edge function voltou a escrever o literal de meia-noite BRT — é a segunda régua que este portão existe para impedir",
     ).toEqual([]);
   });
 
@@ -572,7 +618,7 @@ describe("a repescagem — regra: um dia do calendário tinha três dias de chan
 
   it("ela é acionada pela ASSINATURA da rodada diária, não por agendamento novo", () => {
     expect(
-      /(?:async\s+)?function\s+temAssinaturaDaRodadaDiaria\s*\(/.test(corpo),
+      /export function temAssinaturaDaRodadaDiaria\s*\(/.test(regua),
       "não existe teste de assinatura da rodada diária — sem ele a repescagem precisaria de cron próprio",
     ).toBe(true);
     expect(
@@ -688,8 +734,9 @@ describe("a repescagem não tem régua própria — regra: um segundo caminho de
 
 describe("orçamento da varredura — regra: bloqueio por excesso do ML é por endereço de origem e derrubaria as outras sincronizações junto", () => {
   it("existe teto de dias por invocação e a janela é de 30 dias", () => {
-    expect(/REPESCAGEM_TETO_DIAS\s*=\s*\d+/.test(corpo), "não há teto de dias por invocação").toBe(true);
-    expect(/REPESCAGEM_JANELA_DIAS\s*=\s*30/.test(corpo), "a janela da repescagem não é de 30 dias").toBe(true);
+    expect(/REPESCAGEM_TETO_DIAS\s*=\s*\d+/.test(regua), "não há teto de dias por invocação").toBe(true);
+    expect(/REPESCAGEM_JANELA_DIAS\s*=\s*30/.test(regua), "a janela da repescagem não é de 30 dias").toBe(true);
+    expect(/REPESCAGEM_TETO_PEDIDOS\s*=\s*\d+/.test(corpo), "não há teto de pedidos recuperados por invocação").toBe(true);
   });
 
   it("o que sobrou é CONTADO e a próxima rodada retoma de onde parou", () => {
@@ -798,5 +845,48 @@ describe("recuperado não estreia régua nova — regra: `/orders/{id}` devolve 
       donos.sort(),
       "`date_approved` é lido fora de `expandOrder` e da normalização — algum caminho novo o trouxe de volta",
     ).toEqual(["expandOrder", "normalizarParaAReguaDaBusca"]);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 18. A janela sobre `data_pedido` usa a régua que esta base já provou
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("limite superior EXCLUSIVO no dia seguinte — regra: `data_pedido` é TEXT com formatos mistos, e `<=` no próprio dia perde o dia inteiro", () => {
+  /**
+   * Medido em produção em 20/08: `recalc-order-costs` devolvia `scanned: 0` numa
+   * janela de um dia e 59 pedidos passando o dia seguinte como fim. A causa é
+   * comparação de string contra linhas com carimbo de hora
+   * (`'2026-02-10 00:00:00+00' <= '2026-02-10'` é FALSO).
+   * `_shared/janelaDataPedido.ts` existe por isso. Aqui o estrago seria o diff
+   * reverso perder o último dia e deixar de ver um fantasma real, em silêncio.
+   */
+  it("a leitura de `orders` importa a régua compartilhada, em vez de escrever a terceira", () => {
+    expect(
+      /from\s+"\.\.\/_shared\/janelaDataPedido\.ts"/.test(corpo),
+      "a EF não importa `_shared/janelaDataPedido.ts` — a janela sobre `data_pedido` virou régua própria",
+    ).toBe(true);
+  });
+
+  it("`lerIdsDoBanco` fecha por `.lt(` no dia seguinte, e nunca por `.lte(`", () => {
+    const corpoLeitor = corpoDaFuncao(corpo, "lerIdsDoBanco");
+    expect(
+      corpoLeitor.includes("fimExclusivoDataPedido("),
+      "`lerIdsDoBanco` não usa o fim exclusivo da régua compartilhada",
+    ).toBe(true);
+    expect(
+      /\.lte\(\s*"data_pedido"/.test(corpoLeitor),
+      "`lerIdsDoBanco` fecha a janela com `.lte(\"data_pedido\")` — contra linha com carimbo de hora isso perde o último dia inteiro",
+    ).toBe(false);
+  });
+
+  it("janela ilegível LANÇA, em vez de virar janela vazia com sucesso declarado", () => {
+    const corpoLeitor = corpoDaFuncao(corpo, "lerIdsDoBanco");
+    const pos = corpoLeitor.indexOf("inicioInclusivoDataPedido(");
+    expect(pos, "não há normalização do limite inferior").toBeGreaterThan(-1);
+    expect(
+      /=== null[\s\S]{0,160}throw new Error/.test(corpoLeitor.slice(pos)),
+      "limite ilegível não lança — janela vazia com sucesso declarado é a assinatura dos backfills silenciosos desta casa",
+    ).toBe(true);
   });
 });
