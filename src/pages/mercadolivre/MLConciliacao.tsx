@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import {
   AlertCircle,
-  AlertTriangle,
   CheckCircle2,
   Clock,
   Eye,
@@ -23,6 +22,7 @@ import { KPICard } from "@/components/dashboard/KPICard";
 import { MLPageHeader } from "@/components/mercadolivre/MLPageHeader";
 import { CasoConciliacaoSheet } from "@/components/mercadolivre/CasoConciliacaoSheet";
 import { CasoNossoErroSheet } from "@/components/mercadolivre/CasoNossoErroSheet";
+import { FilaDesligadaAviso } from "@/components/mercadolivre/FilaDesligadaAviso";
 import {
   useCasosConciliacao,
   useConciliacaoResumo,
@@ -641,19 +641,11 @@ export default function MLConciliacao() {
         </Alert>
       ) : null}
 
-      {/* A régua de valor a menor está desligada por calibração reprovada. */}
-      {resumo && resumo.acusar_valor_a_menor === false ? (
-        <Alert>
-          <AlertTriangle className="h-4 w-4" />
-          <AlertTitle className="text-sm">A fila de “repasse a menor” está desligada</AlertTitle>
-          <AlertDescription className="text-sm">
-            As diferenças continuam sendo medidas e somadas, mas nenhuma vira chamado: a
-            calibração reproduziu só 55,3% dos pedidos ao centavo e o resíduo líquido da janela
-            ficou negativo. Uma régua nesse estado não tem autoridade para acusar um pedido
-            individual. Elas estão listadas abaixo, no bloco recolhido.
-          </AlertDescription>
-        </Alert>
-      ) : null}
+      {/* A régua de valor a menor está desligada por calibração reprovada — e
+          agora a tela diz também o que a ligaria. O CEO em 04/09/2026: "fala
+          sobre a fila de repasse menor estar desligada… mas n vejo onde ligar".
+          🔴 A resposta é explicação, não interruptor: ver `FilaDesligadaAviso`. */}
+      <FilaDesligadaAviso acusarValorAMenor={resumo?.acusar_valor_a_menor ?? null} />
 
       {/* 🔴 Truncamento — o total real vem contado SEM teto pela RPC.
           A condição NÃO é "carregou menos que o total": a abertura carrega
