@@ -222,3 +222,70 @@ describe("🔴 a migration falha ALTO em vez de aplicar pela metade", () => {
     expect(plano).toContain("has_function_privilege('authenticated'");
   });
 });
+
+// ============================================================================
+// 🔴 O BLOCO QUE FALTAVA — e a razao de ele existir
+//
+// As 16 asserções acima passaram numa migration cuja guarda final NAO PODIA
+// passar em nenhum estado do mundo. Ela procurava o literal
+// `l.tipo_calc = 'repasse_ausente'` no corpo instalado para provar que a
+// conjuncao impossivel tinha saido — mas esse literal aparece DUAS vezes no
+// corpo: na cascata (removida) e na coluna `diferenca` (mantida de proposito).
+// A guarda encontrava a segunda ocorrencia no corpo que ela mesma acabava de
+// instalar e abortava a migration. O `apply_migration` reverteu atomicamente,
+// producao ficou intacta — e o portao estatico daqui nao viu nada.
+//
+// `feedback_gate_por_invariante_nao_por_literal`, pela terceira vez nesta fase.
+// Uma guarda ancorada em ONDE UM LITERAL APARECE e enganavel por construcao;
+// uma guarda que mede o EFEITO nao e.
+// ============================================================================
+
+describe("🔴 as guardas da migration medem EFEITO, não presença de literal", () => {
+  it("17 — o literal ambíguo aparece MESMO duas vezes no corpo (a premissa)", () => {
+    // Se um dia a coluna `diferenca` deixar de usar esse literal, esta
+    // asserção cai e o comentário acima vira mentira — que é o ponto dela.
+    const ocorrencias = (corpo.match(/l\.tipo_calc = 'repasse_ausente'/g) ?? []).length;
+    expect(
+      ocorrencias,
+      "a ambiguidade que quebrou a guarda deixou de existir; revise o raciocínio",
+    ).toBeGreaterThanOrEqual(1);
+  });
+
+  it("18 — 🔴 nenhuma guarda ancora no literal solto `l.tipo_calc = ...`", () => {
+    // Esta é a asserção que teria pego a migration que não aplicou.
+    expect(
+      corpo,
+      "guarda ancorada num literal que aparece em dois lugares do corpo",
+    ).not.toMatch(/position\(\s*'l\.tipo_calc/);
+  });
+
+  it("19 — a guarda pós-substituição EXERCITA a invariante, com escrita real", () => {
+    // Monta a situação: caso aberto como ausência, repasse já aprovado.
+    expect(corpo).toMatch(/insert into public\.conciliacao_casos/);
+    expect(corpo).toMatch(/'repasse_ausente',\s*'aberto'/);
+    expect(corpo).toContain("INVARIANTE REPROVADA");
+    expect(corpo).toMatch(/is distinct from 'resolvido_sozinho'/);
+  });
+
+  it("20 — e apaga a linha de sonda que ela mesma inseriu", () => {
+    expect(corpo).toMatch(/delete from public\.conciliacao_casos/);
+  });
+
+  it("21 — 🔴 recusa aprovar sem ter exercitado nada (gate vazio não é gate)", () => {
+    // O gate de cobertura do GSD que passou com zero itens é o mesmo defeito.
+    expect(corpo).toMatch(/if v_pedido is null then/);
+    expect(corpo).toContain("Guarda vazia nao aprova migration");
+  });
+
+  it("22 — mede fan-out em vez de argumentar que o join é 1:1", () => {
+    expect(corpo).toContain("FAN-OUT");
+    expect(corpo).toMatch(/v_depois <> v_antes/);
+  });
+
+  it("23 — a guarda de deriva distingue as duas versões por marcador estrutural", () => {
+    // `ka.tipo_caso` só existe na versão corrigida: se já estiver no corpo
+    // vivo, alguém consertou direto no banco e aplicar desfaria o conserto.
+    expect(corpo).toMatch(/if position\('ka\.tipo_caso' in v_corpo\) > 0 then/);
+    expect(corpo).toMatch(/if position\('when k\.estado is null' in v_corpo\) = 0 then/);
+  });
+});

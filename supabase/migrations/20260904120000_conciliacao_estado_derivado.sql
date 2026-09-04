@@ -83,12 +83,15 @@ begin
     raise exception 'conciliacao_base_linhas nao existe; aplique 20260903130000 e 20260903140000 antes desta';
   end if;
 
+  -- Marcador 1: o ramo do curto-circuito, que so existe na cascata antiga.
   if position('when k.estado is null' in v_corpo) = 0 then
     raise exception 'o corpo VIVO de conciliacao_base_linhas nao contem a cascata que esta migration substitui: producao divergiu do repositorio, confira antes de aplicar';
   end if;
 
-  if position('l.tipo_calc = ''repasse_ausente''' in v_corpo) = 0 then
-    raise exception 'o corpo VIVO nao contem a conjuncao impossivel que esta migration remove: producao divergiu do repositorio';
+  -- Marcador 2: o alias `ka` so existe na versao corrigida. Se ja estiver la,
+  -- alguem corrigiu direto no banco e esta migration desfaria o conserto.
+  if position('ka.tipo_caso' in v_corpo) > 0 then
+    raise exception 'o corpo VIVO ja contem o lookup corrigido: alguem consertou direto no banco e esta migration desfaria isso';
   end if;
 end $$;
 
@@ -422,6 +425,11 @@ declare
   v_auth        boolean;
   v_corpo       text;
   v_colunas     text;
+  v_org         uuid;
+  v_pedido      text;
+  v_estado      text;
+  v_antes       bigint;
+  v_depois      bigint;
 begin
   select has_function_privilege('anon', 'public.conciliacao_base_linhas(uuid,int)', 'execute')
     into v_anon;
@@ -441,12 +449,17 @@ begin
     join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'conciliacao_base_linhas';
 
-  if position('l.tipo_calc = ''repasse_ausente''' in v_corpo) > 0 then
-    raise exception 'a conjuncao impossivel continua na cascata; a substituicao nao pegou';
-  end if;
+  -- 🔴 NAO procurar `l.tipo_calc = 'repasse_ausente'` solto aqui. Ele aparece
+  -- DUAS vezes no corpo: na cascata (que esta migration remove) e na coluna
+  -- `diferenca` (que ela mantem de proposito). Uma guarda ancorada nesse
+  -- literal encontra a segunda ocorrencia no corpo que ela mesma acabou de
+  -- instalar e acusa falha em qualquer estado do mundo — foi exatamente o que
+  -- aconteceu na primeira tentativa de aplicar esta migration.
+  -- `feedback_gate_por_invariante_nao_por_literal`: a guarda tem que verificar
+  -- o EFEITO, que nao pode ser enganado por onde o literal aparece.
 
   if position('ka.tipo_caso' in v_corpo) = 0 then
-    raise exception 'o lookup literal do caso de ausencia nao entrou; resolvido_sozinho seguiria morto';
+    raise exception 'o lookup do caso de ausencia nao entrou; resolvido_sozinho seguiria morto';
   end if;
 
   -- O contrato de 24 colunas nao pode ter mudado: a tela le por nome.
@@ -457,5 +470,64 @@ begin
 
   if v_colunas not like '%valor_estimado%' or v_colunas not like '%dias_restantes%' then
     raise exception 'o contrato de colunas de conciliacao_base_linhas mudou; a tela le por nome';
+  end if;
+
+  -- ═══ A INVARIANTE, MEDIDA ═══════════════════════════════════════════════
+  --
+  -- 🔴 Esta e a unica guarda que prova que a migration fez o que diz. Ela
+  -- monta a situacao real: um caso aberto como `repasse_ausente` num pedido
+  -- cujo repasse ja chegou e foi aprovado. Se a cascata estiver certa, a linha
+  -- volta como `resolvido_sozinho`. Se estiver errada, volta `aberto` — e ai
+  -- a migration inteira reverte.
+  --
+  -- Escolhe um pedido que ainda NAO tem caso persistido, para nao esbarrar na
+  -- chave unica nem tocar dado de verdade. A linha de sonda e apagada logo
+  -- depois; se algo levantar excecao antes disso, a transacao da migration
+  -- desfaz tudo de qualquer jeito.
+
+  select c.organization_id, b.ml_order_id
+    into v_org, v_pedido
+    from public.conciliacao_config c
+    cross join lateral public.conciliacao_base_linhas(c.organization_id, null) b
+   where b.tipo_caso    = 'repasse_a_menor'
+     and b.recebido     is not null
+     and b.ml_order_id  is not null
+     and not exists (select 1
+                       from public.conciliacao_casos k
+                      where k.organization_id = c.organization_id
+                        and k.ml_order_id     = b.ml_order_id
+                        and k.tipo_caso       = 'repasse_ausente')
+   limit 1;
+
+  -- ⚠️ Guarda que passa sem exercitar nada NAO e guarda. Se nao ha candidato,
+  -- a invariante fica sem prova e esta migration recusa aplicar em silencio.
+  if v_pedido is null then
+    raise exception 'a invariante de resolvido_sozinho nao pode ser exercida: nenhum pedido com repasse aprovado disponivel na janela. Guarda vazia nao aprova migration';
+  end if;
+
+  select count(*) into v_antes
+    from public.conciliacao_base_linhas(v_org, null);
+
+  insert into public.conciliacao_casos (organization_id, ml_order_id, tipo_caso, estado)
+  values (v_org, v_pedido, 'repasse_ausente', 'aberto');
+
+  select count(*),
+         max(b.estado) filter (where b.ml_order_id = v_pedido
+                                 and b.tipo_caso   = 'repasse_a_menor')
+    into v_depois, v_estado
+    from public.conciliacao_base_linhas(v_org, null) b;
+
+  delete from public.conciliacao_casos
+   where organization_id = v_org
+     and ml_order_id     = v_pedido
+     and tipo_caso       = 'repasse_ausente';
+
+  if v_estado is distinct from 'resolvido_sozinho' then
+    raise exception 'INVARIANTE REPROVADA: caso de ausencia aberto, com repasse aprovado chegado depois, saiu como "%" no pedido % — deveria ser resolvido_sozinho', coalesce(v_estado, 'linha ausente'), v_pedido;
+  end if;
+
+  -- O lookup `ka` e 1:1 pela chave unica, mas isso e argumento, nao medida.
+  if v_depois <> v_antes then
+    raise exception 'FAN-OUT: o lookup do caso de ausencia multiplicou linhas, de % para %', v_antes, v_depois;
   end if;
 end $$;
