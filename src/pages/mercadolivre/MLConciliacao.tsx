@@ -30,6 +30,7 @@ import {
   type ConciliacaoResumoRow,
 } from "@/hooks/useConciliacao";
 import {
+  acharCasoSelecionado,
   chaveDeLista,
   compararPorPrazo,
   compararPorValor,
@@ -465,10 +466,15 @@ export default function MLConciliacao() {
 
   const maisUrgente = useMemo(() => baldes.ml.find(ehUrgente) ?? null, [baldes.ml]);
 
-  const casoSelecionado = useMemo<CasoConciliacaoRow | null>(() => {
-    if (chaveSelecionada == null) return null;
-    return linhas.find((c) => chaveDeLista(c) === chaveSelecionada) ?? null;
-  }, [linhas, chaveSelecionada]);
+  // 🔴 `acharCasoSelecionado`, e não `find` por chave exata: `caso_id` NASCE no
+  // meio da sessão. A primeira escrita em `conciliacao_casos` — a conferência
+  // no Mercado Pago (225-07) ou o "marcar como contestado" — faz a RPC passar a
+  // devolver o UUID, a chave da MESMA linha muda e o painel fecharia sozinho no
+  // instante em que o usuário precisa continuar. Ver `casoUrgencia.chaveLogica`.
+  const casoSelecionado = useMemo<CasoConciliacaoRow | null>(
+    () => acharCasoSelecionado(linhas, chaveSelecionada),
+    [linhas, chaveSelecionada],
+  );
 
   const filaVisivel = useMemo(() => {
     if (fila === "nosso") return baldes.nosso;

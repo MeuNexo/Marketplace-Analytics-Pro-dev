@@ -130,7 +130,25 @@ export interface CasoChaveavel {
 export function chaveDeLista(caso: CasoChaveavel): string {
   const id = typeof caso?.caso_id === "string" ? caso.caso_id.trim() : "";
   if (id.length > 0) return id;
+  return chaveLogica(caso);
+}
 
+/**
+ * 🔴 A identidade que SOBREVIVE à primeira escrita.
+ *
+ * `chaveDeLista` prefere `caso_id` porque é o identificador estável para a
+ * reconciliação do React. Mas a seleção do painel é uma STRING guardada na
+ * página, e `caso_id` NASCE no meio da sessão: enquanto o caso é só
+ * pré-visualização da RPC ele é nulo, e a primeira escrita em
+ * `conciliacao_casos` — a conferência no Mercado Pago (225-07) ou o "marcar
+ * como contestado" — faz a RPC passar a devolvê-lo. A chave da MESMA linha
+ * muda, a busca exata falha e o painel fecha sozinho, exatamente no instante em
+ * que o usuário precisava continuar.
+ *
+ * Identidade de reconciliação e identidade de seleção são coisas diferentes.
+ * Esta é a segunda: derivada só de campos que a escrita não cria.
+ */
+export function chaveLogica(caso: CasoChaveavel): string {
   const tipo =
     typeof caso?.tipo_caso === "string" && caso.tipo_caso.trim().length > 0
       ? caso.tipo_caso.trim()
@@ -145,6 +163,27 @@ export function chaveDeLista(caso: CasoChaveavel): string {
   if (pagamento) return `pgto-${pagamento.trim()}:${tipo}`;
 
   return `sem-pedido:${tipo}`;
+}
+
+/**
+ * Acha o caso selecionado tolerando a troca de chave descrita em `chaveLogica`.
+ *
+ * ⚠️ A chave EXATA vem primeiro: se a linha ainda casa por `chaveDeLista`, é
+ * ela. O caminho lógico é o resgate, não o padrão — invertê-los faria duas
+ * entradas sem origem do mesmo pedido não ingerido colidirem.
+ */
+export function acharCasoSelecionado<T extends CasoChaveavel>(
+  linhas: T[] | null | undefined,
+  chave: string | null | undefined,
+): T | null {
+  if (!Array.isArray(linhas) || typeof chave !== "string" || chave.length === 0) {
+    return null;
+  }
+  return (
+    linhas.find((c) => chaveDeLista(c) === chave) ??
+    linhas.find((c) => chaveLogica(c) === chave) ??
+    null
+  );
 }
 
 // ─── Traduções do contrato da RPC para o português da tela ──────────────────
