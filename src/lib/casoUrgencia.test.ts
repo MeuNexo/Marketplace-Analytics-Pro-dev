@@ -610,3 +610,94 @@ describe("239-03 — os motivos da régua do envio nomeiam a causa e o dono da l
     }
   });
 });
+
+describe("239-04 — as quatro causas do balde `sem_captura_cobranca`", () => {
+  // 🔴 O balde antigo dizia UMA coisa ("falta dado nosso") para QUATRO
+  // situações. Três delas não são lacuna nossa. Medido no CONTEXT: o grupo 2 é
+  // o segundo maior da régua do dinheiro, e a maior parte dele é venda recente
+  // — espera normal do ML, que a defasagem medida do CFFE fecha em até 18 dias
+  // (mediana 1). Chamar espera de defeito infla o problema e queima o sinal.
+
+  it("`cobranca_nao_emitida_pelo_ml` diz que a espera é do ML e que a linha sai sozinha", () => {
+    const texto = rotuloMotivo("cobranca_nao_emitida_pelo_ml");
+    expect(texto).not.toBe("cobranca_nao_emitida_pelo_ml");
+    expect(texto.toLowerCase()).toContain("mercado livre");
+    // A promessa central: quem lê precisa saber que NÃO há ação a tomar.
+    expect(texto.toLowerCase()).toMatch(/sai sozinh|resolve sozinh|nada a fazer/);
+    // E não pode nomear a lacuna como nossa.
+    expect(texto.toLowerCase()).not.toContain("falta dado nosso");
+  });
+
+  it("`captura_nunca_tentada` diz que ainda não consultamos a cobrança deste pedido", () => {
+    const texto = rotuloMotivo("captura_nunca_tentada");
+    expect(texto).not.toBe("captura_nunca_tentada");
+    expect(texto.toLowerCase()).toMatch(/nunca (foi )?consult|ainda não consult/);
+  });
+
+  it("`captura_com_erro` diz que a consulta falhou e que a lacuna é NOSSA", () => {
+    const texto = rotuloMotivo("captura_com_erro");
+    expect(texto).not.toBe("captura_com_erro");
+    expect(texto.toLowerCase()).toMatch(/falh|erro/);
+    expect(texto.toLowerCase()).toContain("nossa");
+  });
+
+  it("`ml_respondeu_sem_cobranca` diz que o ML RESPONDEU que não há cobrança", () => {
+    const texto = rotuloMotivo("ml_respondeu_sem_cobranca");
+    expect(texto).not.toBe("ml_respondeu_sem_cobranca");
+    expect(texto.toLowerCase()).toContain("respondeu");
+    // 🔴 Resposta do ML não é lacuna nossa: se o texto acusasse a nossa base,
+    // trocaríamos um balde errado por outro.
+    expect(texto.toLowerCase()).not.toContain("falta dado nosso");
+  });
+
+  it("`sem_captura_cobranca` continua no mapa — estado novo não pode virar código cru", () => {
+    // A cascata do SQL mantém o balde como saída FINAL, de propósito: um estado
+    // de captura que ninguém previu tem de aparecer feio, não sumir.
+    const texto = rotuloMotivo("sem_captura_cobranca");
+    expect(texto).not.toBe("sem_captura_cobranca");
+    expect(texto.length).toBeGreaterThan(20);
+  });
+
+  it("🔴 nenhuma das quatro causas usa a expressão genérica de ausência", () => {
+    for (const codigo of [
+      "cobranca_nao_emitida_pelo_ml",
+      "captura_nunca_tentada",
+      "captura_com_erro",
+      "ml_respondeu_sem_cobranca",
+    ]) {
+      const texto = rotuloMotivo(codigo).toLowerCase();
+      expect(texto, `motivo genérico em ${codigo}`).not.toContain("não apurado");
+      expect(texto, `motivo vazio em ${codigo}`).not.toBe(codigo);
+    }
+  });
+});
+
+describe("239-04 — `repasse_em_aberto`: o rótulo que não afirma desfecho", () => {
+  it("tem rótulo próprio, e ele não é o código cru", () => {
+    expect(rotuloTipoCaso("repasse_em_aberto")).toBe("Repasse: apuração em aberto");
+  });
+
+  it("🔴 o rótulo NÃO afirma o que aconteceu com o dinheiro", () => {
+    // D-239-01: sem as três linhas fechadas — esperado, recebido, diferença —
+    // o card não pode ostentar "Repasse a menor". Ele diz que a apuração está
+    // em aberto, que é o que ele sabe.
+    const texto = rotuloTipoCaso("repasse_em_aberto").toLowerCase();
+    expect(texto).toContain("aberto");
+    expect(texto).not.toContain("a menor");
+    expect(texto).not.toContain("ausente");
+  });
+
+  it("o slot do meio continua sendo 'Recebido' — a grandeza é dinheiro que entrou", () => {
+    // 🔴 `repasse_em_aberto` é régua de DINHEIRO. O prefixo `frete_` é que
+    // muda o slot para "Cobrado pelo ML"; este tipo não o tem, e não pode
+    // herdar o rótulo do frete só porque também é "em aberto".
+    expect(rotuloSlotRecebido("repasse_em_aberto")).toBe("Recebido");
+  });
+
+  it("a identidade de seleção separa o aberto do afirmativo, no eixo do dinheiro", () => {
+    const pedido = "2000017653416208";
+    const emAberto = chaveLogica({ ml_order_id: pedido, tipo_caso: "repasse_em_aberto" });
+    const afirmativo = chaveLogica({ ml_order_id: pedido, tipo_caso: "repasse_a_menor" });
+    expect(emAberto).not.toBe(afirmativo);
+  });
+});
