@@ -245,11 +245,23 @@ describe("🔴 PORTÃO (forma) — o estado de verificação vem do BANCO, nunca
     expect(CODIGO).not.toMatch(/ausencia_a_verificar/);
   });
 
-  it("7b/8 — a organização entra na queryKey (IDOR de cache entre lojas)", () => {
-    const chaves = CODIGO.match(/queryKey:\s*\[[^\]]*\]/g) ?? [];
-    expect(chaves.length, "nenhuma queryKey encontrada").toBeGreaterThanOrEqual(1);
-    for (const k of chaves) {
+  it("7b/8 — a organização entra na queryKey da CONSULTA (IDOR de cache entre lojas)", () => {
+    // ⚠️ Só as chaves de DEFINIÇÃO (`as const`, convenção do repositório) são
+    // exigidas com organização. As de `invalidateQueries` são PREFIXO de
+    // propósito: invalidar com a chave inteira deixaria de pé a entrada da
+    // outra loja, que é exatamente o cache que o usuário vê ao trocar de conta.
+    const definicoes = CODIGO.match(/queryKey:\s*\[[^\]]*\]\s*as const/g) ?? [];
+    expect(definicoes.length, "nenhuma queryKey de consulta encontrada").toBeGreaterThanOrEqual(1);
+    for (const k of definicoes) {
       expect(k, `queryKey sem organização: ${k}`).toMatch(/orgId|organization/i);
+    }
+  });
+
+  it("7c/8 — a invalidação é por PREFIXO, e são exatamente as três consultas", () => {
+    const invalidacoes = CODIGO.match(/invalidateQueries\(\{[^}]*\}\)/g) ?? [];
+    expect(invalidacoes.length, "invalidação faltando ou sobrando").toBe(3);
+    for (const i of invalidacoes) {
+      expect(i, `invalidação com chave completa: ${i}`).not.toMatch(/orgId/);
     }
   });
 

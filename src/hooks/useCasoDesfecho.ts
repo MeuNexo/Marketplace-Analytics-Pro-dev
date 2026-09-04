@@ -105,7 +105,7 @@ export function podeEscreverDesfecho(papel: string | null | undefined): boolean 
 
 /** Data local em ISO. `toISOString()` desloca o dia em fuso negativo — e o
  *  Brasil é um deles: depois das 21h a data viraria a de amanhã. */
-function hojeISO(agora: Date = new Date()): string {
+export function hojeISO(agora: Date = new Date()): string {
   const a = agora.getFullYear();
   const m = String(agora.getMonth() + 1).padStart(2, "0");
   const d = String(agora.getDate()).padStart(2, "0");
