@@ -25,7 +25,11 @@
  *
  * ─── O UNIVERSO VEM DA API, NAO DO CACHE ───────────────────────────────────
  *
- * `GET /users/{seller_id}/items/search`, paginado. NAO se le
+ * `GET /users/{ml_user_id}/items/search`, paginado. 🔴 E `ml_user_id`, NAO
+ * `ml_tokens.seller_id` — este ultimo e UUID INTERNO (FK para `sellers`) e
+ * devolve `400 Invalid user_id in path`. Medido em 04/09/2026, na primeira
+ * invocacao, e o erro veio DENTRO de um corpo `{"ok":true}` com HTTP 200.
+ * NAO se le
  * `ml_inventory_cache`: aquele cache ja teve NOVE anuncios fantasma — fechados
  * no ML e ainda marcados como ativos, com 94 unidades de estoque que nao
  * existiam. Cache e derivado e ja mentiu; a busca do vendedor e a origem.
@@ -166,13 +170,13 @@ async function getAccessToken(
 }
 
 /** O universo de anuncios da conta, direto da origem. */
-async function listarAnuncios(sellerId: string, token: string): Promise<string[]> {
+async function listarAnuncios(mlUserId: string, token: string): Promise<string[]> {
   const ids: string[] = [];
   for (const situacao of ["active", "paused"]) {
     let salto = 0;
     while (true) {
       const res = await fetch(
-        ML_API + "/users/" + sellerId + "/items/search?status=" + situacao +
+        ML_API + "/users/" + mlUserId + "/items/search?status=" + situacao +
           "&limit=" + PAGINA_BUSCA + "&offset=" + salto,
         { headers: { Authorization: "Bearer " + token, Accept: "application/json" } },
       );
@@ -268,7 +272,7 @@ async function lerCustoDeTabela(itemId: string, token: string): Promise<Leitura>
 
 async function capturarOrg(
   sb: ReturnType<typeof createClient>,
-  linha: { ml_user_id: string; organization_id: string; seller_id: string | null },
+  linha: { ml_user_id: string; organization_id: string },
 ): Promise<Record<string, unknown>> {
   const orgId = linha.organization_id;
   const mlUserId = String(linha.ml_user_id);
@@ -443,7 +447,7 @@ async function runSync(): Promise<Record<string, unknown>> {
 
     const { data: todosTokens, error } = await sb
       .from("ml_tokens")
-      .select("ml_user_id,organization_id,seller_id")
+      .select("ml_user_id,organization_id")
       .not("refresh_token", "is", null);
 
     if (error) {

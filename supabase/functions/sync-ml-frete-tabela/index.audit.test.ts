@@ -138,6 +138,17 @@ describe("as proibições do plano, em forma de portão", () => {
     expect(/ml_inventory_cache/.test(CODIGO)).toBe(false);
   });
 
+  it("🔴 o path da API do ML é montado com `ml_user_id`, NUNCA com `seller_id`", () => {
+    // Medido em 04/09/2026, primeira invocação: `ml_tokens.seller_id` é UUID
+    // INTERNO (FK para `sellers`) e o ML respondeu
+    // `400 Invalid user_id in path` — dentro de um corpo `{"ok":true}`, HTTP 200.
+    // O portão não pegava porque nenhuma asserção olhava DE ONDE vinha o id.
+    expect(/ML_API \+ "\/users\/" \+ mlUserId \+ "\/items\/search/.test(CODIGO)).toBe(true);
+    // E o campo errado não é nem lido: campo inútil selecionado é convite para
+    // o defeito voltar pela mão de quem "aproveitar" a variável que já existe.
+    expect(/seller_?[Ii]d/.test(CODIGO)).toBe(false);
+  });
+
   it("existe orçamento por invocação — varredura sem teto estoura o tempo", () => {
     expect(/const\s+ORCAMENTO\s*=\s*\d+/.test(CODIGO)).toBe(true);
   });
