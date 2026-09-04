@@ -18,6 +18,7 @@
 // ============================================================================
 import { describe, expect, it } from "vitest";
 import {
+  acharCasoSelecionado,
   chaveDeLista,
   compararPorPrazo,
   compararPorValor,
@@ -176,6 +177,67 @@ describe("chaveDeLista — 🔴 ml_order_id NUNCA é key de React", () => {
   it("caso_id vazio não é aceito como chave — cai no fallback", () => {
     const k = chaveDeLista({ caso_id: "", ml_order_id: "300", tipo_caso: "repasse_ausente" });
     expect(k).toContain("300");
+  });
+});
+
+describe("acharCasoSelecionado — 🔴 o painel não pode fechar sozinho ao gravar", () => {
+  // ────────────────────────────────────────────────────────────────────────
+  // 🔴 O DEFEITO QUE ISTO FECHA, e ele é do tipo que não pisca em lugar nenhum.
+  //
+  // A seleção do painel é uma STRING guardada na página. Enquanto o caso é só
+  // pré-visualização da RPC, `chaveDeLista` devolve `pedido:tipo`. No instante
+  // em que a primeira escrita cria a linha em `conciliacao_casos` — a
+  // conferência no Mercado Pago, ou o "marcar como contestado" —, a RPC passa a
+  // devolver `caso_id` e a chave da MESMA linha vira o UUID. A busca exata
+  // falha, `casoSelecionado` vira nulo e o painel FECHA.
+  //
+  // Fecha exatamente no momento em que o usuário precisa continuar: conferiu no
+  // MP, o caso acabou de virar acionável, e o botão de contestar apareceria
+  // agora. Ele some junto com o painel, e a tela não diz por quê.
+  //
+  // ⚠️ A chave de React continua sendo `chaveDeLista` (com o UUID): identidade
+  // de reconciliação e identidade de seleção são coisas diferentes, e é por
+  // confundir as duas que o defeito existe.
+  // ────────────────────────────────────────────────────────────────────────
+
+  const previa = {
+    caso_id: null,
+    ml_order_id: "2000017817648050",
+    tipo_caso: "repasse_ausente",
+  };
+  const persistido = { ...previa, caso_id: "uuid-recem-criado" };
+
+  it("acha pela chave exata quando nada mudou", () => {
+    expect(acharCasoSelecionado([previa], chaveDeLista(previa))).toBe(previa);
+    expect(acharCasoSelecionado([persistido], chaveDeLista(persistido))).toBe(persistido);
+  });
+
+  it("🔴 acha a MESMA linha depois que ela ganhou caso_id — o painel não fecha", () => {
+    const chaveDeAntes = chaveDeLista(previa);
+    expect(chaveDeLista(persistido)).not.toBe(chaveDeAntes);
+    expect(acharCasoSelecionado([persistido], chaveDeAntes)).toBe(persistido);
+  });
+
+  it("não confunde os dois casos do mesmo pedido", () => {
+    const outroTipo = { ...persistido, tipo_caso: "repasse_a_menor", caso_id: "uuid-outro" };
+    expect(acharCasoSelecionado([outroTipo, persistido], chaveDeLista(previa))).toBe(persistido);
+  });
+
+  it("chave nula ou não encontrada devolve null, nunca a primeira linha", () => {
+    expect(acharCasoSelecionado([persistido], null)).toBeNull();
+    expect(acharCasoSelecionado([persistido], "")).toBeNull();
+    expect(acharCasoSelecionado([persistido], "uuid-que-nao-existe")).toBeNull();
+    expect(acharCasoSelecionado(null, "qualquer")).toBeNull();
+  });
+
+  it("a entrada sem pedido continua achável pelo pagamento", () => {
+    const entrada = {
+      caso_id: null,
+      ml_order_id: null,
+      tipo_caso: "entrada_sem_origem",
+      payment_ids: ["PAY-77"],
+    };
+    expect(acharCasoSelecionado([entrada], chaveDeLista(entrada))).toBe(entrada);
   });
 });
 
