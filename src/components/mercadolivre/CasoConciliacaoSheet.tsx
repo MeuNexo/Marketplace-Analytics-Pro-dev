@@ -309,7 +309,13 @@ export function CasoConciliacaoSheet({ caso, ingestaoInicio, onOpenChange }: Pro
   const tomEstado = rotuloEstado(estado);
 
   // ── 225-07 (G-01) — a conferência no Mercado Pago ───────────────────────
-  const conferivel = caso?.tipo_caso === TIPO_VERIFICAVEL;
+  // Sem número de pedido não há o que conferir no painel do MP, e a escrita
+  // seria recusada pelo portão do hook. Botão que não existe é melhor que botão
+  // que falha — é a mesma regra que governa o rodapé de desfecho.
+  const conferivel =
+    caso?.tipo_caso === TIPO_VERIFICAVEL &&
+    typeof caso?.ml_order_id === "string" &&
+    caso.ml_order_id.trim().length > 0;
   const {
     verificacao,
     registrarVerificacao,

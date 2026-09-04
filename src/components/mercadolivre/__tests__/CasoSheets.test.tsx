@@ -413,6 +413,11 @@ describe("🔴 G-01 — o caminho existe SÓ onde a régua do banco o lê", () =
     expect(screen.queryByRole("button", { name: ROTULO_DESFAZER })).toBeNull();
   });
 
+  it("25b — pedido sem número não oferece conferência: não há o que abrir no painel do MP", () => {
+    abrir({ ...AUSENCIA, ml_order_id: null });
+    expect(screen.queryByRole("button", { name: ROTULO_CONFERIR })).toBeNull();
+  });
+
   it("26 — 🔴 A CADEIA INTEIRA: verificado como `approved`, o caso vira acionável e ganha o desfecho", () => {
     // Este é o teste que a fase não tinha. A RPC re-deriva o motivo para
     // `sem_repasse_confirmado` e `acionavel` para verdadeiro; o portão que já
