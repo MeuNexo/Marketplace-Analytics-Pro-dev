@@ -760,3 +760,43 @@ describe("o vigia da folga — regra: pressuposto que ninguém remede passa a va
     ).toBe(true);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 17. O pedido recuperado nasce na MESMA régua do resto da base
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("recuperado não estreia régua nova — regra: `/orders/{id}` devolve mais campo que `/orders/search`, e um deles muda comportamento a jusante", () => {
+  /**
+   * `data_pagamento` é coluna morta (100% NULL em 14.278 de 14.278, C-06)
+   * porque a busca não traz `date_approved`. A conciliação usa
+   * `COALESCE(data_pagamento, data_pedido)` CONTANDO com isso — o comentário da
+   * migration diz que o relógio fica "mais APERTADO, nunca mais frouxo".
+   *
+   * Se a recaptura gravasse o campo, 26 linhas passariam a medir por uma régua e
+   * 9.069 por outra. E o pior caso é o pior mesmo: um pedido que aprovou 292h
+   * depois de criado pularia doze dias para a frente.
+   */
+  it("a colheita por id passa pela normalização antes de virar pedido", () => {
+    const corpoBusca = corpoDaFuncao(corpo, "buscarPedidosPorId");
+    expect(
+      corpoBusca.includes("normalizarParaAReguaDaBusca("),
+      "a recaptura empurra o payload de `/orders/{id}` cru — ele traz `date_approved`, que a busca não traz",
+    ).toBe(true);
+  });
+
+  it("a normalização descarta `date_approved`, e nenhum outro caminho o reintroduz", () => {
+    const corpoNorm = corpoDaFuncao(corpo, "normalizarParaAReguaDaBusca");
+    expect(
+      /date_approved/.test(corpoNorm),
+      "a normalização não menciona `date_approved` — não descarta nada",
+    ).toBe(true);
+
+    const donos = Array.from(new Set(
+      posicoes(corpo, "date_approved").map((p) => funcaoQueContem(corpo, p) ?? "(fora de função nomeada)"),
+    ));
+    expect(
+      donos.sort(),
+      "`date_approved` é lido fora de `expandOrder` e da normalização — algum caminho novo o trouxe de volta",
+    ).toEqual(["expandOrder", "normalizarParaAReguaDaBusca"]);
+  });
+});

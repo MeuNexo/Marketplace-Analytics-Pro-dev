@@ -464,13 +464,47 @@ async function buscarPedidosPorId(
         recusados.push({ id, motivo: "resposta do ML sem id de pedido" });
         continue;
       }
-      pedidos.push(pedido);
+      pedidos.push(normalizarParaAReguaDaBusca(pedido));
     } catch (err) {
       recusados.push({ id, motivo: err instanceof Error ? err.message : String(err) });
     }
   }
 
   return { pedidos, recusados };
+}
+
+/**
+ * 🔴 PÕE O PEDIDO RECUPERADO NA MESMA RÉGUA DO RESTO DA BASE.
+ *
+ * `GET /orders/{id}` devolve MAIS campo que `/orders/search` — e um deles muda
+ * comportamento a jusante. O censo mediu que a busca **não traz
+ * `date_approved`**: ele é nulo nos 28 ausentes E nos 9.097 presentes, porque o
+ * payload da busca simplesmente não tem o campo. Consequência: `data_pagamento`
+ * em `orders` é COLUNA MORTA, 100% NULL em 14.278 de 14.278 (225-CALIBRACAO,
+ * C-06), e a base inteira foi desenhada sabendo disso.
+ *
+ * O `data_evento_venda` da conciliação é
+ * `COALESCE(data_pagamento, data_pedido)`, e a decisão está escrita na própria
+ * migration: *"dentro de um COALESCE que hoje sempre cai na data do pedido. Como
+ * o pedido antecede a aprovação, o relógio fica mais APERTADO, nunca mais
+ * frouxo."* O desenho **depende** de a coluna estar vazia.
+ *
+ * Se a recaptura gravasse `date_approved`, exatamente os pedidos recuperados —
+ * e só eles — passariam a usar a data de aprovação, afrouxando o relógio da
+ * conciliação. E o estrago seria maior justamente onde dói: um pedido do grupo
+ * de fechamento tardio aprovou 292 horas depois de criado, então o evento de
+ * venda dele pularia **doze dias** para a frente. Vinte e seis linhas medidas por
+ * uma régua e 9.069 por outra, sem erro, sem log, sem sinal — a mesma classe de
+ * defeito que derrubou o saldo na Fase 233.
+ *
+ * Então a recaptura descarta o campo, e o descarte é DELIBERADO, não esquecimento.
+ * ⚠️ Preencher `data_pagamento` é possível e provavelmente desejável — mas para a
+ * base INTEIRA e numa fase própria, porque move `data_evento_venda` de todo
+ * pedido. Fazê-lo por acidente em 26 linhas é a única variante errada.
+ */
+function normalizarParaAReguaDaBusca(pedido: any): any {
+  const { date_approved: _descartado, ...resto } = pedido;
+  return resto;
 }
 
 /**
