@@ -152,6 +152,7 @@ async function mpGet(url: string, token: string): Promise<Response> {
 
 interface ArquivoMp {
   file_name?: string;
+  format?: string;
   begin_date?: string;
   end_date?: string;
   date_created?: string;
@@ -176,7 +177,18 @@ async function sincronizarOrg(
   const token = await getAccessToken(sb, mlUserId);
 
   const arquivos = await listarArquivos(token);
-  const disponiveis = arquivos.filter((a) => a.file_name && a.status === "enabled");
+  // 🔴 SO CSV. Esta linha e a correcao do WORKER_RESOURCE_LIMIT observado no
+  // primeiro deploy: `/list` devolve tambem relatorios em .xlsx, e a EF estava
+  // BAIXANDO E PARSEANDO planilha binaria como se fosse texto — 3.640 e 3.831
+  // "linhas" lidas, 0 gravadas. Gastava o orcamento de compute inteiro para
+  // jogar o resultado fora. Ler o que nao se vai gravar nao e desperdicio
+  // benigno: e o que faz a funcao estourar recurso quando a janela cresce.
+  const disponiveis = arquivos.filter(
+    (a) =>
+      a.file_name &&
+      a.status === "enabled" &&
+      ((a.format ?? "").toUpperCase() === "CSV" || a.file_name.toLowerCase().endsWith(".csv")),
+  );
 
   // Quais ja foram ingeridos? A tabela de estado e a memoria entre invocacoes —
   // sem ela, cada execucao reprocessaria (ou recriaria) tudo.
@@ -422,10 +434,31 @@ async function runSync(): Promise<Record<string, unknown>> {
   try {
     const sb = createClient(SUPABASE_URL, SERVICE_KEY);
 
-    const { data: tokens, error } = await sb
+    // 🔴 D-225-14: so as organizacoes que o monitor de conciliacao cobre. O
+    // escopo sai de DADO (`conciliacao_config`, semeada so para a Pe Vermeio),
+    // nunca de um UUID escrito no codigo. Sem este filtro a EF varre a conta de
+    // outra organizacao — que alem de desperdicio e superficie que o escopo da
+    // fase nao pediu.
+    const { data: cobertas, error: erroCfg } = await sb
+      .from("conciliacao_config")
+      .select("organization_id");
+
+    if (erroCfg) {
+      console.error("sync-mp-saidas runSync error: conciliacao_config:", erroCfg.message);
+      return { ok: false, error: erroCfg.message };
+    }
+    const noEscopo = new Set((cobertas ?? []).map((c: any) => c.organization_id));
+    if (noEscopo.size === 0) {
+      console.log("sync-mp-saidas runSync: nenhuma organizacao no escopo do monitor");
+      return { ok: true, results: [] };
+    }
+
+    const { data: todosTokens, error } = await sb
       .from("ml_tokens")
       .select("ml_user_id,organization_id")
       .not("refresh_token", "is", null);
+
+    const tokens = (todosTokens ?? []).filter((t: any) => noEscopo.has(t.organization_id));
 
     if (error) {
       console.error("sync-mp-saidas runSync error: ml_tokens:", error.message);

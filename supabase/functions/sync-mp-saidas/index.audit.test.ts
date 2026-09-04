@@ -161,6 +161,21 @@ describe("as fronteiras que o plano proibiu atravessar", () => {
     expect(criacoes.length).toBeLessThanOrEqual(2);
   });
 
+  it("🔴 só baixa CSV — planilha binária estourou o compute no 1º deploy", () => {
+    // WORKER_RESOURCE_LIMIT medido em produção: a EF baixava e parseava .xlsx
+    // como texto (3.640 e 3.831 "linhas", 0 gravadas). Ler o que não se vai
+    // gravar é o que faz a função estourar quando a janela cresce.
+    expect(/\(a\.format \?\? ""\)\.toUpperCase\(\) === "CSV"/.test(CODIGO)).toBe(true);
+    expect(/endsWith\(".csv"\)/.test(CODIGO)).toBe(true);
+  });
+
+  it("🔴 o escopo sai de conciliacao_config, nunca de UUID no código (D-225-14)", () => {
+    expect(/from\("conciliacao_config"\)/.test(CODIGO)).toBe(true);
+    expect(/noEscopo\.has\(t\.organization_id\)/.test(CODIGO)).toBe(true);
+    // UUID literal em código é como o escopo vaza sem ninguém perceber.
+    expect(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(CODIGO)).toBe(false);
+  });
+
   it("relatório ainda em preparo encerra sem erro e registra o estado", () => {
     expect(/motivo:\s*"ainda_em_preparo"/.test(CODIGO)).toBe(true);
     expect(/status:\s*"pendente"/.test(CODIGO)).toBe(true);
