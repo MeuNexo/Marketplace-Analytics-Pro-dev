@@ -20,10 +20,12 @@ import { describe, expect, it } from "vitest";
 import {
   acharCasoSelecionado,
   chaveDeLista,
+  chaveLogica,
   compararPorPrazo,
   compararPorValor,
   rotuloEstado,
   rotuloMotivo,
+  rotuloSlotRecebido,
   rotuloTipoCaso,
   rotuloUrgencia,
   valorEmReais,
@@ -447,5 +449,78 @@ describe("225-06 — rótulos do frete prometido", () => {
   it("motivo de frete desconhecido continua devolvendo o próprio código", () => {
     // Um motivo novo no banco tem que aparecer feio na tela, não sumir dela.
     expect(rotuloMotivo("frete_invencao_nova")).toBe("frete_invencao_nova");
+  });
+});
+
+// ─── 239-01: o rótulo não afirma o que a linha não mediu (D-239-01) ──────────
+//
+// 🔴 O CONTRATO DO WESLEY, medido em 04/09: 1.200 de 1.200 linhas de frete
+// ostentavam "Frete cobrado acima do publicado" sem nenhuma das três linhas
+// fechada — `recebido`, `residuo_nosso` e `diferenca` nulos em 100% (M-08).
+// Rótulo que afirma o desfecho exige as três linhas; sem elas o item não é
+// caso, é pergunta em aberto. Estas asserções guardam a metade da tela; a
+// outra metade — o `tipo_caso` derivado — mora na migration e tem portão
+// próprio em `freteTresLinhasSqlAudit.test.ts`.
+
+describe("239-01 — o tipo em aberto existe e não afirma desfecho", () => {
+  it("`frete_em_aberto` tem rótulo próprio, e ele não é o código cru", () => {
+    expect(rotuloTipoCaso("frete_em_aberto")).toBe("Frete: comparação em aberto");
+  });
+
+  it("🔴 o rótulo do tipo em aberto NÃO afirma o que aconteceu", () => {
+    // "acima", "a maior" e "indevido" são desfechos. Sem a diferença calculada
+    // a tela não sabe de que lado o número cai — nem se cai.
+    const texto = rotuloTipoCaso("frete_em_aberto").toLowerCase();
+    for (const palavra of ["acima", "a maior", "indevido", "sempre"]) {
+      expect(texto, `o tipo em aberto afirmou: ${palavra}`).not.toContain(palavra);
+    }
+  });
+
+  it("o tipo afirmativo continua com o texto que já estava em produção", () => {
+    expect(rotuloTipoCaso("frete_a_maior")).toBe("Frete cobrado acima do publicado");
+  });
+
+  it("código desconhecido continua devolvendo o próprio código", () => {
+    expect(rotuloTipoCaso("frete_tipo_que_o_banco_inventou")).toBe(
+      "frete_tipo_que_o_banco_inventou",
+    );
+  });
+});
+
+describe("239-01 — `rotuloSlotRecebido`: no frete o slot do meio é COBRANÇA", () => {
+  it("nos dois tipos de frete o slot do meio diz 'Cobrado pelo ML'", () => {
+    // A régua do frete compara a FICHA do anúncio com a FATURA. Não há dinheiro
+    // entrando nessa conta — chamar de "Recebido" o valor que o ML COBROU
+    // inverte o sinal da leitura para quem lê a tela.
+    expect(rotuloSlotRecebido("frete_a_maior")).toBe("Cobrado pelo ML");
+    expect(rotuloSlotRecebido("frete_em_aberto")).toBe("Cobrado pelo ML");
+  });
+
+  it("nos tipos de dinheiro o slot do meio continua 'Recebido'", () => {
+    for (const tipo of ["repasse_ausente", "repasse_a_menor", "entrada_sem_origem"]) {
+      expect(rotuloSlotRecebido(tipo), `tipo de dinheiro renomeado: ${tipo}`).toBe("Recebido");
+    }
+  });
+
+  it("tipo ausente ou desconhecido cai no rótulo do dinheiro — o frete é o caso nomeado", () => {
+    expect(rotuloSlotRecebido(null)).toBe("Recebido");
+    expect(rotuloSlotRecebido(undefined)).toBe("Recebido");
+    expect(rotuloSlotRecebido("tipo_que_o_banco_inventou")).toBe("Recebido");
+  });
+});
+
+describe("239-01 — a identidade de seleção separa o aberto do afirmativo", () => {
+  it("🔴 o mesmo pedido em aberto e afirmativo NÃO colapsa na mesma chave", () => {
+    // A migration passa a derivar `tipo_caso` por linha. Se a chave lógica
+    // ignorasse o tipo, duas linhas do mesmo pedido disputariam a seleção do
+    // painel e ele fecharia sozinho — o defeito que `chaveLogica` já existe
+    // para evitar, agora exercido no eixo que esta fase criou.
+    const pedido = "2000017866736552";
+    const emAberto = chaveLogica({ ml_order_id: pedido, tipo_caso: "frete_em_aberto" });
+    const afirmativo = chaveLogica({ ml_order_id: pedido, tipo_caso: "frete_a_maior" });
+
+    expect(emAberto).not.toBe(afirmativo);
+    expect(emAberto).toContain(pedido);
+    expect(afirmativo).toContain(pedido);
   });
 });

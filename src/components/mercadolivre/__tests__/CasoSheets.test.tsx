@@ -441,3 +441,76 @@ describe("🔴 G-01 — o caminho existe SÓ onde a régua do banco o lê", () =
     expect(screen.queryByText(/ainda não é acionável/i)).toBeNull();
   });
 });
+
+// ============================================================================
+// 239-01 — o slot do meio diz o que o número É
+//
+// 🔴 POR QUE ISTO É PORTÃO DE ÁRVORE, E NÃO GREP: o rótulo "Recebido" está
+// escrito no arquivo nos dois casos — o que muda é qual ramo renderiza. Só a
+// árvore acessível responde "o que este card mostra para uma linha de frete".
+//
+// A régua do frete compara a FICHA do anúncio com a FATURA do ML. Nenhum
+// dinheiro entra nessa conta: o valor do meio é o que o ML COBROU. Chamá-lo de
+// "Recebido" inverte o sinal da leitura — e agora que a migration deste plano
+// faz o número aterrissar no slot (era nulo em 1.200 de 1.200), o rótulo errado
+// deixaria de ser inofensivo e passaria a mentir 970 vezes.
+// ============================================================================
+
+describe("🔴 239-01 — no frete o slot do meio é cobrança, no dinheiro é recebimento", () => {
+  const FRETE: Partial<CasoConciliacaoRow> = {
+    tipo_caso: "frete_a_maior",
+    motivo: "frete_sem_vigencia_na_venda",
+    fila: "nenhuma",
+    acionavel: false,
+    esperado_nosso: null,
+    recebido: 27.05,
+    residuo_nosso: null,
+    diferenca: null,
+  };
+
+  function abrirNossoErro(caso: Partial<CasoConciliacaoRow>) {
+    render(
+      <CasoNossoErroSheet
+        caso={{ ...CASO, fila: "nosso", acionavel: false, ...caso } as CasoConciliacaoRow}
+        ingestaoInicio="2026-01-28"
+        onOpenChange={() => {}}
+      />,
+    );
+  }
+
+  it("27 — linha de frete: o slot do meio se chama 'Cobrado pelo ML', e 'Recebido' não aparece", () => {
+    abrir(FRETE);
+    expect(screen.getByRole("group", { name: "Cobrado pelo ML" })).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Recebido" })).toBeNull();
+  });
+
+  it("28 — o valor cobrado aparece no slot, não some por causa do rótulo novo", () => {
+    abrir(FRETE);
+    const slot = screen.getByRole("group", { name: "Cobrado pelo ML" });
+    expect(slot.textContent).toContain("27,05");
+  });
+
+  it("29 — linha de dinheiro: o slot do meio continua 'Recebido'", () => {
+    abrir({ tipo_caso: "repasse_a_menor" });
+    expect(screen.getByRole("group", { name: "Recebido" })).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Cobrado pelo ML" })).toBeNull();
+  });
+
+  it("30 — o tipo em aberto usa o mesmo vocabulário de cobrança", () => {
+    abrir({ ...FRETE, tipo_caso: "frete_em_aberto" });
+    expect(screen.getByRole("group", { name: "Cobrado pelo ML" })).toBeTruthy();
+  });
+
+  it("31 — 🔴 a fila 'Nosso erro' também recebe linha de frete, e lá o rótulo vale igual", () => {
+    // Carrinho (49) e frete sem cobrança registrada (14) saem com fila `nosso`:
+    // 63 das 1.200 linhas de frete abrem NESTE sheet, não no outro.
+    abrirNossoErro({ ...FRETE, motivo: "possivel_carrinho" });
+    expect(screen.getByRole("group", { name: "Cobrado pelo ML" })).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Recebido" })).toBeNull();
+  });
+
+  it("32 — e no dinheiro daquela fila o rótulo do meio não muda", () => {
+    abrirNossoErro({ tipo_caso: "repasse_a_menor", motivo: "divergencia_da_nossa_base" });
+    expect(screen.getByRole("group", { name: "Recebido" })).toBeTruthy();
+  });
+});
