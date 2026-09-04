@@ -27,6 +27,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
+// 🔴 225-13 — a régua de entrada do dinheiro, em módulo puro e import RELATIVO.
+// O resolvedor do vitest no Node não abre import por URL, então o núcleo
+// testável mora em arquivo separado — mesmo padrão de `sync-ads/aggregate.ts`.
+import { julgaPagamento } from "./aceite.ts";
+
 // EdgeRuntime é global no runtime Supabase Edge — sem import necessário.
 // Declaração de tipo para satisfazer deno check (premissa A2).
 declare const EdgeRuntime: { waitUntil: (p: Promise<unknown>) => void };
@@ -219,6 +224,10 @@ interface ResultadoJanela {
   envios_resolvidos:         number;
   envios_falhados:           number;
   formato_de_pedido_anomalo: number;
+  /** 225-13: quantos entraram pelo CAMINHO DO DINHEIRO, e não pela lista de
+   *  status. Sem contador próprio o efeito da régua nova ficaria
+   *  indistinguível do movimento normal da janela. */
+  aceitos_pelo_caminho_do_dinheiro: number;
 }
 
 function janelaVazia(): ResultadoJanela {
@@ -226,6 +235,7 @@ function janelaVazia(): ResultadoJanela {
     upserted: 0, fora_do_caixa: 0, origem_indeterminada: 0,
     detalhes_consultados: 0, detalhes_pendentes: 0,
     envios_resolvidos: 0, envios_falhados: 0, formato_de_pedido_anomalo: 0,
+    aceitos_pelo_caminho_do_dinheiro: 0,
   };
 }
 
@@ -239,6 +249,8 @@ function somarJanela(a: ResultadoJanela, b: ResultadoJanela): ResultadoJanela {
     envios_resolvidos:         a.envios_resolvidos + b.envios_resolvidos,
     envios_falhados:           a.envios_falhados + b.envios_falhados,
     formato_de_pedido_anomalo: a.formato_de_pedido_anomalo + b.formato_de_pedido_anomalo,
+    aceitos_pelo_caminho_do_dinheiro:
+      a.aceitos_pelo_caminho_do_dinheiro + b.aceitos_pelo_caminho_do_dinheiro,
   };
 }
 
@@ -364,7 +376,24 @@ async function processWindow(
       if (String(p?.order?.type ?? "") !== "mercadolibre") continue;
 
       const status = String(p?.status ?? "").toLowerCase();
-      if (!VALID_STATUSES.includes(status)) continue;
+
+      // 🔴 225-13 — A RÉGUA DECIDE PELO DINHEIRO, NÃO PELO RÓTULO.
+      //
+      // Até aqui a recusa era `!VALID_STATUSES.includes(status)`, e ela
+      // acontecia ANTES de qualquer escrita. `charged_back` com
+      // `status_detail = reimbursed` é contestação encerrada A NOSSO FAVOR: o
+      // dinheiro foi liberado e está no bolso. 14 pagamentos e R$ 3.330,88 em
+      // 2026 eram descartados aqui — 6 nunca entraram (R$ 1.280,40) e 8
+      // congelaram sem a chave de pedido que o payload trazia, porque toda
+      // passagem seguinte morria neste `continue`.
+      //
+      // A régua é ADITIVA e mora em `./aceite.ts`: a lista de cinco continua
+      // sendo o primeiro ramo, intocada, e chega como ARGUMENTO. O segundo
+      // ramo admite o que tem dinheiro liberado e estorno ZERO, com os dois
+      // campos PRESENTES — contestação de fato perdida continua recusada.
+      const veredito = julgaPagamento(p, VALID_STATUSES);
+      if (!veredito.aceita) continue;
+      if (veredito.via === "dinheiro") apurado.aceitos_pelo_caminho_do_dinheiro++;
 
       const releaseDate = String(p?.money_release_date ?? "").substring(0, 10);
       if (!releaseDate) continue;
@@ -656,7 +685,8 @@ async function syncOrg(
     " detalhes=" + apurado.detalhes_consultados +
     " pendentes=" + apurado.detalhes_pendentes +
     " envios_ok=" + apurado.envios_resolvidos +
-    " envios_falha=" + apurado.envios_falhados,
+    " envios_falha=" + apurado.envios_falhados +
+    " pelo_dinheiro=" + apurado.aceitos_pelo_caminho_do_dinheiro,
   );
   return { org_id: orgId, ...apurado };
 }
