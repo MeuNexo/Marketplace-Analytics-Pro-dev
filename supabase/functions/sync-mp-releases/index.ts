@@ -52,6 +52,52 @@ function json(body: unknown, status = 200) {
 
 const VALID_STATUSES = ["approved", "authorized", "in_process", "in_mediation", "refunded"];
 
+// ── 225-09: a procedência do dinheiro ────────────────────────────────────────
+// O filtro acima pergunta DE QUE TIPO É O PEDIDO. Ele é verdadeiro tanto quando a
+// organização VENDE quanto quando o dono COMPRA no ML pagando com a mesma conta
+// Mercado Pago — e não existe checagem de QUEM RECEBEU. Foi só isso que pôs
+// R$ 12.232,60 de compra pessoal em 38 linhas dentro do caixa da empresa desde
+// 07/01/2026, 97,6% em maio (R$ 6.436,32) e agosto (R$ 5.496,89).
+//
+// 🔴 O DISCRIMINADOR NÃO É ANTI-JOIN CONTRA `orders`. As 28 vendas reais órfãs
+// (R$ 2.449,52) falham no MESMO teste de "não casa com orders" que as 38 compras:
+// elas são órfãs porque a ingestão de PEDIDOS as perdeu. Quem separa é o PAR
+// collector_id × payer_id, medido mutuamente exclusivo e exaustivo em 438 de 438
+// linhas — 0 com ambos, 0 com nenhum (225-CENSO-COLLECTOR.md, seções 1, 2 e 4).
+//
+// ⚠️ /v1/payments/search OMITE collector_id quando o dono do token é o pagador.
+// A busca dá o sinal; o detalhe (/v1/payments/{id}) dá a prova, e é lá que o
+// payer_id aparece NA RAIZ do payload — o objeto `payer` vem nulo nos dois casos.
+const MOTIVO_COMPRA_DO_TITULAR = "compra_do_titular";
+
+// A descrição que o Mercado Pago dá ao repasse de frete pago pelo comprador.
+// Nesses pagamentos o id do bloco de pedido É o id do ENVIO (11 dígitos), não do
+// pedido (16) — 105 linhas, R$ 1.329,15, desde 27/12/2025.
+const DESCRICAO_FRETE_DO_COMPRADOR = "marketplace_shipment";
+
+// Teto de consultas de detalhe por invocação. O censo mediu a minoria que precisa
+// de detalhe em 2 de 65; o teto existe para o caso raro não estourar o tempo da
+// função. O que sobra é CONTADO e volta na rodada seguinte — e a rodada seguinte
+// avança porque a leitura de estado anterior faz o já conferido não gastar consulta.
+const TETO_DETALHE_POR_INVOCACAO = 60;
+
+// Página da leitura de estado anterior. O PostgREST trunca em 1.000 EM SILÊNCIO e
+// cash_inflows tem 9.891 linhas na Pé Vermeio — sem faixa explícita a função
+// "descobriria" que tem trabalho a fazer para sempre.
+const PAGINA_ESTADO = 1000;
+
+// Formato do identificador de pedido do ML: 16 dígitos. Usado APENAS como CONTADOR
+// de anomalia no retorno, NUNCA como regra de classificação — serve para descobrir
+// uma quarta família amanhã, não para decidir hoje.
+const FORMATO_DE_PEDIDO_ML = /^\d{16}$/;
+
+/** Identificador do Mercado Livre, ou nulo. Zero e vazio são ausência, não id. */
+function idOuNulo(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 function requireServiceRole(req: Request): Response | null {
   if (!SERVICE_KEY) return null;
   const auth = req.headers.get("authorization") ?? "";
@@ -163,16 +209,122 @@ interface PaymentWindow {
   mode:      "historical" | "future";
 }
 
-// Pagina o /search e faz UPSERT incremental por página (sem fetch de detalhe individual).
+/** O que a EF apurou nesta janela, para o retorno. Contadores, nunca adjetivos. */
+interface ResultadoJanela {
+  upserted:                  number;
+  fora_do_caixa:             number;
+  origem_indeterminada:      number;
+  detalhes_consultados:      number;
+  detalhes_pendentes:        number;
+  envios_resolvidos:         number;
+  envios_falhados:           number;
+  formato_de_pedido_anomalo: number;
+}
+
+function janelaVazia(): ResultadoJanela {
+  return {
+    upserted: 0, fora_do_caixa: 0, origem_indeterminada: 0,
+    detalhes_consultados: 0, detalhes_pendentes: 0,
+    envios_resolvidos: 0, envios_falhados: 0, formato_de_pedido_anomalo: 0,
+  };
+}
+
+function somarJanela(a: ResultadoJanela, b: ResultadoJanela): ResultadoJanela {
+  return {
+    upserted:                  a.upserted + b.upserted,
+    fora_do_caixa:             a.fora_do_caixa + b.fora_do_caixa,
+    origem_indeterminada:      a.origem_indeterminada + b.origem_indeterminada,
+    detalhes_consultados:      a.detalhes_consultados + b.detalhes_consultados,
+    detalhes_pendentes:        a.detalhes_pendentes + b.detalhes_pendentes,
+    envios_resolvidos:         a.envios_resolvidos + b.envios_resolvidos,
+    envios_falhados:           a.envios_falhados + b.envios_falhados,
+    formato_de_pedido_anomalo: a.formato_de_pedido_anomalo + b.formato_de_pedido_anomalo,
+  };
+}
+
+/** O que JÁ estava apurado numa linha desta janela. */
+interface EstadoAnterior {
+  recebedor_ml_user_id: number | null;
+  pagador_ml_user_id:   number | null;
+  entra_no_caixa:       boolean;
+  motivo_fora_do_caixa: string | null;
+  origem_conferida_em:  string | null;
+  ml_order_id:          string | null;
+  ml_shipment_id:       string | null;
+}
+
+/**
+ * 225-09 — lê, ANTES do laço, tudo o que já foi apurado nos pagamentos da janela.
+ *
+ * 🔴 POR QUE ELA TRAZ A CLASSIFICAÇÃO INTEIRA, E NÃO SÓ "QUEM JÁ FOI CONFERIDO":
+ * o laço monta uma linha para TODO pagamento da página e a empurra no upsert, que
+ * grava a linha inteira. Se a re-invocação apenas PULASSE a consulta de detalhe de
+ * um pagamento já conferido, o que aconteceria com uma compra pessoal na segunda
+ * passada seria isto: a busca não traz o recebedor (a organização é a pagadora), o
+ * detalhe é pulado porque já foi conferido, nada resolve — e pela regra de "estado
+ * indeterminado entra no caixa" a linha voltaria a ser gravada como RECEITA, com
+ * motivo nulo. O CHECK do banco considera essa combinação VÁLIDA: sem erro, sem
+ * log, sem sinal. E a rota é obrigatória, não rara — o 225-11 manda reinvocar cada
+ * mês que devolver pendentes.
+ *
+ * 🔴 E ELA TRAZ TAMBÉM AS DUAS CHAVES (pedido e envio): sem isso, uma falha
+ * transitória de rede na segunda passada apagaria uma chave de pedido que já estava
+ * certa, e o que ficaria contado seria "a resolução falhou", não "a chave anterior
+ * foi perdida".
+ *
+ * ⚠️ Pagina com faixa explícita. O PostgREST trunca em 1.000 em silêncio.
+ */
+async function lerEstadoAnterior(
+  sb: ReturnType<typeof createClient>,
+  orgId: string,
+  diaInicio: string,
+  diaFim: string,
+): Promise<Map<string, EstadoAnterior>> {
+  const mapa = new Map<string, EstadoAnterior>();
+  let de = 0;
+
+  for (;;) {
+    const { data, error } = await sb
+      .from("cash_inflows")
+      .select(
+        "payment_id,recebedor_ml_user_id,pagador_ml_user_id,entra_no_caixa," +
+        "motivo_fora_do_caixa,origem_conferida_em,ml_order_id,ml_shipment_id",
+      )
+      .eq("organization_id", orgId)
+      .gte("release_date", diaInicio)
+      .lte("release_date", diaFim)
+      .order("payment_id", { ascending: true })
+      .range(de, de + PAGINA_ESTADO - 1);
+
+    if (error) {
+      throw new Error("cash_inflows leitura de estado org=" + orgId + ": " + error.message);
+    }
+
+    const linhas: any[] = data ?? [];
+    for (const l of linhas) mapa.set(String(l.payment_id), l as EstadoAnterior);
+
+    if (linhas.length < PAGINA_ESTADO) break;
+    de += PAGINA_ESTADO;
+  }
+
+  return mapa;
+}
+
+// Pagina o /search e faz UPSERT incremental por página.
 async function processWindow(
   sb: ReturnType<typeof createClient>,
   mlUserId: string,
   orgId: string,
   token: string,
   win: PaymentWindow,
-): Promise<number> {
+): Promise<ResultadoJanela> {
   let offset = 0;
-  let upserted = 0;
+  const apurado = janelaVazia();
+
+  // 🔴 Antes de processar a janela: o que já foi apurado nela.
+  const estadoAnterior = await lerEstadoAnterior(
+    sb, orgId, win.beginDate.substring(0, 10), win.endDate.substring(0, 10),
+  );
 
   while (true) {
     const qs = new URLSearchParams({
@@ -193,7 +345,8 @@ async function processWindow(
       console.log(
         "sync-mp-releases: 1a chamada MP ml_user_id=" + mlUserId +
         " mode=" + win.mode + " total=" + total +
-        " begin=" + win.beginDate.substring(0, 10) + " end=" + win.endDate.substring(0, 10),
+        " begin=" + win.beginDate.substring(0, 10) + " end=" + win.endDate.substring(0, 10) +
+        " estado_lido=" + estadoAnterior.size,
       );
     }
 
@@ -205,6 +358,9 @@ async function processWindow(
       // order.type === 'mercadolibre' (mesmo paga via pix/bank_transfer/account_money).
       // Exclui aportes/transferências (cofrinho/rendimento do MP, PSP_TRANSFER) que
       // vêm como regular_payment mas sem order de marketplace — NÃO são receita.
+      //
+      // ⚠️ 225-09: este filtro NÃO muda. Ele continua sendo a porta de entrada; o que
+      // mudou é que passar por ele deixou de ser suficiente para o valor virar receita.
       if (String(p?.order?.type ?? "") !== "mercadolibre") continue;
 
       const status = String(p?.status ?? "").toLowerCase();
@@ -231,10 +387,151 @@ async function processWindow(
         ? (String(p?.date_last_updated ?? "").substring(0, 10) || null)
         : null;
 
+      const paymentId = String(p.id);
+      const anterior  = estadoAnterior.get(paymentId) ?? null;
+
+      // 🔴 Já conferido = a pergunta já foi respondida para esta linha. Não gasta
+      // consulta de detalhe E carrega a classificação de volta VERBATIM.
+      const jaConferido =
+        anterior !== null &&
+        anterior.origem_conferida_em !== null &&
+        anterior.origem_conferida_em !== undefined;
+
+      let recebedor:    number | null = null;
+      let pagador:      number | null = null;
+      let entraNoCaixa: boolean       = true;
+      let motivo:       string | null = null;
+      let conferidaEm:  string | null = null;
+
+      if (jaConferido) {
+        // Verbatim: não recalcula, não consulta, não deduz. Reprocessar a mesma
+        // janela duas vezes tem que deixar a classificação IDÊNTICA à da primeira
+        // passada — é essa a definição operacional de idempotência aqui.
+        recebedor    = (anterior as EstadoAnterior).recebedor_ml_user_id;
+        pagador      = (anterior as EstadoAnterior).pagador_ml_user_id;
+        entraNoCaixa = (anterior as EstadoAnterior).entra_no_caixa;
+        motivo       = (anterior as EstadoAnterior).motivo_fora_do_caixa;
+        conferidaEm  = (anterior as EstadoAnterior).origem_conferida_em;
+      } else {
+        recebedor = idOuNulo(p?.collector_id);
+        pagador   = idOuNulo(p?.payer_id);
+
+        // Ausência dos dois é DÚVIDA, não veredito: a busca omite o recebedor
+        // quando o dono do token é o pagador. Quem responde é o detalhe.
+        if (recebedor === null && pagador === null) {
+          if (apurado.detalhes_consultados < TETO_DETALHE_POR_INVOCACAO) {
+            apurado.detalhes_consultados++;
+            try {
+              const detalhe = await mpGet(MP_API + "/v1/payments/" + paymentId, token, sb, mlUserId);
+              recebedor = idOuNulo(detalhe?.collector_id);
+              pagador   = idOuNulo(detalhe?.payer_id);
+            } catch (e: any) {
+              console.warn(
+                "sync-mp-releases: detalhe de pagamento falhou payment_id=" + paymentId + ": " + e.message,
+              );
+            }
+          } else {
+            // Ficou para a rodada seguinte. Este contador é o que precisa DECRESCER
+            // entre invocações — e decresce porque quem foi conferido não volta a
+            // gastar consulta.
+            apurado.detalhes_pendentes++;
+          }
+        }
+
+        const recebeuOVendedor = recebedor !== null && recebedor === Number(mlUserId);
+        const pagouOVendedor   = pagador   !== null && pagador   === Number(mlUserId);
+
+        if (recebeuOVendedor && !pagouOVendedor) {
+          entraNoCaixa = true;
+          motivo       = null;
+          conferidaEm  = syncedAt;
+        } else if (pagouOVendedor && !recebeuOVendedor) {
+          // A organização PAGOU. Não é receita. A linha FICA na tabela, visível, com
+          // o motivo escrito — descartar esconderia, e nenhuma entrada some (D-225-10).
+          entraNoCaixa = false;
+          motivo       = MOTIVO_COMPRA_DO_TITULAR;
+          conferidaEm  = syncedAt;
+        } else {
+          // Nem o detalhe resolveu, ou os dois vieram preenchidos. Entra no caixa —
+          // é a escolha que NÃO inventa uma exclusão — com a conferência nula, e
+          // soma num contador próprio. O censo mediu ZERO destes em 438 linhas:
+          // qualquer ocorrência é sinal novo, e o contador é o que impede a escolha
+          // de virar silêncio.
+          entraNoCaixa = true;
+          motivo       = null;
+          conferidaEm  = null;
+          apurado.origem_indeterminada++;
+        }
+      }
+
+      // 🔴 O `order.id` do payload é lido UMA única vez, aqui. Daqui em diante tudo
+      // usa a variável — nenhum ramo regrava o identificador de ENVIO no campo de
+      // pedido.
+      let mlOrderId = String(p?.order?.id ?? "") || null;
+      const idDoBlocoDePedido = mlOrderId;
+      let mlShipmentId: string | null = anterior !== null ? anterior.ml_shipment_id : null;
+
+      // Preservação genérica: payload sem chave não apaga chave já gravada.
+      if (mlOrderId === null && anterior !== null && anterior.ml_order_id !== null) {
+        mlOrderId = anterior.ml_order_id;
+      }
+
+      // ── G-06: o frete pago pelo comprador ────────────────────────────────
+      // Aqui o id do bloco de pedido é o do ENVIO. Guardá-lo em coluna própria e
+      // resolver o PEDIDO REAL pelo endpoint de envio — provado 103/103 pelo censo,
+      // com order_id sempre presente, sender_id = o próprio vendedor nas 103 e
+      // nenhuma colisão entre si. Reescrever a chave não duplica dinheiro: o frete é
+      // pagamento SEPARADO do da venda e a chave única é (organization_id, payment_id).
+      const ehFreteDoComprador = String(p?.description ?? "") === DESCRICAO_FRETE_DO_COMPRADOR;
+      if (ehFreteDoComprador && idDoBlocoDePedido !== null) {
+        mlShipmentId = idDoBlocoDePedido;
+
+        // 🔴 Linha que JÁ resolveu conserva a chave e não gasta chamada: uma falha
+        // transitória de rede não pode apagar um pedido que já estava certo.
+        const pedidoJaResolvido =
+          anterior !== null &&
+          anterior.ml_order_id !== null &&
+          anterior.ml_order_id !== idDoBlocoDePedido
+            ? anterior.ml_order_id
+            : null;
+
+        if (pedidoJaResolvido !== null) {
+          mlOrderId = pedidoJaResolvido;
+        } else {
+          // Linha que NUNCA resolveu: o campo de pedido fica nulo até a resolução
+          // dar certo. Gravar o identificador de envio ali é o defeito que este
+          // ramo existe para acabar.
+          mlOrderId = null;
+          try {
+            const envio = await mpGet(ML_API + "/shipments/" + idDoBlocoDePedido, token, sb, mlUserId);
+            mlOrderId = String(envio?.order_id ?? "") || null;
+            if (mlOrderId !== null) apurado.envios_resolvidos++;
+            else apurado.envios_falhados++;
+          } catch (e: any) {
+            apurado.envios_falhados++;
+            console.warn(
+              "sync-mp-releases: resolucao de envio falhou payment_id=" + paymentId + ": " + e.message,
+            );
+          }
+        }
+      }
+
+      // Contador de anomalia de formato. MEDE, não classifica: serve para descobrir
+      // uma quarta família amanhã, não para decidir hoje.
+      if (mlOrderId !== null && !FORMATO_DE_PEDIDO_ML.test(mlOrderId)) {
+        apurado.formato_de_pedido_anomalo++;
+      }
+
+      if (!entraNoCaixa) apurado.fora_do_caixa++;
+
+      // ⚠️ UM ÚNICO sítio de push, de propósito: o PostgREST monta o insert pela
+      // UNIÃO das chaves do lote e preenche com nulo/default o que falta em cada
+      // objeto. Dois formatos de linha no mesmo lote produzem exatamente a reversão
+      // silenciosa que este plano existe para fechar.
       rows.push({
         organization_id: orgId,
         ml_user_id:      Number(mlUserId),
-        payment_id:      String(p.id),
+        payment_id:      paymentId,
         release_date:    releaseDate,
         net_amount:      net,
         gross_amount:    p?.transaction_amount ?? null,
@@ -243,14 +540,20 @@ async function processWindow(
         description:     p?.description ?? null,
         synced_at:       syncedAt,
         refund_date:     refundDate,
-        // 225-01: a chave de conciliação venda↔repasse. O valor já era lido na
-        // condição do filtro acima (`p.order.type`) e era descartado aqui — sem
-        // ele é impossível dizer se uma venda foi repassada, porque `release_date`
-        // é a data em que o dinheiro liberou, não a da venda. `String(...) || null`
-        // cobre os dois formatos que a API já devolveu (número e string) e
-        // transforma vazio em NULO, em vez de gravar string vazia: nulo é o estado
-        // que a coluna documenta, string vazia seria um terceiro estado sem filtro.
-        ml_order_id:     String(p?.order?.id ?? "") || null,
+        // 225-01: a chave de conciliação venda↔repasse. `release_date` é a data em
+        // que o dinheiro liberou, não a da venda, então sem esta chave é impossível
+        // dizer se uma venda foi repassada. 225-09: no frete ela passou a receber o
+        // PEDIDO RESOLVIDO, e nunca mais o identificador de envio.
+        ml_order_id:     mlOrderId,
+        // 225-09: a procedência, gravada na MESMA linha e na MESMA transação que o
+        // valor. 🔴 O valor não muda — net_amount e gross_amount continuam sendo o
+        // que a API devolveu; estas colunas dizem se aquele valor é da empresa.
+        recebedor_ml_user_id: recebedor,
+        pagador_ml_user_id:   pagador,
+        entra_no_caixa:       entraNoCaixa,
+        motivo_fora_do_caixa: motivo,
+        origem_conferida_em:  conferidaEm,
+        ml_shipment_id:       mlShipmentId,
       });
     }
 
@@ -259,7 +562,7 @@ async function processWindow(
         .from("cash_inflows")
         .upsert(rows, { onConflict: "organization_id,payment_id" });
       if (error) throw new Error("cash_inflows upsert org=" + orgId + ": " + error.message);
-      upserted += rows.length;
+      apurado.upserted += rows.length;
     }
 
     offset += pageResults.length;
@@ -267,7 +570,7 @@ async function processWindow(
     await new Promise(r => setTimeout(r, 150)); // rate limit gentil entre páginas
   }
 
-  return upserted;
+  return apurado;
 }
 
 async function syncOrg(
@@ -275,7 +578,9 @@ async function syncOrg(
   row: { ml_user_id: string; organization_id: string; seller_id: string | null },
   daysBack:   number,
   daysAhead:  number,
-): Promise<{ org_id: string; upserted: number }> {
+  beginDate:  string | null,
+  endDate:    string | null,
+): Promise<{ org_id: string } & ResultadoJanela> {
   const { ml_user_id: mlUserId, organization_id: orgId } = row;
 
   let token: string;
@@ -286,34 +591,63 @@ async function syncOrg(
   }
 
   const today = todayStr();
-  let upserted = 0;
+  let apurado = janelaVazia();
 
-  // (a) Histórica: hoje-N até hoje
-  try {
-    upserted += await processWindow(sb, mlUserId, orgId, token, {
-      beginDate: toBrtIso(addDays(today, -daysBack), "start"),
-      endDate:   toBrtIso(today, "end"),
-      mode:      "historical",
-    });
-  } catch (e: any) {
-    console.warn("sync-mp-releases: erro janela histórica ml_user_id=" + mlUserId + ": " + e.message);
-  }
-
-  // (b) Futura: amanhã até hoje+daysAhead (só quando daysAhead > 0)
-  if (daysAhead > 0) {
+  // 🔴 225-09 — JANELA EXPLÍCITA. Por que é requisito e não conveniência: a varredura
+  // ordena por data de liberação em ordem CRESCENTE, então qualquer parada por teto ou
+  // por tempo perde a CAUDA RECENTE — que é exatamente onde estão maio (R$ 6.436,32) e
+  // agosto (R$ 5.496,89), os 97,6% da contaminação. Sem janela explícita não existe
+  // forma de mirar esses dois meses nem de retomar de onde parou: toda invocação
+  // recomeçaria de hoje e andaria para trás, e uma passada larga que PAREÇA ter dado
+  // certo pode ter reclassificado janeiro e fevereiro e deixado maio e agosto intactos.
+  if (beginDate !== null && endDate !== null) {
     try {
-      upserted += await processWindow(sb, mlUserId, orgId, token, {
-        beginDate: toBrtIso(addDays(today, 1), "start"),
-        endDate:   toBrtIso(addDays(today, daysAhead), "end"),
-        mode:      "future",
-      });
+      apurado = somarJanela(apurado, await processWindow(sb, mlUserId, orgId, token, {
+        beginDate: toBrtIso(beginDate, "start"),
+        endDate:   toBrtIso(endDate, "end"),
+        mode:      "historical",
+      }));
     } catch (e: any) {
-      console.warn("sync-mp-releases: erro janela futura ml_user_id=" + mlUserId + ": " + e.message);
+      console.warn("sync-mp-releases: erro janela explicita ml_user_id=" + mlUserId + ": " + e.message);
+    }
+  } else {
+    // Sem janela explícita, o comportamento é IDÊNTICO ao de antes desta passagem.
+    // (a) Histórica: hoje-N até hoje
+    try {
+      apurado = somarJanela(apurado, await processWindow(sb, mlUserId, orgId, token, {
+        beginDate: toBrtIso(addDays(today, -daysBack), "start"),
+        endDate:   toBrtIso(today, "end"),
+        mode:      "historical",
+      }));
+    } catch (e: any) {
+      console.warn("sync-mp-releases: erro janela histórica ml_user_id=" + mlUserId + ": " + e.message);
+    }
+
+    // (b) Futura: amanhã até hoje+daysAhead (só quando daysAhead > 0)
+    if (daysAhead > 0) {
+      try {
+        apurado = somarJanela(apurado, await processWindow(sb, mlUserId, orgId, token, {
+          beginDate: toBrtIso(addDays(today, 1), "start"),
+          endDate:   toBrtIso(addDays(today, daysAhead), "end"),
+          mode:      "future",
+        }));
+      } catch (e: any) {
+        console.warn("sync-mp-releases: erro janela futura ml_user_id=" + mlUserId + ": " + e.message);
+      }
     }
   }
 
-  console.log("sync-mp-releases: org=" + orgId + " ml_user_id=" + mlUserId + " upserted=" + upserted);
-  return { org_id: orgId, upserted };
+  console.log(
+    "sync-mp-releases: org=" + orgId + " ml_user_id=" + mlUserId +
+    " upserted=" + apurado.upserted +
+    " fora_do_caixa=" + apurado.fora_do_caixa +
+    " indeterminadas=" + apurado.origem_indeterminada +
+    " detalhes=" + apurado.detalhes_consultados +
+    " pendentes=" + apurado.detalhes_pendentes +
+    " envios_ok=" + apurado.envios_resolvidos +
+    " envios_falha=" + apurado.envios_falhados,
+  );
+  return { org_id: orgId, ...apurado };
 }
 
 // ── Background sync (toda a lógica de sync — Pitfall 4: try/catch obrigatório) ─
@@ -321,7 +655,12 @@ async function syncOrg(
 // O try/catch externo captura TODA exceção do background — sem ele o processo
 // morre silenciosamente (sem log) quando chamado via EdgeRuntime.waitUntil.
 
-async function runSync(daysBack: number, daysAhead: number): Promise<unknown> {
+async function runSync(
+  daysBack:  number,
+  daysAhead: number,
+  beginDate: string | null,
+  endDate:   string | null,
+): Promise<unknown> {
   try {
     const sb = createClient(SUPABASE_URL, SERVICE_KEY);
 
@@ -337,13 +676,13 @@ async function runSync(daysBack: number, daysAhead: number): Promise<unknown> {
 
     if (!tokenRows || tokenRows.length === 0) {
       console.log("sync-mp-releases runSync: no active users");
-      return { ok: true, days_back: daysBack, days_ahead: daysAhead, results: [] };
+      return { ok: true, days_back: daysBack, days_ahead: daysAhead, begin_date: beginDate, end_date: endDate, results: [] };
     }
 
     const results: any[] = [];
     for (const row of tokenRows) {
       try {
-        const result = await syncOrg(sb, row, daysBack, daysAhead);
+        const result = await syncOrg(sb, row, daysBack, daysAhead, beginDate, endDate);
         results.push({ ml_user_id: row.ml_user_id, ...result });
       } catch (e: any) {
         console.error("sync-mp-releases ml_user_id=" + row.ml_user_id + " error:", e.message);
@@ -393,7 +732,7 @@ async function runSync(daysBack: number, daysAhead: number): Promise<unknown> {
       console.warn("sync-mp-releases: disparo de sync-ml-frete-tabela falhou (nao bloqueia):", e?.message);
     }
 
-    return { ok: true, days_back: daysBack, days_ahead: daysAhead, results };
+    return { ok: true, days_back: daysBack, days_ahead: daysAhead, begin_date: beginDate, end_date: endDate, results };
   } catch (err: unknown) {
     // Pitfall 4: capturar TODA exceção do background — sem try/catch o processo
     // morre silenciosamente (sem log) quando chamado via EdgeRuntime.waitUntil
@@ -421,17 +760,26 @@ serve(async (req) => {
   const daysBack  = Number(body.days_back  ?? 30);
   const daysAhead = Number(body.days_ahead ?? 45);
 
+  // 🔴 225-09: janela explícita, OPCIONAL. Quando as duas datas vêm, a função
+  // processa exatamente aquela janela; quando não vêm, o comportamento é o de
+  // antes desta passagem, sem uma linha de diferença — e é isso que o cron de 3
+  // em 3 horas continua invocando.
+  const dataOuNulo = (v: unknown): string | null =>
+    typeof v === "string" && v.length >= 10 ? v.substring(0, 10) : null;
+  const beginDate = dataOuNulo(body.begin_date);
+  const endDate   = dataOuNulo(body.end_date);
+
   // Modo debug síncrono (CASHFIX-03): ?debug=1 roda runSync inline e
   // devolve o diagnóstico no corpo — permite ao orquestrador provar a persistência
   // (upserted>0) sem depender de logs de console.
   const isDebug = new URL(req.url).searchParams.get("debug") === "1";
   if (isDebug) {
-    const diag = await runSync(daysBack, daysAhead);
+    const diag = await runSync(daysBack, daysAhead, beginDate, endDate);
     return json({ ok: true, mode: "debug-sync", diag }, 200);
   }
 
   // Desacoplar o pg_net da duração de execução (CASHFIX-03):
   // runSync() processa em background — o caller recebe 202 imediatamente.
-  EdgeRuntime.waitUntil(runSync(daysBack, daysAhead));
+  EdgeRuntime.waitUntil(runSync(daysBack, daysAhead, beginDate, endDate));
   return json({ ok: true, msg: "sync enqueued" }, 202);
 });
