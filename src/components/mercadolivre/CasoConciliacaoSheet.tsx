@@ -47,6 +47,7 @@ import {
 import {
   rotuloEstado,
   rotuloMotivo,
+  rotuloSlotRecebido,
   rotuloTipoCaso,
   rotuloUrgencia,
   valorEmReais,
@@ -522,7 +523,13 @@ export function CasoConciliacaoSheet({ caso, ingestaoInicio, onOpenChange }: Pro
                 </p>
                 <div className="mt-2">
                   <LinhaMeta rotulo="Esperado" valor={valorEmReais(caso.esperado_nosso)} />
-                  <LinhaMeta rotulo="Recebido" valor={valorEmReais(caso.recebido)} />
+                  {/* 🔴 239-01: no frete este número é COBRANÇA, não entrada de
+                      dinheiro. O rótulo vem do tipo do caso — ver
+                      `rotuloSlotRecebido`. */}
+                  <LinhaMeta
+                    rotulo={rotuloSlotRecebido(caso.tipo_caso)}
+                    valor={valorEmReais(caso.recebido)}
+                  />
                   <LinhaMeta
                     rotulo="Diferença contra a nossa base"
                     valor={valorEmReais(caso.residuo_nosso)}

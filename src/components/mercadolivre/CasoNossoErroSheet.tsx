@@ -10,7 +10,12 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import type { CasoConciliacaoRow } from "@/hooks/useConciliacao";
-import { rotuloMotivo, rotuloTipoCaso, valorEmReais } from "@/lib/casoUrgencia";
+import {
+  rotuloMotivo,
+  rotuloSlotRecebido,
+  rotuloTipoCaso,
+  valorEmReais,
+} from "@/lib/casoUrgencia";
 import { dataEmBR, textoOuAusente } from "@/lib/dossieConciliacao";
 import { BotaoCopiar, LinhaMeta } from "@/components/mercadolivre/CasoConciliacaoSheet";
 
@@ -94,7 +99,13 @@ export function CasoNossoErroSheet({ caso, ingestaoInicio, onOpenChange }: Props
                 </p>
                 <div className="mt-2">
                   <LinhaMeta rotulo="Esperado pela nossa base" valor={valorEmReais(caso.esperado_nosso)} />
-                  <LinhaMeta rotulo="Recebido" valor={valorEmReais(caso.recebido)} />
+                  {/* 🔴 239-01: carrinho e frete sem cobrança registrada saem
+                      com fila `nosso` e abrem NESTE sheet — 63 das 1.200 linhas
+                      de frete. Lá o número do meio é cobrança, não recebimento. */}
+                  <LinhaMeta
+                    rotulo={rotuloSlotRecebido(caso.tipo_caso)}
+                    valor={valorEmReais(caso.recebido)}
+                  />
                   <LinhaMeta rotulo="Diferença" valor={valorEmReais(caso.diferenca)} />
                 </div>
               </section>

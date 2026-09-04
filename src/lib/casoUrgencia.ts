@@ -202,7 +202,37 @@ const TIPOS_DE_CASO: Record<string, string> = {
   // hipótese antes de F-02 medir a direção. O tipo nomeia a comparação; o
   // motivo é que diz de que lado o número caiu.
   frete_a_maior: "Frete cobrado acima do publicado",
+  // 🔴 239-01 (D-239-01): este tipo existe porque rótulo afirmativo exige as
+  // três linhas fechadas — esperado, cobrado e diferença. Sem a diferença
+  // calculada, a linha não sabe de que lado o número cai, e "acima do
+  // publicado" seria acusação sem conta. Medido em 04/09: 1.200 de 1.200
+  // linhas de frete ostentavam o rótulo afirmativo com as três linhas nulas.
+  // Quem troca este texto pela CAUSA real da comparação em aberto é o motivo,
+  // e é o plano 03 que a mede.
+  frete_em_aberto: "Frete: comparação em aberto",
 };
+
+/** Todo tipo de caso cuja régua compara a FICHA do anúncio com a FATURA. */
+function ehTipoDeFrete(codigo: string | null | undefined): boolean {
+  return typeof codigo === "string" && codigo.startsWith("frete_");
+}
+
+/**
+ * O rótulo do slot do meio do card — o que aquele número É.
+ *
+ * 🔴 Nas réguas de dinheiro (repasse, entrada sem origem) o valor do meio é o
+ * que ENTROU na conta: "Recebido". Na régua do frete não entra dinheiro
+ * nenhum — o valor é o que o Mercado Livre COBROU na fatura. Chamá-lo de
+ * "Recebido" inverte o sinal da leitura para quem confere a tela.
+ *
+ * ⚠️ O prefixo é de propósito: os planos 03 e 04 acrescentam tipos de frete, e
+ * um mapa fechado os faria nascer com o rótulo do dinheiro em silêncio.
+ * Desconhecido cai em "Recebido" porque o frete é o caso NOMEADO — quem não se
+ * declara frete é tratado pela régua antiga, que é a do dinheiro.
+ */
+export function rotuloSlotRecebido(tipoCaso: string | null | undefined): string {
+  return ehTipoDeFrete(tipoCaso) ? "Cobrado pelo ML" : "Recebido";
+}
 
 export function rotuloTipoCaso(codigo: string | null | undefined): string {
   if (!codigo) return "Tipo não informado";
