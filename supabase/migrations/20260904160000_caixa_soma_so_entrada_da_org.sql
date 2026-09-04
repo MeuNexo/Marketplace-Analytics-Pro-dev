@@ -503,7 +503,7 @@ entradas as (
          (ci.gross_amount is not distinct from ci.net_amount) as sem_tarifa,
          (o.ml_order_id is null)                     as sem_pedido,
          ci.entra_no_caixa,
-         ci.motivo_fora_do_caixa,
+         ci.motivo_fora_do_caixa
     from public.cash_inflows ci
     left join public.orders o
            on o.ml_order_id     = ci.ml_order_id
