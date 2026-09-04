@@ -109,12 +109,55 @@ function blocoQueContem(corpoFonte: string, posicao: number): string {
   throw new Error("bloco não fecha — fonte malformado?");
 }
 
-/** O corpo de uma função nomeada (`function nome(` / `async function nome(`). */
+/**
+ * O corpo de uma função nomeada (`function nome(` / `async function nome(`).
+ *
+ * 🔴 NÃO SERVE PEGAR O PRIMEIRO `{` DEPOIS DO NOME. Uma função cuja anotação de
+ * retorno seja um objeto literal — `): Promise<{ ausentes: string[] }>` — tem um
+ * `{` antes do corpo, e a versão ingênua desta função devolvia a ANOTAÇÃO DE
+ * TIPO como se fosse o corpo. Foi assim que este portão reprovou
+ * `buscarPedidosPorId` e `filtrarIdentificadoresAusentes` estando os dois
+ * corretos: o gate estava errado, não o código.
+ *
+ * Aqui a lista de parâmetros é fechada por contagem de parênteses e o corpo é o
+ * primeiro `{` em profundidade ZERO de sinais de tipo genérico.
+ */
 function corpoDaFuncao(corpoFonte: string, nome: string): string {
-  const re = new RegExp("(?:async\\s+)?function\\s+" + nome + "\\s*[(<]");
+  const re = new RegExp("(?:async\\s+)?function\\s+" + nome + "\\s*\\(");
   const m = re.exec(corpoFonte);
   expect(m, `função não encontrada no fonte: ${nome}`).not.toBeNull();
-  return blocoApos(corpoFonte, m![0], m!.index);
+
+  const abreParams = corpoFonte.indexOf("(", m!.index);
+  let profundidade = 0;
+  let fechaParams = -1;
+  for (let i = abreParams; i < corpoFonte.length; i++) {
+    if (corpoFonte[i] === "(") profundidade++;
+    else if (corpoFonte[i] === ")") {
+      profundidade--;
+      if (profundidade === 0) { fechaParams = i; break; }
+    }
+  }
+  expect(fechaParams, `lista de parâmetros de ${nome} não fecha`).toBeGreaterThan(-1);
+
+  let angulo = 0;
+  let inicioCorpo = -1;
+  for (let i = fechaParams + 1; i < corpoFonte.length; i++) {
+    const c = corpoFonte[i];
+    if (c === "<") angulo++;
+    else if (c === ">") angulo--;
+    else if (c === "{" && angulo === 0) { inicioCorpo = i; break; }
+  }
+  expect(inicioCorpo, `corpo de ${nome} não encontrado`).toBeGreaterThan(-1);
+
+  let p = 0;
+  for (let i = inicioCorpo; i < corpoFonte.length; i++) {
+    if (corpoFonte[i] === "{") p++;
+    else if (corpoFonte[i] === "}") {
+      p--;
+      if (p === 0) return corpoFonte.slice(inicioCorpo + 1, i);
+    }
+  }
+  throw new Error(`corpo de ${nome} não fecha — fonte malformado?`);
 }
 
 /**
@@ -228,16 +271,30 @@ describe("uma régua só de meia-noite BRT — regra: duas noções da mesma jan
     ).toBe(true);
   });
 
-  it("o literal de meia-noite BRT aparece uma vez só, e dentro de `janelaBRT`", () => {
+  /**
+   * 🔴 A INVARIANTE É "UMA RÉGUA", NÃO "UM LITERAL". A primeira versão desta
+   * asserção exigia que `T03:00:00` aparecesse UMA vez no arquivo — e reprovou
+   * `janelaBRT`, que legitimamente o usa duas vezes, uma para cada ponta do
+   * intervalo. Contar o literal em vez de perguntar QUEM o usa é gate ancorado
+   * em número, não em propriedade: ele reprova o certo e, pior, passaria se
+   * alguém movesse a única ocorrência para outra função.
+   */
+  it("todo literal de meia-noite BRT mora dentro de `janelaBRT`", () => {
     const achados = posicoes(corpo, "T03:00:00");
     expect(
       achados.length,
-      `o literal de meia-noite BRT aparece ${achados.length} vezes — mais de uma é uma segunda régua de data escrita à parte`,
-    ).toBe(1);
+      "o literal de meia-noite BRT sumiu do arquivo — não há régua nenhuma",
+    ).toBeGreaterThan(0);
+
+    const forasteiros = Array.from(new Set(
+      achados
+        .map((p) => funcaoQueContem(corpo, p) ?? "(fora de função nomeada)")
+        .filter((nome) => nome !== "janelaBRT"),
+    ));
     expect(
-      funcaoQueContem(corpo, achados[0]),
-      "o literal de meia-noite BRT está fora de `janelaBRT`",
-    ).toBe("janelaBRT");
+      forasteiros,
+      "o literal de meia-noite BRT aparece fora de `janelaBRT` — é uma segunda régua de data escrita à parte",
+    ).toEqual([]);
   });
 
   it("a captura e a conferência chamam `janelaBRT`", () => {
@@ -365,17 +422,33 @@ describe("recaptura não atualiza pedido preexistente — regra: os campos fisca
     ).toEqual([]);
   });
 
-  it("o filtro é o único caminho pelo qual a lista de identificadores chega ao enriquecimento", () => {
+  /**
+   * 🔴 ESTA ASSERÇÃO NASCEU INVERTIDA E FOI CORRIGIDA ANTES DE VER O CÓDIGO.
+   *
+   * A primeira versão exigia `colheita < filtro` — colher no ML e só então
+   * descartar o que já existe. Isso satisfaz a proibição de ESCRITA, mas viola o
+   * critério mais forte que o plano pede: *"rodar a recaptura sobre uma lista
+   * cujos pedidos já existem resulta em zero escrita **e zero chamada de
+   * enriquecimento**"*. Com a colheita primeiro, uma lista inteiramente
+   * preexistente ainda custaria uma chamada ao ML por identificador.
+   *
+   * O filtro só precisa dos IDENTIFICADORES, nunca do payload — então ele pode e
+   * deve vir primeiro. O gate estava errado, não o código.
+   */
+  it("o filtro roda antes até da colheita no ML — lista já existente custa zero chamada", () => {
     const posFiltro = handler.indexOf("filtrarIdentificadoresAusentes(");
-    const trechoAteEnriquecimento = handler.slice(0, handler.indexOf("fetchShipmentDetails("));
-    const posBusca = trechoAteEnriquecimento.indexOf("buscarPedidosPorId(");
+    const posBusca  = handler.indexOf("buscarPedidosPorId(");
     expect(
       posBusca,
-      "a colheita por id não aparece antes do enriquecimento — a recaptura não tem de onde tirar os pedidos",
+      "a colheita por id não aparece no handler — a recaptura não tem de onde tirar os pedidos",
     ).toBeGreaterThan(-1);
     expect(
-      posBusca < posFiltro,
-      "o filtro roda antes da colheita — não há o que filtrar ainda",
+      posFiltro < posBusca,
+      "a colheita no ML roda antes do filtro — uma lista inteiramente preexistente pagaria uma chamada por identificador à toa",
+    ).toBe(true);
+    expect(
+      posBusca < handler.indexOf("fetchShipmentDetails("),
+      "a colheita por id não acontece antes do enriquecimento",
     ).toBe(true);
   });
 });

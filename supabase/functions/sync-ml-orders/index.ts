@@ -14,6 +14,51 @@
  *   BACKFILL_FRETE_COMPRADOR=true → exige `frete_comprador` preenchido (Fase
  *                                    222, D-R2-04 / 222-13-R2). Desligar ao fim
  *                                    do backfill, pelo mesmo motivo.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * POR QUE ESTA FUNÇÃO TEM UMA SEGUNDA PASSADA (Fase 225, plano 225-10)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * O NÚMERO. A ingestão perdeu **26 pedidos reais de 2026 — 0,29% do volume,
+ * R$ 5.172,15 de receita paga que não existia no banco** (`225-CENSO-PEDIDOS.md`).
+ * A medição foi diferença de CONJUNTO de identificadores contra a API: 28 ids no
+ * ML e não em `orders`, **zero** em `orders` e não no ML, e 2 dos 28 eram apenas
+ * pendentes do próprio dia da medição.
+ *
+ * O MECANISMO, PROVADO E DIFERENTE DO QUE ESTE ARQUIVO SUGERIA:
+ * **`/orders/search` só indexa pedido FECHADO.** Nos 9.097 pedidos do censo,
+ * `date_closed` está preenchido em 9.097 — 100%. Zero `confirmed`,
+ * `payment_required` ou `payment_in_process`. E a prova pelo contra-exemplo:
+ * dois pedidos da Pé Vermeio com `date_closed` nulo existem no ML e **não
+ * aparecem em janela nenhuma da busca**, nem com filtro de cancelado; foram
+ * achados por fonte independente (`cash_inflows`).
+ *
+ * A CONSEQUÊNCIA, EM UMA FRASE: o sistema procura pedido por *quando foi criado*
+ * e só até D+3 — o corpo VIVO de `dispatch_orders_jobs` tem `v_dias_retro := 3`,
+ * que a migration do repositório nem mostra — mas o ML só devolve o pedido
+ * *quando ele fecha*. Quem fecha depois da última varredura da própria janela
+ * some, e some **para sempre**, porque `reconcileCancelled` — a única passada
+ * posterior sobre janela antiga — só faz `update` de status e **NUNCA INSERT**.
+ *
+ * A EVIDÊNCIA QUANTITATIVA: dos 35 pedidos de 2026 com `date_closed` mais de 24h
+ * depois de `date_created`, **12 estão ausentes (34%)**; dos 22 com mais de 48h,
+ * **10 ausentes (45%)**. Contra uma taxa de base de 0,29% — enriquecimento de
+ * **110×**. O maior atraso de fechamento observado em 2026 foi de **292 horas**
+ * (~12 dias).
+ *
+ * O QUE ESTE ARQUIVO PASSOU A TER:
+ *   • modo de CONFERÊNCIA (`audit_only`) — leitura pura, colhe os ids do ML dia
+ *     a dia e compara CONJUNTOS contra `orders`, nos dois sentidos;
+ *   • modo de RECAPTURA (`only_missing` + `order_ids`) — busca por id
+ *     (`GET /orders/{id}`), o caminho barato e determinístico, e descarta o que
+ *     já existe ANTES de qualquer chamada de enriquecimento;
+ *   • REPESCAGEM de 30 dias pendurada na rodada diária, que rejanela por
+ *     `date_created` e recupera o que fechou tarde.
+ *
+ * 🔴 `paging.total` NÃO É CONTAGEM. O censo mediu 9.307 declarados contra 9.097
+ * ids únicos (+2,3%), com o total excedendo os ids únicos em 143 dos 247 dias —
+ * inclusive em dias de uma única página. Ele continua servindo de critério de
+ * parada de paginação em `fetchOrdersPage`/`reconcileCancelled`, e de nada mais.
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -106,6 +151,41 @@ async function mlFetch(path: string, accessToken: string, timeoutMs = 15_000) {
     return data;
   }
   throw new Error(`mlFetch ${path}: falhou apos 5 tentativas (ultimo erro: ${ultimoErro})`);
+}
+
+// ── A ÚNICA régua de janela BRT deste arquivo ────────────────────────────────
+// Meia-noite BRT = 03:00Z. Esta função é a única que conhece esse número, e é de
+// propósito: a captura e a conferência precisam montar EXATAMENTE a mesma
+// janela, senão o diff de conjuntos acusa como ausente um pedido que só caiu do
+// outro lado da borda. Duas noções da mesma janela divergindo em silêncio é a
+// classe de defeito que derrubou o saldo na Fase 233 — por isso o portão de
+// forma exige que o literal apareça uma vez só, e aqui dentro.
+function janelaBRT(dateFrom: string, dateTo: string): { rangeStart: Date; rangeEnd: Date } {
+  const rangeStart   = new Date(`${dateFrom}T03:00:00.000Z`);
+  const rangeEndBase = new Date(`${dateTo}T03:00:00.000Z`);
+  rangeEndBase.setUTCDate(rangeEndBase.getUTCDate() + 1);
+  return { rangeStart, rangeEnd: new Date(rangeEndBase.getTime() - 1) };
+}
+
+// Desloca um dia do calendário (YYYY-MM-DD) por N passos. Ancorado ao meio-dia
+// UTC de propósito: qualquer aritmética de dia ancorada na meia-noite passa a
+// depender do fuso do runtime, e é assim que se produz o defeito dos 111 pedidos
+// gravados um dia antes (225-CENSO-PEDIDOS.md, seção 5).
+function deslocarDia(dia: string, passos: number): string {
+  const d = new Date(`${dia}T12:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + passos);
+  return d.toISOString().substring(0, 10);
+}
+
+function diasDaJanela(dateFrom: string, dateTo: string): string[] {
+  const dias: string[] = [];
+  let atual = dateFrom;
+  // Teto de segurança: janela maior que um ano é erro de chamada, não pedido.
+  for (let i = 0; i < 400 && atual <= dateTo; i++) {
+    dias.push(atual);
+    atual = deslocarDia(atual, 1);
+  }
+  return dias;
 }
 
 // ── Paginated order fetch with auto-split when total > 950 ────────────────────
@@ -241,6 +321,284 @@ async function reconcileCancelled(
   }
 
   return corrigidos;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 225-10 — A SEGUNDA PASSADA: conferir por conjunto de ids, recapturar por id
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface ResultadoConferencia {
+  dias_examinados: number;
+  dias_com_divergencia: number;
+  dias_nao_medidos: number;
+  dias_nao_medidos_lista: string[];
+  bordas_nao_medidas: number;
+  ids_ml_unicos: number;
+  ids_banco_na_janela: number;
+  ausentes_no_banco: string[];
+  ausentes_no_ml: string[];
+  maior_atraso_horas: number | null;
+  atraso_denominador: number;
+  sem_data_de_fechamento: number;
+}
+
+/**
+ * Lê os identificadores de pedido de `orders` numa faixa de `data_pedido`.
+ *
+ * 🔴 Faixa EXPLÍCITA e contagem no servidor, sempre: o PostgREST trunca em 1.000
+ * linhas **em silêncio**, e `orders` tem uma linha por ITEM — um mês passa de
+ * 1.000 com folga. Truncar aqui não devolve menos dado, devolve um diff que
+ * INVENTA ausências. Por isso a divergência entre o total declarado e o
+ * recebido é exceção, e nunca um número menor devolvido calado.
+ */
+async function lerIdsDoBanco(
+  supabaseAdmin: any,
+  organizationId: string,
+  dataDe: string,
+  dataAte: string,
+): Promise<Set<string>> {
+  const PAGINA = 1000;
+  const ids = new Set<string>();
+  let recebidas = 0;
+  let totalDeclarado: number | null = null;
+
+  for (let pagina = 0; pagina < 200; pagina++) {
+    const { data, error, count } = await supabaseAdmin
+      .from("orders")
+      .select("ml_order_id", { count: "exact" })
+      .eq("organization_id", organizationId)
+      .gte("data_pedido", dataDe)
+      .lte("data_pedido", dataAte)
+      .order("id", { ascending: true })
+      .range(recebidas, recebidas + PAGINA - 1);
+
+    if (error) throw new Error(`lerIdsDoBanco: leitura de orders falhou (${error.message})`);
+    if (totalDeclarado === null) totalDeclarado = typeof count === "number" ? count : null;
+
+    const linhas = (data ?? []) as any[];
+    for (const l of linhas) ids.add(String(l.ml_order_id));
+    recebidas += linhas.length;
+    if (linhas.length < PAGINA) break;
+  }
+
+  if (totalDeclarado !== null && recebidas !== totalDeclarado) {
+    throw new Error(
+      `lerIdsDoBanco: leitura truncada — servidor declarou ${totalDeclarado} linhas e recebi ${recebidas}`,
+    );
+  }
+  return ids;
+}
+
+/**
+ * Separa, de uma lista de identificadores, os que NÃO existem em `orders` para
+ * esta organização.
+ *
+ * 🔴 PREDICADO PRÓPRIO, e nunca o de `jaCompletos`. Aquele serve a outro
+ * propósito — decidir quem precisa de nova consulta de envio — e é ALARGADO
+ * pelos interruptores de backfill. Reaproveitá-lo faria a recaptura reprocessar
+ * pedido antigo no dia em que alguém ligasse um interruptor, e reescrever pedido
+ * preexistente é regressão cara e silenciosa: os campos fiscais de `orders`
+ * foram validados pela contadora na Fase 222.
+ *
+ * Aqui a pergunta é uma só: existe em `orders` para esta organização? Então não
+ * entra.
+ *
+ * Falha de leitura LANÇA. Degradar para "a lista veio vazia, logo nenhum existe"
+ * inverteria exatamente a garantia que esta função existe para dar.
+ */
+async function filtrarIdentificadoresAusentes(
+  supabaseAdmin: any,
+  organizationId: string,
+  identificadores: string[],
+): Promise<{ ausentes: string[]; descartados: string[] }> {
+  const LOTE = 100;
+  const presentes = new Set<string>();
+
+  for (let i = 0; i < identificadores.length; i += LOTE) {
+    const lote = identificadores.slice(i, i + LOTE);
+    const { data, error } = await supabaseAdmin
+      .from("orders")
+      .select("ml_order_id")
+      .eq("organization_id", organizationId)
+      .in("ml_order_id", lote);
+
+    if (error) {
+      throw new Error(`filtrarIdentificadoresAusentes: leitura de orders falhou (${error.message})`);
+    }
+    const linhas = (data ?? []) as any[];
+    if (linhas.length >= 1000) {
+      throw new Error(
+        "filtrarIdentificadoresAusentes: lote devolveu 1.000 linhas — teto do PostgREST atingido, reduza o lote",
+      );
+    }
+    for (const r of linhas) presentes.add(String(r.ml_order_id));
+  }
+
+  return {
+    ausentes:    identificadores.filter((id) => !presentes.has(id)),
+    descartados: identificadores.filter((id) =>  presentes.has(id)),
+  };
+}
+
+/**
+ * Colhe pedidos um a um por `GET /orders/{id}`.
+ *
+ * É o caminho barato e determinístico para os já perdidos, e o único que os
+ * alcança: a busca retroativa não devolve o que não está indexado, e varrer por
+ * `date_last_updated` no passado acha 3 de 12 (medido, 225-CENSO-PEDIDOS.md §3).
+ *
+ * Recusa do ML é CONTADA com o motivo, nunca engolida — 26 menos um sem
+ * explicação é pior que 25 com motivo.
+ */
+async function buscarPedidosPorId(
+  identificadores: string[],
+  accessToken: string,
+): Promise<{ pedidos: any[]; recusados: { id: string; motivo: string }[] }> {
+  const pedidos: any[] = [];
+  const recusados: { id: string; motivo: string }[] = [];
+
+  for (const id of identificadores) {
+    try {
+      const pedido = await mlFetch(`/orders/${id}`, accessToken);
+      if (pedido?.id == null) {
+        recusados.push({ id, motivo: "resposta do ML sem id de pedido" });
+        continue;
+      }
+      pedidos.push(pedido);
+    } catch (err) {
+      recusados.push({ id, motivo: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  return { pedidos, recusados };
+}
+
+/**
+ * MODO DE CONFERÊNCIA — leitura pura. Nenhuma porta de escrita, por contrato e
+ * por portão de forma.
+ *
+ * 🔴 COMPARA CONJUNTOS DE IDENTIFICADORES SOBRE A JANELA INTEIRA, nunca
+ * contagens por dia. É isso que a torna imune ao defeito lateral dos 111 pedidos
+ * gravados no dia anterior ao correto (225-CENSO-PEDIDOS.md §5): eles estão no
+ * banco, apenas na data errada, e uma comparação por balde de dia os reportaria
+ * como ausentes de um dia e sobrando em outro.
+ *
+ * OS DOIS SENTIDOS DO DIFF, e por que cada um usa uma régua diferente:
+ *   • ML \ banco  — pergunta a `orders` pelos ids colhidos, sem tocar em data
+ *     nenhuma. Imune à régua de `data_pedido` por construção.
+ *   • banco \ ML  — precisa de uma faixa de `data_pedido`, então é aqui que o
+ *     deslocamento de um dia poderia mentir. Neutralizado colhendo também o dia
+ *     ANTERIOR e o SEGUINTE da janela e usando esse conjunto alargado só neste
+ *     sentido. Se uma borda não puder ser medida, o número sai marcado.
+ *
+ * Dia com falha de rede sai como NÃO MEDIDO. Contar zero diferença num dia que
+ * não foi perguntado é a mentira mais fácil de contar aqui.
+ */
+async function conferirJanela(
+  mlNumericId: number,
+  dateFrom: string,
+  dateTo: string,
+  accessToken: string,
+  supabaseAdmin: any,
+  organizationId: string,
+): Promise<ResultadoConferencia> {
+  const dias = diasDaJanela(dateFrom, dateTo);
+  const idsPorDia = new Map<string, string[]>();
+  const naoMedidos: string[] = [];
+  const vistos = new Set<string>();
+
+  // O vigia da folga sai de graça: `date_closed` já vem no payload da busca que
+  // esta função lê de qualquer forma. Zero chamada extra, zero endpoint novo.
+  let maiorAtrasoMs = -1;
+  let atrasoDenominador = 0;
+  let semDataDeFechamento = 0;
+
+  for (const dia of dias) {
+    try {
+      const { rangeStart, rangeEnd } = janelaBRT(dia, dia);
+      const brutos = await fetchOrdersPage(
+        mlNumericId,
+        rangeStart.toISOString(),
+        rangeEnd.toISOString(),
+        accessToken,
+      );
+
+      const doDia = new Set<string>();
+      for (const o of brutos) {
+        const id = String(o.id);
+        if (doDia.has(id)) continue;
+        doDia.add(id);
+        if (vistos.has(id)) continue;
+        vistos.add(id);
+
+        const criado  = o.date_created ? Date.parse(o.date_created) : NaN;
+        const fechado = o.date_closed  ? Date.parse(o.date_closed)  : NaN;
+        if (!Number.isFinite(fechado)) {
+          // Pedido sem data de fechamento não tem ATRASO, tem AUSÊNCIA — e o
+          // censo já mostrou que essa é a classe cega da busca. Contado à parte.
+          semDataDeFechamento++;
+        } else if (Number.isFinite(criado)) {
+          atrasoDenominador++;
+          if (fechado - criado > maiorAtrasoMs) maiorAtrasoMs = fechado - criado;
+        }
+      }
+      idsPorDia.set(dia, Array.from(doDia));
+    } catch (err) {
+      const motivo = err instanceof Error ? err.message : String(err);
+      naoMedidos.push(dia);
+      console.warn(`conferirJanela: dia ${dia} NAO MEDIDO (${motivo})`);
+    }
+  }
+
+  // Bordas: só alimentam o sentido banco \ ML, para o deslocamento de um dia
+  // não virar falso fantasma.
+  const idsDeBorda = new Set<string>();
+  let bordasNaoMedidas = 0;
+  for (const borda of [deslocarDia(dateFrom, -1), deslocarDia(dateTo, 1)]) {
+    try {
+      const { rangeStart, rangeEnd } = janelaBRT(borda, borda);
+      const brutos = await fetchOrdersPage(
+        mlNumericId,
+        rangeStart.toISOString(),
+        rangeEnd.toISOString(),
+        accessToken,
+      );
+      for (const o of brutos) idsDeBorda.add(String(o.id));
+    } catch (err) {
+      const motivo = err instanceof Error ? err.message : String(err);
+      bordasNaoMedidas++;
+      console.warn(`conferirJanela: borda ${borda} NAO MEDIDA (${motivo})`);
+    }
+  }
+
+  const idsML = Array.from(vistos);
+  const { ausentes } = await filtrarIdentificadoresAusentes(supabaseAdmin, organizationId, idsML);
+
+  const idsBanco = await lerIdsDoBanco(supabaseAdmin, organizationId, dateFrom, dateTo);
+  const alargado = new Set<string>(idsML);
+  for (const id of idsDeBorda) alargado.add(id);
+  const ausentesNoMl = Array.from(idsBanco).filter((id) => !alargado.has(id));
+
+  const conjuntoAusentes = new Set(ausentes);
+  let diasComDivergencia = 0;
+  for (const idsDoDia of idsPorDia.values()) {
+    if (idsDoDia.some((id) => conjuntoAusentes.has(id))) diasComDivergencia++;
+  }
+
+  return {
+    dias_examinados:        idsPorDia.size,
+    dias_com_divergencia:   diasComDivergencia,
+    dias_nao_medidos:       naoMedidos.length,
+    dias_nao_medidos_lista: naoMedidos,
+    bordas_nao_medidas:     bordasNaoMedidas,
+    ids_ml_unicos:          idsML.length,
+    ids_banco_na_janela:    idsBanco.size,
+    ausentes_no_banco:      ausentes,
+    ausentes_no_ml:         ausentesNoMl,
+    maior_atraso_horas:     maiorAtrasoMs >= 0 ? Math.round((maiorAtrasoMs / 3_600_000) * 100) / 100 : null,
+    atraso_denominador:     atrasoDenominador,
+    sem_data_de_fechamento: semDataDeFechamento,
+  };
 }
 
 // ── Batch-fetch shipment details from /shipments/{id} ────────────────────────
@@ -831,6 +1189,19 @@ serve(async (req) => {
       date_from:  z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       date_to:    z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       seller_id:  z.string().nullable().optional(),
+      // [225-10] Modo de CONFERÊNCIA: leitura pura, devolve o diff por conjunto
+      // de identificadores nos dois sentidos. Não escreve uma linha.
+      audit_only:   z.boolean().optional(),
+      // [225-10] Modo de RECAPTURA: em vez de varrer a janela, busca por id os
+      // identificadores de `order_ids` e insere SÓ os que ainda não existem.
+      only_missing: z.boolean().optional(),
+      order_ids:    z.array(z.string().min(1)).max(500).optional(),
+      // [225-10] Repescagem de 30 dias. Ausente = decide pela assinatura da
+      // rodada diária; explícito = liga ou desliga para esta invocação.
+      repescagem:   z.boolean().optional(),
+      // [225-10] Linha de `sync_jobs` desta rodada, para o vigia da folga da
+      // janela gravar o maior atraso medido. Ausente = a rodada não mede.
+      sync_job_id:  z.union([z.string().min(1), z.number()]).optional(),
     });
 
     const parsed = BodySchema.safeParse(await req.json());
@@ -841,7 +1212,10 @@ serve(async (req) => {
       );
     }
 
-    const { ml_user_id, date_from, date_to, seller_id } = parsed.data;
+    const {
+      ml_user_id, date_from, date_to, seller_id,
+      audit_only, only_missing, order_ids, repescagem, sync_job_id,
+    } = parsed.data;
 
     // ── Token lookup (ME-04: ORDER BY determinístico + filtro por org quando conhecida) ──
     // Sem ORDER BY, o lookup é não-determinístico em multi-tenant (dois orgs com mesmo ml_user_id).
@@ -891,23 +1265,71 @@ serve(async (req) => {
     const mlUser       = await mlFetch("/users/me", accessToken);
     const mlNumericId  = mlUser.id as number;
 
+    // ── [225-10] MODO DE CONFERÊNCIA — leitura pura, retorno antecipado ──────
+    // Fica ANTES de qualquer construção de lote de propósito: o retorno daqui
+    // não pode alcançar nenhuma porta de escrita, nem a de `orders` nem a do
+    // log de sync. O portão de forma afirma isso.
+    if (audit_only) {
+      if (!organizationId) {
+        return new Response(
+          JSON.stringify({ success: false, error: "conferencia exige token com organizacao" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      console.log(`sync-ml-orders: CONFERENCIA ${date_from} → ${date_to} (leitura pura)`);
+      const conferencia = await conferirJanela(
+        mlNumericId, date_from, date_to, accessToken, supabaseAdmin, organizationId,
+      );
+      return new Response(
+        JSON.stringify({ success: true, modo: "conferencia", date_from, date_to, ...conferencia }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     // ── Build ISO range (BRT midnight = UTC 03:00) ────────────────────────────
-    const rangeStart = new Date(`${date_from}T03:00:00.000Z`);
-    const rangeEndBase = new Date(`${date_to}T03:00:00.000Z`);
-    rangeEndBase.setUTCDate(rangeEndBase.getUTCDate() + 1);
-    const rangeEnd = new Date(rangeEndBase.getTime() - 1);
+    const { rangeStart, rangeEnd } = janelaBRT(date_from, date_to);
 
     console.log(
       `sync-ml-orders: ml_user_id=${ml_user_id} from=${date_from} to=${date_to}`,
     );
 
     // ── Fetch orders ──────────────────────────────────────────────────────────
-    const rawOrders = await fetchOrdersPage(
-      mlNumericId,
-      rangeStart.toISOString(),
-      rangeEnd.toISOString(),
-      accessToken,
-    );
+    // Dois caminhos de colheita, e um só de escrita.
+    //
+    // [225-10] RECAPTURA (`only_missing`): a lista explícita de identificadores
+    // é filtrada contra `orders` ANTES de qualquer chamada ao ML e ANTES de
+    // qualquer enriquecimento. A ordem é a garantia, não a intenção — e é ela
+    // que faz "rodar a recaptura sobre pedidos que já existem" custar zero
+    // escrita E zero chamada.
+    let rawOrders: any[];
+    let recapturaSolicitados = 0;
+    let recapturaDescartados: string[] = [];
+    let recapturaRecusados: { id: string; motivo: string }[] = [];
+
+    if (only_missing) {
+      if (!organizationId) throw new Error("recaptura exige token com organizacao");
+      const solicitados = Array.from(new Set((order_ids ?? []).map((id) => String(id))));
+      recapturaSolicitados = solicitados.length;
+
+      const { ausentes, descartados } = await filtrarIdentificadoresAusentes(
+        supabaseAdmin, organizationId, solicitados,
+      );
+      recapturaDescartados = descartados;
+      console.log(
+        `sync-ml-orders: RECAPTURA — ${solicitados.length} pedidos, ${descartados.length} ja no banco (descartados), ${ausentes.length} a buscar`,
+      );
+
+      const colhido = await buscarPedidosPorId(ausentes, accessToken);
+      rawOrders = colhido.pedidos;
+      recapturaRecusados = colhido.recusados;
+    } else {
+      rawOrders = await fetchOrdersPage(
+        mlNumericId,
+        rangeStart.toISOString(),
+        rangeEnd.toISOString(),
+        accessToken,
+      );
+    }
 
     // Deduplicate by order id
     const seen    = new Set<number>();
@@ -1121,7 +1543,11 @@ serve(async (req) => {
     // A correção pergunta ao ML especificamente pelos cancelados do período —
     // conjunto pequeno (855 em sete meses) — em vez de reprocessar tudo por
     // `last_updated`, que traria milhares de pedidos sem mudança de status.
-    const reconciliados = await reconcileCancelled(
+    //
+    // [225-10] Não roda na recaptura: ali a janela `date_from`/`date_to` serve
+    // só de referência de vigência fiscal, não é um período varrido — varrer
+    // cancelados dela seria trabalho sobre uma janela que ninguém pediu.
+    const reconciliados = only_missing ? 0 : await reconcileCancelled(
       mlNumericId,
       rangeStart,
       rangeEnd,
@@ -1134,8 +1560,13 @@ serve(async (req) => {
     }
 
     // ── Log to ml_sync_log ────────────────────────────────────────────────────
+    // [225-10] A recaptura NÃO escreve aqui. A chave do upsert é
+    // (user_id, ml_user_id, date_from, date_to, source), e a janela que a
+    // recaptura recebe é referência de vigência fiscal, não período varrido:
+    // gravar por cima sobrescreveria o registro da varredura real daquele dia
+    // com uma contagem que não corresponde a ele.
     const daysCount = Math.round((rangeEnd.getTime() - rangeStart.getTime()) / DAY_MS) + 1;
-    await supabaseAdmin
+    if (!only_missing) await supabaseAdmin
       .from("ml_sync_log")
       .upsert(
         {
@@ -1156,9 +1587,19 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
+        modo: only_missing ? "recaptura" : "captura",
         orders_synced: upserted,
         date_from,
         date_to,
+        // [225-10] A recaptura conta os três estados sem colapsar nenhum:
+        // pedido pedido, pedido descartado por já existir (ZERO escrita e ZERO
+        // chamada de enriquecimento para ele) e pedido recusado pelo ML com o
+        // motivo ao lado — 26 menos um sem explicação é pior que 25 com motivo.
+        recaptura_solicitados: recapturaSolicitados,
+        recaptura_descartados: recapturaDescartados.length,
+        recaptura_descartados_ids: recapturaDescartados,
+        recaptura_recusados: recapturaRecusados.length,
+        recaptura_recusados_detalhe: recapturaRecusados,
         shipments_failed: shipmentsFailed,
         shipments_total:  shipmentsAttempted,
         tax_preserved:    impostoPreservado,
