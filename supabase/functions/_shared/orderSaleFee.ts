@@ -296,12 +296,29 @@ export function somaComissaoDasLinhas(linhas: readonly LinhaCobrancaPersistivel[
  * (`comissaoLinhas`) é a Identidade (I), uma CONFERÊNCIA — nunca um gate
  * duro que descarta o pedido.
  *
- * Pedido sem NENHUM dos dois critérios (sem `sale_fee` completo e sem linha
- * de comissão) não autoriza afirmar rebate nenhum, e por isso NÃO entra no
- * mapa devolvido — é o insumo de "sem linha de faturamento" que
- * `classificarCaptura` consome via `idsPresentesNaResposta` (D-hap-02/03):
- * um `order_id` que voltou na resposta mas não está neste mapa é, para quem
- * chama, um pedido sem dado suficiente para afirmar rebate.
+ * 🔴 O TERCEIRO CRITÉRIO (240-01, medido em 04/09/2026): entra também quem
+ * voltou com QUALQUER linha de cobrança persistível, mesmo sem comissão.
+ *
+ * O critério anterior descartava o pedido INTEIRO quando não havia comissão —
+ * e junto com ele ia embora a linha de FRETE que existia. Provado contra a API
+ * ao vivo: `2000017653416208` e `2000017802260492` voltam com `sale_fee: null`
+ * e `details` de UMA linha `CFFE` (R$ 23,65 e R$ 25,55), e esses valores batem
+ * AO CENTAVO com o retido no Mercado Pago. São anúncios sem comissão de venda:
+ * o ML cobra só a tarifa de envio. A cobrança nunca chegava a
+ * `ml_order_sale_fee`, o `declarado` da conciliação ficava nulo, e a tela
+ * afirmava "o ML respondeu sem cobrança" — quando o ML respondeu COM cobrança.
+ *
+ * O raciocínio de D-hap-04 continua inteiro para o REBATE: sem linha de
+ * comissão, `comissaoLinhas` segue `null` e `saleFee` segue vindo só da raiz.
+ * Nada aqui autoriza afirmar rebate que não veio. O que mudou é que a AUSÊNCIA
+ * DE COMISSÃO deixou de apagar a COBRANÇA QUE EXISTE.
+ *
+ * Pedido que voltou VAZIO — sem `sale_fee` completo, sem linha de comissão e
+ * sem nenhuma linha de cobrança — continua fora do mapa. É o insumo de "sem
+ * linha de faturamento" que `classificarCaptura` consome via
+ * `idsPresentesNaResposta` (D-hap-02/03): um `order_id` que voltou na resposta
+ * mas não está neste mapa é, para quem chama, um pedido sobre o qual o ML
+ * respondeu sem nada a cobrar.
  */
 export function lerPedidos(results: readonly unknown[]): Map<string, PedidoSaleFee> {
   const mapa = new Map<string, PedidoSaleFee>();
@@ -341,9 +358,15 @@ export function lerPedidos(results: readonly unknown[]): Map<string, PedidoSaleF
     const saleFeeCompleto =
       saleFee.gross !== null && saleFee.net !== null && saleFee.rebate !== null;
 
-    if (!temLinhaDeComissao && !saleFeeCompleto) {
-      // Nem linha de comissão nem sale_fee completo — não autoriza afirmar
-      // rebate nenhum. Fica de fora do mapa de propósito (ver cabeçalho).
+    // 🔴 240-01: `linhas.length === 0` é o terceiro membro, e ele é o que
+    // separa "o ML não cobrou nada" de "o ML cobrou, mas não foi comissão".
+    // Sem ele, a tarifa de envio de um anúncio sem comissão era descartada
+    // junto com o pedido — R$ 23,65 e R$ 25,55 provados ao vivo, batendo ao
+    // centavo com o retido no MP.
+    if (!temLinhaDeComissao && !saleFeeCompleto && linhas.length === 0) {
+      // O ML respondeu e não há NADA a persistir: nem comissão, nem sale_fee
+      // completo, nem uma linha de cobrança sequer. Fica de fora do mapa de
+      // propósito (ver cabeçalho).
       continue;
     }
 

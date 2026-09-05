@@ -59,6 +59,15 @@ function lerAmostraCvvfn(): AmostraCvvfn {
 const amostra = lerAmostra();
 const amostraCvvfn = lerAmostraCvvfn();
 
+/**
+ * 240-01 — o payload REAL dos pedidos que a tela dizia não ter cobrança.
+ * Capturado ao vivo em 04/09/2026; `sale_fee: null` e uma única linha `CFFE`.
+ */
+const CFFE_CAMINHO = "supabase/functions/_shared/__fixtures__/mlOrderSaleFee.cffeSemComissao.json";
+const amostraCffe = JSON.parse(
+  readFileSync(resolve(process.cwd(), CFFE_CAMINHO), "utf8"),
+) as { medido_em: string; procedencia: string; results: ResultadoPedidoSaleFee[] };
+
 /** Tolerância de centavo — mesmo helper de orderTaxRate.test.ts / mlOrderSaleFeeContrato.test.ts. */
 const closeCents = (received: number | null, expected: number) => {
   expect(received).not.toBeNull();
@@ -157,7 +166,20 @@ describe("lerPedidos — um registro por pedido, sale_fee da raiz, linhas à par
     expect(pedido.linhas.length).toBe(original.details.length);
   });
 
-  it("pedido sem sale_fee completo e sem linha de comissão (só frete) NÃO entra no mapa — não autoriza afirmar rebate (260821-hap, D-hap-04)", () => {
+  // 🔴 240-01 — ESTE TESTE MUDOU DE LADO, E A MUDANÇA É DELIBERADA.
+  //
+  // Ele cravava D-hap-04: pedido sem comissão e sem `sale_fee` completo ficava
+  // FORA do mapa. A regra estava certa quanto ao REBATE e errada quanto à
+  // COBRANÇA — jogava fora, junto com o pedido, a linha de frete que existia.
+  // Medido em 04/09/2026 contra a API ao vivo: 109 de 164 pedidos (66,5%) têm
+  // CFFE no ML que a nossa base não tem, e a tela dizia "o ML respondeu sem
+  // cobrança" sobre cobrança que o ML fez.
+  //
+  // O que NÃO mudou, e o teste continua exigindo logo abaixo: sem linha de
+  // comissão, `comissaoLinhas` é NULO e `saleFee` continua vindo só da raiz.
+  // A ausência de comissão parou de apagar a cobrança; ela não passou a
+  // autorizar rebate nenhum.
+  it("pedido com só frete ENTRA no mapa (240-01), mas sem afirmar comissão nem rebate", () => {
     const semComissao = {
       order_id: 9999999999999,
       // sale_fee INCOMPLETO de propósito (gross/rebate ausentes) — não é o
@@ -198,7 +220,14 @@ describe("lerPedidos — um registro por pedido, sale_fee da raiz, linhas à par
       ],
     };
     const mapa2 = lerPedidos([semComissao]);
-    expect(mapa2.has("9999999999999")).toBe(false);
+    expect(mapa2.has("9999999999999"), "a linha CFFE existe e não pode ser descartada").toBe(true);
+    const p = mapa2.get("9999999999999") as PedidoSaleFee;
+    expect(p.linhas.length).toBe(1);
+    expect(p.linhas[0].detail_sub_type).toBe("CFFE");
+    // 🔴 A metade de D-hap-04 que continua de pé, na mesma asserção:
+    expect(p.comissaoLinhas, "sem comissão, nunca zero inventado").toBeNull();
+    expect(p.saleFee.rebate, "`sale_fee` incompleto não vira rebate").toBeNull();
+    expect(p.saleFee.gross).toBeNull();
   });
 
   it("pedido sem sale_fee nenhum e sem linha de comissão NÃO entra no mapa (260821-hap, D-hap-04)", () => {
@@ -503,5 +532,80 @@ describe("detectarTruncamento — compara o que foi enviado com o que voltou, nu
   it("nunca repete id na lista de ausentes, mesmo com duplicata nos enviados", () => {
     const resultado = detectarTruncamento({ enviados: ["a", "a", "b"], presentes: new Set() });
     expect(resultado.ausentes).toEqual(["a", "b"]);
+  });
+});
+
+
+// ─── 240-01: a cobrança que existe deixa de ser jogada fora com o pedido ────
+
+describe("240-01 — pedido com SÓ tarifa de envio entra no mapa, sem afirmar rebate", () => {
+  const mapa = lerPedidos(amostraCffe.results);
+
+  it("🔴 os 3 pedidos reais entram — antes eram descartados inteiros", () => {
+    expect(mapa.size).toBe(3);
+    for (const r of amostraCffe.results) {
+      expect(mapa.has(String(r.order_id)), `pedido fora do mapa: ${r.order_id}`).toBe(true);
+    }
+  });
+
+  it("a linha de frete é preservada com o valor que o ML cobrou", () => {
+    const esperado: Record<string, number> = {
+      "2000017274421542": 19.94,
+      "2000017653416208": 23.65,
+      "2000017802260492": 25.55,
+    };
+    for (const [id, valor] of Object.entries(esperado)) {
+      const p = mapa.get(id);
+      expect(p, id).toBeDefined();
+      expect(p!.linhas.length, id).toBe(1);
+      expect(p!.linhas[0].detail_sub_type, id).toBe("CFFE");
+      closeCents(p!.linhas[0].detail_amount, valor);
+    }
+  });
+
+  it("🔴 sem linha de comissão, `comissaoLinhas` continua NULO — nunca zero", () => {
+    for (const p of mapa.values()) expect(p.comissaoLinhas).toBeNull();
+  });
+
+  it("🔴 e o rebate continua não afirmado: `sale_fee` da raiz era null", () => {
+    for (const p of mapa.values()) {
+      expect(p.saleFee.rebate).toBeNull();
+      expect(p.saleFee.gross).toBeNull();
+      expect(p.saleFee.net).toBeNull();
+    }
+  });
+
+  it("nenhum deles é lido como estorno", () => {
+    for (const p of mapa.values()) expect(p.temEstorno).toBe(false);
+  });
+
+  it("o descarte não morreu, mudou de alvo: pedido VAZIO continua fora", () => {
+    const vazio = lerPedidos([{ order_id: 999, sale_fee: null, details: [] }]);
+    expect(vazio.size).toBe(0);
+    const semDetails = lerPedidos([{ order_id: 998, sale_fee: null }]);
+    expect(semDetails.size).toBe(0);
+  });
+
+  it("e o pedido com comissão E frete continua exatamente como era", () => {
+    // Não-regressão: a amostra de 7 pedidos da 223 não pode mudar de tamanho.
+    expect(lerPedidos(amostra.results).size).toBe(7);
+  });
+
+  it("🔴 na classificação, esses pedidos saem `ok` — não `sem_linha`", () => {
+    const ids = amostraCffe.results.map((r) => String(r.order_id));
+    const decisoes = classificarCaptura({
+      pedidosDoLote: ids,
+      lidos: mapa,
+      presentesNaResposta: new Set(ids),
+      httpStatus: 200,
+      agora: new Date("2026-09-04T12:00:00Z"),
+      tentativasAtuais: {},
+    });
+    expect(decisoes.length).toBe(3);
+    for (const d of decisoes) {
+      expect(d.status, d.ml_order_id).toBe("ok");
+      expect(d.linhas, d.ml_order_id).toBe(1);
+      expect(d.comissaoLinhas, d.ml_order_id).toBeNull();
+    }
   });
 });
