@@ -794,6 +794,25 @@ async function runSync(
       console.warn("sync-mp-releases: disparo de sync-ml-frete-tabela falhou (nao bloqueia):", e?.message);
     }
 
+    // ── 244-02: a captura da tarifa PUBLICADA de comissao, pela mesma carona ─
+    // Mesma disciplina, mesmo motivo, e a mesma trava diaria dentro da EF.
+    // Ela e a SEGUNDA FONTE da comissao — o equivalente ao `list_cost` do
+    // frete. Sem ela a tela compara o Mercado Livre contra o extrato dele
+    // mesmo e nunca consegue dizer "cobrou a mais".
+    //
+    // ⚠️ Fica DEPOIS da do frete de proposito: as duas concorrem pelo mesmo
+    // teto de chamadas do ML, e o frete ja esta provado em producao. Se um dia
+    // o orcamento apertar, e esta que cede primeiro.
+    try {
+      await fetch(SUPABASE_URL + "/functions/v1/sync-ml-comissao-tabela", {
+        method:  "POST",
+        headers: { Authorization: "Bearer " + SERVICE_KEY, "Content-Type": "application/json" },
+        body:    "{}",
+      });
+    } catch (e: any) {
+      console.warn("sync-mp-releases: disparo de sync-ml-comissao-tabela falhou (nao bloqueia):", e?.message);
+    }
+
     return { ok: true, days_back: daysBack, days_ahead: daysAhead, begin_date: beginDate, end_date: endDate, ml_user_id: filtroMlUserId, orgs_varridas: results.length, results };
   } catch (err: unknown) {
     // Pitfall 4: capturar TODA exceção do background — sem try/catch o processo

@@ -220,11 +220,39 @@ const TIPOS_DE_CASO: Record<string, string> = {
   // é acionável: ausência de repasse VERIFICADA no Mercado Pago tem `recebido`
   // nulo porque o dinheiro não veio — ali o nulo é o achado, não a lacuna.
   repasse_em_aberto: "Repasse: apuração em aberto",
+
+  // ── 244-03: a quarta régua, e ela tem DOIS tipos porque tem DUAS fontes ──
+  //
+  // 🔴 O tipo diz CONTRA O QUE a linha foi comparada, e isso não é detalhe de
+  // redação: é a diferença entre "o Mercado Livre cobrou mais do que publicou"
+  // — afirmação sobre o ML, que exige fonte independente — e "as duas leituras
+  // do ML discordam entre si", que é achado e não acusação.
+  //
+  // `comissao_a_maior` só nasce onde o esperado veio da TABELA PUBLICADA
+  // (`ml_comissao_tabela`), e só onde ela já era vigente na data da venda.
+  comissao_a_maior: "Comissão acima da tarifa publicada",
+  // `comissao_divergente` nasce onde o esperado veio do PRÓPRIO PEDIDO
+  // (`sale_fee.net`, do recurso de pedido) contra o que a fatura cobrou. São
+  // dois endpoints do Mercado Livre, e um discordar do outro é fato — mas não
+  // diz para que lado o dinheiro andou, então o rótulo não fala em tarifa.
+  comissao_divergente: "Comissão: fatura × pedido",
+  comissao_em_aberto: "Comissão: comparação em aberto",
 };
 
-/** Todo tipo de caso cuja régua compara a FICHA do anúncio com a FATURA. */
-function ehTipoDeFrete(codigo: string | null | undefined): boolean {
-  return typeof codigo === "string" && codigo.startsWith("frete_");
+/**
+ * Todo tipo de caso cuja régua compara uma FICHA/TABELA com a FATURA — e não
+ * dinheiro que entrou na conta.
+ *
+ * ⚠️ 244-03: `comissao_` entrou aqui pelo mesmo motivo que `frete_`. Na régua
+ * de comissão não entra dinheiro nenhum: o valor do meio é o que o Mercado
+ * Livre COBROU. Deixá-la fora faria o card dizer "Recebido R$ 46,08" sobre uma
+ * cobrança, invertendo o sinal da leitura para quem confere a tela.
+ */
+function ehTipoDeCobranca(codigo: string | null | undefined): boolean {
+  return (
+    typeof codigo === "string" &&
+    (codigo.startsWith("frete_") || codigo.startsWith("comissao_"))
+  );
 }
 
 /**
@@ -237,11 +265,12 @@ function ehTipoDeFrete(codigo: string | null | undefined): boolean {
  *
  * ⚠️ O prefixo é de propósito: os planos 03 e 04 acrescentam tipos de frete, e
  * um mapa fechado os faria nascer com o rótulo do dinheiro em silêncio.
- * Desconhecido cai em "Recebido" porque o frete é o caso NOMEADO — quem não se
- * declara frete é tratado pela régua antiga, que é a do dinheiro.
+ * Desconhecido cai em "Recebido" porque frete e comissão são os casos
+ * NOMEADOS — quem não se declara é tratado pela régua antiga, que é a do
+ * dinheiro.
  */
 export function rotuloSlotRecebido(tipoCaso: string | null | undefined): string {
-  return ehTipoDeFrete(tipoCaso) ? "Cobrado pelo ML" : "Recebido";
+  return ehTipoDeCobranca(tipoCaso) ? "Cobrado pelo ML" : "Recebido";
 }
 
 export function rotuloTipoCaso(codigo: string | null | undefined): string {
@@ -402,6 +431,52 @@ const MOTIVOS: Record<string, string> = {
   // fechar. Ela sai do caixa e ganha nome — não desaparece.
   compra_do_titular:
     "Compra pessoal do titular da conta, paga pelo mesmo Mercado Pago da empresa — não é receita e não entra no caixa. A linha fica visível para não sumir do total",
+
+  // ── 244-03: a régua de comissão ───────────────────────────────────────────
+  //
+  // 🔴 A separação que manda aqui é a MESMA que separa `comissao_a_maior` de
+  // `comissao_divergente`: qual fonte produziu o esperado. Um texto que não
+  // dissesse isso deixaria o leitor achar que a tela confere a tarifa quando
+  // ela só está conferindo o ML contra o ML.
+
+  // (A) contra a tarifa PUBLICADA — a fonte independente
+  comissao_confere_com_o_publicado:
+    "A comissão cobrada bate com a tarifa publicada pelo Mercado Livre para este anúncio neste preço. A conta fecha",
+  // 🔴 O lado que NÃO acusa. Sem ele, "é sempre a mais" seria irrefutável pelo
+  // recorte — o mesmo defeito que a 239-02 nomeou no frete.
+  comissao_com_rebate_medido:
+    "A comissão cobrada ficou ABAIXO da tarifa publicada: é o rebate promocional, o Mercado Livre pagando parte do desconto. Não é caso — aparece porque medir direção exige os dois lados",
+  comissao_a_maior_confirmada:
+    "Comissão cobrada acima da tarifa publicada para este anúncio neste preço, com a tabela vigente na data da venda — este caso pode virar chamado",
+  regua_comissao_nao_liberada:
+    "Diferença de comissão medida contra a tarifa publicada, mas a régua ainda não está liberada. Fica visível para não sumir do total, e não vira caso",
+
+  // (B) contra o PRÓPRIO PEDIDO — dois endpoints do ML, não fonte independente
+  comissao_confere_com_o_pedido:
+    "A comissão da fatura bate com a tarifa que o próprio pedido declara. São duas leituras do Mercado Livre e elas concordam — não é conferência contra tabela publicada, que ainda não existia na data desta venda",
+  comissao_diverge_do_pedido:
+    "A fatura cobrou uma comissão diferente da que o próprio pedido declara. As duas leituras são do Mercado Livre e discordam entre si — é achado, não prova de retenção: não dá para dizer por esta conta para que lado o dinheiro andou",
+
+  // Lacunas, cada uma com o dono nomeado
+  comissao_estornada:
+    "A comissão deste pedido foi estornada pelo Mercado Livre — venda desfeita não tem tarifa a conferir. Comparar dinheiro que voltou inventaria rebate",
+  comissao_nao_emitida_pelo_ml:
+    "Perguntamos ao Mercado Livre e ele ainda não emitiu a cobrança de comissão deste pedido. É espera normal da fonte, dentro dos 18 dias medidos — não é lacuna nossa",
+  comissao_captura_pendente:
+    "Ainda não perguntamos ao Mercado Livre pela comissão deste pedido — ou perguntamos há tempo demais para a resposta ainda valer. A lacuna é NOSSA",
+  comissao_sem_captura_tentada:
+    "Nunca houve tentativa registrada de consultar a cobrança deste pedido. É lacuna nossa, e ela some quando a captura alcançar o pedido",
+  comissao_captura_com_erro:
+    "A consulta da cobrança deste pedido falhou e ainda não foi refeita. Medido em 05/09/2026: todas as falhas eram bloqueio por excesso de chamadas (HTTP 429), com retentativa já agendada — o remédio é espaçar a varredura, não corrigir cadastro",
+  comissao_sem_cobranca_registrada:
+    "Não há linha de comissão para este pedido e a venda já passou do prazo de emissão do Mercado Livre. Não presumimos zero",
+  // 🔴 D-244-05, e este texto é o contrato da fase escrito para o leitor.
+  comissao_sem_tarifa_publicada:
+    "Ainda não capturamos a tarifa publicada para este anúncio neste preço — sem ela não existe esperado independente. A lacuna é nossa e some quando a captura alcançar o par",
+  comissao_sem_esperado:
+    "Não há tarifa publicada capturada nem tarifa declarada pelo próprio pedido — sem nenhum dos dois não existe esperado, e comparar contra zero seria inventar",
+  comissao_varios_anuncios_no_pedido:
+    "O pedido tem mais de um anúncio, e a tarifa é POR anúncio — não há soma honesta, então não comparamos",
 };
 
 export interface OpcoesMotivo {

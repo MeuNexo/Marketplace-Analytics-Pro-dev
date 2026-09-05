@@ -30,12 +30,22 @@ export const FAMILIAS_QUE_AFIRMAM = [
   "repasse_a_menor",
   "repasse_ausente",
   "frete_a_maior",
+  // ── 244-03: as duas da régua de comissão ─────────────────────────────────
+  // As DUAS afirmam, e por isso as duas exigem as três linhas. O que muda
+  // entre elas não é o rigor da prova: é CONTRA O QUE a prova foi feita.
+  // `comissao_a_maior` afirma sobre a tarifa do Mercado Livre (fonte
+  // independente); `comissao_divergente` afirma que as duas leituras DELE
+  // discordam entre si. Nenhuma das duas pode aparecer sem esperado, cobrado e
+  // diferença fechados.
+  "comissao_a_maior",
+  "comissao_divergente",
 ] as const;
 
 /** Rótulos que NÃO afirmam desfecho — dizem qual pergunta está em aberto. */
 export const FAMILIAS_QUE_NAO_AFIRMAM = [
   "repasse_em_aberto",
   "frete_em_aberto",
+  "comissao_em_aberto",
   // 🔴 A exceção que motivou o arquivo. Ela é declarada, não derivada do nome.
   "entrada_sem_origem",
 ] as const;
