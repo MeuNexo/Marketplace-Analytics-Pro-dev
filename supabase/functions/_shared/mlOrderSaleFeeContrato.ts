@@ -197,6 +197,24 @@ export interface ResultadoPedidoSaleFee {
  * comissão em R$ 44,45 num pedido só. Provado por teste negativo em
  * `mlOrderSaleFeeContrato.test.ts` — não "completar a lista" com `CFFI` no
  * futuro sem medir de novo.
+ *
+ * ── 🔴 241-02: ESTE COMENTÁRIO ESTAVA CERTO E NÃO SALVOU NINGUÉM ───────────
+ *
+ * Ele identifica `CFFI` como frete desde 21/08/2026. Mesmo assim, a régua de
+ * frete — que vive numa FUNÇÃO SQL, não aqui — filtrava só `CFFE`, `CXDE` e
+ * `CXDED`, e por isso o card do pedido `2000017810721990` dizia "não há linha
+ * de cobrança de frete" sobre a linha `CFFI` de R$ 68,65 que estava na base.
+ *
+ * O sistema SABIA, num lugar, e NEGAVA, em outro. É a causa raiz da fase 241:
+ * conhecimento sobre categoria escrito em prosa de um arquivo não obriga a
+ * lista de outro. O dicionário agora é único
+ * (`subtiposDeCobranca.ts`) e um portão confere a concordância com o SQL.
+ *
+ * ⚠️ E uma afirmação acima ENVELHECEU: "o código genérico `CV`, sozinho, nunca
+ * aparece neste seller". Em 05/09/2026 ele aparece em 2 pedidos, e `CVML` em
+ * 3, `CVAF` em 29 — 34 pedidos, R$ 490,52 de comissão fora desta lista. NÃO
+ * corrigido de propósito: mexer aqui altera rebate e MCO, e é decisão do
+ * Wesley com a calibração na frente. Ver `241-ACHADO-COMISSAO-INCOMPLETA.md`.
  */
 export const SUBTIPOS_COMISSAO = ["CVVML", "CVVPRC", "CVVFNU", "CVVFN"] as const;
 
