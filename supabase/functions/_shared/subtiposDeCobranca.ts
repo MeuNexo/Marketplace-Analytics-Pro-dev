@@ -61,6 +61,32 @@ export interface SubtipoConhecido {
    * pergunta ficar uma semana esperando decisão.
    */
   compoeSaleFee: boolean;
+  /**
+   * 🔴 244-04: o Mercado Livre DESCONTA esta linha do que nos paga?
+   *
+   * Terceira pergunta, terceira coluna — e ela não se deduz das outras duas.
+   * `familia` diz o que a cobrança é; `compoeSaleFee` diz se ela está dentro da
+   * tarifa do pedido; esta diz se o dinheiro sai do nosso bolso.
+   *
+   * Medido em 05/09/2026 sobre 8.004 pedidos com repasse aprovado, conferindo
+   * `(gross − net)` do Mercado Pago contra a soma das linhas:
+   *
+   * | grupo | n | fecha com `CFONPN` dentro | fecha com ele FORA |
+   * |---|---:|---:|---:|
+   * | com parcelamento | 2.762 | **0** | **2.655** |
+   * | sem parcelamento | 5.242 | 4.853 | 4.853 |
+   *
+   * Zero de 2.762. E o próprio nome que o ML dá à linha explica: "Taxa de
+   * parcelamento (equivalente ao acréscimo no preço pago pelo comprador)".
+   * Conferido em 12 pedidos sorteados contra `total_paid_amount −
+   * transaction_amount` do recurso de pedido: 10 batem ao centavo.
+   *
+   * ⚠️ Isso NÃO quer dizer que a linha seja irrelevante — são R$ 108.802 que o
+   * comprador pagou a mais pelo nosso produto, e isso é informação de
+   * precificação. Quer dizer que ela não é COBRANÇA NOSSA, e somá-la ao que o
+   * ML nos cobrou inventa um vazamento que ninguém perdeu.
+   */
+  retidoDoRepasse: boolean;
 }
 
 /**
@@ -72,33 +98,33 @@ export interface SubtipoConhecido {
  */
 export const SUBTIPOS: Readonly<Record<string, SubtipoConhecido>> = {
   // ── Frete ────────────────────────────────────────────────────────────────
-  CFFE: { natureza: "CHARGE", familia: "frete", nomeDoML: "Tarifa de envio extra ou intermunicipal", compoeSaleFee: false },
-  CFFI: { natureza: "CHARGE", familia: "frete", nomeDoML: "Tarifa por envio interno ao município", compoeSaleFee: false },
-  CXDE: { natureza: "CHARGE", familia: "frete", nomeDoML: "Tarifa de envio extra ou intermunicipal", compoeSaleFee: false },
-  CXDED: { natureza: "CHARGE", familia: "frete", nomeDoML: "Tarifa de devolução por envio externo ou intermunicipal", compoeSaleFee: false },
-  BFFE: { natureza: "BONUS", familia: "frete", nomeDoML: "Cancelamento da tarifa de envio extra ou intermunicipal", compoeSaleFee: false },
-  BXDE: { natureza: "BONUS", familia: "frete", nomeDoML: "Cancelamento da tarifa de envio extra ou intermunicipal", compoeSaleFee: false },
-  BXDED: { natureza: "BONUS", familia: "frete", nomeDoML: "Cancelamento da tarifa de devolução por envio externo ou intermunicipal", compoeSaleFee: false },
+  CFFE: { natureza: "CHARGE", familia: "frete", nomeDoML: "Tarifa de envio extra ou intermunicipal", compoeSaleFee: false, retidoDoRepasse: true },
+  CFFI: { natureza: "CHARGE", familia: "frete", nomeDoML: "Tarifa por envio interno ao município", compoeSaleFee: false, retidoDoRepasse: true },
+  CXDE: { natureza: "CHARGE", familia: "frete", nomeDoML: "Tarifa de envio extra ou intermunicipal", compoeSaleFee: false, retidoDoRepasse: true },
+  CXDED: { natureza: "CHARGE", familia: "frete", nomeDoML: "Tarifa de devolução por envio externo ou intermunicipal", compoeSaleFee: false, retidoDoRepasse: true },
+  BFFE: { natureza: "BONUS", familia: "frete", nomeDoML: "Cancelamento da tarifa de envio extra ou intermunicipal", compoeSaleFee: false, retidoDoRepasse: true },
+  BXDE: { natureza: "BONUS", familia: "frete", nomeDoML: "Cancelamento da tarifa de envio extra ou intermunicipal", compoeSaleFee: false, retidoDoRepasse: true },
+  BXDED: { natureza: "BONUS", familia: "frete", nomeDoML: "Cancelamento da tarifa de devolução por envio externo ou intermunicipal", compoeSaleFee: false, retidoDoRepasse: true },
 
   // ── Comissão de venda ────────────────────────────────────────────────────
-  CVVML: { natureza: "CHARGE", familia: "comissao", nomeDoML: "Custo por vender no Mercado Livre", compoeSaleFee: true },
-  CVML: { natureza: "CHARGE", familia: "comissao", nomeDoML: "Custo por vender no Mercado Livre", compoeSaleFee: true },
-  CV: { natureza: "CHARGE", familia: "comissao", nomeDoML: "Tarifa de venda", compoeSaleFee: true },
-  CVAF: { natureza: "CHARGE", familia: "comissao", nomeDoML: "Cargo por venta con afiliados", compoeSaleFee: false },
-  BVVML: { natureza: "BONUS", familia: "comissao", nomeDoML: "Cancelamento do Custo por vender no Mercado Livre", compoeSaleFee: true },
+  CVVML: { natureza: "CHARGE", familia: "comissao", nomeDoML: "Custo por vender no Mercado Livre", compoeSaleFee: true, retidoDoRepasse: true },
+  CVML: { natureza: "CHARGE", familia: "comissao", nomeDoML: "Custo por vender no Mercado Livre", compoeSaleFee: true, retidoDoRepasse: true },
+  CV: { natureza: "CHARGE", familia: "comissao", nomeDoML: "Tarifa de venda", compoeSaleFee: true, retidoDoRepasse: true },
+  CVAF: { natureza: "CHARGE", familia: "comissao", nomeDoML: "Cargo por venta con afiliados", compoeSaleFee: false, retidoDoRepasse: true },
+  BVVML: { natureza: "BONUS", familia: "comissao", nomeDoML: "Cancelamento do Custo por vender no Mercado Livre", compoeSaleFee: true, retidoDoRepasse: true },
 
   // ── Pagamento (cobrar / receber) ─────────────────────────────────────────
-  CVVPRC: { natureza: "CHARGE", familia: "pagamento", nomeDoML: "Custo por cobrar no Mercado Pago", compoeSaleFee: true },
-  CVMP: { natureza: "CHARGE", familia: "pagamento", nomeDoML: "Custo por cobrar no Mercado Pago", compoeSaleFee: true },
-  CVVFNU: { natureza: "CHARGE", familia: "pagamento", nomeDoML: "Taxa de recebimento", compoeSaleFee: true },
-  BVVPRC: { natureza: "BONUS", familia: "pagamento", nomeDoML: "Cancelamento do Custo por cobrar no Mercado Pago", compoeSaleFee: true },
-  BVVFNU: { natureza: "BONUS", familia: "pagamento", nomeDoML: "Cancelamento da taxa de recebimento", compoeSaleFee: true },
+  CVVPRC: { natureza: "CHARGE", familia: "pagamento", nomeDoML: "Custo por cobrar no Mercado Pago", compoeSaleFee: true, retidoDoRepasse: true },
+  CVMP: { natureza: "CHARGE", familia: "pagamento", nomeDoML: "Custo por cobrar no Mercado Pago", compoeSaleFee: true, retidoDoRepasse: true },
+  CVVFNU: { natureza: "CHARGE", familia: "pagamento", nomeDoML: "Taxa de recebimento", compoeSaleFee: true, retidoDoRepasse: true },
+  BVVPRC: { natureza: "BONUS", familia: "pagamento", nomeDoML: "Cancelamento do Custo por cobrar no Mercado Pago", compoeSaleFee: true, retidoDoRepasse: true },
+  BVVFNU: { natureza: "BONUS", familia: "pagamento", nomeDoML: "Cancelamento da taxa de recebimento", compoeSaleFee: true, retidoDoRepasse: true },
 
   // ── Parcelamento ─────────────────────────────────────────────────────────
   // ⚠️ `CFONPN` começa com `CF` e NÃO é frete. A armadilha do prefixo.
-  CFONPN: { natureza: "CHARGE", familia: "parcelamento", nomeDoML: "Taxa de parcelamento (equivalente ao acréscimo no preço pago pelo comprador)", compoeSaleFee: false },
-  CVVFN: { natureza: "CHARGE", familia: "parcelamento", nomeDoML: "Taxa de parcelamento", compoeSaleFee: true },
-  BFONPN: { natureza: "BONUS", familia: "parcelamento", nomeDoML: "Cancelamento da Taxa de parcelamento (equivalente ao acréscimo no preço pago pelo comprador)", compoeSaleFee: false },
+  CFONPN: { natureza: "CHARGE", familia: "parcelamento", nomeDoML: "Taxa de parcelamento (equivalente ao acréscimo no preço pago pelo comprador)", compoeSaleFee: false, retidoDoRepasse: false },
+  CVVFN: { natureza: "CHARGE", familia: "parcelamento", nomeDoML: "Taxa de parcelamento", compoeSaleFee: true, retidoDoRepasse: true },
+  BFONPN: { natureza: "BONUS", familia: "parcelamento", nomeDoML: "Cancelamento da Taxa de parcelamento (equivalente ao acréscimo no preço pago pelo comprador)", compoeSaleFee: false, retidoDoRepasse: false },
 };
 
 /** A família da sigla, ou `"desconhecida"` — nunca um silêncio. */
@@ -161,5 +187,22 @@ export const SIGLAS_QUE_COMPOEM_SALE_FEE = Object.entries(SUBTIPOS)
 /** As parcelas de COBRANÇA do `sale_fee` — as que `somaComissaoDasLinhas` soma. */
 export const COMPOEM_SALE_FEE_CHARGE = Object.entries(SUBTIPOS)
   .filter(([, v]) => v.compoeSaleFee && v.natureza === "CHARGE")
+  .map(([k]) => k)
+  .sort();
+
+/**
+ * 🔴 244-04 — AS SIGLAS QUE O MERCADO LIVRE NÃO DESCONTA DO REPASSE.
+ *
+ * Duas, e as duas são parcelamento. A régua de repasse (`conciliacao_base_linhas`)
+ * compara `(gross − net)` do Mercado Pago contra a soma das linhas de cobrança;
+ * incluir estas duas fazia a conta não fechar em **0 de 2.762** pedidos
+ * parcelados e exibia na tela um vazamento de R$ 43.960,50 que ninguém perdeu.
+ *
+ * ⚠️ A lista existe como EXCEÇÃO NOMEADA, e não como filtro de família: um dia
+ * o ML pode emitir uma cobrança de parcelamento que ele de fato retenha, e aí a
+ * pergunta certa continua sendo "sai do nosso bolso?", não "é parcelamento?".
+ */
+export const NAO_RETIDOS_DO_REPASSE = Object.entries(SUBTIPOS)
+  .filter(([, v]) => !v.retidoDoRepasse)
   .map(([k]) => k)
   .sort();
