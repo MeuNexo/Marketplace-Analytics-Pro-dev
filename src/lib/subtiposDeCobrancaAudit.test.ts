@@ -22,6 +22,8 @@ import {
   siglasDa,
   FRETE_COBRANCA,
   FRETE_BONUS,
+  SIGLAS_QUE_COMPOEM_SALE_FEE,
+  COMPOEM_SALE_FEE_CHARGE,
 } from "../../supabase/functions/_shared/subtiposDeCobranca.ts";
 import { SUBTIPOS_COMISSAO } from "../../supabase/functions/_shared/mlOrderSaleFeeContrato.ts";
 
@@ -132,30 +134,54 @@ describe("241-02 — o dicionário é fonte única, e o desconhecido não passa 
     expect(FRETE_BONUS).toEqual(["BFFE", "BXDE", "BXDED"]);
   });
 
-  it("🔴 D-241-04: `SUBTIPOS_COMISSAO` fica INTOCADA nesta fase", () => {
-    // Mexer nela altera rebate e MCO — decisão do Wesley, com a calibração na
-    // frente. O teste crava o conteúdo para que ninguém a mude de raspão.
-    expect([...SUBTIPOS_COMISSAO]).toEqual(["CVVML", "CVVPRC", "CVVFNU", "CVVFN"]);
+  // ── 🔴 244-01: A LISTA É COMPOSIÇÃO, E O PORTÃO É POR MUTAÇÃO ────────────
+  //
+  // A 241 deixou a lista intocada e registrou a dúvida. A 244 mediu e decidiu
+  // com dinheiro. Os três testes abaixo são o que impede a decisão de ser
+  // desfeita por alguém "completando a lista" pelo nome das siglas.
+
+  it("🔴 D-244-01: `SUBTIPOS_COMISSAO` é DERIVADA do dicionário, nunca escrita à mão", () => {
+    expect([...SUBTIPOS_COMISSAO].sort()).toEqual(COMPOEM_SALE_FEE_CHARGE);
+    // O contador, não só o veredito.
+    expect(COMPOEM_SALE_FEE_CHARGE.length).toBe(7);
   });
 
-  it("e registra, sem corrigir, o que ela deixa de fora", () => {
-    // Medido: CVML (3 pedidos), CV (2), CVAF (29) — 34 pedidos, R$ 490,52.
-    // Ver `241-ACHADO-COMISSAO-INCOMPLETA.md`.
-    const comissaoNoDicionario = siglasDa("comissao", "CHARGE");
-    const foraDaLista = comissaoNoDicionario.filter(
-      (s) => !(SUBTIPOS_COMISSAO as readonly string[]).includes(s),
-    );
-    expect(foraDaLista.sort()).toEqual(["CV", "CVAF", "CVML"]);
+  it("🔴 D-244-01: as sete parcelas de cobrança do `sale_fee`, medidas em 8.136 pedidos", () => {
+    expect(COMPOEM_SALE_FEE_CHARGE).toEqual([
+      "CV", "CVML", "CVMP", "CVVFN", "CVVFNU", "CVVML", "CVVPRC",
+    ]);
   });
 
-  it("⚠️ e que três dos quatro nomes da lista não são comissão pelo dicionário do ML", () => {
-    // `CVVPRC` é pagamento, `CVVFNU` é recebimento, `CVVFN` é parcelamento.
-    // Pode estar certo (se `sale_fee.net` também os contém) ou errado — NÃO
-    // foi medido, e por isso nada mudou. O teste existe para que a pergunta
-    // não se perca.
-    const naoSaoComissao = (SUBTIPOS_COMISSAO as readonly string[]).filter(
-      (s) => familiaDe(s) !== "comissao",
-    );
-    expect(naoSaoComissao.sort()).toEqual(["CVVFN", "CVVFNU", "CVVPRC"]);
+  it("🔴 D-244-02: `CVAF` NÃO compõe o `sale_fee` — 29 de 29 fecham SEM ela", () => {
+    // Teste negativo, no molde do que a 241 escreveu para `CFFI`. Incluí-la
+    // inflaria a comissão em R$ 277,06 e quebraria 29 identidades que fecham.
+    expect(SUBTIPOS.CVAF.compoeSaleFee).toBe(false);
+    expect(SUBTIPOS_COMISSAO).not.toContain("CVAF");
+    // E ela continua sendo comissão de FAMÍLIA: o que muda é onde o dinheiro
+    // mora, não o que a cobrança é.
+    expect(familiaDe("CVAF")).toBe("comissao");
+  });
+
+  it("🔴 `CFONPN` não compõe e `CVVFN` compõe — por isso o campo é separado da família", () => {
+    // As duas são "taxa de parcelamento" para o ML. Só uma está dentro da
+    // tarifa do pedido. Provado em 21/08 no `2000014566978158`:
+    // 41,18 + CVVFN 27,08 = 68,26 = `sale_fee.net`.
+    expect(SUBTIPOS.CFONPN.compoeSaleFee).toBe(false);
+    expect(SUBTIPOS.CVVFN.compoeSaleFee).toBe(true);
+    expect(familiaDe("CFONPN")).toBe("parcelamento");
+    expect(familiaDe("CVVFN")).toBe("parcelamento");
+  });
+
+  it("nenhuma sigla de FRETE compõe o `sale_fee` — a régua do frete é outra conta", () => {
+    for (const s of [...FRETE_COBRANCA, ...FRETE_BONUS]) {
+      expect(SUBTIPOS[s].compoeSaleFee, s).toBe(false);
+    }
+  });
+
+  it("toda sigla declarada responde `compoeSaleFee` — nenhuma indefinida", () => {
+    for (const [sigla, v] of Object.entries(SUBTIPOS)) {
+      expect(typeof v.compoeSaleFee, sigla).toBe("boolean");
+    }
+    expect(SIGLAS_QUE_COMPOEM_SALE_FEE.length).toBe(10);
   });
 });

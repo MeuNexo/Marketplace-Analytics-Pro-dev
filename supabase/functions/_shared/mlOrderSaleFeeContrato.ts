@@ -2,10 +2,12 @@
  * mlOrderSaleFeeContrato.ts — o contrato medido de
  * `GET /billing/integration/group/ML/order/details` (Fase 223, 223-01).
  *
- * Módulo PURO: nenhum import remoto nem referência ao runtime do Deno, para
+ * Módulo PURO: nenhum import REMOTO nem referência ao runtime do Deno, para
  * ser importável tanto pelas edge functions Deno (import relativo, extensão
  * `.ts` explícita) quanto pelo vitest (node) e pelo frontend Vite. NÃO faz
  * nenhuma chamada de rede/IO — só tipos e o predicado `ehLinhaDeComissao`.
+ * O único import é relativo, para outro módulo puro: o dicionário de subtipos
+ * (244-01), que é a fonte única de qual sigla compõe o `sale_fee`.
  * A aritmética de negócio (rateio, upsert) é do 223-03.
  *
  * O DEFEITO QUE ESTE MÓDULO FECHA: os dois candidatos óbvios para o rebate
@@ -42,6 +44,8 @@
  * subestimada em todo pedido de quantidade > 1) que essa identidade
  * revelou — fora do escopo desta fase.
  */
+
+import { COMPOEM_SALE_FEE_CHARGE } from "./subtiposDeCobranca.ts";
 
 // ── sale_fee (raiz de cada item de results[]) — Q1, Q3, Q4 ────────────────
 
@@ -179,44 +183,54 @@ export interface ResultadoPedidoSaleFee {
 // ── Subtipos de comissão e o predicado que separa comissão de estorno ─────
 
 /**
- * Subtipos de `charge_info.detail_sub_type` que são comissão. Medidos nos
- * 371 pedidos de 21/08 (quick 260821-hap): `CVVFNU` em 95 linhas, `CVVFN` em
- * 5 — os DOIS existem, `CVVFN` NÃO é erro de digitação de `CVVFNU`. Prova ao
- * centavo, pedido `2000014566978158`: `CVVPRC` 9,09 + `CVVML` 32,09 = 41,18
- * contra `sale_fee.net` 68,26; com `CVVFN` 27,08 a conta fecha exata
- * (41,18 + 27,08 = 68,26). Fechar essa identidade corrigiu 5 das 7
- * divergências da identidade interna medidas nos 371 pedidos.
+ * As parcelas de COBRANÇA em que o Mercado Livre quebra o `sale_fee` do pedido.
  *
- * `CVVML` ("custo por vender no Mercado Livre") e `CVVPRC` ("custo por
- * cobrar no Mercado Pago") foram observados em 7/7 pedidos da amostra
- * original (223-01). O código genérico `CV`, sozinho, da doc oficial, nunca
- * aparece neste seller e devolveria zero linhas se usado como filtro.
+ * ── 🔴 244-01: ISTO NÃO É UMA TAXONOMIA, É UMA COMPOSIÇÃO ──────────────────
  *
- * ⚠️ `CFFI` (1 linha, R$ 44,45, nos 371 medidos) NÃO entra — é frete, irmã
- * de `CFFE` ("tarifa de envio extra ou intermunicipal"). Somá-la inflaria a
- * comissão em R$ 44,45 num pedido só. Provado por teste negativo em
- * `mlOrderSaleFeeContrato.test.ts` — não "completar a lista" com `CFFI` no
- * futuro sem medir de novo.
+ * A lista NÃO responde "quais siglas se chamam comissão". Responde "quais
+ * parcelas somadas reproduzem o `sale_fee.net` da raiz do pedido". A diferença
+ * não é acadêmica: foi lendo o NOME de cada sigla, e não o dinheiro, que o
+ * `241-ACHADO-COMISSAO-INCOMPLETA.md` concluiu que três das quatro "não são
+ * comissão" e travou a fase 244 esperando decisão.
  *
- * ── 🔴 241-02: ESTE COMENTÁRIO ESTAVA CERTO E NÃO SALVOU NINGUÉM ───────────
+ * Prova ao centavo, pedido `2000017848004682` (05/09/2026):
  *
- * Ele identifica `CFFI` como frete desde 21/08/2026. Mesmo assim, a régua de
- * frete — que vive numa FUNÇÃO SQL, não aqui — filtrava só `CFFE`, `CXDE` e
- * `CXDED`, e por isso o card do pedido `2000017810721990` dizia "não há linha
- * de cobrança de frete" sobre a linha `CFFI` de R$ 68,65 que estava na base.
+ *   `CVVML` 45,76  "custo por vender no Mercado Livre"
+ * + `CVVPRC` 0,32  "custo por cobrar no Mercado Pago"
+ * = 46,08 = `sale_fee.net` = 12,0% publicado em `/sites/MLB/listing_prices`
  *
- * O sistema SABIA, num lugar, e NEGAVA, em outro. É a causa raiz da fase 241:
- * conhecimento sobre categoria escrito em prosa de um arquivo não obriga a
- * lista de outro. O dicionário agora é único
- * (`subtiposDeCobranca.ts`) e um portão confere a concordância com o SQL.
+ * As três leituras batem. `CVVPRC` não é outra família de cobrança: é o resto
+ * dos mesmos 12%.
  *
- * ⚠️ E uma afirmação acima ENVELHECEU: "o código genérico `CV`, sozinho, nunca
- * aparece neste seller". Em 05/09/2026 ele aparece em 2 pedidos, e `CVML` em
- * 3, `CVAF` em 29 — 34 pedidos, R$ 490,52 de comissão fora desta lista. NÃO
- * corrigido de propósito: mexer aqui altera rebate e MCO, e é decisão do
- * Wesley com a calibração na frente. Ver `241-ACHADO-COMISSAO-INCOMPLETA.md`.
+ * ── O QUE MUDOU, E CONTRA QUE MEDIÇÃO ──────────────────────────────────────
+ *
+ * Entraram `CVML`, `CVMP` e `CV`. Medido sobre 8.136 pedidos com captura:
+ *
+ *   · `CV` sozinho: 2 pedidos, 2/2 fecham SOMANDO, 0 fecham sem.
+ *   · `CVML` + `CVMP` (aparecem sempre em par, a geração antiga do par
+ *     CVVML/CVVPRC): 3 pedidos, 3/3 fecham ao centavo — 45,65 + 8,95 = 54,60,
+ *     26,76 + 5,25 = 32,01, 34,24 + 6,71 = 40,95.
+ *
+ * ⚠️ `CVAF` FICOU DE FORA, e isso é teste negativo, não esquecimento: 29 de 29
+ * pedidos com `CVAF` fecham SEM ela e nenhum fecha COM. É cobrança do programa
+ * de afiliados, adicional ao `sale_fee`. A lista de agosto já a excluía — por
+ * acaso, porque ninguém tinha visto a sigla ainda.
+ *
+ * ── POR QUE FOI SEGURO MEXER ───────────────────────────────────────────────
+ *
+ * O achado da 241 supôs que mexer aqui alteraria rebate e MCO. **Medido: não
+ * altera.** `SUBTIPOS_COMISSAO` alimenta só `somaComissaoDasLinhas` →
+ * `ml_order_sale_fee_captura.comissao_linhas`, que é CONFERÊNCIA. Nenhuma RPC
+ * do banco a lê (varredura em `pg_get_functiondef` de todas as funções, 0
+ * ocorrências) e nenhuma CHECK a menciona. O rebate que entra na margem vem de
+ * `sale_fee_rebate` — a RAIZ do `sale_fee` —, lido por
+ * `get_margin_with_ads_by_product` e `orders_price_timeseries`.
+ *
+ * 🔴 A lista é DERIVADA de `subtiposDeCobranca.ts`, nunca reescrita à mão.
+ * Foi literal repetido em arquivos que não se falam que deixou `CFFI` fora da
+ * régua de frete por semanas (fase 241).
  */
-export const SUBTIPOS_COMISSAO = ["CVVML", "CVVPRC", "CVVFNU", "CVVFN"] as const;
+export const SUBTIPOS_COMISSAO = COMPOEM_SALE_FEE_CHARGE as readonly string[];
 
 /**
  * Verdadeiro só para uma linha de COBRANÇA (`charge_info.detail_type ===

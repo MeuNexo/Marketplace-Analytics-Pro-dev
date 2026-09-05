@@ -45,6 +45,22 @@ export interface SubtipoConhecido {
   familia: Exclude<FamiliaDeCobranca, "desconhecida">;
   /** O texto do ML, verbatim. É a procedência — não reescrever. */
   nomeDoML: string;
+  /**
+   * 🔴 244-01: a sigla é uma PARCELA do `sale_fee` do pedido?
+   *
+   * Não é opinião sobre o nome: é o que a soma prova. Uma sigla tem
+   * `compoeSaleFee: true` se e só se incluí-la faz `sum(detail_amount)` das
+   * linhas `CHARGE` bater com `sale_fee.net` da raiz do pedido.
+   *
+   * Prova ao centavo, pedido `2000017848004682` (05/09/2026):
+   *   `CVVML` 45,76 + `CVVPRC` 0,32 = 46,08 = `sale_fee_net` = 12% publicado.
+   *
+   * ⚠️ Por isso `CVVPRC` compõe mesmo se chamando "custo por cobrar no Mercado
+   * Pago": o Mercado Livre QUEBRA a mesma tarifa em parcelas com nomes
+   * diferentes. Ler o nome e concluir a família foi o erro que fez esta
+   * pergunta ficar uma semana esperando decisão.
+   */
+  compoeSaleFee: boolean;
 }
 
 /**
@@ -56,33 +72,33 @@ export interface SubtipoConhecido {
  */
 export const SUBTIPOS: Readonly<Record<string, SubtipoConhecido>> = {
   // ── Frete ────────────────────────────────────────────────────────────────
-  CFFE: { natureza: "CHARGE", familia: "frete", nomeDoML: "Tarifa de envio extra ou intermunicipal" },
-  CFFI: { natureza: "CHARGE", familia: "frete", nomeDoML: "Tarifa por envio interno ao município" },
-  CXDE: { natureza: "CHARGE", familia: "frete", nomeDoML: "Tarifa de envio extra ou intermunicipal" },
-  CXDED: { natureza: "CHARGE", familia: "frete", nomeDoML: "Tarifa de devolução por envio externo ou intermunicipal" },
-  BFFE: { natureza: "BONUS", familia: "frete", nomeDoML: "Cancelamento da tarifa de envio extra ou intermunicipal" },
-  BXDE: { natureza: "BONUS", familia: "frete", nomeDoML: "Cancelamento da tarifa de envio extra ou intermunicipal" },
-  BXDED: { natureza: "BONUS", familia: "frete", nomeDoML: "Cancelamento da tarifa de devolução por envio externo ou intermunicipal" },
+  CFFE: { natureza: "CHARGE", familia: "frete", nomeDoML: "Tarifa de envio extra ou intermunicipal", compoeSaleFee: false },
+  CFFI: { natureza: "CHARGE", familia: "frete", nomeDoML: "Tarifa por envio interno ao município", compoeSaleFee: false },
+  CXDE: { natureza: "CHARGE", familia: "frete", nomeDoML: "Tarifa de envio extra ou intermunicipal", compoeSaleFee: false },
+  CXDED: { natureza: "CHARGE", familia: "frete", nomeDoML: "Tarifa de devolução por envio externo ou intermunicipal", compoeSaleFee: false },
+  BFFE: { natureza: "BONUS", familia: "frete", nomeDoML: "Cancelamento da tarifa de envio extra ou intermunicipal", compoeSaleFee: false },
+  BXDE: { natureza: "BONUS", familia: "frete", nomeDoML: "Cancelamento da tarifa de envio extra ou intermunicipal", compoeSaleFee: false },
+  BXDED: { natureza: "BONUS", familia: "frete", nomeDoML: "Cancelamento da tarifa de devolução por envio externo ou intermunicipal", compoeSaleFee: false },
 
   // ── Comissão de venda ────────────────────────────────────────────────────
-  CVVML: { natureza: "CHARGE", familia: "comissao", nomeDoML: "Custo por vender no Mercado Livre" },
-  CVML: { natureza: "CHARGE", familia: "comissao", nomeDoML: "Custo por vender no Mercado Livre" },
-  CV: { natureza: "CHARGE", familia: "comissao", nomeDoML: "Tarifa de venda" },
-  CVAF: { natureza: "CHARGE", familia: "comissao", nomeDoML: "Cargo por venta con afiliados" },
-  BVVML: { natureza: "BONUS", familia: "comissao", nomeDoML: "Cancelamento do Custo por vender no Mercado Livre" },
+  CVVML: { natureza: "CHARGE", familia: "comissao", nomeDoML: "Custo por vender no Mercado Livre", compoeSaleFee: true },
+  CVML: { natureza: "CHARGE", familia: "comissao", nomeDoML: "Custo por vender no Mercado Livre", compoeSaleFee: true },
+  CV: { natureza: "CHARGE", familia: "comissao", nomeDoML: "Tarifa de venda", compoeSaleFee: true },
+  CVAF: { natureza: "CHARGE", familia: "comissao", nomeDoML: "Cargo por venta con afiliados", compoeSaleFee: false },
+  BVVML: { natureza: "BONUS", familia: "comissao", nomeDoML: "Cancelamento do Custo por vender no Mercado Livre", compoeSaleFee: true },
 
   // ── Pagamento (cobrar / receber) ─────────────────────────────────────────
-  CVVPRC: { natureza: "CHARGE", familia: "pagamento", nomeDoML: "Custo por cobrar no Mercado Pago" },
-  CVMP: { natureza: "CHARGE", familia: "pagamento", nomeDoML: "Custo por cobrar no Mercado Pago" },
-  CVVFNU: { natureza: "CHARGE", familia: "pagamento", nomeDoML: "Taxa de recebimento" },
-  BVVPRC: { natureza: "BONUS", familia: "pagamento", nomeDoML: "Cancelamento do Custo por cobrar no Mercado Pago" },
-  BVVFNU: { natureza: "BONUS", familia: "pagamento", nomeDoML: "Cancelamento da taxa de recebimento" },
+  CVVPRC: { natureza: "CHARGE", familia: "pagamento", nomeDoML: "Custo por cobrar no Mercado Pago", compoeSaleFee: true },
+  CVMP: { natureza: "CHARGE", familia: "pagamento", nomeDoML: "Custo por cobrar no Mercado Pago", compoeSaleFee: true },
+  CVVFNU: { natureza: "CHARGE", familia: "pagamento", nomeDoML: "Taxa de recebimento", compoeSaleFee: true },
+  BVVPRC: { natureza: "BONUS", familia: "pagamento", nomeDoML: "Cancelamento do Custo por cobrar no Mercado Pago", compoeSaleFee: true },
+  BVVFNU: { natureza: "BONUS", familia: "pagamento", nomeDoML: "Cancelamento da taxa de recebimento", compoeSaleFee: true },
 
   // ── Parcelamento ─────────────────────────────────────────────────────────
   // ⚠️ `CFONPN` começa com `CF` e NÃO é frete. A armadilha do prefixo.
-  CFONPN: { natureza: "CHARGE", familia: "parcelamento", nomeDoML: "Taxa de parcelamento (equivalente ao acréscimo no preço pago pelo comprador)" },
-  CVVFN: { natureza: "CHARGE", familia: "parcelamento", nomeDoML: "Taxa de parcelamento" },
-  BFONPN: { natureza: "BONUS", familia: "parcelamento", nomeDoML: "Cancelamento da Taxa de parcelamento (equivalente ao acréscimo no preço pago pelo comprador)" },
+  CFONPN: { natureza: "CHARGE", familia: "parcelamento", nomeDoML: "Taxa de parcelamento (equivalente ao acréscimo no preço pago pelo comprador)", compoeSaleFee: false },
+  CVVFN: { natureza: "CHARGE", familia: "parcelamento", nomeDoML: "Taxa de parcelamento", compoeSaleFee: true },
+  BFONPN: { natureza: "BONUS", familia: "parcelamento", nomeDoML: "Cancelamento da Taxa de parcelamento (equivalente ao acréscimo no preço pago pelo comprador)", compoeSaleFee: false },
 };
 
 /** A família da sigla, ou `"desconhecida"` — nunca um silêncio. */
@@ -109,3 +125,41 @@ export function siglasDa(
 export const FRETE_COBRANCA = siglasDa("frete", "CHARGE");
 /** Os três cancelamentos de frete — o netting, que só tinha `BFFE`. */
 export const FRETE_BONUS = siglasDa("frete", "BONUS");
+
+/**
+ * 🔴 244-01 — AS PARCELAS DO `sale_fee`, e só elas.
+ *
+ * `SUBTIPOS_COMISSAO` (em `mlOrderSaleFeeContrato.ts`) deriva DESTA lista. Ela
+ * responde uma pergunta de DINHEIRO — "somar esta sigla faz a conta fechar
+ * contra `sale_fee.net`?" — e não uma de nome.
+ *
+ * Medido em 05/09/2026 sobre os 8.136 pedidos com captura, contando só linhas
+ * `CHARGE` (é assim que `somaComissaoDasLinhas` soma):
+ *
+ * | lista | identidades que fecham | erro acumulado |
+ * |---|---:|---:|
+ * | a de agosto (CVVML, CVVPRC, CVVFNU, CVVFN) | 8.103 | R$ 371,96 |
+ * | **esta** (+ CVML, CVMP, CV)                | **8.108** | **R$ 137,59** |
+ * | esta + `CVAF`                              | 8.079 | — |
+ *
+ * ⚠️ `CVAF` ("cargo por venta con afiliados") NÃO entra: 29 de 29 pedidos com
+ * ela fecham SEM ela e nenhum fecha COM. É cobrança adicional do programa de
+ * afiliados, fora do `sale_fee`. Somá-la inflaria a comissão em R$ 277,06 e
+ * quebraria 29 identidades que hoje fecham.
+ *
+ * ⚠️ `CFONPN` (parcelamento, R$ 108.912) também não entra — e `CVVFN`, que o
+ * ML também chama de "taxa de parcelamento", ENTRA. É por isso que este campo
+ * existe separado de `familia`: a família diz o que a cobrança é, e
+ * `compoeSaleFee` diz se ela está DENTRO da tarifa do pedido. Provado em
+ * 21/08 no pedido `2000014566978158`: 41,18 + `CVVFN` 27,08 = 68,26 = `net`.
+ */
+export const SIGLAS_QUE_COMPOEM_SALE_FEE = Object.entries(SUBTIPOS)
+  .filter(([, v]) => v.compoeSaleFee)
+  .map(([k]) => k)
+  .sort();
+
+/** As parcelas de COBRANÇA do `sale_fee` — as que `somaComissaoDasLinhas` soma. */
+export const COMPOEM_SALE_FEE_CHARGE = Object.entries(SUBTIPOS)
+  .filter(([, v]) => v.compoeSaleFee && v.natureza === "CHARGE")
+  .map(([k]) => k)
+  .sort();

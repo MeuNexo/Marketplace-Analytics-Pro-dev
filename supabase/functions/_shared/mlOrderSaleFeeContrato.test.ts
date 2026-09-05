@@ -273,8 +273,33 @@ describe("ehLinhaDeComissao — separa comissão de estorno por cancelamento (Q2
 });
 
 describe("SUBTIPOS_COMISSAO", () => {
-  it("contém exatamente CVVML, CVVPRC, CVVFNU e CVVFN (260821-hap, D-hap-05)", () => {
-    expect(SUBTIPOS_COMISSAO).toEqual(["CVVML", "CVVPRC", "CVVFNU", "CVVFN"]);
+  it("🔴 244-01: as SETE parcelas de cobrança do `sale_fee`, em ordem determinística", () => {
+    // Deriva de `subtiposDeCobranca.ts` — não é literal repetido. As três que
+    // entraram (`CV`, `CVML`, `CVMP`) fecham a identidade em 5 pedidos que
+    // antes ficavam sem nenhuma linha de comissão.
+    expect([...SUBTIPOS_COMISSAO]).toEqual([
+      "CV", "CVML", "CVMP", "CVVFN", "CVVFNU", "CVVML", "CVVPRC",
+    ]);
+  });
+
+  it("🔴 244-02: `CVAF` fica FORA — 29 de 29 pedidos com ela fecham SEM ela", () => {
+    expect(
+      ehLinhaDeComissao({
+        charge_info: { detail_type: "CHARGE", detail_sub_type: "CVAF", detail_amount: 9.55 },
+      }),
+    ).toBe(false);
+  });
+
+  it("🔴 244-01: `CVML` e `CVMP` são a geração antiga do par CVVML/CVVPRC, e somam", () => {
+    // Pedido 2000015885738264: 45,65 + 8,95 = 54,60 = `sale_fee.net`.
+    for (const [sub, valor] of [["CVML", 45.65], ["CVMP", 8.95], ["CV", 54.0]] as const) {
+      expect(
+        ehLinhaDeComissao({
+          charge_info: { detail_type: "CHARGE", detail_sub_type: sub, detail_amount: valor },
+        }),
+        sub,
+      ).toBe(true);
+    }
   });
 
   it("CVVFN não é erro de digitação de CVVFNU — ehLinhaDeComissao aceita os dois convivendo (260821-hap)", () => {
