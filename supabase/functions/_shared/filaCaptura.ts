@@ -40,6 +40,8 @@
 /** O estado da captura que a régua lê. */
 export interface CapturaConhecida {
   status: string;
+  /** ISO da última tentativa — a trava diária de `freteAindaAusente`. */
+  ultima_tentativa?: string | null;
   /** ISO, ou `null` quando ainda não houve captura bem-sucedida. */
   capturado_em: string | null;
   /** ISO, ou `null` quando não há por que reconsultar (capturado, ou desistiu). */
@@ -51,6 +53,13 @@ export interface PedidoDaFila {
   ml_order_id: string;
   /** `orders.data_pedido` — TEXT com carimbo de hora nesta base. */
   data_pedido: string | null;
+  /**
+   * 🔴 242-01: já existe linha de cobrança de FRETE gravada para este pedido?
+   *
+   * É o fato que faltava para a fila decidir. Sem ele, a régua só tinha o
+   * relógio — e o relógio disse "espere 21 dias" sobre dado que o ML já tinha.
+   */
+  temFrete?: boolean;
 }
 
 /**
@@ -190,12 +199,66 @@ export function okPrematuro(c: CapturaConhecida, p: PedidoDaFila, agoraMs: numbe
   return cap < fim.getTime();
 }
 
+/**
+ * Falta a linha de frete e a janela ainda está aberta — logo o Mercado Livre
+ * pode já ter emitido, e a única forma de saber é PERGUNTAR.
+ *
+ * 🔴 ESTA FUNÇÃO DERRUBA D-240-08, e a premissa dela. A fase 240 decidiu não
+ * reabrir durante a janela viva porque "reconsultar releria o mesmo número".
+ * Medido em 05/09/2026, amostra de 40 pedidos dentro da janela consultados na
+ * API ao vivo: **39 JÁ TINHAM o frete no ML e a nossa base não** — R$ 1.577,43
+ * só na amostra. O dado muda, e muda cedo.
+ *
+ * O achado é do Wesley, com o app do ML ao lado da tela, no pedido
+ * `2000017989526906`: extrato mostra "Envios −R$ 30,75" e o card dizia "não há
+ * linha de cobrança de frete para este pedido".
+ *
+ * ⚠️ POR QUE ISTO NÃO GIRA, apesar de olhar o conteúdo: a saída é TER o frete.
+ * Assim que a linha chega, o pedido para de voltar. Quem nunca terá frete sai
+ * pelo fim da janela — no máximo 21 reconsultas, **uma por dia**, nunca
+ * infinitas. Foi por não separar esses dois casos que a 240 escolheu o relógio
+ * sozinho, e escolheu errado.
+ *
+ * A trava diária é `ultima_tentativa`, não um contador novo: sem ela, oito
+ * invocações no mesmo dia consumiriam oito vagas do mesmo pedido.
+ */
+export function freteAindaAusente(
+  c: CapturaConhecida,
+  p: PedidoDaFila,
+  agoraMs: number,
+): boolean {
+  if (!ehCapturaFechada(c.status)) return false;
+  // O fato não veio: não inventa. Sem saber se falta frete, esta régua se cala
+  // e o pedido segue para as outras.
+  if (p.temFrete !== false) return false;
+  const fim = fimDaJanelaCffe(p.data_pedido);
+  if (fim === null) return false;
+  // Fora da janela é assunto de `okPrematuro`, não desta.
+  if (agoraMs >= fim.getTime()) return false;
+  return !tentadoNoMesmoDia(c.ultima_tentativa ?? c.capturado_em, agoraMs);
+}
+
+/** O dia (UTC) de um instante ISO, ou `null` quando não dá para ler. */
+function diaDe(iso: string | null | undefined): string | null {
+  if (typeof iso !== "string" || iso.trim() === "") return null;
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? new Date(t).toISOString().slice(0, 10) : null;
+}
+
+/** Já foi tentado hoje? Ausência de carimbo conta como NÃO tentado. */
+function tentadoNoMesmoDia(iso: string | null | undefined, agoraMs: number): boolean {
+  const d = diaDe(iso);
+  if (d === null) return false;
+  return d === new Date(agoraMs).toISOString().slice(0, 10);
+}
+
 /** Por que este pedido entrou na fila. `null` quando não entrou. */
 export type MotivoNaFila =
   | "nunca_capturado"
   | "retentativa_vencida"
   | "cffe_pode_ter_chegado"
-  | "captura_truncada";
+  | "captura_truncada"
+  | "frete_ainda_ausente";
 
 /**
  * A decisão de fila para UM pedido. A ordem dos ramos é conteúdo, não estilo:
@@ -211,10 +274,13 @@ export function motivoNaFila(
   if (!c) return "nunca_capturado";
 
   if (ehCapturaFechada(c.status)) {
-    // A ordem nomeia a causa DOMINANTE quando as duas valem: um pedido de
-    // agosto capturado em 20/08 é as duas coisas, e o truncamento é o defeito
-    // maior (1.233 pedidos contra 19).
+    // A ordem nomeia a causa DOMINANTE quando mais de uma vale. O truncamento
+    // vem primeiro por ser o defeito maior (1.233 pedidos contra 19).
     if (capturaTruncadaAntesDaCorrecao(c)) return "captura_truncada";
+    // 🔴 242-01: falta frete E ainda dá tempo de ele chegar. Vem ANTES da
+    // régua do relógio porque é mais específica: ela sabe O QUE falta, não só
+    // QUANDO a captura aconteceu.
+    if (freteAindaAusente(c, p, agoraMs)) return "frete_ainda_ausente";
     return okPrematuro(c, p, agoraMs) ? "cffe_pode_ter_chegado" : null;
   }
 
@@ -248,6 +314,7 @@ export function montarFila(
     retentativa_vencida: 0,
     cffe_pode_ter_chegado: 0,
     captura_truncada: 0,
+    frete_ainda_ausente: 0,
   };
   const vistos = new Set<string>();
   for (const p of pedidos) {

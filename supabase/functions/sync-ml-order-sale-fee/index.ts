@@ -12,6 +12,7 @@ import {
   inicioInclusivoDataPedido,
   fimExclusivoDataPedido,
 } from "../_shared/janelaDataPedido.ts";
+import { FRETE_COBRANCA } from "../_shared/subtiposDeCobranca.ts";
 import {
   montarFila,
   carimboDeCaptura,
@@ -456,6 +457,40 @@ async function lerCapturaExistente(
   return mapa;
 }
 
+/**
+ * Quais pedidos JA tem linha de cobranca de frete gravada.
+ *
+ * A lista de subtipos vem de `subtiposDeCobranca.ts` (241-02), que e a fonte
+ * unica: foi por haver listas diferentes em lugares que nao se falam que
+ * `CFFI` ficou de fora da regua de frete por sete meses.
+ */
+// deno-lint-ignore no-explicit-any
+async function lerPedidosComFrete(
+  // deno-lint-ignore no-explicit-any
+  supabaseAdmin: any,
+  organizationId: string,
+  mlUserId: string,
+): Promise<Set<string>> {
+  const vistos = new Set<string>();
+  const PASSO = 1000;
+  for (let offset = 0; ; offset += PASSO) {
+    const { data, error } = await supabaseAdmin
+      .from("ml_order_sale_fee")
+      .select("ml_order_id")
+      .eq("organization_id", organizationId)
+      .eq("ml_user_id", mlUserId)
+      .in("detail_sub_type", FRETE_COBRANCA)
+      .order("ml_order_id", { ascending: true })
+      .range(offset, offset + PASSO - 1);
+    if (error) throw new Error(`select ml_order_sale_fee (frete): ${error.message}`);
+    const lote = data ?? [];
+    // deno-lint-ignore no-explicit-any
+    for (const r of lote as any[]) vistos.add(String(r.ml_order_id));
+    if (lote.length < PASSO) break;
+  }
+  return vistos;
+}
+
 // ── A janela de datas por modo ───────────────────────────────────────────────
 
 /** `dias` dias antes de `agora`, em UTC puro, formato AAAA-MM-DD. */
@@ -575,6 +610,8 @@ interface ResultadoConta {
   fila_reaberto_por_cffe: number;
   /** 🔴 240-03: capturados em 20/08, antes de a protecao contra truncamento existir. */
   fila_captura_truncada: number;
+  /** 🔴 242-01: falta a linha de frete e a janela ainda esta aberta. */
+  fila_frete_ainda_ausente: number;
   /** A janela usada, escrita para que a rodada declare a regua que aplicou. */
   janela_cffe_dias: number;
   /** D-hap-07: nunca termina calada. */
@@ -614,6 +651,7 @@ async function executarParaConta(
       fila_retentativa_vencida: 0,
       fila_reaberto_por_cffe: 0,
       fila_captura_truncada: 0,
+      fila_frete_ainda_ausente: 0,
       janela_cffe_dias: JANELA_CFFE_DIAS,
       linhas_gravadas: 0,
       capturados: 0,
@@ -671,6 +709,12 @@ async function executarParaConta(
 
   const idsNaJanela = await listarPedidosNaJanela(supabaseAdmin, organizationId, mlUserId, inicio, fim);
   const capturaMap = await lerCapturaExistente(supabaseAdmin, organizationId, mlUserId);
+  // 🔴 242-01: O FATO QUE FALTAVA PARA A FILA DECIDIR. Sem ele a regua so tinha
+  // o relogio, e o relogio mandou esperar 21 dias por dado que o ML ja tinha:
+  // amostra de 40 pedidos "dentro da janela", 39 JA TINHAM o frete la.
+  // A familia de subtipos vem do dicionario da 241 — nunca literal novo aqui.
+  const comFrete = await lerPedidosComFrete(supabaseAdmin, organizationId, mlUserId);
+  for (const p of idsNaJanela) p.temFrete = comFrete.has(p.ml_order_id);
 
   // 🔴 240-02: a decisao de quem entra na fila saiu daqui e virou modulo PURO
   // (`filaCaptura.ts`), porque `index.ts` importa modulos remotos que o vitest
@@ -869,6 +913,7 @@ async function executarParaConta(
     fila_retentativa_vencida: motivosDaFila.retentativa_vencida,
     fila_reaberto_por_cffe: motivosDaFila.cffe_pode_ter_chegado,
     fila_captura_truncada: motivosDaFila.captura_truncada,
+    fila_frete_ainda_ausente: motivosDaFila.frete_ainda_ausente,
     janela_cffe_dias: JANELA_CFFE_DIAS,
     truncamentos_detectados: truncamentosDetectados,
     ausentes_nao_resolvidos: ausentesNaoResolvidosTotal,

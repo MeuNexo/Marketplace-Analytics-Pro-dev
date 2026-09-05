@@ -9,6 +9,7 @@ import {
   capturaTruncadaAntesDaCorrecao,
   CORTE_TRUNCAMENTO_CORRIGIDO_MS,
   carimboDeCaptura,
+  freteAindaAusente,
   type CapturaConhecida,
 } from "./filaCaptura.ts";
 
@@ -120,6 +121,7 @@ describe("240-02 — a fila inteira, e o caminho de hoje intocado", () => {
       retentativa_vencida: 1,
       cffe_pode_ter_chegado: 1,
       captura_truncada: 0,
+      frete_ainda_ausente: 0,
     });
   });
 
@@ -285,5 +287,72 @@ describe("🔴 240-04 — o carimbo é a ÚNICA saída da fila, e quem fecha tem
       capturado_em: carimboDeCaptura("so_cobranca", new Date(AGORA).toISOString()),
     };
     expect(motivoNaFila(pedido, comCarimbo, AGORA)).toBeNull();
+  });
+});
+
+describe("🔴 242-01 — a reabertura olha o que FALTA, não só o relógio", () => {
+  // Venda 25/08, janela fecha 15/09. "Hoje" é 05/09: DENTRO da janela.
+  const HOJE = Date.parse("2026-09-05T12:00:00Z");
+  const dentro = { ml_order_id: "d1", data_pedido: "2026-08-25T10:00:00Z", temFrete: false };
+  const comFrete = { ...dentro, temFrete: true };
+
+  const capturado = (ultimaTentativa: string | null): CapturaConhecida => ({
+    status: "ok",
+    // Pós-corte do truncamento, para isolar esta régua das outras duas.
+    capturado_em: "2026-08-26T10:00:00Z",
+    proxima_tentativa: null,
+    ultima_tentativa: ultimaTentativa,
+  });
+
+  it("sem frete, dentro da janela e não tentado hoje → volta à fila", () => {
+    expect(freteAindaAusente(capturado("2026-09-04T10:00:00Z"), dentro, HOJE)).toBe(true);
+    expect(motivoNaFila(dentro, capturado("2026-09-04T10:00:00Z"), HOJE)).toBe("frete_ainda_ausente");
+  });
+
+  it("🔴 COM frete não volta — a saída é o conteúdo, e é ela que impede o giro", () => {
+    expect(freteAindaAusente(capturado("2026-09-04T10:00:00Z"), comFrete, HOJE)).toBe(false);
+    expect(motivoNaFila(comFrete, capturado("2026-09-04T10:00:00Z"), HOJE)).toBeNull();
+  });
+
+  it("🔴 tentado HOJE não volta — a trava diária é `ultima_tentativa`", () => {
+    expect(freteAindaAusente(capturado("2026-09-05T03:00:00Z"), dentro, HOJE)).toBe(false);
+  });
+
+  it("o fato ausente cala a régua: `temFrete` indefinido não vira `false`", () => {
+    const semFato = { ml_order_id: "d1", data_pedido: "2026-08-25T10:00:00Z" };
+    expect(freteAindaAusente(capturado("2026-09-04T10:00:00Z"), semFato, HOJE)).toBe(false);
+  });
+
+  it("fora da janela é assunto da régua da 240, não desta", () => {
+    const antigo = { ml_order_id: "a1", data_pedido: "2026-07-01T10:00:00Z", temFrete: false };
+    expect(freteAindaAusente(capturado("2026-09-04T10:00:00Z"), antigo, HOJE)).toBe(false);
+  });
+
+  it("🔴 o ciclo completo: entra hoje, não repete hoje, entra amanhã, some ao chegar o frete", () => {
+    const capturas = new Map<string, CapturaConhecida>([["d1", capturado("2026-09-04T10:00:00Z")]]);
+
+    // Hoje: entra.
+    expect(montarFila([dentro], capturas, HOJE).pendentes).toEqual(["d1"]);
+
+    // Depois de tentar hoje: não repete no mesmo dia.
+    capturas.set("d1", capturado("2026-09-05T09:00:00Z"));
+    expect(montarFila([dentro], capturas, HOJE).pendentes).toEqual([]);
+
+    // Amanhã, ainda sem frete: entra de novo — no máximo uma vez por dia.
+    const AMANHA = Date.parse("2026-09-06T12:00:00Z");
+    expect(montarFila([dentro], capturas, AMANHA).pendentes).toEqual(["d1"]);
+
+    // A linha de frete chegou: some para sempre, sem depender do relógio.
+    expect(montarFila([comFrete], capturas, AMANHA).pendentes).toEqual([]);
+  });
+
+  it("o truncamento continua vindo primeiro — é o defeito maior", () => {
+    const truncado: CapturaConhecida = {
+      status: "ok",
+      capturado_em: "2026-08-20T12:00:00Z",
+      proxima_tentativa: null,
+      ultima_tentativa: "2026-08-20T12:00:00Z",
+    };
+    expect(motivoNaFila(dentro, truncado, HOJE)).toBe("captura_truncada");
   });
 });
