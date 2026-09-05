@@ -12,6 +12,12 @@ import {
   inicioInclusivoDataPedido,
   fimExclusivoDataPedido,
 } from "../_shared/janelaDataPedido.ts";
+import {
+  montarFila,
+  JANELA_CFFE_DIAS,
+  type CapturaConhecida,
+  type PedidoDaFila,
+} from "../_shared/filaCaptura.ts";
 
 /**
  * sync-ml-order-sale-fee/index.ts — a ingestão do rebate por pedido
@@ -365,8 +371,8 @@ async function listarPedidosNaJanela(
   mlUserId: string,
   inicio: string,
   fim: string,
-): Promise<string[]> {
-  const vistos = new Set<string>();
+): Promise<PedidoDaFila[]> {
+  const vistos = new Map<string, PedidoDaFila>();
   const PASSO = 1000;
   // PostgREST trunca em 1000 linhas em silêncio — .range() é obrigatório aqui,
   // igual à régua que a Fase 222/223 já cravaram nesta casa. Distinto por
@@ -376,7 +382,7 @@ async function listarPedidosNaJanela(
   for (let offset = 0; ; offset += PASSO) {
     const { data, error } = await supabaseAdmin
       .from("orders")
-      .select("ml_order_id")
+      .select("ml_order_id, data_pedido")
       .eq("organization_id", organizationId)
       .eq("ml_user_id", mlUserId)
       .in("status", STATUSES_ELEGIVEIS)
@@ -391,10 +397,16 @@ async function listarPedidosNaJanela(
     if (error) throw new Error(`select orders (janela): ${error.message}`);
     const lote = data ?? [];
     // deno-lint-ignore no-explicit-any
-    for (const r of lote as any[]) vistos.add(String(r.ml_order_id));
+    for (const r of lote as any[]) {
+      const id = String(r.ml_order_id);
+      // 🔴 240-02: a data vem junto porque a janela do CFFE se ancora nela.
+      // `Map`, e nao `Set`, pelo mesmo motivo do `Set` original: uma venda com
+      // N linhas em `orders` nao pode virar N vagas para o mesmo pedido.
+      if (!vistos.has(id)) vistos.set(id, { ml_order_id: id, data_pedido: r.data_pedido ?? null });
+    }
     if (lote.length < PASSO) break;
   }
-  return [...vistos];
+  return [...vistos.values()];
 }
 
 interface CapturaExistente {
@@ -403,6 +415,8 @@ interface CapturaExistente {
   tentativas: number;
   /** Usado só por `mode: "status"` — a última vez que este pedido foi tentado. */
   ultima_tentativa: string | null;
+  /** 🔴 240-02: a âncora da janela do CFFE. Ver `filaCaptura.ts`. */
+  capturado_em: string | null;
 }
 
 // deno-lint-ignore no-explicit-any
@@ -417,7 +431,7 @@ async function lerCapturaExistente(
   for (let offset = 0; ; offset += PASSO) {
     const { data, error } = await supabaseAdmin
       .from("ml_order_sale_fee_captura")
-      .select("ml_order_id, status, proxima_tentativa, tentativas, ultima_tentativa")
+      .select("ml_order_id, status, proxima_tentativa, tentativas, ultima_tentativa, capturado_em")
       .eq("organization_id", organizationId)
       .eq("ml_user_id", mlUserId)
       .order("ml_order_id", { ascending: true })
@@ -431,6 +445,8 @@ async function lerCapturaExistente(
         proxima_tentativa: r.proxima_tentativa ?? null,
         tentativas: Number(r.tentativas ?? 0),
         ultima_tentativa: r.ultima_tentativa ?? null,
+        // 🔴 240-02: a âncora da janela do CFFE. Ver `filaCaptura.ts`.
+        capturado_em: r.capturado_em ?? null,
       });
     }
     if (lote.length < PASSO) break;
@@ -539,6 +555,17 @@ interface ResultadoConta {
   truncamentos_detectados: number;
   /** Ausentes que sobraram sem resolução nesta invocação (orçamento/429) — nunca sem_linha. */
   ausentes_nao_resolvidos: number;
+  /**
+   * 🔴 240-02: POR QUE cada pedido entrou na fila, separado. Uma rodada que
+   * reabre 150 pedidos pelo CFFE e uma que nao reabriu nenhum sao invisiveis
+   * uma para a outra num total so — e o backfill dos 910 se mede exatamente
+   * por este contador cair.
+   */
+  fila_nunca_capturado: number;
+  fila_retentativa_vencida: number;
+  fila_reaberto_por_cffe: number;
+  /** A janela usada, escrita para que a rodada declare a regua que aplicou. */
+  janela_cffe_dias: number;
   /** D-hap-07: nunca termina calada. */
   motivo_parada: MotivoParada;
   motivo?: string;
@@ -572,6 +599,10 @@ async function executarParaConta(
       conta: mlUserId,
       lotes: 0,
       pedidos_consultados: 0,
+      fila_nunca_capturado: 0,
+      fila_retentativa_vencida: 0,
+      fila_reaberto_por_cffe: 0,
+      janela_cffe_dias: JANELA_CFFE_DIAS,
       linhas_gravadas: 0,
       capturados: 0,
       parciais: 0,
@@ -629,19 +660,21 @@ async function executarParaConta(
   const idsNaJanela = await listarPedidosNaJanela(supabaseAdmin, organizationId, mlUserId, inicio, fim);
   const capturaMap = await lerCapturaExistente(supabaseAdmin, organizationId, mlUserId);
 
+  // 🔴 240-02: a decisao de quem entra na fila saiu daqui e virou modulo PURO
+  // (`filaCaptura.ts`), porque `index.ts` importa modulos remotos que o vitest
+  // nao resolve — a regra que decide reabrir R$ ~20 mil de cobranca nao podia
+  // continuar so provavel por auditoria de texto.
+  //
+  // O que mudou de comportamento: `status = "ok"` deixou de ser um `continue`
+  // incondicional. `D-223-05` vale para a comissao, que nasce com a venda; nao
+  // vale para o frete, que o ML emite ate 18 dias depois. Detalhe e medicao no
+  // cabecalho do modulo.
   const agoraMs = agora.getTime();
-  const pendentesIniciais: string[] = [];
-  for (const id of idsNaJanela) {
-    const c = capturaMap.get(id);
-    if (!c) {
-      pendentesIniciais.push(id);
-      continue;
-    }
-    if (c.status === "ok") continue; // capturado: nunca reconsultado (D-223-05)
-    if (c.proxima_tentativa === null) continue; // desistiu (ex.: sem_linha esgotado)
-    if (new Date(c.proxima_tentativa).getTime() > agoraMs) continue; // ainda não chegou a vez
-    pendentesIniciais.push(id);
-  }
+  const { pendentes: pendentesIniciais, contagem: motivosDaFila } = montarFila(
+    idsNaJanela,
+    capturaMap as ReadonlyMap<string, CapturaConhecida>,
+    agoraMs,
+  );
 
   let restantesTrabalho: string[] = [...pendentesIniciais];
   let lotes = 0;
@@ -727,6 +760,10 @@ async function executarParaConta(
         proxima_tentativa: d.proximaTentativa ? d.proximaTentativa.toISOString() : null,
         tentativas: d.tentativas,
         ultima_tentativa: agora.toISOString(),
+        // 🔴 240-02: o MESMO valor que o upsert grava (linha 328). Sem ele, o
+        // espelho local diria `capturado_em: null` e a regra do CFFE leria o
+        // pedido recem-capturado como prematuro DENTRO da propria invocacao.
+        capturado_em: d.status === "ok" ? agora.toISOString() : null,
       });
     }
 
@@ -816,6 +853,10 @@ async function executarParaConta(
     interrompido_por_429: interrompidoPor429,
     restantes,
     reconsultas_solo: reconsultasSolo,
+    fila_nunca_capturado: motivosDaFila.nunca_capturado,
+    fila_retentativa_vencida: motivosDaFila.retentativa_vencida,
+    fila_reaberto_por_cffe: motivosDaFila.cffe_pode_ter_chegado,
+    janela_cffe_dias: JANELA_CFFE_DIAS,
     truncamentos_detectados: truncamentosDetectados,
     ausentes_nao_resolvidos: ausentesNaoResolvidosTotal,
     motivo_parada: motivoParada,
@@ -886,7 +927,8 @@ async function executarStatusConta(
   let desistidos = 0;
   let ultimaTentativa: string | null = null;
 
-  for (const id of idsNaJanela) {
+  for (const p of idsNaJanela) {
+    const id = p.ml_order_id;
     const c = capturaMap.get(id);
     if (!c) {
       pendentes += 1;
