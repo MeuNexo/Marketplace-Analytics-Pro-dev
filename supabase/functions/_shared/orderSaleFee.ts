@@ -512,7 +512,7 @@ export function detectarTruncamento({
 // ── + D-hap-02 (260821-hap): ausência só conclui a partir de chamada solo ──
 
 /** O que este pedido, dentro deste lote, ficou autorizado a afirmar. */
-export type StatusCaptura = "ok" | "parcial" | "sem_linha" | "erro";
+export type StatusCaptura = "ok" | "parcial" | "sem_linha" | "erro" | "so_cobranca";
 
 export interface ClassificarCapturaInput {
   /** Os `order_id` (como string) que foram enviados nesta chamada. */
@@ -657,9 +657,28 @@ export function classificarCaptura({
       return semLinha(id);
     }
 
+    // 🔴 240-03: `so_cobranca` — o ML respondeu COM cobrança, mas sem o
+    // `sale_fee` da raiz completo. Nasceu porque 240-01 fez o pedido que só tem
+    // tarifa de envio entrar no mapa, e chamá-lo de `ok` seria mentira em duas
+    // direções: `ok` PROMETE que dá para afirmar rebate (a CHECK
+    // `ml_order_sale_fee_captura_ok_tem_sale_fee` exige os três campos), e
+    // `sem_linha` NEGA cobrança que existe.
+    //
+    // O estado é terceiro e merece nome próprio — é o mesmo contrato da fase
+    // 239: quando a resposta não cabe nos rótulos que existem, o rótulo novo
+    // diz a verdade em vez de espremê-la no mais próximo.
+    //
+    // Como `ok`, ele é DEFINITIVO quanto ao sale fee: `proximaTentativa: null`,
+    // porque o ML já falou e reconsultar releria o mesmo. As linhas de
+    // cobrança são gravadas normalmente — é justamente o que a 240-01 destravou.
+    const temSaleFeeCompleto =
+      pedido.saleFee.gross !== null &&
+      pedido.saleFee.net !== null &&
+      pedido.saleFee.rebate !== null;
+
     return {
       ml_order_id: id,
-      status: "ok",
+      status: temSaleFeeCompleto ? "ok" : "so_cobranca",
       httpStatus,
       tentativas: tentativasDe(id),
       // Capturado: nunca mais reconsultado (D-223-05).

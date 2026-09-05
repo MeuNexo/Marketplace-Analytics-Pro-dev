@@ -68,7 +68,60 @@ export interface PedidoDaFila {
 export const DIAS_DEFASAGEM_CFFE = 18;
 export const JANELA_CFFE_DIAS = DIAS_DEFASAGEM_CFFE + 3;
 
+/**
+ * O instante em que a proteção contra truncamento do envelope passou a valer
+ * (D-hap-02/03, "260821-hap" — a reconsulta solo de `orderSaleFeeLote.ts`).
+ *
+ * 🔴 A SEGUNDA CAUSA, e a maior delas — medida em 05/09/2026, por dia de
+ * captura:
+ *
+ *   20/08: 1.233 pedidos gravados `ok`, **37,1% com CFFE**, média 2,92 linhas
+ *   21/08: 6.376 pedidos gravados `ok`, **97,4% com CFFE**, média 3,62 linhas
+ *
+ * O backfill inicial rodou em 20/08, ANTES de a proteção existir. O envelope
+ * do ML pagina por LINHA DE COBRANÇA (teto de 150), não por pedido: os lotes
+ * voltavam truncados, o pedido era gravado `ok` com as linhas que couberam — a
+ * comissão vinha, o frete ficava de fora — e `D-223-05` fechava a porta para
+ * sempre.
+ *
+ * Por mês de venda o rastro é o mesmo: janeiro 54,4% e fevereiro 42,9% de
+ * cobertura de CFFE, contra 96,7% a 99,2% de março a julho.
+ *
+ * ⚠️ Isto NÃO é a mesma coisa que captura prematura. Um pedido de janeiro
+ * capturado em agosto foi capturado MUITO depois de a janela do CFFE fechar —
+ * a régua de `okPrematuro` não o alcança, e por isso esta existe ao lado dela,
+ * com nome próprio. Duas causas, dois nomes: é o contrato da fase 239.
+ */
+export const CORTE_TRUNCAMENTO_CORRIGIDO_MS = Date.parse("2026-08-21T00:00:00Z");
+
+/**
+ * Este `ok` foi carimbado antes de a proteção contra truncamento existir —
+ * logo pode ter sido gravado a partir de uma resposta cortada pelo meio.
+ *
+ * Auto-limitante pelo mesmo mecanismo de `okPrematuro`: a reconsulta grava
+ * `capturado_em = agora`, que é depois do corte, e o pedido sai da fila.
+ */
+export function capturaTruncadaAntesDaCorrecao(c: CapturaConhecida): boolean {
+  if (!ehCapturaFechada(c.status)) return false;
+  if (c.capturado_em === null) return true;
+  const cap = Date.parse(c.capturado_em);
+  if (!Number.isFinite(cap)) return true;
+  return cap < CORTE_TRUNCAMENTO_CORRIGIDO_MS;
+}
+
 const MS_POR_DIA = 24 * 60 * 60 * 1000;
+
+/**
+ * Os status em que o ML JÁ FALOU e a captura está fechada quanto ao sale fee.
+ *
+ * 🔴 `so_cobranca` (240-03) entra aqui junto com `ok`: o ML respondeu com
+ * cobrança, só não com `sale_fee` completo. Deixá-lo de fora faria a fila
+ * reconsiderá-lo por `proxima_tentativa` — que é nula — e ele sumiria da
+ * varredura das duas réguas abaixo, que é exatamente onde ele precisa estar.
+ */
+function ehCapturaFechada(status: string): boolean {
+  return status === "ok" || status === "so_cobranca";
+}
 
 /**
  * O instante em que a janela do CFFE se fecha para este pedido, ou `null`
@@ -94,13 +147,24 @@ export function fimDaJanelaCffe(dataPedido: string | null): Date | null {
  * de informação — e ausência não vira "já capturei". É a mesma régua de
  * `aceite.ts`: campo que não veio não é zero.
  */
-export function okPrematuro(c: CapturaConhecida, p: PedidoDaFila): boolean {
-  if (c.status !== "ok") return false;
+export function okPrematuro(c: CapturaConhecida, p: PedidoDaFila, agoraMs: number): boolean {
+  if (!ehCapturaFechada(c.status)) return false;
   const fim = fimDaJanelaCffe(p.data_pedido);
   // Sem data de pedido não há como julgar: não reabre. Reabrir aqui colocaria
   // na fila, a cada rodada, todo pedido cuja data não sabemos ler — e essa
   // fila nunca encolheria.
   if (fim === null) return false;
+
+  // 🔴 SÓ DEPOIS QUE A JANELA FECHA. Sem esta guarda, um pedido vendido e
+  // capturado hoje satisfaz `capturado_em < venda + 21` e volta à fila TODO
+  // DIA durante três semanas — a tarifa nem foi emitida ainda, e a reconsulta
+  // relê o mesmo número. Medido antes de corrigir: o contador deu 1.372 em vez
+  // dos ~910 do passivo real, e a diferença era exatamente a janela viva.
+  //
+  // Com a guarda, cada pedido é reconsultado UMA vez, no dia em que a janela
+  // fecha — que é o primeiro dia em que a resposta pode ter mudado.
+  if (agoraMs < fim.getTime()) return false;
+
   if (c.capturado_em === null) return true;
   const cap = Date.parse(c.capturado_em);
   if (!Number.isFinite(cap)) return true;
@@ -108,7 +172,11 @@ export function okPrematuro(c: CapturaConhecida, p: PedidoDaFila): boolean {
 }
 
 /** Por que este pedido entrou na fila. `null` quando não entrou. */
-export type MotivoNaFila = "nunca_capturado" | "retentativa_vencida" | "cffe_pode_ter_chegado";
+export type MotivoNaFila =
+  | "nunca_capturado"
+  | "retentativa_vencida"
+  | "cffe_pode_ter_chegado"
+  | "captura_truncada";
 
 /**
  * A decisão de fila para UM pedido. A ordem dos ramos é conteúdo, não estilo:
@@ -123,8 +191,12 @@ export function motivoNaFila(
 ): MotivoNaFila | null {
   if (!c) return "nunca_capturado";
 
-  if (c.status === "ok") {
-    return okPrematuro(c, p) ? "cffe_pode_ter_chegado" : null;
+  if (ehCapturaFechada(c.status)) {
+    // A ordem nomeia a causa DOMINANTE quando as duas valem: um pedido de
+    // agosto capturado em 20/08 é as duas coisas, e o truncamento é o defeito
+    // maior (1.233 pedidos contra 19).
+    if (capturaTruncadaAntesDaCorrecao(c)) return "captura_truncada";
+    return okPrematuro(c, p, agoraMs) ? "cffe_pode_ter_chegado" : null;
   }
 
   // Desistiu (ex.: `sem_linha` com tentativas esgotadas): não volta.
@@ -156,6 +228,7 @@ export function montarFila(
     nunca_capturado: 0,
     retentativa_vencida: 0,
     cffe_pode_ter_chegado: 0,
+    captura_truncada: 0,
   };
   const vistos = new Set<string>();
   for (const p of pedidos) {

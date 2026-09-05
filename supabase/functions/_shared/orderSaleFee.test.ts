@@ -591,7 +591,7 @@ describe("240-01 — pedido com SÓ tarifa de envio entra no mapa, sem afirmar r
     expect(lerPedidos(amostra.results).size).toBe(7);
   });
 
-  it("🔴 na classificação, esses pedidos saem `ok` — não `sem_linha`", () => {
+  it("🔴 na classificação, esses pedidos saem `so_cobranca` — nem `ok`, nem `sem_linha`", () => {
     const ids = amostraCffe.results.map((r) => String(r.order_id));
     const decisoes = classificarCaptura({
       pedidosDoLote: ids,
@@ -603,9 +603,29 @@ describe("240-01 — pedido com SÓ tarifa de envio entra no mapa, sem afirmar r
     });
     expect(decisoes.length).toBe(3);
     for (const d of decisoes) {
-      expect(d.status, d.ml_order_id).toBe("ok");
+      // `ok` prometeria rebate (a CHECK do banco exige `sale_fee` completo);
+      // `sem_linha` negaria cobrança que existe. O estado é um terceiro.
+      expect(d.status, d.ml_order_id).toBe("so_cobranca");
       expect(d.linhas, d.ml_order_id).toBe(1);
       expect(d.comissaoLinhas, d.ml_order_id).toBeNull();
+      // Definitivo quanto ao sale fee: o ML já falou.
+      expect(d.proximaTentativa, d.ml_order_id).toBeNull();
+      // 🔴 E nunca grava rebate — a CHECK `so_cobranca_sem_rebate` exige.
+      expect(d.saleFee?.rebate ?? null, d.ml_order_id).toBeNull();
     }
+  });
+
+  it("o pedido com `sale_fee` completo continua saindo `ok`", () => {
+    // Não-regressão: a amostra da 223 tem os três campos e não pode mudar.
+    const ids = amostra.results.map((r) => String(r.order_id));
+    const decisoes = classificarCaptura({
+      pedidosDoLote: ids,
+      lidos: lerPedidos(amostra.results),
+      presentesNaResposta: new Set(ids),
+      httpStatus: 200,
+      agora: new Date("2026-09-04T12:00:00Z"),
+      tentativasAtuais: {},
+    });
+    expect(decisoes.every((d) => d.status === "ok")).toBe(true);
   });
 });

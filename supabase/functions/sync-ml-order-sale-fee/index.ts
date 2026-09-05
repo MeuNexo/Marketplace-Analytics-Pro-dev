@@ -564,6 +564,8 @@ interface ResultadoConta {
   fila_nunca_capturado: number;
   fila_retentativa_vencida: number;
   fila_reaberto_por_cffe: number;
+  /** 🔴 240-03: capturados em 20/08, antes de a protecao contra truncamento existir. */
+  fila_captura_truncada: number;
   /** A janela usada, escrita para que a rodada declare a regua que aplicou. */
   janela_cffe_dias: number;
   /** D-hap-07: nunca termina calada. */
@@ -602,6 +604,7 @@ async function executarParaConta(
       fila_nunca_capturado: 0,
       fila_retentativa_vencida: 0,
       fila_reaberto_por_cffe: 0,
+      fila_captura_truncada: 0,
       janela_cffe_dias: JANELA_CFFE_DIAS,
       linhas_gravadas: 0,
       capturados: 0,
@@ -856,6 +859,7 @@ async function executarParaConta(
     fila_nunca_capturado: motivosDaFila.nunca_capturado,
     fila_retentativa_vencida: motivosDaFila.retentativa_vencida,
     fila_reaberto_por_cffe: motivosDaFila.cffe_pode_ter_chegado,
+    fila_captura_truncada: motivosDaFila.captura_truncada,
     janela_cffe_dias: JANELA_CFFE_DIAS,
     truncamentos_detectados: truncamentosDetectados,
     ausentes_nao_resolvidos: ausentesNaoResolvidosTotal,
