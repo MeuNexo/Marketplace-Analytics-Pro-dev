@@ -15,6 +15,7 @@ import {
 import {
   montarFila,
   carimboDeCaptura,
+  ehCapturaFechada,
   JANELA_CFFE_DIAS,
   type CapturaConhecida,
   type PedidoDaFila,
@@ -507,8 +508,15 @@ async function processarLote(
     maxSolo,
   });
 
+  // 🔴 240-05: `ehCapturaFechada`, NUNCA `=== "ok"` solto. Este filtro era o
+  // TERCEIRO lugar onde o status estava cravado em texto, e o unico que
+  // importava para o dinheiro: `so_cobranca` ficava de fora, entao a linha de
+  // cobranca que a 240-01 destravou era CONTADA no diagnostico e nao GRAVADA.
+  // Medido na tela: 11 pedidos com `linhas = 1` na captura e 0 linhas em
+  // `ml_order_sale_fee` — exatamente o defeito que esta fase existe para matar,
+  // reintroduzido por mim ao criar o status novo.
   const idsCapturados = resultado.decisoes
-    .filter((d) => d.status === "ok")
+    .filter((d) => ehCapturaFechada(d.status))
     .map((d) => d.ml_order_id);
   await gravarLinhas(supabaseAdmin, organizationId, mlUserId, resultado.pedidosLidos, idsCapturados);
   await gravarCapturas(supabaseAdmin, organizationId, mlUserId, resultado.decisoes);
@@ -733,7 +741,7 @@ async function executarParaConta(
     ausentesNaoResolvidosTotal += resultado.ausentesNaoResolvidos;
 
     for (const d of resultado.decisoes) {
-      if (d.status === "ok") {
+      if (ehCapturaFechada(d.status)) {
         capturados += 1;
         capturadosOkCount += 1;
         linhasGravadas += d.linhas;
@@ -939,7 +947,7 @@ async function executarStatusConta(
       pendentes += 1;
       continue;
     }
-    if (c.status === "ok") {
+    if (ehCapturaFechada(c.status)) {
       capturados += 1;
     } else if (c.status === "sem_linha") {
       semLinha += 1;
