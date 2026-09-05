@@ -14,6 +14,7 @@ import {
 } from "../_shared/janelaDataPedido.ts";
 import {
   montarFila,
+  carimboDeCaptura,
   JANELA_CFFE_DIAS,
   type CapturaConhecida,
   type PedidoDaFila,
@@ -325,7 +326,7 @@ async function gravarCapturas(
     discount_reason: d.saleFee?.discount_reason ?? null,
     comissao_linhas: d.comissaoLinhas,
     tem_estorno: d.temEstorno,
-    capturado_em: d.status === "ok" ? agoraISO : null,
+    capturado_em: carimboDeCaptura(d.status, agoraISO),
     ultima_tentativa: agoraISO,
     proxima_tentativa: d.proximaTentativa ? d.proximaTentativa.toISOString() : null,
   }));
@@ -766,7 +767,7 @@ async function executarParaConta(
         // 🔴 240-02: o MESMO valor que o upsert grava (linha 328). Sem ele, o
         // espelho local diria `capturado_em: null` e a regra do CFFE leria o
         // pedido recem-capturado como prematuro DENTRO da propria invocacao.
-        capturado_em: d.status === "ok" ? agora.toISOString() : null,
+        capturado_em: carimboDeCaptura(d.status, agora.toISOString()),
       });
     }
 

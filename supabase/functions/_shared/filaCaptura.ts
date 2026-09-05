@@ -119,8 +119,27 @@ const MS_POR_DIA = 24 * 60 * 60 * 1000;
  * reconsiderá-lo por `proxima_tentativa` — que é nula — e ele sumiria da
  * varredura das duas réguas abaixo, que é exatamente onde ele precisa estar.
  */
-function ehCapturaFechada(status: string): boolean {
+export function ehCapturaFechada(status: string): boolean {
   return status === "ok" || status === "so_cobranca";
+}
+
+/**
+ * O valor de `capturado_em` a gravar — `null` só para quem NÃO fechou.
+ *
+ * 🔴 ESTA FUNÇÃO EXISTE POR CAUSA DE UM LAÇO REAL, medido em 05/09/2026. O
+ * upsert carimbava `capturado_em` apenas quando `status === "ok"`. Quando
+ * `so_cobranca` nasceu (240-03), os 19 pedidos que caíram nele foram gravados
+ * com carimbo NULO — e `okPrematuro` lê nulo como "prematuro", de propósito
+ * (ausência não é "já capturei"). Resultado: os 19 voltavam à fila em TODA
+ * rodada, para sempre, gastando chamada para reler o mesmo número.
+ *
+ * As duas regras estavam certas isoladamente e erradas juntas. O carimbo é a
+ * ÚNICA saída de ambas as réguas de reabertura, então quem fecha a captura tem
+ * de carimbar — e agora é uma função só, testável, em vez de uma condição
+ * solta dentro de um `index.ts` que o vitest não alcança.
+ */
+export function carimboDeCaptura(status: string, agoraISO: string): string | null {
+  return ehCapturaFechada(status) ? agoraISO : null;
 }
 
 /**

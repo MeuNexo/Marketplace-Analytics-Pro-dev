@@ -8,6 +8,7 @@ import {
   okPrematuro,
   capturaTruncadaAntesDaCorrecao,
   CORTE_TRUNCAMENTO_CORRIGIDO_MS,
+  carimboDeCaptura,
   type CapturaConhecida,
 } from "./filaCaptura.ts";
 
@@ -253,5 +254,36 @@ describe("240-03 — `so_cobranca` é captura FECHADA, e passa pelas duas régua
 
   it("🔴 maduro e pós-corte: NÃO reabre — senão giraria para sempre", () => {
     expect(motivoNaFila(pedido, soCobranca(FORA), AGORA)).toBeNull();
+  });
+});
+
+describe("🔴 240-04 — o carimbo é a ÚNICA saída da fila, e quem fecha tem de carimbar", () => {
+  const AGORA_ISO = "2026-09-05T03:40:00.000Z";
+
+  it("`ok` e `so_cobranca` carimbam; os demais, não", () => {
+    expect(carimboDeCaptura("ok", AGORA_ISO)).toBe(AGORA_ISO);
+    expect(carimboDeCaptura("so_cobranca", AGORA_ISO)).toBe(AGORA_ISO);
+    for (const st of ["erro", "sem_linha", "parcial", "inventado"]) {
+      expect(carimboDeCaptura(st, AGORA_ISO), st).toBeNull();
+    }
+  });
+
+  it("🔴 o laço que isto fecha: `so_cobranca` sem carimbo volta à fila para sempre", () => {
+    // Medido em produção: 19 pedidos gravados `so_cobranca` com carimbo nulo
+    // voltavam em TODA rodada, porque `okPrematuro` lê nulo como prematuro — e
+    // essa leitura está certa (ausência não é "já capturei"). As duas regras
+    // estavam certas isoladamente e erradas juntas.
+    const semCarimbo: CapturaConhecida = {
+      status: "so_cobranca",
+      capturado_em: null,
+      proxima_tentativa: null,
+    };
+    expect(motivoNaFila(pedido, semCarimbo, AGORA)).not.toBeNull();
+
+    const comCarimbo: CapturaConhecida = {
+      ...semCarimbo,
+      capturado_em: carimboDeCaptura("so_cobranca", new Date(AGORA).toISOString()),
+    };
+    expect(motivoNaFila(pedido, comCarimbo, AGORA)).toBeNull();
   });
 });
