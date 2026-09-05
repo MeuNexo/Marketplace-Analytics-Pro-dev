@@ -300,6 +300,12 @@ const MOTIVOS: Record<string, string> = {
     "Mais de um pedido no mesmo pacote — o repasse pode ter vindo agrupado. Não acusamos em cima de carrinho",
   frete_multi_item:
     "O pedido tem mais de um anúncio: o custo de tabela é por anúncio e o frete é por pacote — não há soma honesta, então não comparamos",
+  // 🔴 243-01: o par que separa a DÚVIDA da CONTA FECHADA. Enquanto não
+  // tínhamos perguntado, "pode ser frete grátis ou lacuna" era a régua certa.
+  // Com o custo publicado em zero E a captura recente sem linha de frete, as
+  // três fontes concordam e não há o que corrigir.
+  frete_gratis_confirmado:
+    "Frete grátis confirmado: o custo publicado do envio é zero e o Mercado Livre, consultado, não cobrou nada. A conta fecha em R$ 0,00 — não há o que corrigir",
   frete_sem_cobranca_registrada:
     "Não há linha de cobrança de frete para este pedido. Pode ser frete grátis ou lacuna da nossa captura — não presumimos zero",
   // 🔴 242-02: o par que separa "o ML não emitiu" de "não perguntamos".

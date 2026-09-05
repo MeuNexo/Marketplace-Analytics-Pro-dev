@@ -740,3 +740,29 @@ describe("242-02 — o rótulo separa 'o ML não emitiu' de 'não perguntamos'",
     }
   });
 });
+
+
+describe("243-01 — frete grátis confirmado é conta fechada, não pedido de correção", () => {
+  it("o motivo existe e não repete o código", () => {
+    const t = rotuloMotivo("frete_gratis_confirmado");
+    expect(t.length).toBeGreaterThan(10);
+    expect(t).not.toBe("frete_gratis_confirmado");
+  });
+
+  it("🔴 o texto NÃO pede correção — a conta fecha", () => {
+    const t = rotuloMotivo("frete_gratis_confirmado").toLowerCase();
+    expect(t).toContain("não há o que corrigir");
+    expect(t).not.toContain("lacuna");
+  });
+
+  it("🔴 e diz que PERGUNTAMOS — sem isso seria presunção de novo", () => {
+    // "Esperado zero" sozinho é presunção: foi assim que a 242 errou 39 de 40.
+    expect(rotuloMotivo("frete_gratis_confirmado").toLowerCase()).toContain("consultado");
+  });
+
+  it("a dúvida honesta sobrevive ao lado, com texto diferente", () => {
+    const duvida = rotuloMotivo("frete_sem_cobranca_registrada");
+    expect(duvida).not.toBe(rotuloMotivo("frete_gratis_confirmado"));
+    expect(duvida.toLowerCase()).toContain("não presumimos zero");
+  });
+});
