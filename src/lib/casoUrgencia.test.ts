@@ -570,11 +570,20 @@ describe("239-03 — os motivos da régua do envio nomeiam a causa e o dono da l
     expect(texto).toContain("não há o que comparar");
   });
 
-  it("cobrança não emitida: a espera é do ML e sai sozinha — não é defeito nosso", () => {
+  // 🔴 242-02: ESTE TESTE MUDOU, e a mudança é o achado. Ele exigia o texto
+  // "Mercado Livre ainda não emitiu a cobrança" — uma afirmação sobre o ML que,
+  // até 05/09/2026, era derivada só da IDADE da venda. Medido contra a API ao
+  // vivo em 40 desses pedidos: **39 já tinham o frete no ML**. O rótulo estava
+  // errado em ~97% dos casos e soava cuidadoso.
+  //
+  // O que continua exigido é a metade certa: a espera é do ML e não é lacuna
+  // nossa. O que passou a ser exigido é a PROVA de que perguntamos.
+  it("cobrança não emitida: a espera é do ML — e agora o texto diz que PERGUNTAMOS", () => {
     const texto = rotuloMotivo("frete_cobranca_nao_emitida");
-    expect(texto).toContain("Mercado Livre ainda não emitiu a cobrança");
+    expect(texto.toLowerCase()).toContain("perguntamos");
+    expect(texto).toMatch(/ainda não foi emitida/i);
     expect(texto).toMatch(/não é lacuna nossa/i);
-    expect(texto).toMatch(/sai sozinho/i);
+    expect(texto).toMatch(/sai sozinha/i);
   });
 
   it("apurado no pacote: a conta foi feita UMA vez, no pedido líder", () => {
@@ -700,5 +709,34 @@ describe("239-04 — `repasse_em_aberto`: o rótulo que não afirma desfecho", (
     const emAberto = chaveLogica({ ml_order_id: pedido, tipo_caso: "repasse_em_aberto" });
     const afirmativo = chaveLogica({ ml_order_id: pedido, tipo_caso: "repasse_a_menor" });
     expect(emAberto).not.toBe(afirmativo);
+  });
+});
+
+
+describe("242-02 — o rótulo separa 'o ML não emitiu' de 'não perguntamos'", () => {
+  it("os dois motivos existem e não se confundem", () => {
+    const ml = rotuloMotivo("frete_cobranca_nao_emitida");
+    const nosso = rotuloMotivo("frete_captura_pendente");
+    expect(ml.length).toBeGreaterThan(10);
+    expect(nosso.length).toBeGreaterThan(10);
+    expect(ml).not.toBe(nosso);
+  });
+
+  it("🔴 o que culpa o ML declara que PERGUNTAMOS", () => {
+    // Até 05/09 este texto dizia "o ML ainda não emitiu" a partir da IDADE da
+    // venda. Medido: errado em 39 de 40 casos.
+    expect(rotuloMotivo("frete_cobranca_nao_emitida").toLowerCase()).toContain("perguntamos");
+  });
+
+  it("🔴 e o que é lacuna nossa NÃO empurra para o Mercado Livre", () => {
+    const t = rotuloMotivo("frete_captura_pendente");
+    expect(t.toUpperCase()).toContain("NOSSA");
+    expect(t.toLowerCase()).not.toContain("não é lacuna nossa");
+  });
+
+  it("nenhum dos dois é acionável — não vira chamado", () => {
+    for (const m of ["frete_cobranca_nao_emitida", "frete_captura_pendente"]) {
+      expect(rotuloMotivo(m)).not.toBe(m);
+    }
   });
 });

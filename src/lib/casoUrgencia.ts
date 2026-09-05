@@ -302,6 +302,11 @@ const MOTIVOS: Record<string, string> = {
     "O pedido tem mais de um anúncio: o custo de tabela é por anúncio e o frete é por pacote — não há soma honesta, então não comparamos",
   frete_sem_cobranca_registrada:
     "Não há linha de cobrança de frete para este pedido. Pode ser frete grátis ou lacuna da nossa captura — não presumimos zero",
+  // 🔴 242-02: o par que separa "o ML não emitiu" de "não perguntamos".
+  // O texto antigo de `frete_cobranca_nao_emitida` afirmava sobre o ML a
+  // partir da IDADE da venda, e estava errado em 39 de 40 casos medidos.
+  frete_captura_pendente:
+    "Ainda não perguntamos ao Mercado Livre pela cobrança de frete deste pedido — ou perguntamos há tempo demais para a resposta ainda valer. A lacuna é NOSSA, e some quando a captura alcançar o pedido",
 
   // ── Frete: medido, ainda sem ação (225-06) ────────────────────────────────
   frete_sem_vigencia_na_venda:
@@ -332,8 +337,12 @@ const MOTIVOS: Record<string, string> = {
     "Lacuna nossa: ainda não capturamos o envio deste pedido, então não existe custo de tabela para comparar — ela sai quando a captura do envio alcançar este pedido",
   frete_sem_opcao_no_envio:
     "O Mercado Livre não publicou a opção de envio deste envio — sem ela não existe custo de tabela e não há o que comparar. A ausência é da fonte, não da nossa captura",
+  // 🔴 242-02: este texto AFIRMA sobre o Mercado Livre, e por isso o motivo
+  // agora exige prova — captura tentada para o pedido, e recente. Até 05/09 ele
+  // era derivado só da IDADE da venda, e estava errado em 39 de 40 casos
+  // medidos ao vivo: o ML já tinha o frete e ninguém tinha ido buscar.
   frete_cobranca_nao_emitida:
-    "O Mercado Livre ainda não emitiu a cobrança de frete desta venda — a espera é normal e sai sozinho conforme a fatura fecha. Não é lacuna nossa",
+    "Perguntamos ao Mercado Livre e a cobrança de frete desta venda ainda não foi emitida — a espera é normal e sai sozinha conforme a fatura fecha. Não é lacuna nossa",
   // 🔴 Carrinho tem N pedidos e UM frete. Antes, N pedidos viravam N não-casos
   // por uma heurística (mesmo comprador, mesmo dia); agora o pacote é FATO, vindo
   // do envio, e a conta é feita uma vez só — no pedido líder, que o card nomeia.
